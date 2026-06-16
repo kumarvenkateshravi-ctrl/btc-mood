@@ -1,26 +1,244 @@
 @import "tailwindcss";
 
+/* ============================================================
+   BTC Market Mood — design system
+   Register: product. Lane: evolved pro-terminal with cinematic
+   depth. Color strategy: committed, signal-driven. Scene: a
+   focused trader on a 27" monitor in a dim room at market open.
+   Everything is tinted toward a cool blue-violet (hue ~264) so
+   the near-blacks read as a deliberate material, never #000.
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* --- Surface scale (depth via lightness, dark-mode rule) --- */
+  --base:       oklch(0.155 0.018 264);   /* page background    */
+  --surface-1:  oklch(0.195 0.021 264);   /* panels             */
+  --surface-2:  oklch(0.232 0.024 264);   /* raised: toolbars   */
+  --surface-3:  oklch(0.275 0.026 264);   /* popovers, hovers   */
+  --chart-bg:   oklch(0.175 0.020 264);   /* chart canvas       */
+
+  /* --- Hairlines --- */
+  --line:        oklch(0.31 0.028 264);
+  --line-strong: oklch(0.40 0.034 264);
+
+  /* --- Ink --- */
+  --ink:        oklch(0.97 0.008 264);    /* primary text       */
+  --ink-muted:  oklch(0.74 0.020 264);    /* secondary          */
+  --ink-faint:  oklch(0.585 0.020 264);   /* tertiary / labels  */
+
+  /* --- Signal palette (the committed star) --- */
+  --bull:        #089981;
+  --bull-bright: #28b9a1;
+  --bull-dim:    #007961;
+  --bear:        #f23645;
+  --bear-bright: #ff5665;
+  --bear-dim:    #d21625;
+  --neutral:     oklch(0.72 0.030 264);
+  --neutral-dim: oklch(0.55 0.022 264);
+
+  /* --- Volatility regime accents (intensity, not new hues) --- */
+  --regime-calm: oklch(0.74 0.090 232);   /* cool, quiet        */
+  --regime-hot:  oklch(0.80 0.150 78);    /* amber, energetic   */
+
+  /* --- Selection / focus accent (azure: distinct from signal) - */
+  --accent:      oklch(0.72 0.135 232);
+  --accent-dim:  oklch(0.55 0.095 232);
+  --ring: oklch(0.72 0.135 232 / 0.55);
+
+  /* --- Motion --- */
+  --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 130ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
+
+  /* --- Elevation (shadows stay subtle; depth is mostly light) - */
+  --shadow-1: 0 1px 0 oklch(1 0 0 / 0.03), 0 6px 18px oklch(0 0 0 / 0.32);
+  --shadow-2: 0 1px 0 oklch(1 0 0 / 0.04), 0 18px 48px oklch(0 0 0 / 0.46);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-base: var(--base);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-chart-bg: var(--chart-bg);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-bull: var(--bull);
+  --color-bull-bright: var(--bull-bright);
+  --color-bull-dim: var(--bull-dim);
+  --color-bear: var(--bear);
+  --color-bear-bright: var(--bear-bright);
+  --color-bear-dim: var(--bear-dim);
+  --color-neutral: var(--neutral);
+  --color-neutral-dim: var(--neutral-dim);
+  --color-regime-calm: var(--regime-calm);
+  --color-regime-hot: var(--regime-hot);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html, body {
+  background: var(--base);
+  color: var(--ink);
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+}
+
+.font-mono,
+code,
+pre {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+a { color: inherit; text-decoration: none; }
+
+/* ---- Atmosphere: a single soft signal-tinted aurora behind the
+   app shell. Cinematic depth without glassmorphism or noise. ---- */
+.app-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 78% -8%, rgba(8, 153, 129, 0.10), transparent 70%),
+    radial-gradient(55% 45% at 6% 4%, oklch(0.72 0.135 232 / 0.08), transparent 72%);
+}
+
+/* ---- Focus ring (keyboard nav) ---- */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--base), 0 0 0 4px var(--ring);
+  border-radius: 8px;
+}
+
+/* ---- Panel material: layered surface with a lit top edge ---- */
+.panel {
+  background:
+    linear-gradient(180deg, oklch(1 0 0 / 0.025), transparent 8%),
+    linear-gradient(180deg, var(--surface-1), var(--chart-bg));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+}
+
+/* ---- Loading shimmer ---- */
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---- Live pulse: a calm breathing dot, not a strobe ---- */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.82); }
+}
+
+/* ---- Signal flip: a brief, confident ring expansion ---- */
+@keyframes flip-ring {
+  0%   { box-shadow: 0 0 0 0 var(--flip-color); opacity: 0.9; }
+  100% { box-shadow: 0 0 0 14px transparent; opacity: 0; }
+}
+
+/* ---- Verdict sweep: light grazes across the command strip on a
+   confirmed flip, then settles. ---- */
+@keyframes verdict-sweep {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  35%  { opacity: 0.55; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+/* ---- Number roll-in for the live price ---- */
+@keyframes tick-in {
+  from { opacity: 0; transform: translateY(0.22em); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- View-mode morph: panels that appear on a mode switch settle in
+   with a brief opacity lift (no layout-property animation). ---- */
+@keyframes mode-fade {
+  from { opacity: 0.35; }
+  to   { opacity: 1; }
+}
+
+/* ---- Price tick flashes: a calm tinted wash on the chip, not a
+   strobe. The color of the wash encodes direction. ---- */
+.price-flash-up   { background-color: rgba(8, 153, 129, 0.18); }
+.price-flash-down { background-color: rgba(242, 54, 69, 0.18); }
+
+/* ---- Toast: drop in from below the fold ---- */
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ---- Regime wash on the chart canvas. The wash is a single
+   vertical gradient whose hue blends from cool (calm) to warm (hot)
+   based on a data-regime attribute. The chart pane sits on top of
+   this wash; the candle bodies carry most of the signal, so the wash
+   is intentionally faint. ---- */
+[data-regime] {
+  position: relative;
+  isolation: isolate;
+}
+[data-regime]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: background 600ms var(--ease-quart);
+}
+[data-regime="0"]::before,
+[data-regime="0.1"]::before,
+[data-regime="0.2"]::before,
+[data-regime="0.3"]::before { background: linear-gradient(180deg, transparent 0%, oklch(0.74 0.090 232 / 0.10) 50%, transparent 100%); }
+[data-regime="0.4"]::before,
+[data-regime="0.5"]::before { background: linear-gradient(180deg, transparent 0%, oklch(0.77 0.110 180 / 0.10) 50%, transparent 100%); }
+[data-regime="0.6"]::before,
+[data-regime="0.7"]::before { background: linear-gradient(180deg, transparent 0%, oklch(0.79 0.135 130 / 0.12) 50%, transparent 100%); }
+[data-regime="0.8"]::before,
+[data-regime="0.9"]::before,
+[data-regime="1"]::before { background: linear-gradient(180deg, transparent 0%, oklch(0.80 0.150 78 / 0.16) 50%, transparent 100%); }
+
+/* ---- Trade workspace background: a quiet 24px paper grid + a single
+   tinted radial in the corner. Never busy. ---- */
+.paper-bg {
+  position: relative;
+  background:
+    radial-gradient(55% 50% at 88% -10%, oklch(0.72 0.135 232 / 0.10), transparent 70%),
+    radial-gradient(45% 35% at 0% 110%, rgba(8, 153, 129, 0.07), transparent 72%);
+}
+.paper-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, oklch(1 0 0 / 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(1 0 0 / 0.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(70% 60% at 50% 40%, black 60%, transparent 100%);
+}
+
+/* Hide scrollbar, keep scroll (horizontal strips). */
+.scroll-x { scrollbar-width: none; }
+.scroll-x::-webkit-scrollbar { display: none; }
+
+/* Honor reduced motion everywhere: snap to end state, no spatial
+   movement, but keep functional fades. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
