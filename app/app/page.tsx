@@ -16,8 +16,7 @@ import { useSharedIndicators } from '@/lib/useSharedIndicators';
 import { synthCandles } from '@/lib/binance';
 import { fetchKlinesTyped, klinesQueryKey, KlinesError, RateLimitedError } from '@/lib/fetcher';
 import { aggregateMood, computeSignal, type MoodVerdict, type TFSnapshot } from '@/lib/signals';
-import { computeIndicator } from '@/lib/indicatorCompute';
-import { INDICATORS } from '@/lib/indicatorLibrary';
+import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { Candle } from '@/lib/types';
 import { subscribeKlines, subscribeBookTicker, type BookTicker, type WSStatus } from '@/lib/ws';
 import {
@@ -77,6 +76,7 @@ export default function DashboardPage() {
   const [chartType, setChartType] = useState<ChartType>('candlestick');
   const [symbol, setSymbol] = useState<CompareSymbol>(DEFAULT_COMPARE_SYMBOL);
   const [hydrated, setHydrated] = useState(false);
+  const [activeIndicatorId, setActiveIndicatorId] = useState<string>('');
   const { activeIndicators, showVolume, toggleVolume, handleAdd: handleAddIndicator, handleRemove: handleRemoveIndicator, handleToggle: handleToggleIndicator, handleParam: handleParamChange } = useSharedIndicators();
 
   // Hydrate from the URL (tf, type, symbol) once on the client.
@@ -303,75 +303,37 @@ export default function DashboardPage() {
     [snapshots],
   );
 
-  // Per-TF indicator directions for the SignalMatrix.
-  // Runs computeIndicator for each active indicator × timeframe and
-  // derives a buy/sell/neutral direction from the last non-null value.
-  type IndicatorCell = 'buy' | 'sell' | 'neutral';
   const indicatorRows = useMemo(() => {
-    const lookup = new Map(INDICATORS.map((d) => [d.id, d]));
-    return activeIndicators
-      .filter((a) => a.visible)
-      .map((a) => {
-        const def = lookup.get(a.id);
-        if (!def) return null;
-        const cells: Record<string, IndicatorCell> = {};
+    const activeDef = CUSTOM_INDICATORS.find((d) => d.id === activeIndicatorId);
+    if (!activeDef) return [];
 
-        for (const tf of TIMEFRAMES) {
-          const arr = candlesByTf[tf] as Candle[];
-          if (!arr || arr.length < 30) {
-            cells[tf] = 'neutral';
-            continue;
-          }
-          try {
-            const result = computeIndicator(def, arr, a.params);
-            // Direction heuristic: for oscillators (RSI, Stoch, MFI, etc.)
-            // we use the last line value + overbought/oversold-style thresholds.
-            // For trend indicators (EMA cross, MACD) we check line relationships.
-            const mainLine = result.lines[0];
-            if (!mainLine || mainLine.values.length === 0) {
-              cells[tf] = 'neutral';
-              continue;
-            }
-            let lastVal: number | null = null;
-            for (let j = mainLine.values.length - 1; j >= 0; j--) {
-              if (mainLine.values[j] != null) { lastVal = mainLine.values[j]; break; }
-            }
-            if (lastVal == null) { cells[tf] = 'neutral'; continue; }
-
-            let dir: IndicatorCell = 'neutral';
-            // Oscillators: over 70 = sell, under 30 = buy
-            if (['rsi', 'stoch', 'mfi', 'willr', 'cci'].includes(a.id) ||
-                (def.category === 'momentum' && def.separatePane)) {
-              dir = lastVal >= 70 ? 'sell' : lastVal <= 30 ? 'buy' : 'neutral';
-            } else if (result.lines.length >= 2) {
-              // Two-line indicators: first line > second = bullish
-              const secondLine = result.lines[1];
-              let sVal: number | null = null;
-              for (let j = secondLine.values.length - 1; j >= 0; j--) {
-                if (secondLine.values[j] != null) { sVal = secondLine.values[j]; break; }
-              }
-              if (sVal != null) {
-                dir = lastVal > sVal ? 'buy' : lastVal < sVal ? 'sell' : 'neutral';
-              }
-            } else if (result.lines.length === 1) {
-              // Single-line: above middle of range = bullish (simplified)
-              dir = lastVal > 50 ? 'buy' : lastVal < 50 ? 'sell' : 'neutral';
-            }
-            cells[tf] = dir;
-          } catch {
-            cells[tf] = 'neutral';
-          }
+    const cells: Record<string, 'buy' | 'sell' | 'neutral'> = {};
+    for (const tf of TIMEFRAMES) {
+      const arr = candlesByTf[tf] as Candle[];
+      if (!arr || arr.length === 0) {
+        cells[tf] = 'neutral';
+        continue;
+      }
+      const res = activeDef.compute(arr);
+      let lastSignal: 'buy' | 'sell' | 'neutral' = 'neutral';
+      for (let i = res.signals.length - 1; i >= 0; i--) {
+        if (res.signals[i] !== 'neutral') {
+          lastSignal = res.signals[i];
+          break;
         }
+      }
+      cells[tf] = lastSignal;
+    }
 
-        return {
-          key: a.instanceId,
-          label: def.label,
-          sub: def.params.map((pk) => `${pk.label} ${a.params[pk.key] ?? pk.default}`).join(', '),
-          cells,
-        };
-      })
-      .filter(Boolean) as Array<{ key: string; label: string; sub: string; cells: Record<string, IndicatorCell> }>;
-  }, [activeIndicators, candlesByTf]);
+    return [
+      {
+        key: activeDef.id,
+        label: activeDef.name,
+        sub: activeDef.description,
+        cells,
+      },
+    ];
+  }, [candlesByTf, activeIndicatorId]);
 
   const currentCandles = candlesByTf[selected];
   const currentPrice = prices[selected];
@@ -442,11 +404,12 @@ export default function DashboardPage() {
               price={currentPrice}
               change={currentChange}
               status={status}
-              hideIndicators={false}
               showVolume={showVolume}
               onQuickTrade={() => setTab('trade')}
               bid={bid}
               ask={ask}
+              activeIndicatorId={activeIndicatorId}
+              onIndicatorChange={setActiveIndicatorId}
             />
 
             <section>

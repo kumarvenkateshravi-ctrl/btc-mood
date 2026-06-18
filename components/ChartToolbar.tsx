@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Maximize2, Minimize2, MoreHorizontal } from 'lucide-react';
+import { Maximize2, Minimize2, MoreHorizontal, ChevronDown } from 'lucide-react';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
-import IndicatorsDropdown from './IndicatorsDropdown';
-import type { IndicatorDef } from '@/lib/indicatorLibrary';
-import type { ActiveIndicator } from '@/components/trade/IndicatorPicker';
+import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
+
 
 export type ToolbarChartType = 'candlestick' | 'heikinAshi' | 'renko';
 
@@ -18,14 +17,10 @@ export interface ChartToolbarProps {
   onSelectTf: (tf: Timeframe) => void;
   chartType: ToolbarChartType;
   onSelectType: (t: ToolbarChartType) => void;
-  indicators: { ema9: boolean; ema21: boolean };
-  onToggleIndicator: (key: 'ema9' | 'ema21') => void;
-  /** Casual view hides the EMA pills and the indicators menu section. */
-  hideIndicators?: boolean;
+
   showSignals: boolean;
   onToggleSignals: () => void;
-  lastEma9: number | null;
-  lastEma21: number | null;
+
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onFitContent: () => void;
@@ -34,10 +29,8 @@ export interface ChartToolbarProps {
   autoBrick: boolean;
   onBrickSizeChange: (n: number | null) => void;
   onAutoBrickChange: (v: boolean) => void;
-  /** Custom indicator system (55-type catalog). */
-  activeIndicators: ActiveIndicator[];
-  onAddIndicator: (def: IndicatorDef) => void;
-  onToggleIndicatorFull: (id: string) => void;
+  activeIndicatorId: string;
+  onIndicatorChange: (id: string) => void;
 }
 
 export default function ChartToolbar(props: ChartToolbarProps) {
@@ -49,13 +42,10 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onSelectTf,
     chartType,
     onSelectType,
-    indicators,
-    onToggleIndicator,
-    hideIndicators = false,
+
     showSignals,
     onToggleSignals,
-    lastEma9,
-    lastEma21,
+
     isFullscreen,
     onToggleFullscreen,
     onFitContent,
@@ -63,9 +53,8 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     autoBrick,
     onBrickSizeChange,
     onAutoBrickChange,
-    activeIndicators,
-    onAddIndicator,
-    onToggleIndicatorFull,
+    activeIndicatorId,
+    onIndicatorChange,
   } = props;
 
   return (
@@ -114,20 +103,10 @@ export default function ChartToolbar(props: ChartToolbarProps) {
           />
         )}
 
-        {/* Indicators dropdown — replaces the EMA + Signals pills. The
-            OHLCLegend below the toolbar still surfaces EMA 9 / EMA 21
-            values on hover, so the live readouts are not lost. Hidden
-            on narrow viewports and in Casual mode (the calmest chart
-            surface by design). */}
-        {!hideIndicators && (
-          <div className="hidden sm:block">
-            <IndicatorsDropdown
-              activeIndicators={activeIndicators}
-              onAdd={onAddIndicator}
-              onToggle={onToggleIndicatorFull}
-            />
-          </div>
-        )}
+        <IndicatorSelect 
+          value={activeIndicatorId} 
+          onChange={onIndicatorChange} 
+        />
 
         <button
           type="button"
@@ -323,86 +302,114 @@ function BrickSizeControl({
 
 function MoreMenu({ onFitContent }: { onFitContent: () => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
+    window.addEventListener('mousedown', onClick);
+    return () => window.removeEventListener('mousedown', onClick);
   }, [open]);
 
   return (
     <div ref={ref} className="relative">
       <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="More"
+        onClick={() => setOpen((o) => !o)}
         className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition hover:bg-surface-3 hover:text-ink"
       >
-        <MoreHorizontal className="h-3.5 w-3.5" />
+        <MoreHorizontal className="h-4 w-4" />
       </button>
+
       {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-9 z-20 min-w-[200px] overflow-hidden rounded-md border border-line bg-surface-2 py-1 text-[12px] shadow-xl"
-        >
-          <MenuItem
-            onClick={() => {
-              onFitContent();
-              setOpen(false);
-            }}
-          >
-            Reset zoom
-          </MenuItem>
-        </div>
+        <ul className="absolute right-0 top-full z-30 mt-1 min-w-[120px] rounded-lg border border-line bg-surface-1 py-1 shadow-2xl">
+          <li>
+            <button
+              onClick={() => {
+                onFitContent();
+                setOpen(false);
+              }}
+              className="block w-full px-3 py-1.5 text-left text-xs font-medium text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+            >
+              Fit Content
+            </button>
+          </li>
+        </ul>
       )}
     </div>
   );
 }
 
-function MenuItem({
-  children,
-  onClick,
-  trailing,
+export function IndicatorSelect({
+  value,
+  onChange,
 }: {
-  children: React.ReactNode;
-  onClick: () => void;
-  trailing?: string;
+  value: string;
+  onChange: (id: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', onClick);
+    return () => window.removeEventListener('mousedown', onClick);
+  }, [open]);
+
   return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className="flex w-full items-center justify-between px-3 py-1.5 text-left text-ink-muted transition hover:bg-surface-3 hover:text-ink"
-    >
-      <span>{children}</span>
-      {trailing && (
-        <span
-          className={[
-            'rounded px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider',
-            trailing === 'on'
-              ? 'bg-bull/12 text-bull-bright ring-1 ring-bull/30'
-              : 'bg-neutral/10 text-ink-faint ring-1 ring-neutral/25',
-          ].join(' ')}
-        >
-          {trailing}
-        </span>
+    <div ref={ref} className="relative hidden sm:block border-l border-line pl-3 ml-1">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-7 items-center gap-2 rounded px-2 py-0.5 transition-colors hover:bg-surface-2 text-ink-muted hover:text-ink focus-ring"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+          <polyline points="2 11 8 5 12 9 22 1" />
+          <path d="M2 22 L2 14 M6 22 L6 14 M6 14 L2 14" strokeWidth="0" fill="currentColor" />
+          <rect x="2" y="15" width="4" height="7" stroke="currentColor" fill="none" />
+          <rect x="8" y="11" width="4" height="11" stroke="currentColor" fill="none" />
+          <rect x="14" y="13" width="4" height="9" stroke="currentColor" fill="none" />
+        </svg>
+        <span className="text-[13px] font-medium tracking-wide">Indicators</span>
+        <ChevronDown size={14} className="opacity-70" />
+      </button>
+      {open && (
+        <ul className="absolute left-3 top-full z-30 mt-1 min-w-[200px] overflow-hidden rounded-lg border border-line bg-surface-1 shadow-2xl py-1">
+          {CUSTOM_INDICATORS.map((ind) => (
+            <li key={ind.id}>
+              <button
+                onClick={() => {
+                  onChange(ind.id);
+                  setOpen(false);
+                }}
+                className={`block w-full px-4 py-2 text-left text-[13px] font-medium transition-colors ${
+                  ind.id === value
+                    ? 'bg-accent/15 text-ink'
+                    : 'text-ink-muted hover:bg-surface-2 hover:text-ink'
+                }`}
+              >
+                {ind.name}
+              </button>
+            </li>
+          ))}
+          {value && (
+            <li className="border-t border-line mt-1 pt-1">
+               <button
+                 onClick={() => {
+                   onChange('');
+                   setOpen(false);
+                 }}
+                 className="block w-full px-4 py-2 text-left text-[13px] font-medium transition-colors text-bear-bright hover:bg-surface-2"
+               >
+                 Clear Indicator
+               </button>
+            </li>
+          )}
+        </ul>
       )}
-    </button>
+    </div>
   );
 }

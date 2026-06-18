@@ -42,43 +42,12 @@ interface Row {
 
 // EMA9 above EMA21 = bullish bias; below = bearish. Identical to
 // scoreSignal's direction component, so this never drifts.
-function emaCellSide(s: TFSnapshot): CellSide {
-  if (s.ema9 == null || s.ema21 == null) return 'neutral';
-  if (s.ema9 > s.ema21) return 'buy';
-  if (s.ema9 < s.ema21) return 'sell';
-  return 'neutral';
-}
-
-// RSI cells reflect the *standard reading*: under 30 oversold (bullish
-// reversal lean), over 70 overbought (bearish reversal lean), in
-// between is neutral. (Distinct from the scoring rule, which uses
-// 60/40 lean and 80/20 veto — this is what a trader expects to see in
-// an RSI row.)
-function rsiCellSide(s: TFSnapshot): CellSide {
-  if (s.rsi14 == null) return 'neutral';
-  if (s.rsi14 <= 30) return 'buy';
-  if (s.rsi14 >= 70) return 'sell';
-  return 'neutral';
-}
-
 const ROWS: Row[] = [
   {
-    key: 'ema',
-    label: 'EMA cross',
-    sub: '9 / 21',
-    cell: emaCellSide,
-  },
-  {
-    key: 'rsi',
-    label: 'RSI',
-    sub: '14',
-    cell: rsiCellSide,
-  },
-  {
-    key: 'verdict',
-    label: 'Verdict',
-    sub: 'combined',
-    cell: (s) => s.signal.side,
+    key: 'awaiting',
+    label: 'Custom',
+    sub: 'Indicators',
+    cell: () => 'neutral',
   },
 ];
 
@@ -195,9 +164,7 @@ export default function SignalMatrix({
       </div>
 
       <p className="mt-3 text-[10px] leading-relaxed text-ink-faint">
-        Cells reflect the same signals that drive the mood verdict and chart
-        markers. EMA cross = EMA9 vs EMA21 direction. RSI = standard 30 / 70
-        overbought/oversold bands. Verdict = combined EMA + RSI confluence.
+        Awaiting custom PineScript indicators to populate the matrix.
       </p>
     </section>
   );

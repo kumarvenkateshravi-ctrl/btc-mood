@@ -27,12 +27,12 @@ function fmtVol(n: number | null | undefined): string {
 
 function fmtTime(t: number): string {
   const d = new Date(t * 1000);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${y}-${m}-${day} ${hh}:${mm} UTC`;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${hh}:${mm}`;
 }
 
 export default function OHLCLegend({ compact = false, mode }: OHLCLegendProps) {
@@ -57,7 +57,7 @@ export default function OHLCLegend({ compact = false, mode }: OHLCLegendProps) {
     );
   }
 
-  const { base, src, emaFast, emaSlow } = active;
+  const { base, src } = active;
   // For Renko, `open === prior close` and `close === current close`,
   // so `isBull` is true for an up-brick. Source candle `src` is the
   // underlying time-based candle for the hovered brick index.
@@ -111,15 +111,6 @@ export default function OHLCLegend({ compact = false, mode }: OHLCLegendProps) {
         <>
           <Divider />
           <Cell label="Vol" value={fmtVol(src.volume)} muted />
-        </>
-      )}
-      {!isRenko && (
-        <>
-          <Divider />
-          <Cell label="EMA 9" value={fmt(emaFast)} tone="sky" />
-          {!compact && (
-            <Cell label="EMA 21" value={fmt(emaSlow)} tone="amber" />
-          )}
         </>
       )}
     </div>

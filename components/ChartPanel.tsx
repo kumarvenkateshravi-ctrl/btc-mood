@@ -1,15 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Chart, { type ChartIndicators, type ChartType } from './Chart';
+import Chart, { type ChartType } from './Chart';
 import ChartToolbar from './ChartToolbar';
 import OHLCLegend from './OHLCLegend';
 import { computeChartHeight, isMobileViewport, FALLBACK_HEIGHT } from '@/lib/chartHeight';
-import { ema } from '@/lib/indicators';
-import { INDICATORS } from '@/lib/indicatorLibrary';
-import { computeIndicator, type ComputedIndicator } from '@/lib/indicatorCompute';
 import type { Candle, Timeframe } from '@/lib/types';
-import { useSharedIndicators } from '@/lib/useSharedIndicators';
+import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
+import type { IndicatorSettings } from '@/lib/indicatorFramework';
 
 interface ChartPanelProps {
   candles: Candle[];
@@ -21,15 +19,15 @@ interface ChartPanelProps {
   price: number | null;
   change: number | null;
   status: 'live' | 'demo' | 'loading';
-  /** Casual view hides the EMA overlays and their controls. */
-  hideIndicators?: boolean;
   showVolume?: boolean;
   onQuickTrade?: (side: 'buy' | 'sell') => void;
   bid?: number | null;
   ask?: number | null;
+  activeIndicatorId: string;
+  onIndicatorChange: (id: string) => void;
 }
 
-const NO_INDICATORS: ChartIndicators = { ema9: false, ema21: false };
+
 
 export default function ChartPanel({
   candles,
@@ -41,65 +39,31 @@ export default function ChartPanel({
   price,
   change,
   status,
-  hideIndicators = false,
   showVolume: parentShowVolume,
   onQuickTrade,
   bid = null,
   ask = null,
+  activeIndicatorId,
+  onIndicatorChange,
 }: ChartPanelProps) {
-  const [indicators, setIndicators] = useState<ChartIndicators>({
-    ema9: true,
-    ema21: true,
-  });
 
-  // EMA periods are now editable from the legend's gear icon — defaults
-  // match the original hardcoded 9 / 21.
-  const [emaFastPeriod, setEmaFastPeriod] = useState(9);
-  const [emaSlowPeriod, setEmaSlowPeriod] = useState(21);
-
-  const effectiveIndicators = hideIndicators ? NO_INDICATORS : indicators;
 
   // BUY/SELL signal markers on the chart, on by default.
   const [showSignals, setShowSignals] = useState(true);
   const toggleSignals = useCallback(() => setShowSignals((v) => !v), []);
 
-  const handleEmaPeriod = useCallback((key: 'ema9' | 'ema21', period: number) => {
-    if (!Number.isFinite(period) || period < 2 || period > 500) return;
-    if (key === 'ema9') setEmaFastPeriod(period);
-    else setEmaSlowPeriod(period);
-  }, []);
 
-  // Shared indicators (synced with Trade page via localStorage)
-  const {
-    activeIndicators,
-    handleAdd: handleAddIndicator,
-    handleRemove: handleRemoveIndicator,
-    handleToggle: handleToggleIndicator,
-    handleParam: handleParamChange,
-    handleColor: handleIndicatorColor,
-  } = useSharedIndicators();
-
-  const lookup = useMemo(() => new Map(INDICATORS.map((d) => [d.id, d])), []);
-
-  const computedIndicators = useMemo<ComputedIndicator[]>(() => {
-    if (candles.length === 0) return [];
-    return activeIndicators
-      .filter((a) => a.visible)
-      .map((a) => {
-        const def = lookup.get(a.id);
-        if (!def) return null;
-        const computed = computeIndicator(def, candles, a.params);
-        if (a.color && computed.lines.length > 0) {
-          computed.lines[0].color = a.color;
-        }
-        return computed;
-      })
-      .filter(Boolean) as ComputedIndicator[];
-  }, [candles, activeIndicators, lookup]);
 
   // Renko brick state.
   const [brickSize, setBrickSize] = useState<number | null>(null);
   const [autoBrick, setAutoBrick] = useState(true);
+
+  // Indicator settings
+  const [indicatorSettings, setIndicatorSettings] = useState<Record<string, IndicatorSettings>>({});
+
+  const handleUpdateIndicatorSettings = useCallback((id: string, settings: IndicatorSettings) => {
+    setIndicatorSettings((prev) => ({ ...prev, [id]: settings }));
+  }, []);
 
   const sectionRef = useRef<HTMLElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -163,24 +127,7 @@ export default function ChartPanel({
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleFullscreen]);
 
-  const toggleIndicator = useCallback((key: 'ema9' | 'ema21') => {
-    setIndicators((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
 
-  // Live EMA values for the indicator pills. Recomputed when candles
-  // or the underlying closes change. Tracks the current editable period
-  // so a gear-icon period change reflects in the displayed value too.
-  const { lastEma9, lastEma21 } = useMemo(() => {
-    const min = Math.max(emaFastPeriod, emaSlowPeriod) + 1;
-    if (candles.length < min) return { lastEma9: null, lastEma21: null };
-    const closes = candles.map((c) => c.close);
-    const f = ema(closes, emaFastPeriod);
-    const s = ema(closes, emaSlowPeriod);
-    return {
-      lastEma9: f[f.length - 1] ?? null,
-      lastEma21: s[s.length - 1] ?? null,
-    };
-  }, [candles, emaFastPeriod, emaSlowPeriod]);
 
   const handleChartReady = useCallback(
     (api: { fitContent: () => void }) => {
@@ -194,6 +141,16 @@ export default function ChartPanel({
   }, []);
 
   const loading = candles.length === 0;
+
+  const indicatorResult = useMemo(() => {
+    if (loading) return null;
+    const activeDef = CUSTOM_INDICATORS.find(d => d.id === activeIndicatorId);
+    if (!activeDef) return null;
+    return activeDef.compute(candles, { 
+      id: activeDef.id, 
+      settings: indicatorSettings[activeIndicatorId] 
+    });
+  }, [candles, loading, activeIndicatorId, indicatorSettings]);
 
   return (
     <section
@@ -209,13 +166,8 @@ export default function ChartPanel({
         onSelectTf={onSelectTf}
         chartType={type}
         onSelectType={onTypeChange}
-        indicators={indicators}
-        onToggleIndicator={toggleIndicator}
-        hideIndicators={hideIndicators}
         showSignals={showSignals}
         onToggleSignals={toggleSignals}
-        lastEma9={lastEma9}
-        lastEma21={lastEma21}
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
         onFitContent={fitContent}
@@ -223,9 +175,8 @@ export default function ChartPanel({
         autoBrick={autoBrick}
         onBrickSizeChange={setBrickSize}
         onAutoBrickChange={setAutoBrick}
-        activeIndicators={activeIndicators}
-        onAddIndicator={handleAddIndicator}
-        onToggleIndicatorFull={handleToggleIndicator}
+        activeIndicatorId={activeIndicatorId}
+        onIndicatorChange={onIndicatorChange}
       />
       <OHLCLegend compact={compact} mode={type} />
       <div className="relative" style={{ height: chartHeight }}>
@@ -235,22 +186,20 @@ export default function ChartPanel({
             candles={candles}
             type={type}
             height={chartHeight}
-            indicators={effectiveIndicators}
+            indicatorResult={indicatorResult}
             showSignals={showSignals}
             brickSize={brickSize ?? undefined}
             autoBrick={autoBrick}
             onReady={handleChartReady}
-            customIndicators={computedIndicators}
             tf={selected}
-            activeIndicators={activeIndicators}
-            emaFastPeriod={emaFastPeriod}
-            emaSlowPeriod={emaSlowPeriod}
-            onEmaToggle={toggleIndicator}
-            onEmaPeriod={handleEmaPeriod}
             showVolume={parentShowVolume}
             onQuickTrade={onQuickTrade}
             bid={bid}
             ask={ask}
+            activeIndicatorId={activeIndicatorId}
+            onIndicatorChange={onIndicatorChange}
+            indicatorSettings={indicatorSettings[activeIndicatorId]}
+            onUpdateIndicatorSettings={(settings) => handleUpdateIndicatorSettings(activeIndicatorId, settings)}
           />
         )}
       </div>

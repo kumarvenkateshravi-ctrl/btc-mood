@@ -15,8 +15,6 @@ export interface HoverPayload {
   base: Candle;
   /** Previous base candle, used for calculating price change and %. */
   prevBase: Candle | null;
-  emaFast: number | null;
-  emaSlow: number | null;
 }
 
 interface State {

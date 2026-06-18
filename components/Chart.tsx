@@ -17,27 +17,52 @@ import {
   type CandlestickData,
   type HistogramData,
   type LineData,
+  type WhitespaceData,
   type MouseEventParams,
   type Time,
 } from 'lightweight-charts';
 import { toHeikinAshi } from '@/lib/heikinAshi';
 import { toRenko } from '@/lib/renko';
+import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import { ema } from '@/lib/indicators';
 import { buildSignalFlips } from '@/lib/signalMarkers';
 import { setHover, type HoverPayload } from '@/lib/chartHoverStore';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
+import { Eye, EyeOff, Trash2 } from 'lucide-react';
+import IndicatorSettingsModal from './trade/IndicatorSettingsModal';
+import type { IndicatorSettings } from '@/lib/indicatorFramework';
+
+function TvSettingsIcon({ size = 16, strokeWidth = 1.5, className = '' }: { size?: number, strokeWidth?: number, className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M7.5 3h9l4.5 9-4.5 9h-9L3 12z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function shiftTime(t: number): Time {
+  const tzOffset = new Date().getTimezoneOffset() * 60;
+  return (t - tzOffset) as Time;
+}
 import type { Candle } from '@/lib/types';
-import type { ComputedIndicator } from '@/lib/indicatorCompute';
-import type { ActiveIndicator } from '@/components/trade/IndicatorPicker';
-import { INDICATORS } from '@/lib/indicatorLibrary';
+import type { IndicatorResult, IndicatorPlot } from '@/lib/indicatorFramework';
 
 export type ChartType = 'candlestick' | 'heikinAshi' | 'renko';
 
-export interface ChartIndicators {
-  ema9: boolean;
-  ema21: boolean;
-}
+
 
 export type OverlayKind = 'entry' | 'tp' | 'sl';
 
@@ -84,7 +109,7 @@ interface ChartProps {
   type: ChartType;
   tf?: string;
   height: number;
-  indicators: ChartIndicators;
+  indicatorResult?: IndicatorResult | null;
   showSignals?: boolean;
   brickSize?: number;
   autoBrick?: boolean;
@@ -104,20 +129,15 @@ interface ChartProps {
   regime?: number;
   overlayPnL?: number | null;
   onChartContextMenu?: (price: number, x: number, y: number) => void;
-  customIndicators?: import('@/lib/indicatorCompute').ComputedIndicator[];
-  activeIndicators?: import('@/components/trade/IndicatorPicker').ActiveIndicator[];
   showVolume?: boolean;
   onToggleVolume?: () => void;
   onQuickTrade?: (side: 'buy' | 'sell') => void;
   bid?: number | null;
   ask?: number | null;
-  emaFastPeriod?: number;
-  emaSlowPeriod?: number;
-  onEmaToggle?: (key: 'ema9' | 'ema21') => void;
-  onEmaPeriod?: (key: 'ema9' | 'ema21', period: number) => void;
-  onIndicatorToggle?: (id: string) => void;
-  onIndicatorRemove?: (id: string) => void;
-  onIndicatorParam?: (id: string, key: string, value: number) => void;
+  activeIndicatorId: string;
+  onIndicatorChange: (id: string) => void;
+  indicatorSettings?: IndicatorSettings;
+  onUpdateIndicatorSettings?: (settings: IndicatorSettings) => void;
 }
 
 export default function Chart({
@@ -125,7 +145,7 @@ export default function Chart({
   type,
   tf,
   height,
-  indicators,
+  indicatorResult = null,
   showSignals = true,
   brickSize,
   autoBrick,
@@ -145,34 +165,53 @@ export default function Chart({
   regime = 0.2,
   overlayPnL = null,
   onChartContextMenu,
-  customIndicators = [],
-  activeIndicators = [],
   showVolume = true,
   onToggleVolume,
   onQuickTrade,
   bid = null,
   ask = null,
-  emaFastPeriod = 9,
-  emaSlowPeriod = 21,
-  onEmaToggle,
-  onEmaPeriod,
-  onIndicatorToggle,
-  onIndicatorRemove,
-  onIndicatorParam,
+  activeIndicatorId,
+  onIndicatorChange,
+  indicatorSettings,
+  onUpdateIndicatorSettings,
 }: ChartProps) {
+  const [isIndicatorVisible, setIsIndicatorVisible] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    if (activeIndicatorId) setIsIndicatorVisible(true);
+  }, [activeIndicatorId]);
+
+  useEffect(() => {
+    indicatorSeriesRef.current.forEach((series, plotId) => {
+      const customStyle = indicatorSettings?.styles?.[plotId];
+      if (customStyle) {
+        try {
+          series.applyOptions({
+            color: customStyle.color || '#2962FF',
+            lineWidth: (customStyle.thickness as any) || 2,
+            visible: isIndicatorVisible && (customStyle.display !== false),
+          });
+        } catch {}
+      } else {
+        try { series.applyOptions({ visible: isIndicatorVisible }); } catch {}
+      }
+    });
+  }, [isIndicatorVisible, indicatorResult, indicatorSettings]);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const priceCardRef = useRef<HTMLDivElement | null>(null);
   const priceTextRef = useRef<HTMLDivElement | null>(null);
   const countdownTextRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const indicatorSeriesRef = useRef<Map<string, ISeriesApi<any>>>(new Map());
   const dummySeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const overlayPrimitiveRef = useRef<OrderOverlayPrimitive | null>(null);
+  const separatePaneRef = useRef<{ setHeight: (n: number) => void } | null>(null);
+  const [hasSeparatePane, setHasSeparatePane] = useState(false);
   const fxPrimitiveRef = useRef<ChartFxPrimitive | null>(null);
-  const emaFastRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const emaSlowRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const customSeriesRef = useRef<Map<string, ISeriesApi<'Line'> | ISeriesApi<'Histogram'>>>(new Map());
 
   const [hover, setHoverLine] = useState<{
     kind: OverlayKind;
@@ -190,11 +229,6 @@ export default function Chart({
   }, [onOverlayDrag, onOverlayChipClick, onChartContextMenu]);
 
   const lastBarTimeRef = useRef<number | null>(null);
-  const emaArraysRef = useRef<{
-    closes: number[];
-    fast: (number | null)[];
-    slow: (number | null)[];
-  }>({ closes: [], fast: [], slow: [] });
 
   const hoverInputsRef = useRef<{
     src: Candle[];
@@ -288,22 +322,7 @@ export default function Chart({
       borderVisible: true,
     });
 
-    const emaFast = chart.addSeries(LineSeries, {
-      color: C.emaFast,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-      title: `EMA ${emaFastPeriod}`,
-    });
-    const emaSlow = chart.addSeries(LineSeries, {
-      color: C.emaSlow,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-      title: `EMA ${emaSlowPeriod}`,
-    });
+
 
     const dummySeries = chart.addSeries(LineSeries, {
       visible: false,
@@ -325,8 +344,6 @@ export default function Chart({
     markersRef.current = markers;
     overlayPrimitiveRef.current = orderOverlay;
     fxPrimitiveRef.current = fx;
-    emaFastRef.current = emaFast;
-    emaSlowRef.current = emaSlow;
 
     const onCrosshair = (param: MouseEventParams) => {
       const cs = candleSeriesRef.current;
@@ -371,8 +388,6 @@ export default function Chart({
         src: srcCandle,
         base,
         prevBase,
-        emaFast: emaArraysRef.current.fast[idx] ?? null,
-        emaSlow: emaArraysRef.current.slow[idx] ?? null,
       };
       setHover(payload);
     };
@@ -670,10 +685,8 @@ export default function Chart({
       markersRef.current = null;
       overlayPrimitiveRef.current = null;
       fxPrimitiveRef.current = null;
-      emaFastRef.current = null;
-      emaSlowRef.current = null;
+      indicatorSeriesRef.current.clear();
       lastBarTimeRef.current = null;
-      emaArraysRef.current = { closes: [], fast: [], slow: [] };
       hoverInputsRef.current = { src: [], base: [], isRenko: false };
       initialZoomDoneRef.current = false;
       setHover(null);
@@ -681,95 +694,7 @@ export default function Chart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height, onReady]);
 
-  // ---- Custom indicator series lifecycle ----
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    const existing = customSeriesRef.current;
-    const wanted = new Set<string>();
-    const oscScaleId = 'oscillators';
-
-    for (const ind of customIndicators) {
-      const scaleId = ind.separatePane ? oscScaleId : undefined;
-      for (let i = 0; i < ind.lines.length; i++) {
-        const key = `${ind.id}:${i}`;
-        wanted.add(key);
-        if (existing.has(key)) continue;
-        const line = ind.lines[i];
-        const seriesOpts = {
-          color: line.color,
-          priceScaleId: scaleId,
-          priceFormat: { type: 'price' as const, precision: 4, minMove: 0.0001 },
-          lastValueVisible: false,
-        };
-        if (line.type === 'histogram') {
-          existing.set(key, chart.addSeries(HistogramSeries, seriesOpts));
-        } else {
-          existing.set(key, chart.addSeries(LineSeries, {
-            ...seriesOpts,
-            lineWidth: 2,
-            priceLineVisible: false,
-            crosshairMarkerVisible: false,
-          }));
-        }
-      }
-    }
-
-    try {
-      chart.priceScale(oscScaleId).applyOptions({
-        scaleMargins: { top: 0.65, bottom: 0.18 },
-        visible: false,
-      });
-    } catch {}
-
-    for (const [key, series] of existing) {
-      if (!wanted.has(key)) {
-        try { chart.removeSeries(series); } catch {}
-        existing.delete(key);
-      }
-    }
-
-    const hasOscillators = customIndicators.some((ind) => ind.separatePane && ind.lines.length > 0);
-    try { chart.priceScale('oscillators').applyOptions({ visible: hasOscillators }); } catch {}
-  }, [customIndicators]);
-
-  // ---- Custom indicator data push ----
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    for (const ind of customIndicators) {
-      for (let i = 0; i < ind.lines.length; i++) {
-        const key = `${ind.id}:${i}`;
-        const series = customSeriesRef.current.get(key);
-        if (!series) continue;
-
-        const line = ind.lines[i];
-        const data = line.values
-          .map((v, idx) => (v != null ? { time: (candles[idx]?.time ?? 0) as Time, value: v } : null))
-          .filter((d): d is { time: Time; value: number } => d !== null);
-
-        if (data.length > 0) {
-          try {
-            if (line.type === 'histogram') {
-              (series as ISeriesApi<'Histogram'>).setData(data as HistogramData<Time>[]);
-            } else {
-              (series as ISeriesApi<'Line'>).setData(data as LineData<Time>[]);
-            }
-          } catch {}
-        }
-      }
-    }
-  }, [customIndicators, candles]);
-
   const isRenko = type === 'renko';
-  useEffect(() => {
-    emaFastRef.current?.applyOptions({ visible: indicators.ema9 && !isRenko });
-  }, [indicators.ema9, isRenko]);
-  useEffect(() => {
-    emaSlowRef.current?.applyOptions({ visible: indicators.ema21 && !isRenko });
-  }, [indicators.ema21, isRenko]);
 
   useEffect(() => {
     chartRef.current?.timeScale().applyOptions({
@@ -778,24 +703,31 @@ export default function Chart({
     });
   }, [isRenko]);
 
+  // Track whether the active indicator has a separate-pane plot. Only
+  // flips when the indicator changes (or the plots themselves) so
+  // the data-push effect doesn't trigger a re-render every WS tick.
+  useEffect(() => {
+    const next = !!indicatorResult?.plots.some((p) => p.pane === 'separate');
+    setHasSeparatePane((prev) => (prev === next ? prev : next));
+  }, [indicatorResult]);
+
   // ---- Data push ----
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
-    const emaFast = emaFastRef.current;
-    const emaSlow = emaSlowRef.current;
-    if (!candleSeries || !emaFast || !emaSlow) return;
+    if (!candleSeries) return;
     if (candles.length === 0) return;
 
     const isNewContext = prevTfRef.current !== tf || prevTypeRef.current !== type;
 
     if (prevTypeRef.current !== null && prevTypeRef.current !== type) {
       candleSeries.setData([]);
-      emaFast.setData([]);
-      emaSlow.setData([]);
       markersRef.current?.setMarkers([]);
+      indicatorSeriesRef.current.forEach((s) => {
+        try { s.setData([]); } catch {}
+      });
     }
     prevTypeRef.current = type;
-    prevTfRef.current = tf;
+    prevTfRef.current = tf ?? null;
 
     const baseCandles =
       type === 'heikinAshi'
@@ -804,9 +736,6 @@ export default function Chart({
         ? toRenko(candles, { brickSize, autoBrick })
         : candles;
     const closes = candles.map((c) => c.close);
-    const eFast = ema(closes, emaFastPeriod);
-    const eSlow = ema(closes, emaSlowPeriod);
-    emaArraysRef.current = { closes, fast: eFast, slow: eSlow };
     hoverInputsRef.current = { src: candles, base: baseCandles, isRenko };
 
     if (baseCandles.length === 0) return;
@@ -825,45 +754,25 @@ export default function Chart({
       const last = baseCandles[baseCandles.length - 1];
       const lastSrc = candles[candles.length - 1];
       candleSeries.update({
-        time: last.time as Time,
+        time: shiftTime(last.time as number),
         open: last.open,
         high: last.high,
         low: last.low,
         close: last.close,
       });
-      if (!isRenko) {
-        const ef = eFast[eFast.length - 1];
-        const es = eSlow[eSlow.length - 1];
-        if (ef != null) emaFast.update({ time: lastSrc.time as Time, value: ef });
-        if (es != null) emaSlow.update({ time: lastSrc.time as Time, value: es });
-      }
-      return;
+      // Fall through — indicator plots still need sync on incremental
+      // ticks (e.g. settings change without candle update).
     }
 
     const candleData: CandlestickData<Time>[] = baseCandles.map((c) => ({
-      time: c.time as Time,
+      time: shiftTime(c.time as number),
       open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
     }));
 
-    const fastData: LineData<Time>[] = [];
-    if (!isRenko) {
-      for (let i = 0; i < eFast.length; i++) {
-        if (eFast[i] != null) {
-          fastData.push({ time: candles[i].time as Time, value: eFast[i]! });
-        }
-      }
-    }
-    const slowData: LineData<Time>[] = [];
-    if (!isRenko) {
-      for (let i = 0; i < eSlow.length; i++) {
-        if (eSlow[i] != null) {
-          slowData.push({ time: candles[i].time as Time, value: eSlow[i]! });
-        }
-      }
-    }
+
 
     const futureData: WhitespaceData<Time>[] = [];
     if (tf && baseCandles.length > 0 && !isRenko) {
@@ -872,14 +781,160 @@ export default function Chart({
       let t = lastTime;
       for (let i = 1; i <= 300; i++) {
         t += minutes * 60;
-        futureData.push({ time: t as Time });
+        futureData.push({ time: shiftTime(t) });
       }
     }
 
     candleSeries.setData(candleData);
     if (dummySeriesRef.current) dummySeriesRef.current.setData(futureData);
-    emaFast.setData(fastData);
-    emaSlow.setData(slowData);
+    
+    // Sync custom indicator plots
+    if (indicatorResult && chartRef.current) {
+      const existing = indicatorSeriesRef.current;
+      const wanted = new Set<string>();
+
+      // Separate-pane indicators get their own dedicated pane below
+      // the candles with its own Y-axis scale (TradingView-style).
+      const hasSeparate = indicatorResult.plots.some(
+        (p) => p.pane === 'separate',
+      );
+      const separatePaneIndex = 1;
+      if (hasSeparate) {
+        try {
+          if (!separatePaneRef.current) {
+            const pane = chartRef.current.addPane();
+            pane.setHeight(150);
+            // Style the separator + pane background for the dark theme.
+            try {
+              chartRef.current.applyOptions({
+                layout: {
+                  panes: {
+                    separatorColor: '#2a3247',
+                    separatorHoverColor: 'rgba(154, 178, 215, 0.4)',
+                  },
+                },
+              });
+            } catch {}
+            // Right price scale on the separate pane: visible with our
+            // ink-faint color so the Y-axis labels are readable.
+            chartRef.current
+              .priceScale('right', separatePaneIndex)
+              .applyOptions({
+                visible: true,
+                borderColor: '#2a3247',
+                textColor: '#7b88a0',
+                autoScale: true,
+              });
+            separatePaneRef.current = pane;
+          }
+        } catch (e) {
+          console.warn('Failed to create separate indicator pane', e);
+        }
+      }
+      
+      for (const plot of indicatorResult.plots) {
+        wanted.add(plot.id);
+        let series = existing.get(plot.id);
+        const isSeparate = plot.pane === 'separate';
+        
+        if (!series) {
+          if (plot.type === 'line') {
+            series = chartRef.current.addSeries(
+              LineSeries,
+              {
+                color: plot.color,
+                lineWidth: (plot.lineWidth as 1 | 2 | 3 | 4) || 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+                title: plot.title,
+              },
+              isSeparate ? separatePaneIndex : 0,
+            );
+          } else if (plot.type === 'histogram') {
+            series = chartRef.current.addSeries(
+              HistogramSeries,
+              {
+                color: plot.color,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                title: plot.title,
+              },
+              isSeparate ? separatePaneIndex : 0,
+            );
+          } else if (plot.type === 'band') {
+            const up = chartRef.current.addSeries(
+              LineSeries,
+              {
+                color: 'transparent',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+              },
+              isSeparate ? separatePaneIndex : 0,
+            );
+            const dn = chartRef.current.addSeries(
+              LineSeries,
+              {
+                color: 'transparent',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+              },
+              isSeparate ? separatePaneIndex : 0,
+            );
+            series = up;
+          }
+          if (series) {
+            existing.set(plot.id, series);
+          }
+        }
+      }
+      
+      // Clean up removed series
+      for (const [key, series] of existing.entries()) {
+        if (!wanted.has(key)) {
+          try { chartRef.current.removeSeries(series); } catch {}
+          existing.delete(key);
+        }
+      }
+      
+      // Push data
+      for (const plot of indicatorResult.plots) {
+        const series = existing.get(plot.id);
+        if (!series) continue;
+        
+        if (plot.type === 'line' || plot.type === 'histogram') {
+          const formatted = plot.data
+            .map((v, i) => {
+              if (v == null) return null;
+              if (typeof v === 'object' && 'value' in v) {
+                if (Number.isNaN(v.value)) return null;
+                return { time: shiftTime((candles[i]?.time ?? 0) as number), value: v.value, color: v.color };
+              }
+              if (Number.isNaN(v as number)) return null;
+              return { time: shiftTime((candles[i]?.time ?? 0) as number), value: v as number };
+            })
+            .filter((d): d is { time: Time; value: number; color?: string } => d !== null);
+
+          console.log(`[DEBUG Chart] Plotting ${plot.id}. Total candles: ${candles.length}, Plot data length: ${plot.data.length}, Formatted length: ${formatted.length}`);
+          if (formatted.length > 0) {
+            console.log(`[DEBUG Chart] First point:`, formatted[0], `Last point:`, formatted[formatted.length - 1]);
+            try { 
+              series.setData(formatted as any[]); 
+              console.log(`[DEBUG Chart] Successfully set data for ${plot.id}`);
+            } catch (err) {
+              console.error(`[DEBUG Chart] FAILED to set data for ${plot.id}:`, err);
+            }
+          } else {
+            console.warn(`[DEBUG Chart] Formatted data is empty for ${plot.id}!`);
+          }
+        }
+      }
+    }
+    
     lastBarTimeRef.current = lastTime;
 
     if (isNewContext && chartRef.current) {
@@ -891,14 +946,7 @@ export default function Chart({
         to: toIndex,
       });
     }
-  }, [candles, type, brickSize, autoBrick, isRenko, emaFastPeriod, emaSlowPeriod, tf]);
-
-  useEffect(() => {
-    emaFastRef.current?.applyOptions({ title: `EMA ${emaFastPeriod}` });
-  }, [emaFastPeriod]);
-  useEffect(() => {
-    emaSlowRef.current?.applyOptions({ title: `EMA ${emaSlowPeriod}` });
-  }, [emaSlowPeriod]);
+  }, [candles, type, brickSize, autoBrick, isRenko, tf, indicatorResult]);
 
   // ---- FX: bear hatching ----
   useEffect(() => {
@@ -926,10 +974,10 @@ export default function Chart({
       const b = baseCandles[i];
       const top = s.priceToCoordinate(Math.max(b.open, b.close));
       const bot = s.priceToCoordinate(Math.min(b.open, b.close));
-      const x = c.timeScale().timeToCoordinate(b.time as Time);
+      const x = c.timeScale().timeToCoordinate(shiftTime(b.time as number));
       if (top == null || bot == null || x == null) continue;
       rects.push({
-        time: b.time as Time,
+        time: shiftTime(b.time as number),
         x,
         w: 7,
         y: top,
@@ -961,19 +1009,34 @@ export default function Chart({
   useEffect(() => {
     const mk = markersRef.current;
     if (!mk) return;
-    if (!showSignals || isRenko || candles.length === 0) {
+    if (!showSignals || isRenko || candles.length === 0 || !indicatorResult) {
       mk.setMarkers([]);
       return;
     }
-    const markers: SeriesMarker<Time>[] = buildSignalFlips(candles).map((f) => ({
-      time: f.time as Time,
-      position: f.side === 'buy' ? 'belowBar' : 'aboveBar',
-      shape: f.side === 'buy' ? 'arrowUp' : 'arrowDown',
-      color: f.side === 'buy' ? C.bullFace : C.downFace,
-      text: f.side === 'buy' ? 'BUY' : 'SELL',
-    }));
+    
+    const markers: SeriesMarker<Time>[] = [];
+    for (let i = 0; i < indicatorResult.signals.length; i++) {
+      const sig = indicatorResult.signals[i];
+      if (sig === 'buy') {
+        markers.push({
+          time: shiftTime(candles[i].time as number),
+          position: 'belowBar',
+          color: '#22d39a',
+          shape: 'arrowUp',
+          text: 'BUY',
+        });
+      } else if (sig === 'sell') {
+        markers.push({
+          time: shiftTime(candles[i].time as number),
+          position: 'aboveBar',
+          color: '#fb5168',
+          shape: 'arrowDown',
+          text: 'SELL',
+        });
+      }
+    }
     mk.setMarkers(markers);
-  }, [candles, isRenko, showSignals]);
+  }, [candles, showSignals, isRenko, indicatorResult]);
 
   // ---- Order overlays sync ----
   useEffect(() => {
@@ -1002,11 +1065,11 @@ export default function Chart({
 
   // ---- Render ----
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full overflow-hidden"
-      style={{ height, background: C.chartBg }}
-    >
+    <div className="relative w-full overflow-hidden" style={{ height, background: C.chartBg }}>
+      <div
+        ref={containerRef}
+        className="absolute inset-0 z-0"
+      />
       <div
         ref={priceCardRef}
         className="pointer-events-none absolute right-0 z-[50] hidden flex-col items-stretch text-center font-mono tabular-nums tracking-tight text-white transition-colors duration-100"
@@ -1034,23 +1097,7 @@ export default function Chart({
           entryPrice={overlayEntryPrice}
         />
       )}
-      <IndicatorLabels
-        customIndicators={customIndicators}
-        indicators={indicators}
-        emaFast={emaArraysRef.current.fast}
-        emaSlow={emaArraysRef.current.slow}
-        emaFastPeriod={emaFastPeriod}
-        emaSlowPeriod={emaSlowPeriod}
-        candles={candles}
-        isRenko={isRenko}
-        activeIndicators={activeIndicators}
-        showVolume={showVolume}
-        onEmaToggle={onEmaToggle}
-        onEmaPeriod={onEmaPeriod}
-        onIndicatorToggle={onIndicatorToggle}
-        onIndicatorRemove={onIndicatorRemove}
-        onIndicatorParam={onIndicatorParam}
-      />
+
       {onQuickTrade && (
         <div className="pointer-events-auto absolute left-2 top-2 z-10 flex gap-2">
           <button
@@ -1073,201 +1120,115 @@ export default function Chart({
           </button>
         </div>
       )}
+
+      {hasSeparatePane && (() => {
+        const ind = CUSTOM_INDICATORS.find((d) => d.id === activeIndicatorId);
+        if (!ind) return null;
+        const defaultInputs = (ind as any).inputs?.reduce((acc: any, input: any) => {
+          acc[input.id] = input.default;
+          return acc;
+        }, {}) || {};
+        const inputsObj = indicatorSettings?.inputs && Object.keys(indicatorSettings.inputs).length > 0 ? indicatorSettings.inputs : defaultInputs;
+        const settingsText = [inputsObj['bbLength'], inputsObj['bbMult'], inputsObj['kcLength'], inputsObj['kcMult']].filter(Boolean).join(' ');
+        return (
+          <div
+            className="pointer-events-none absolute left-2 z-10 inline-flex items-center gap-1.5 rounded-md bg-[#11151f]/80 px-2 py-1 text-[11px] font-mono text-ink-muted backdrop-blur-sm"
+            style={{ top: 'calc(100% - 150px + 4px)' }}
+          >
+            <span className="font-semibold text-ink">{ind.name}</span>
+            {settingsText && <span className="text-ink-faint">{settingsText}</span>}
+          </div>
+        );
+      })()}
+
+      <div className={`pointer-events-none absolute left-2 z-10 flex flex-col gap-1 ${hasSeparatePane ? 'bottom-2 top-auto' : 'top-16'}`}>
+          {(() => {
+            const ind = CUSTOM_INDICATORS.find((d) => d.id === activeIndicatorId);
+            if (!ind) return null;
+            
+            const defaultInputs = (ind as any).inputs?.reduce((acc: any, input: any) => {
+              acc[input.id] = input.default;
+              return acc;
+            }, {}) || {};
+            
+            const inputsObj = indicatorSettings?.inputs && Object.keys(indicatorSettings.inputs).length > 0 ? indicatorSettings.inputs : defaultInputs;
+            
+            // Only show primary settings for a clean look
+            const settingsText = [inputsObj['length'], inputsObj['source']].filter(Boolean).join(' ');
+
+            let latestValue = null;
+            let valueColor = '#2962FF';
+            if (indicatorResult?.plots?.length) {
+              const plot = indicatorResult.plots[0];
+              const data = plot.data;
+              if (data && data.length > 0) {
+                const lastItem = data[data.length - 1];
+                if (typeof lastItem === 'number') latestValue = lastItem;
+                else if (lastItem && typeof lastItem === 'object' && 'value' in lastItem) latestValue = lastItem.value;
+              }
+              valueColor = indicatorSettings?.styles?.[plot.id]?.color || plot.color || '#2962FF';
+            }
+            const displayValue = latestValue != null ? Number(latestValue).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : '';
+
+            return (
+              <div className={`pointer-events-auto group flex cursor-default items-center gap-2 rounded px-2 py-1 transition-colors ${isSettingsOpen ? 'bg-white/[0.08]' : 'bg-transparent hover:bg-white/[0.04]'}`}>
+                <div className={`flex gap-1.5 text-[13px] items-baseline transition-opacity duration-200 ${isIndicatorVisible ? 'opacity-100' : 'opacity-40'}`}>
+                  <span className={`${isSettingsOpen ? 'text-[#2962FF]' : 'text-[#d1d4dc]'}`}>{ind.name}</span>
+                  <span className="text-[#787b86]">{settingsText}</span>
+                  {displayValue && <span style={{ color: valueColor }}>{displayValue}</span>}
+                </div>
+                {/* Options row */}
+                <div className={`flex items-center transition-opacity duration-200 ${isSettingsOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                  <button 
+                    className={`rounded p-1 transition hover:bg-ink/10 ${!isIndicatorVisible ? 'text-ink/90 bg-ink/20' : 'text-ink/50 hover:text-ink'}`} 
+                    title="Hide/Show"
+                    onClick={() => {
+                      setIsIndicatorVisible(!isIndicatorVisible);
+                      setIsSettingsOpen(false);
+                    }}
+                  >
+                    {isIndicatorVisible ? <Eye size={20} strokeWidth={1.5} /> : <EyeOff size={20} strokeWidth={1.5} />}
+                  </button>
+                  <button 
+                    className={`rounded p-1 transition ${isSettingsOpen ? 'bg-[#2a2e39] text-[#d1d4dc] ring-1 ring-[#434651]' : 'text-ink/50 hover:bg-ink/10 hover:text-ink'}`} 
+                    title="Settings"
+                    onClick={() => setIsSettingsOpen(true)}
+                  >
+                    <TvSettingsIcon size={20} strokeWidth={1.5} />
+                  </button>
+                  <button 
+                    className="rounded p-1 text-ink/50 transition hover:bg-ink/10 hover:text-ink" 
+                    title="Remove"
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      onIndicatorChange?.('');
+                    }}
+                  >
+                    <Trash2 size={20} strokeWidth={1.5} />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+      {isSettingsOpen && activeIndicatorId && (
+        <IndicatorSettingsModal
+          indicatorDef={CUSTOM_INDICATORS.find((d) => d.id === activeIndicatorId)!}
+          initialSettings={indicatorSettings}
+          onClose={() => setIsSettingsOpen(false)}
+          onSave={(settings) => {
+            onUpdateIndicatorSettings?.(settings);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // ---- Helper components ----
 
-type LegendRow =
-  | { kind: 'ema9' | 'ema21'; label: string; value: string; color: string; period: number; visible: boolean }
-  | { kind: 'custom'; id: string; label: string; value: string; color: string; visible: boolean; def: import('@/lib/indicatorLibrary').IndicatorDef | undefined; params: Record<string, number> };
 
-function formatLastValue(values: (number | null)[], decimals = 2): string {
-  for (let j = values.length - 1; j >= 0; j--) {
-    if (values[j] != null) return values[j]!.toFixed(decimals);
-  }
-  return '—';
-}
-
-function IndicatorLabels({
-  customIndicators, indicators, emaFast, emaSlow, emaFastPeriod, emaSlowPeriod, isRenko,
-  activeIndicators = [],
-  onEmaToggle, onEmaPeriod, onIndicatorToggle, onIndicatorRemove, onIndicatorParam,
-}: {
-  customIndicators: ComputedIndicator[];
-  indicators: ChartIndicators;
-  emaFast: (number | null)[];
-  emaSlow: (number | null)[];
-  emaFastPeriod: number;
-  emaSlowPeriod: number;
-  candles: Candle[];
-  isRenko: boolean;
-  activeIndicators?: ActiveIndicator[];
-  showVolume?: boolean;
-  onEmaToggle?: (key: 'ema9' | 'ema21') => void;
-  onEmaPeriod?: (key: 'ema9' | 'ema21', period: number) => void;
-  onIndicatorToggle?: (id: string) => void;
-  onIndicatorRemove?: (id: string) => void;
-  onIndicatorParam?: (id: string, key: string, value: number) => void;
-}) {
-  const indicatorDefs = useMemo(() => new Map(INDICATORS.map((d) => [d.id, d])), []);
-  const rows: LegendRow[] = useMemo(() => {
-    const out: LegendRow[] = [];
-    if (!isRenko) {
-      out.push({ kind: 'ema9', label: `EMA ${emaFastPeriod}`, value: formatLastValue(emaFast), color: C.emaFast, period: emaFastPeriod, visible: indicators.ema9 });
-      out.push({ kind: 'ema21', label: `EMA ${emaSlowPeriod}`, value: formatLastValue(emaSlow), color: C.emaSlow, period: emaSlowPeriod, visible: indicators.ema21 });
-    }
-    const seen = new Set<string>();
-    for (const active of activeIndicators) {
-      if (seen.has(active.id)) continue;
-      seen.add(active.id);
-      const def = indicatorDefs.get(active.id);
-      const computed = customIndicators.find((c) => c.id === active.id);
-      const label = def?.label ?? active.id;
-      const color = computed?.lines[0]?.color ?? '#94a3b8';
-      const value = computed ? formatLastValue(computed.lines[0]?.values ?? [], 4).replace(/\.?0+$/, '') : '—';
-      out.push({ kind: 'custom', id: active.id, label, value, color, visible: active.visible, def, params: active.params });
-    }
-    return out;
-  }, [indicatorDefs, isRenko, emaFast, emaSlow, emaFastPeriod, emaSlowPeriod, indicators.ema9, indicators.ema21, activeIndicators, customIndicators]);
-
-  const [openSettings, setOpenSettings] = useState<string | null>(null);
-  if (rows.length === 0) return null;
-
-  return (
-    <div className="pointer-events-none absolute left-2 top-10 z-10 flex flex-col gap-1">
-      {rows.map((row) => {
-        const rowKey = row.kind === 'custom' ? `custom:${row.id}` : row.kind;
-        const isOpen = openSettings === rowKey;
-        return (
-          <div key={rowKey} className="pointer-events-auto relative">
-            <LegendRowView
-              row={row}
-              onToggle={() => {
-                if (row.kind === 'custom') onIndicatorToggle?.(row.id);
-                else onEmaToggle?.(row.kind);
-              }}
-              onRemove={() => {
-                if (row.kind === 'custom') onIndicatorRemove?.(row.id);
-                else onEmaToggle?.(row.kind);
-              }}
-              onSettings={() => setOpenSettings(isOpen ? null : rowKey)}
-              isSettingsOpen={isOpen}
-            />
-            {isOpen && (
-              <SettingsPopover
-                row={row}
-                onClose={() => setOpenSettings(null)}
-                onEmaPeriod={onEmaPeriod}
-                onIndicatorParam={onIndicatorParam}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function LegendRowView({ row, onToggle, onRemove, onSettings, isSettingsOpen }: {
-  row: LegendRow;
-  onToggle: () => void;
-  onRemove: () => void;
-  onSettings: () => void;
-  isSettingsOpen: boolean;
-}) {
-  const dim = !row.visible;
-  return (
-    <div className={['group inline-flex items-center gap-1.5 rounded-md border border-line/60 bg-surface-1/85 px-2 py-1 text-[10px] font-mono backdrop-blur-sm transition-opacity', dim ? 'opacity-55' : ''].join(' ')}>
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: row.color }} aria-hidden />
-      <span className="text-ink-faint">{row.label}</span>
-      <span className={dim ? 'text-ink-faint line-through' : 'text-ink'}>{row.value}</span>
-      <span className={['ml-1 flex items-center gap-0.5 transition-opacity', isSettingsOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'].join(' ')}>
-        <IconBtn onClick={onToggle} ariaLabel={row.visible ? `Hide ${row.label}` : `Show ${row.label}`} title={row.visible ? 'Hide' : 'Show'}>
-          {row.visible ? <EyeIcon /> : <EyeOffIcon />}
-        </IconBtn>
-        <IconBtn onClick={onSettings} ariaLabel={`Settings for ${row.label}`} title="Settings" active={isSettingsOpen}>
-          <GearIcon />
-        </IconBtn>
-        <IconBtn onClick={onRemove} ariaLabel={`Remove ${row.label}`} title="Remove">
-          <CloseIcon />
-        </IconBtn>
-      </span>
-    </div>
-  );
-}
-
-function IconBtn({ children, onClick, ariaLabel, title, active = false }: {
-  children: React.ReactNode;
-  onClick: () => void;
-  ariaLabel: string;
-  title: string;
-  active?: boolean;
-}) {
-  return (
-    <button type="button" onClick={onClick} aria-label={ariaLabel} title={title}
-      className={['inline-flex h-4 w-4 items-center justify-center rounded text-ink-faint transition-colors', active ? 'text-ink bg-line/60' : 'hover:text-ink hover:bg-line/40'].join(' ')}>
-      {children}
-    </button>
-  );
-}
-
-function EyeIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>;
-}
-function EyeOffIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 3l18 18" /><path d="M10.6 6.1A10.6 10.6 0 0 1 12 6c6.5 0 10 6 10 6a17.3 17.3 0 0 1-3.3 3.9" /><path d="M6.7 6.7A17.3 17.3 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 4-.9" /></svg>;
-}
-function GearIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg>;
-}
-function CloseIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>;
-}
-
-function SettingsPopover({ row, onClose, onEmaPeriod, onIndicatorParam }: {
-  row: LegendRow;
-  onClose: () => void;
-  onEmaPeriod?: (key: 'ema9' | 'ema21', period: number) => void;
-  onIndicatorParam?: (id: string, key: string, value: number) => void;
-}) {
-  return (
-    <div role="dialog" className="absolute left-0 top-full z-20 mt-1 flex min-w-[180px] flex-col gap-2 rounded-lg border border-line bg-surface-1/95 p-2.5 shadow-xl backdrop-blur-md">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">{row.label}</span>
-        <button type="button" aria-label="Close settings" onClick={onClose} className="inline-flex h-4 w-4 items-center justify-center rounded text-ink-faint hover:text-ink"><CloseIcon /></button>
-      </div>
-      {row.kind !== 'custom' ? (
-        <NumberField label="Period" value={row.period} min={2} max={500} step={1} onChange={(v: number) => onEmaPeriod?.(row.kind, v)} />
-      ) : !row.def || row.def.params.length === 0 ? (
-        <p className="text-[10px] text-ink-faint">No editable parameters.</p>
-      ) : (
-        row.def.params.map((p) => (
-          <NumberField key={p.key} label={p.label} value={row.params[p.key] ?? p.default} min={p.min} max={p.max} step={p.step} onChange={(v: number) => onIndicatorParam?.(row.id, p.key, v)} />
-        ))
-      )}
-    </div>
-  );
-}
-
-function NumberField({ label, value, min, max, step, onChange }: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-3 text-[11px] text-ink-muted">
-      <span>{label}</span>
-      <input type="number" value={value} min={min} max={max} step={step}
-        onChange={(e) => { const n = Number(e.target.value); if (!Number.isNaN(n)) onChange(n); }}
-        className="w-20 rounded border border-line bg-base px-1.5 py-0.5 text-right font-mono text-[11px] text-ink outline-none focus:border-line-strong" />
-    </label>
-  );
-}
 
 function OverlayTooltip({ kind, price, y, side, units, leverage, entryPrice }: {
   kind: OverlayKind;
