@@ -10,7 +10,17 @@ import ConfluenceRibbon from '@/components/ConfluenceRibbon';
 import MultiChartGrid from '@/components/MultiChartGrid';
 import WorkspaceMenu from '@/components/WorkspaceMenu';
 import SymbolSearch from '@/components/SymbolSearch';
-import { LayoutGrid, Square } from 'lucide-react';
+import { Square } from 'lucide-react';
+import GridCountControl from '@/components/GridCountControl';
+import {
+  DEFAULT_GRID_COUNT,
+  isGridCount,
+  loadGrid,
+  reconcileGridTfs,
+  saveGrid,
+  tfsForCount,
+  type GridCount,
+} from '@/lib/gridLayout';
 import type { WorkspaceConfig } from '@/lib/workspaces';
 import MoodStrip from '@/components/MoodStrip';
 import SignalMatrix from '@/components/SignalMatrix';
@@ -42,7 +52,6 @@ import type { ChartOverlay, OverlayKind } from '@/components/Chart';
 
 const POLL_MS = 30000; // periodic reconciliation in case WS drops a bar
 const INDICATORS_KEY = 'btc-mood:chart-indicators:v1';
-const GRID_TFS: Timeframe[] = ['15m', '1h', '4h', '1d'];
 const TF_MS: Record<Timeframe, number> = {
   '1m': 60_000,
   '5m': 300_000,
@@ -112,8 +121,39 @@ export default function DashboardPage() {
   const clearIndicators = useCallback(() => setActiveIndicatorIds([]), []);
 
   // Layout & workspace state (Phase 5).
-  const [gridMode, setGridMode] = useState(false);
+  // Grid state: `gridCount` selects 1/2/4/6 panes; `gridTfs` is the
+  // ordered list of timeframes filling the cells. Default cell 0
+  // mirrors the user's currently-selected single-chart TF so the
+  // grid feels connected to the single view.
+  const [gridCount, setGridCount] = useState<GridCount>(DEFAULT_GRID_COUNT);
+  const [gridTfs, setGridTfs] = useState<Timeframe[]>(tfsForCount(DEFAULT_GRID_COUNT, '15m'));
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // Change the grid count while preserving as many of the previous
+  // cell TFs as fit. Persists to localStorage.
+  const handleGridCountChange = useCallback((n: GridCount) => {
+    setGridTfs((tfs) => reconcileGridTfs(tfs, n, selected));
+    setGridCount(n);
+  }, [selected]);
+
+  // Hydrate the persisted grid once on the client. The share URL
+  // does not capture grid state (only single-chart tf/type/symbol/
+  // indicators), so localStorage is the sole source.
+  useEffect(() => {
+    const persisted = loadGrid();
+    if (persisted) {
+      setGridCount(persisted.count);
+      setGridTfs(reconcileGridTfs(persisted.tfs, persisted.count, selected));
+    }
+    // We intentionally don't include `selected` in deps — we only
+    // want the hydrate-once behavior. Subsequent selected changes
+    // already trigger handleGridCountChange paths if relevant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Persist on every change.
+  useEffect(() => {
+    saveGrid({ count: gridCount, tfs: gridTfs });
+  }, [gridCount, gridTfs]);
 
   const applyWorkspace = useCallback((cfg: WorkspaceConfig) => {
     if (cfg.chartType === 'candlestick' || cfg.chartType === 'heikinAshi' || cfg.chartType === 'renko') {
@@ -202,13 +242,17 @@ export default function DashboardPage() {
         setChartType('renko');
         e.preventDefault();
       } else if (k === 'g') {
-        setGridMode((v) => !v);
+        // Cycle through 1 -> 2 -> 4 -> 6 -> 1.
+        const order: GridCount[] = [1, 2, 4, 6];
+        const idx = order.indexOf(gridCount);
+        const next = order[(idx + 1) % order.length];
+        handleGridCountChange(next);
         e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [gridCount, handleGridCountChange]);
 
   // Historical fetch via TanStack Query.
   const klinesQueries = useQueries({
@@ -611,44 +655,34 @@ export default function DashboardPage() {
                 <span className="hidden text-[10px] text-ink-faint sm:inline">
                   Press <Kbd>/</Kbd> to search · <Kbd>G</Kbd> grid
                 </span>
-                <div className="inline-flex items-center rounded-md border border-line bg-base p-0.5">
+                <div className="inline-flex items-center gap-2">
                   <button
-                    onClick={() => setGridMode(false)}
-                    aria-pressed={!gridMode}
+                    onClick={() => setGridCount(1)}
+                    aria-pressed={gridCount === 1}
                     title="Single chart"
                     className={[
-                      'focus-ring inline-flex h-7 w-7 items-center justify-center rounded transition',
-                      !gridMode ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink',
+                      'focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border transition',
+                      gridCount === 1
+                        ? 'border-line-strong bg-surface-3 text-ink'
+                        : 'border-line bg-surface-1 text-ink-faint hover:bg-surface-2 hover:text-ink',
                     ].join(' ')}
                   >
                     <Square className="h-3.5 w-3.5" />
                   </button>
-                  <button
-                    onClick={() => setGridMode(true)}
-                    aria-pressed={gridMode}
-                    title="Multi-timeframe grid"
-                    className={[
-                      'focus-ring inline-flex h-7 w-7 items-center justify-center rounded transition',
-                      gridMode ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink',
-                    ].join(' ')}
-                  >
-                    <LayoutGrid className="h-3.5 w-3.5" />
-                  </button>
+                  <GridCountControl value={gridCount} onChange={handleGridCountChange} />
                 </div>
               </div>
             </div>
 
-            {gridMode ? (
+            {gridCount > 1 ? (
               <MultiChartGrid
+                count={gridCount}
+                tfs={gridTfs}
                 candlesByTf={candlesByTf}
-                gridTfs={GRID_TFS}
                 chartType={chartType}
                 activeIndicatorIds={activeIndicatorIds}
                 selected={selected}
-                onSelectTf={(tf) => {
-                  setSelected(tf);
-                  setGridMode(false);
-                }}
+                onSelectTf={(tf) => setSelected(tf)}
               />
             ) : (
               <ChartPanel

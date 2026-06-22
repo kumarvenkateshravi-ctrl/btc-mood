@@ -4,10 +4,15 @@ import { useMemo } from 'react';
 import Chart, { type ChartType, type IndicatorRender } from './Chart';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { Candle, Timeframe } from '@/lib/types';
+import { GRID_COLS_CLASS, type GridCount } from '@/lib/gridLayout';
 
 interface MultiChartGridProps {
+  /** Number of panes to render. Drives both the cell list and the
+   *  CSS grid column count. */
+  count: GridCount;
+  /** Per-pane timeframe. Length must match `count`. */
+  tfs: Timeframe[];
   candlesByTf: Record<Timeframe, Candle[]>;
-  gridTfs: Timeframe[];
   chartType: ChartType;
   activeIndicatorIds: string[];
   selected: Timeframe;
@@ -17,23 +22,35 @@ interface MultiChartGridProps {
 }
 
 /**
- * Multi-chart grid: the same symbol across several timeframes at once — the
- * "see more of the market in one glance" view. Reuses the self-contained Chart
- * component (each cell owns its lightweight-charts instance). Indicators render
- * with default settings; click a cell's timeframe to focus it.
+ * Multi-chart grid — the "see more of the market in one glance" view.
+ * Renders `count` cells, each a self-contained Chart at its assigned
+ * TF. The grid root's `data-count` attribute picks the column count
+ * via the `GRID_COLS_CLASS` mapping (no JS breakpoint gymnastics).
+ *
+ * Each cell is fully isolated: it owns its lightweight-charts
+ * instance and re-renders independently on WS ticks. Indicators run
+ * with default settings per cell.
  */
 export default function MultiChartGrid({
+  count,
+  tfs,
   candlesByTf,
-  gridTfs,
   chartType,
   activeIndicatorIds,
   selected,
   onSelectTf,
   cellHeight = 240,
 }: MultiChartGridProps) {
+  const colsClass = GRID_COLS_CLASS[count];
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {gridTfs.map((tf) => (
+    <div
+      role="grid"
+      aria-label={`${count}-pane chart grid`}
+      data-count={count}
+      className={['grid gap-3', colsClass].join(' ')}
+    >
+      {tfs.map((tf) => (
         <GridCell
           key={tf}
           tf={tf}
@@ -78,6 +95,7 @@ function GridCell({
 
   return (
     <div
+      role="gridcell"
       className={[
         'panel relative overflow-hidden rounded-xl border transition-colors',
         active ? 'border-accent/50' : 'border-line',
