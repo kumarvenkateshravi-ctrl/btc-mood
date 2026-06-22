@@ -1369,27 +1369,25 @@ export default function Chart({
 
       {onQuickTrade && (
         <div className="pointer-events-auto absolute left-2 top-2 z-10 flex items-center gap-2">
+          <button
+            onClick={() => onQuickTrade('sell')}
+            className="flex flex-col rounded-md bg-bear/20 px-3 py-1.5 text-xs ring-1 ring-bear/30 transition hover:bg-bear/30"
+          >
+            <span className="font-semibold text-bear-bright">Sell</span>
+            {ask != null && Number.isFinite(ask) && (
+              <span className="font-mono text-bear-bright/70">{ask.toFixed(1)}</span>
+            )}
+          </button>
           <ChartOHLCStrip mode={type} />
-          <div className="flex gap-2">
-            <button
-              onClick={() => onQuickTrade('sell')}
-              className="flex flex-col rounded-md bg-bear/20 px-3 py-1.5 text-xs ring-1 ring-bear/30 transition hover:bg-bear/30"
-            >
-              <span className="font-semibold text-bear-bright">Sell</span>
-              {ask != null && Number.isFinite(ask) && (
-                <span className="font-mono text-bear-bright/70">{ask.toFixed(1)}</span>
-              )}
-            </button>
-            <button
-              onClick={() => onQuickTrade('buy')}
-              className="flex flex-col rounded-md bg-bull/20 px-3 py-1.5 text-xs ring-1 ring-bull/30 transition hover:bg-bull/30"
-            >
-              <span className="font-semibold text-bull-bright">Buy</span>
-              {bid != null && Number.isFinite(bid) && (
-                <span className="font-mono text-bull-bright/70">{bid.toFixed(1)}</span>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={() => onQuickTrade('buy')}
+            className="flex flex-col rounded-md bg-bull/20 px-3 py-1.5 text-xs ring-1 ring-bull/30 transition hover:bg-bull/30"
+          >
+            <span className="font-semibold text-bull-bright">Buy</span>
+            {bid != null && Number.isFinite(bid) && (
+              <span className="font-mono text-bull-bright/70">{bid.toFixed(1)}</span>
+            )}
+          </button>
         </div>
       )}
 
