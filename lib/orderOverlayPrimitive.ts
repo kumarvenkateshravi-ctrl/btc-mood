@@ -15,22 +15,53 @@ class OrderRenderer implements IPrimitivePaneRenderer {
       const ctx = scope.context;
       const series = this._api.series;
       const ts = this._api.chart.timeScale();
-      const w = Math.round(ts.width() * scope.horizontalPixelRatio);
+      const hpr = scope.horizontalPixelRatio;
+      const vpr = scope.verticalPixelRatio;
+      const w = Math.round(ts.width() * hpr);
+      const opts = this._prim.options || {};
 
       for (const o of this._prim.overlays) {
         const y = series.priceToCoordinate(o.price);
         if (y === null) continue;
-        const cy = Math.round(y * scope.verticalPixelRatio);
-        
-        ctx.strokeStyle = o.color || '#5aa2e6';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        
+        const cy = Math.round(y * vpr);
+
+        const lineColor =
+          o.color || (o.kind === 'tp' ? '#22d39a' : o.kind === 'sl' ? '#fb5168' : '#5aa2e6');
+
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = Math.max(1, vpr);
+        ctx.setLineDash([5 * hpr, 5 * hpr]);
         ctx.beginPath();
         ctx.moveTo(0, cy);
         ctx.lineTo(w, cy);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        // Label the line (updates live as the line is dragged).
+        let text: string;
+        if (o.kind === 'entry') {
+          const side = opts.side ? String(opts.side).toUpperCase() : 'ENTRY';
+          const units = opts.unitsLabel && opts.unitsLabel !== '—' ? `${opts.unitsLabel} ` : '';
+          text = `${side} ${units}@ ${o.price.toFixed(1)}`;
+        } else if (o.kind === 'tp') {
+          text = `TP ${o.price.toFixed(1)}`;
+        } else {
+          text = `SL ${o.price.toFixed(1)}`;
+        }
+
+        const fontPx = 11 * vpr;
+        ctx.font = `${fontPx}px ui-sans-serif, system-ui, sans-serif`;
+        ctx.textBaseline = 'middle';
+        const padX = 6 * hpr;
+        const boxW = ctx.measureText(text).width + padX * 2;
+        const boxH = 16 * vpr;
+        const boxX = 4 * hpr;
+        const boxY = cy - boxH / 2;
+
+        ctx.fillStyle = lineColor;
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.fillStyle = '#0a0e16';
+        ctx.fillText(text, boxX + padX, cy);
       }
     });
   }

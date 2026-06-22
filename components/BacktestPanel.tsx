@@ -53,8 +53,15 @@ function PanelHeading({ tf, trailing }: { tf: Timeframe; trailing?: React.ReactN
   );
 }
 
+// backtest() is O(n²); cap its input so deep lazy-loaded history never freezes
+// the page. The most recent window is what matters for a quick read.
+const BACKTEST_MAX_BARS = 2000;
+
 export default function BacktestPanel({ tf, candles }: BacktestPanelProps) {
-  const result: BacktestResult = useMemo(() => backtest(tf, candles), [tf, candles]);
+  const result: BacktestResult = useMemo(
+    () => backtest(tf, candles.length > BACKTEST_MAX_BARS ? candles.slice(-BACKTEST_MAX_BARS) : candles),
+    [tf, candles],
+  );
 
   if (candles.length < 60) {
     return (

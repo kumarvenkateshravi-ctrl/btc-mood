@@ -93,4 +93,43 @@ describe('toRenko', () => {
     const auto = toRenko(makeCandles(closes), { autoBrick: true });
     expect(auto.length).toBeGreaterThan(1);
   });
+
+  describe('box-size methods', () => {
+    it("traditional method uses brickSize as the fixed step", () => {
+      const closes = Array.from({ length: 40 }, (_, i) => 100 + i);
+      const bricks = toRenko(makeCandles(closes), { method: 'traditional', brickSize: 5 });
+      expect(bricks.length).toBeGreaterThan(1);
+      for (let i = 1; i < bricks.length; i++) {
+        expect(Math.abs(bricks[i].close - bricks[i - 1].close)).toBe(5);
+      }
+    });
+
+    it('traditional method falls back to 1% when brickSize is missing', () => {
+      const closes = Array.from({ length: 20 }, (_, i) => 100 + i);
+      const bricks = toRenko(makeCandles(closes), { method: 'traditional' });
+      for (let i = 1; i < bricks.length; i++) {
+        expect(Math.abs(bricks[i].close - bricks[i - 1].close)).toBe(1); // 1% of 100
+      }
+    });
+
+    it('atr method honors a custom atrLength and produces bricks', () => {
+      const closes = Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i / 3) * 6);
+      const a14 = toRenko(makeCandles(closes), { method: 'atr', atrLength: 14 });
+      const a5 = toRenko(makeCandles(closes), { method: 'atr', atrLength: 5 });
+      expect(a14.length).toBeGreaterThan(1);
+      expect(a5.length).toBeGreaterThan(1);
+    });
+
+    it('percentage method steps by percentage of the last traded price', () => {
+      // Last close = 100; 5% → box size 5.
+      const closes = Array.from({ length: 60 }, (_, i) => 80 + i * (20 / 59));
+      const bricks = toRenko(makeCandles(closes), { method: 'percentage', percentage: 5 });
+      const ltp = closes[closes.length - 1];
+      const expectedBox = ltp * 0.05;
+      expect(bricks.length).toBeGreaterThan(1);
+      for (let i = 1; i < bricks.length; i++) {
+        expect(Math.abs(bricks[i].close - bricks[i - 1].close)).toBeCloseTo(expectedBox, 6);
+      }
+    });
+  });
 });

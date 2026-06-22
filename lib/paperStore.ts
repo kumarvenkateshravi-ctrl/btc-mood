@@ -240,6 +240,9 @@ export interface PlaceOrderInput {
   /** When non-null, filling this order cancels all other pending
    *  orders with the same ocoGroup on the same symbol. */
   ocoGroup?: string | null;
+  /** Override the fill/open timestamp (unix seconds) — used by Bar Replay so
+   *  trades carry the replay bar's time, not wall-clock time. */
+  ts?: number;
 }
 
 export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: string } {
@@ -284,7 +287,7 @@ export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: strin
       price: fillPrice,
       feeRate: TAKER_FEE,
       fee: input.units * fillPrice * TAKER_FEE,
-      ts: Math.floor(Date.now() / 1000),
+      ts: input.ts ?? Math.floor(Date.now() / 1000),
       leverage: input.leverage,
     };
     const out = applyFill(existingPos, fill, input.symbol, fill.ts, input.leverage);
@@ -449,6 +452,8 @@ export interface ExecuteOrderInput {
   leverage: number;
   takeProfit?: number | null;
   stopLoss?: number | null;
+  /** Override the fill timestamp (unix seconds) — for Bar Replay. */
+  ts?: number;
 }
 
 export interface ExecuteOrderResult {
@@ -473,6 +478,7 @@ export function executeOrder(input: ExecuteOrderInput): ExecuteOrderResult {
     postOnly: false,
     leverage: input.leverage,
     midPrice: input.midPrice,
+    ts: input.ts,
   });
   return {
     ok: result.ok,
@@ -490,7 +496,9 @@ export function setTakeProfit(_orderId: string | null, price: number | null) {
 }
 
 /** Replay a single new bar against the working book. Iterates every
- *  open position so multi-symbol portfolios stay in sync. */
+ *  open position so multi-symbol portfolios stay in sync. (Bar Replay
+ *  uses a separate isolated account in lib/replaySession.ts, so this only
+ *  ever sees live bars.) */
 export function reconcileBar(bar: import('./types').Candle) {
   if (typeof window === 'undefined') return;
   let nextState = state;

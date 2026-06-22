@@ -51,10 +51,63 @@ export interface IndicatorPlot {
   pane?: 'overlay' | 'separate';
 }
 
+/** A horizontal reference line on the indicator's pane (PineScript `hline`). */
+export interface IndicatorLevel {
+  value: number;
+  color: string;
+  lineStyle?: 'solid' | 'dashed' | 'dotted';
+  lineWidth?: number;
+  title?: string;
+}
+
+/** A solid fill between two price levels on the pane (PineScript `fill` between hlines). */
+export interface IndicatorFill {
+  from: number;
+  to: number;
+  /** rgba color. */
+  color: string;
+}
+
+/**
+ * Gradient fill between a plot line and a baseline value, clipped to a value
+ * band — PineScript `fill(plot, baselinePlot, topValue, bottomValue, topColor,
+ * bottomColor)`. Used for the RSI overbought/oversold zones.
+ */
+export interface IndicatorGradientFill {
+  /** Plot id whose per-bar values bound the fill (e.g. 'rsi'). */
+  plotId: string;
+  /** The other plot's constant value (e.g. the 50 mid-line). */
+  baseline: number;
+  /** Value band the gradient is mapped/clipped to. */
+  top: number;
+  bottom: number;
+  /** rgba colour at `top` and at `bottom`. */
+  topColor: string;
+  bottomColor: string;
+}
+
+/** A label/marker on the indicator's pane (PineScript `plotshape`). */
+export interface IndicatorMarker {
+  /** Bar index the marker sits on. */
+  index: number;
+  position: 'aboveBar' | 'belowBar' | 'inBar';
+  color: string;
+  shape: 'arrowUp' | 'arrowDown' | 'circle' | 'square';
+  text?: string;
+}
+
 export interface IndicatorResult {
   plots: IndicatorPlot[];
   // Buy/Sell/Neutral status per candle
   signals: SignalSide[];
+  /** Horizontal reference lines (e.g. RSI 70 / 50 / 30). */
+  levels?: IndicatorLevel[];
+  /** Solid fills between two levels (e.g. the RSI 70↔30 channel). */
+  fills?: IndicatorFill[];
+  /** Gradient zone fills (e.g. RSI overbought / oversold). */
+  gradientFills?: IndicatorGradientFill[];
+  /** Pane labels/markers (e.g. divergence Bull/Bear). */
+  markers?: IndicatorMarker[];
 }
 
 export interface CustomIndicatorConfig {

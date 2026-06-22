@@ -5,6 +5,10 @@ import { COMPARE_SYMBOLS, isCompareSymbol } from '@/lib/compare';
 
 const VALID_TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const CACHE_TTL_MS = 5000;
+// Older history pages are immutable, so cache them far longer.
+const HISTORY_CACHE_TTL_MS = 10 * 60_000;
+const DEFAULT_LIMIT = 1000;
+const MAX_LIMIT = 1000; // Binance spot klines hard cap
 const CACHE_MAX_ENTRIES = 64; // LRU cap to prevent unbounded growth
 const BINANCE_BASE = 'https://data-api.binance.vision/api/v3/klines';
 
@@ -100,12 +104,12 @@ function cacheGet(key: string): CacheEntry | null {
   return entry;
 }
 
-function cacheSet(key: string, payload: string, status: number) {
+function cacheSet(key: string, payload: string, status: number, ttl: number = CACHE_TTL_MS) {
   // If updating an existing key, drop it first so the new entry is the
   // most-recently-used in the insertion-order iteration.
   if (cache.has(key)) cache.delete(key);
   cache.set(key, {
-    expiresAt: Date.now() + CACHE_TTL_MS,
+    expiresAt: Date.now() + ttl,
     payload,
     status,
   });
@@ -160,7 +164,20 @@ export async function GET(req: NextRequest) {
   }
 
   const validTf = tf as Timeframe;
-  const cacheKey = `${symbolParam}:${validTf}`;
+
+  // Pagination: `before` (ms, exclusive upper bound) loads older history;
+  // omitted = the latest page. `limit` caps the page size (Binance max 1000).
+  const beforeRaw = req.nextUrl.searchParams.get('before');
+  const before = beforeRaw && /^\d+$/.test(beforeRaw) ? Number(beforeRaw) : null;
+  const limitRaw = req.nextUrl.searchParams.get('limit');
+  const limit = Math.min(
+    MAX_LIMIT,
+    Math.max(1, limitRaw && /^\d+$/.test(limitRaw) ? Number(limitRaw) : DEFAULT_LIMIT),
+  );
+
+  const isHistory = before != null;
+  const cacheKey = `${symbolParam}:${validTf}:${before ?? 'latest'}:${limit}`;
+  const cacheTtl = isHistory ? HISTORY_CACHE_TTL_MS : CACHE_TTL_MS;
 
   // Fresh cache → serve.
   const cached = cacheGet(cacheKey);
@@ -176,7 +193,8 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const upstream = `${BINANCE_BASE}?symbol=${encodeURIComponent(symbolParam)}&interval=${encodeURIComponent(validTf)}&limit=500`;
+  let upstream = `${BINANCE_BASE}?symbol=${encodeURIComponent(symbolParam)}&interval=${encodeURIComponent(validTf)}&limit=${limit}`;
+  if (before != null) upstream += `&endTime=${before}`;
 
   let res: Response;
   try {
@@ -255,7 +273,7 @@ export async function GET(req: NextRequest) {
   }
 
   const payload = JSON.stringify(candles);
-  cacheSet(cacheKey, payload, 200);
+  cacheSet(cacheKey, payload, 200, cacheTtl);
   counters.misses += 1;
 
   return new NextResponse(payload, {

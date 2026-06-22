@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local scratch / recovery files (not part of the project)
+/_scratch/
+
+# local tooling settings
+.claude/settings.local.json

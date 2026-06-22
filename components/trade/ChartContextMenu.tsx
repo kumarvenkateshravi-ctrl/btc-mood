@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
-import { ArrowDown, ArrowUp, GripVertical } from 'lucide-react';
-import { setActiveOrder } from '@/lib/paperStore';
+import { ArrowDown, ArrowUp, Bell, GripVertical, Zap } from 'lucide-react';
+import { setActiveOrder, executeOrder } from '@/lib/paperStore';
+import { addPriceAlert } from '@/lib/priceAlertsStore';
+import { sideForLevel } from '@/lib/priceAlerts';
 import type { Side } from '@/lib/paper';
 
 interface ChartContextMenuProps {
@@ -14,8 +16,12 @@ interface ChartContextMenuProps {
   y: number;
   /** Current chart symbol. */
   symbol: string;
-  /** Current mid price for SL suggestion. */
+  /** Current mid price for market fills + SL suggestion. */
   midPrice: number;
+  /** Leverage for market orders placed from the menu. */
+  leverage?: number;
+  /** Default order size (units). */
+  size?: number;
   onClose: () => void;
 }
 
@@ -25,6 +31,8 @@ export default function ChartContextMenu({
   y,
   symbol,
   midPrice,
+  leverage = 10,
+  size = 0.1,
   onClose,
 }: ChartContextMenuProps) {
   useEffect(() => {
@@ -52,7 +60,7 @@ export default function ChartContextMenu({
       symbol,
       side,
       type,
-      units: 0.1,
+      units: size,
       entry: price,
       tp: null,
       sl: null,
@@ -63,13 +71,31 @@ export default function ChartContextMenu({
     onClose();
   };
 
+  const market = (side: Side) => {
+    executeOrder({
+      type: side === 'buy' ? 'BUY' : 'SELL',
+      size,
+      orderType: 'MARKET',
+      symbol,
+      midPrice,
+      leverage,
+    });
+    onClose();
+  };
+
+  const alertHere = () => {
+    addPriceAlert({ symbol, price, side: sideForLevel(price, midPrice) });
+    onClose();
+  };
+
   const displayPrice = price.toFixed(1);
+  const marketPrice = midPrice.toFixed(1);
 
   // Constrain to viewport edges so the menu doesn't overflow.
   const maxRight = typeof window !== 'undefined' ? window.innerWidth - 12 : 800;
   const maxBottom = typeof window !== 'undefined' ? window.innerHeight - 12 : 600;
   const left = Math.min(x, maxRight - 180);
-  const top = Math.min(y, maxBottom - 140);
+  const top = Math.min(y, maxBottom - 420);
 
   return (
     <div
@@ -89,6 +115,19 @@ export default function ChartContextMenu({
       </div>
 
       <div className="p-1">
+        <MenuItem
+          icon={<Zap className="h-3.5 w-3.5 text-bull-bright" />}
+          label="Buy market"
+          desc={`Market buy @ ${marketPrice}`}
+          onClick={() => market('buy')}
+        />
+        <MenuItem
+          icon={<Zap className="h-3.5 w-3.5 text-bear-bright" />}
+          label="Sell market"
+          desc={`Market sell @ ${marketPrice}`}
+          onClick={() => market('sell')}
+        />
+        <div className="my-1 border-t border-line" />
         <MenuItem
           icon={<ArrowUp className="h-3.5 w-3.5" />}
           label="Buy limit"
@@ -113,6 +152,13 @@ export default function ChartContextMenu({
           label="Sell stop"
           desc={`Stop sell @ ${displayPrice}`}
           onClick={() => stage('sell', 'stop')}
+        />
+        <div className="my-1 border-t border-line" />
+        <MenuItem
+          icon={<Bell className="h-3.5 w-3.5 text-accent" />}
+          label="Set alert here"
+          desc={`Alert @ ${displayPrice}`}
+          onClick={alertHere}
         />
       </div>
     </div>

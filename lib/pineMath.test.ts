@@ -1,5 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import { highest, lowest, tr, linreg } from './pineMath';
+import { highest, lowest, tr, linreg, pivotHigh, pivotLow, valueWhen, barsSince } from './pineMath';
+
+describe('pivotHigh / pivotLow', () => {
+  it('confirms a pivot high `right` bars after it occurs', () => {
+    //            0  1  2  3  4  5  6   (pivot at idx 2, left=2,right=2)
+    const src = [1, 2, 5, 2, 1, 0, 0];
+    const ph = pivotHigh(src, 2, 2);
+    expect(ph[4]).toBe(5); // confirmed at idx 2+2 = 4
+    expect(ph[3]).toBeNull();
+  });
+  it('confirms a pivot low', () => {
+    const src = [5, 4, 1, 4, 5, 6, 6];
+    const pl = pivotLow(src, 2, 2);
+    expect(pl[4]).toBe(1);
+  });
+  it('rejects non-pivots (ties / not extreme)', () => {
+    expect(pivotHigh([1, 2, 2, 2, 1], 1, 1).every((v) => v === null)).toBe(true);
+  });
+});
+
+describe('valueWhen', () => {
+  it('returns src at the occurrence-th most recent true', () => {
+    const cond = [true, false, true, false, true];
+    const src = [10, 11, 20, 21, 30];
+    expect(valueWhen(cond, src, 0)).toEqual([10, 10, 20, 20, 30]); // most recent
+    expect(valueWhen(cond, src, 1)).toEqual([null, null, 10, 10, 20]); // one before
+  });
+});
+
+describe('barsSince', () => {
+  it('counts bars since the last true', () => {
+    expect(barsSince([false, true, false, false, true, false])).toEqual([null, 0, 1, 2, 0, 1]);
+  });
+});
 
 describe('highest', () => {
   it('returns nulls until the window is full', () => {

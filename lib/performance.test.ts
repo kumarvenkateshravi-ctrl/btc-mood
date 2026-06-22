@@ -43,6 +43,12 @@ describe('computeStats', () => {
     expect(s.avgLoss).toBeCloseTo(-5, 6);
   });
 
+  it('expectancy is the average P&L per trade', () => {
+    const s = computeStats([t(10), t(-5), t(3)]);
+    expect(s.expectancy).toBeCloseTo(8 / 3, 6);
+    expect(computeStats([]).expectancy).toBe(0);
+  });
+
   it('profit factor is gross profit / gross loss', () => {
     const s = computeStats([t(10), t(-5), t(3)]);
     expect(s.profitFactor).toBeCloseTo(13 / 5, 6);

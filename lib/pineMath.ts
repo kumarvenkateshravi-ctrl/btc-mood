@@ -336,3 +336,78 @@ export function ref<T>(arr: (T | null)[], n: number): (T | null)[] {
 export function nz<T>(arr: (T | null)[]): (T | null)[] {
   return arr.map((v) => (v === null ? null : v));
 }
+
+// ta.pivothigh(src, left, right): non-null at the *confirmation* bar (right bars
+// after the pivot) with the pivot value src[i-right] when that bar is strictly
+// higher than the `left` bars before and `right` bars after it.
+export function pivotHigh(src: (number | null)[], left: number, right: number): (number | null)[] {
+  const out = new Array<number | null>(src.length).fill(null);
+  for (let i = 0; i < src.length; i++) {
+    const p = i - right;
+    if (p - left < 0) continue;
+    const pv = src[p];
+    if (pv == null) continue;
+    let ok = true;
+    for (let j = 1; j <= left && ok; j++) {
+      const v = src[p - j];
+      if (v == null || v >= pv) ok = false;
+    }
+    for (let j = 1; j <= right && ok; j++) {
+      const v = src[p + j];
+      if (v == null || v >= pv) ok = false;
+    }
+    if (ok) out[i] = pv;
+  }
+  return out;
+}
+
+// ta.pivotlow — mirror of pivotHigh with strictly-lower neighbours.
+export function pivotLow(src: (number | null)[], left: number, right: number): (number | null)[] {
+  const out = new Array<number | null>(src.length).fill(null);
+  for (let i = 0; i < src.length; i++) {
+    const p = i - right;
+    if (p - left < 0) continue;
+    const pv = src[p];
+    if (pv == null) continue;
+    let ok = true;
+    for (let j = 1; j <= left && ok; j++) {
+      const v = src[p - j];
+      if (v == null || v <= pv) ok = false;
+    }
+    for (let j = 1; j <= right && ok; j++) {
+      const v = src[p + j];
+      if (v == null || v <= pv) ok = false;
+    }
+    if (ok) out[i] = pv;
+  }
+  return out;
+}
+
+// ta.valuewhen(cond, src, occurrence): src at the bar where `cond` was true the
+// `occurrence`-th most recent time (0 = most recent), counting up to & including
+// the current bar. Single pass.
+export function valueWhen(
+  cond: boolean[],
+  src: (number | null)[],
+  occurrence: number,
+): (number | null)[] {
+  const out = new Array<number | null>(src.length).fill(null);
+  const hits: number[] = [];
+  for (let i = 0; i < src.length; i++) {
+    if (cond[i]) hits.push(i);
+    if (hits.length > occurrence) out[i] = src[hits[hits.length - 1 - occurrence]];
+  }
+  return out;
+}
+
+// ta.barssince(cond): number of bars since `cond` was last true (null until the
+// first occurrence).
+export function barsSince(cond: boolean[]): (number | null)[] {
+  const out = new Array<number | null>(cond.length).fill(null);
+  let last = -1;
+  for (let i = 0; i < cond.length; i++) {
+    if (cond[i]) last = i;
+    out[i] = last >= 0 ? i - last : null;
+  }
+  return out;
+}

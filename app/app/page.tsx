@@ -1,20 +1,28 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import Header from '@/components/Header';
 import dynamic from 'next/dynamic';
 const ChartPanel = dynamic(() => import('@/components/ChartPanel'), { ssr: false });
 import TimeframeStrip from '@/components/TimeframeStrip';
+import ConfluenceRibbon from '@/components/ConfluenceRibbon';
+import MultiChartGrid from '@/components/MultiChartGrid';
+import WorkspaceMenu from '@/components/WorkspaceMenu';
+import SymbolSearch from '@/components/SymbolSearch';
+import { LayoutGrid, Square } from 'lucide-react';
+import type { WorkspaceConfig } from '@/lib/workspaces';
 import MoodStrip from '@/components/MoodStrip';
 import SignalMatrix from '@/components/SignalMatrix';
 import AlertsPanel from '@/components/AlertsPanel';
 import BacktestPanel from '@/components/BacktestPanel';
 import IndicatorPicker from '@/components/trade/IndicatorPicker';
-import OrderTicket from '@/components/trade/OrderTicket';
+import TradeHistory from '@/components/trade/TradeHistory';
+import BacktestStats from '@/components/trade/BacktestStats';
+import TradingPanel from '@/components/trade/TradingPanel';
 import { useSharedIndicators } from '@/lib/useSharedIndicators';
 import { synthCandles } from '@/lib/binance';
-import { fetchKlinesTyped, klinesQueryKey, KlinesError, RateLimitedError } from '@/lib/fetcher';
+import { fetchKlinesTyped, fetchKlinesBefore, klinesQueryKey, KlinesError, RateLimitedError } from '@/lib/fetcher';
 import { aggregateMood, computeSignal, type MoodVerdict, type TFSnapshot } from '@/lib/signals';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { Candle } from '@/lib/types';
@@ -25,13 +33,24 @@ import {
   isCompareSymbol,
 } from '@/lib/compare';
 import { loadRules, rulesToFire, saveRules, type AlertSide } from '@/lib/alerts';
+import { priceAlertsToFire } from '@/lib/priceAlerts';
+import { getPriceAlerts, markPriceAlertsFired } from '@/lib/priceAlertsStore';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import type { ChartType } from '@/components/Chart';
-import { usePaperStore, reconcileBar } from '@/lib/paperStore';
-import { unrealizedPnl } from '@/lib/paper';
+import { reconcileBar } from '@/lib/paperStore';
 import type { ChartOverlay, OverlayKind } from '@/components/Chart';
 
 const POLL_MS = 30000; // periodic reconciliation in case WS drops a bar
+const INDICATORS_KEY = 'btc-mood:chart-indicators:v1';
+const GRID_TFS: Timeframe[] = ['15m', '1h', '4h', '1d'];
+const TF_MS: Record<Timeframe, number> = {
+  '1m': 60_000,
+  '5m': 300_000,
+  '15m': 900_000,
+  '1h': 3_600_000,
+  '4h': 14_400_000,
+  '1d': 86_400_000,
+};
 
 function parseChartType(param: string | null): ChartType | null {
   if (param === 'ha') return 'heikinAshi';
@@ -45,9 +64,10 @@ function readInitialState(): {
   tf: Timeframe;
   type: ChartType;
   symbol: CompareSymbol;
+  indicators: string[] | null;
 } {
   if (typeof window === 'undefined') {
-    return { tf: '15m', type: 'candlestick', symbol: DEFAULT_COMPARE_SYMBOL };
+    return { tf: '15m', type: 'candlestick', symbol: DEFAULT_COMPARE_SYMBOL, indicators: null };
   }
   const sp = new URLSearchParams(window.location.search);
   const tfParam = sp.get('tf');
@@ -55,10 +75,14 @@ function readInitialState(): {
   const tf: Timeframe = (TIMEFRAMES as string[]).includes(tfParam ?? '') ? (tfParam as Timeframe) : '15m';
   const type: ChartType = parseChartType(sp.get('type')) ?? 'candlestick';
   const symbol: CompareSymbol = isCompareSymbol(symbolParam) ? symbolParam : DEFAULT_COMPARE_SYMBOL;
-  return { tf, type, symbol };
+  const indParam = sp.get('ind');
+  const indicators = indParam
+    ? indParam.split(',').filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id))
+    : null;
+  return { tf, type, symbol, indicators };
 }
 
-function writeUrlState(tf: Timeframe, type: ChartType, symbol: CompareSymbol) {
+function writeUrlState(tf: Timeframe, type: ChartType, symbol: CompareSymbol, indicators: string[]) {
   if (typeof window === 'undefined') return;
   const sp = new URLSearchParams(window.location.search);
   if (tf === '15m') sp.delete('tf'); else sp.set('tf', tf);
@@ -66,6 +90,8 @@ function writeUrlState(tf: Timeframe, type: ChartType, symbol: CompareSymbol) {
   else sp.set('type', type === 'heikinAshi' ? 'ha' : type === 'renko' ? 'renko' : 'candle');
   if (symbol === DEFAULT_COMPARE_SYMBOL) sp.delete('symbol');
   else sp.set('symbol', symbol);
+  if (indicators.length === 0) sp.delete('ind');
+  else sp.set('ind', indicators.join(','));
   const qs = sp.toString();
   const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
   window.history.replaceState(null, '', url);
@@ -76,7 +102,27 @@ export default function DashboardPage() {
   const [chartType, setChartType] = useState<ChartType>('candlestick');
   const [symbol, setSymbol] = useState<CompareSymbol>(DEFAULT_COMPARE_SYMBOL);
   const [hydrated, setHydrated] = useState(false);
-  const [activeIndicatorId, setActiveIndicatorId] = useState<string>('');
+  const [activeIndicatorIds, setActiveIndicatorIds] = useState<string[]>([]);
+
+  const toggleIndicator = useCallback((id: string) => {
+    setActiveIndicatorIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+  const clearIndicators = useCallback(() => setActiveIndicatorIds([]), []);
+
+  // Layout & workspace state (Phase 5).
+  const [gridMode, setGridMode] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const applyWorkspace = useCallback((cfg: WorkspaceConfig) => {
+    if (cfg.chartType === 'candlestick' || cfg.chartType === 'heikinAshi' || cfg.chartType === 'renko') {
+      setChartType(cfg.chartType);
+    }
+    if (isCompareSymbol(cfg.symbol)) setSymbol(cfg.symbol);
+    if ((TIMEFRAMES as string[]).includes(cfg.tf)) setSelected(cfg.tf as Timeframe);
+    setActiveIndicatorIds(cfg.indicatorIds.filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id)));
+  }, []);
   const { activeIndicators, showVolume, toggleVolume, handleAdd: handleAddIndicator, handleRemove: handleRemoveIndicator, handleToggle: handleToggleIndicator, handleParam: handleParamChange } = useSharedIndicators();
 
   // Hydrate from the URL (tf, type, symbol) once on the client.
@@ -85,14 +131,39 @@ export default function DashboardPage() {
     setSymbol(init.symbol);
     setSelected(init.tf);
     setChartType(init.type);
+    // The share URL wins over localStorage so a shared link reproduces its stack.
+    if (init.indicators && init.indicators.length) {
+      setActiveIndicatorIds(init.indicators);
+    } else {
+      try {
+        const raw = localStorage.getItem(INDICATORS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const valid = parsed.filter(
+              (id) => typeof id === 'string' && CUSTOM_INDICATORS.some((d) => d.id === id),
+            );
+            if (valid.length) setActiveIndicatorIds(valid);
+          }
+        }
+      } catch {}
+    }
     setHydrated(true);
   }, []);
+
+  // Persist the indicator stack (after hydration so we don't clobber it).
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(INDICATORS_KEY, JSON.stringify(activeIndicatorIds));
+    } catch {}
+  }, [hydrated, activeIndicatorIds]);
 
   // Sync TF + chart type + symbol to the URL for shareable links.
   useEffect(() => {
     if (!hydrated) return;
-    writeUrlState(selected, chartType, symbol);
-  }, [hydrated, selected, chartType, symbol]);
+    writeUrlState(selected, chartType, symbol, activeIndicatorIds);
+  }, [hydrated, selected, chartType, symbol, activeIndicatorIds]);
 
   // Keyboard shortcuts for TF + chart type only. Fullscreen (`F`) and
   // `Esc` are handled by ChartPanel itself so it can scope the
@@ -107,6 +178,12 @@ export default function DashboardPage() {
         }
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === '/') {
+        setSearchOpen(true);
+        e.preventDefault();
+        return;
+      }
 
       const idx = Number.parseInt(e.key, 10);
       if (!Number.isNaN(idx) && idx >= 1 && idx <= TIMEFRAMES.length) {
@@ -123,6 +200,9 @@ export default function DashboardPage() {
         e.preventDefault();
       } else if (k === 'r') {
         setChartType('renko');
+        e.preventDefault();
+      } else if (k === 'g') {
+        setGridMode((v) => !v);
         e.preventDefault();
       }
     };
@@ -199,7 +279,16 @@ export default function DashboardPage() {
           continue;
         }
         if (q.isSuccess && q.data) {
-          next[tf] = q.data;
+          const incoming = q.data;
+          const existing = prev[tf];
+          // Preserve lazy-loaded older history that predates the refetched
+          // latest page; otherwise the 30s poll would wipe scrolled-back bars.
+          if (existing.length > 0 && incoming.length > 0 && existing[0].time < incoming[0].time) {
+            const older = existing.filter((c) => c.time < incoming[0].time);
+            next[tf] = [...older, ...incoming];
+          } else {
+            next[tf] = incoming;
+          }
           anyLive = true;
           continue;
         }
@@ -304,49 +393,140 @@ export default function DashboardPage() {
   );
 
   const indicatorRows = useMemo(() => {
-    const activeDef = CUSTOM_INDICATORS.find((d) => d.id === activeIndicatorId);
-    if (!activeDef) return [];
+    const rows: Array<{ key: string; label: string; sub: string; cells: Record<string, 'buy' | 'sell' | 'neutral'> }> = [];
+    for (const id of activeIndicatorIds) {
+      const def = CUSTOM_INDICATORS.find((d) => d.id === id);
+      if (!def) continue;
 
-    const cells: Record<string, 'buy' | 'sell' | 'neutral'> = {};
-    for (const tf of TIMEFRAMES) {
-      const arr = candlesByTf[tf] as Candle[];
-      if (!arr || arr.length === 0) {
-        cells[tf] = 'neutral';
-        continue;
-      }
-      const res = activeDef.compute(arr);
-      let lastSignal: 'buy' | 'sell' | 'neutral' = 'neutral';
-      for (let i = res.signals.length - 1; i >= 0; i--) {
-        if (res.signals[i] !== 'neutral') {
-          lastSignal = res.signals[i];
-          break;
+      const cells: Record<string, 'buy' | 'sell' | 'neutral'> = {};
+      for (const tf of TIMEFRAMES) {
+        const arr = candlesByTf[tf] as Candle[];
+        if (!arr || arr.length === 0) {
+          cells[tf] = 'neutral';
+          continue;
         }
+        const res = def.compute(arr);
+        let lastSignal: 'buy' | 'sell' | 'neutral' = 'neutral';
+        for (let i = res.signals.length - 1; i >= 0; i--) {
+          if (res.signals[i] !== 'neutral') {
+            lastSignal = res.signals[i];
+            break;
+          }
+        }
+        cells[tf] = lastSignal;
       }
-      cells[tf] = lastSignal;
-    }
 
-    return [
-      {
-        key: activeDef.id,
-        label: activeDef.name,
-        sub: activeDef.description,
-        cells,
-      },
-    ];
-  }, [candlesByTf, activeIndicatorId]);
+      rows.push({ key: def.id, label: def.name, sub: def.description, cells });
+    }
+    return rows;
+  }, [candlesByTf, activeIndicatorIds]);
 
   const currentCandles = candlesByTf[selected];
+
+  // ---- Jump-to-date: a focused historical window for the selected TF ----
+  // When set, the chart shows this static window instead of the live stream.
+  const [historyCandles, setHistoryCandles] = useState<import('@/lib/types').Candle[] | null>(null);
+  const [fitSignal, setFitSignal] = useState(0);
+  const historyLoadingRef = useRef(false);
+
+  // The window is tied to one TF + symbol; clear it if either changes.
+  useEffect(() => {
+    setHistoryCandles(null);
+  }, [selected, symbol]);
+
+  const jumpToDate = useCallback(
+    async (dateMs: number) => {
+      const tf = selected;
+      // End the page a little after the target so it sits near the right edge.
+      const endTime = dateMs + TF_MS[tf] * 30;
+      try {
+        const window = await fetchKlinesBefore(tf, symbol, endTime, 1000);
+        if (window.length > 0) {
+          setHistoryCandles(window);
+          setFitSignal((n) => n + 1);
+        }
+      } catch {
+        // ignore — leave the current view
+      }
+    },
+    [selected, symbol],
+  );
+
+  const returnToLive = useCallback(() => {
+    setHistoryCandles(null);
+    setFitSignal((n) => n + 1);
+  }, []);
+
+  // ---- Lazy-load older history on scroll-to-left-edge ----
+  const loadingOlderRef = useRef<Record<string, boolean>>({});
+  const noMoreOlderRef = useRef<Record<string, boolean>>({});
+
+  const loadOlder = useCallback(
+    async (tf: Timeframe) => {
+      const key = `${symbol}:${tf}`;
+      if (loadingOlderRef.current[key] || noMoreOlderRef.current[key]) return;
+      const arr = candlesByTf[tf];
+      if (!arr || arr.length === 0) return;
+      loadingOlderRef.current[key] = true;
+      try {
+        const beforeMs = arr[0].time * 1000;
+        const older = await fetchKlinesBefore(tf, symbol, beforeMs, 1000);
+        if (older.length === 0) {
+          noMoreOlderRef.current[key] = true;
+          return;
+        }
+        setCandlesByTf((prev) => {
+          const cur = prev[tf];
+          if (!cur || cur.length === 0) return prev;
+          const cutoff = cur[0].time;
+          const merged = older.filter((c) => c.time < cutoff);
+          if (merged.length === 0) {
+            noMoreOlderRef.current[key] = true;
+            return prev;
+          }
+          return { ...prev, [tf]: [...merged, ...cur] };
+        });
+        // Fewer than a full page back = we've reached the start of history.
+        if (older.length < 1000) noMoreOlderRef.current[key] = true;
+      } catch {
+        // Leave the guard cleared so a later scroll can retry.
+      } finally {
+        loadingOlderRef.current[key] = false;
+      }
+    },
+    [candlesByTf, symbol],
+  );
+
+  // Extend the focused history window further back (scroll-left in jump view).
+  const loadOlderHistory = useCallback(async () => {
+    if (historyLoadingRef.current || !historyCandles || historyCandles.length === 0) return;
+    historyLoadingRef.current = true;
+    try {
+      const older = await fetchKlinesBefore(selected, symbol, historyCandles[0].time * 1000, 1000);
+      if (older.length > 0) {
+        setHistoryCandles((prev) => {
+          if (!prev || prev.length === 0) return prev;
+          const merged = older.filter((c) => c.time < prev[0].time);
+          return merged.length ? [...merged, ...prev] : prev;
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      historyLoadingRef.current = false;
+    }
+  }, [historyCandles, selected, symbol]);
+
+  const handleLoadOlder = useCallback(() => {
+    if (historyCandles) loadOlderHistory();
+    else loadOlder(selected);
+  }, [historyCandles, loadOlderHistory, loadOlder, selected]);
   const currentPrice = prices[selected];
   const currentChange = changes[selected];
 
-  // Paper trading state (shared with /trade page)
-  const paper = usePaperStore();
-  const pos = paper.positions[symbol] ?? null;
-  const hasPosition = !!(pos && pos.side !== 'flat' && pos.units > 0);
   const mid = useMemo(() => (currentCandles.length > 0 ? currentCandles[currentCandles.length - 1].close : 0), [currentCandles]);
   const bid = bookTicker?.bid ?? null;
   const ask = bookTicker?.ask ?? null;
-  const upnl = useMemo(() => unrealizedPnl(pos, mid), [pos, mid]);
 
   // Alert firing.
   const lastFiredSideRef = useRef<Record<string, AlertSide | null>>({});
@@ -384,6 +564,34 @@ export default function DashboardPage() {
     lastFiredSideRef.current = next;
   }, [snapshots, symbol]);
 
+  // Price-alert firing: watch the live mid and fire on level crossings.
+  const prevPriceRef = useRef<number | null>(null);
+  useEffect(() => {
+    const last = bid != null && ask != null ? (bid + ask) / 2 : currentPrice;
+    if (last == null || !Number.isFinite(last)) return;
+    const prev = prevPriceRef.current;
+    prevPriceRef.current = last;
+    if (prev == null) return;
+    const fired = priceAlertsToFire(getPriceAlerts(), symbol, prev, last);
+    if (fired.length === 0) return;
+    for (const a of fired) {
+      const msg = `${symbol} crossed ${a.side} ${a.price}`;
+      console.info('[price-alert]', msg);
+      if (
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission === 'granted'
+      ) {
+        try {
+          new Notification('BTC Market Mood', { body: msg });
+        } catch {
+          // ignore
+        }
+      }
+    }
+    markPriceAlertsFired(fired.map((a) => a.id));
+  }, [bid, ask, currentPrice, symbol]);
+
   const [tab, setTab] = useState<'signals' | 'trade'>('signals');
 
   return (
@@ -394,22 +602,86 @@ export default function DashboardPage() {
         {/* Chart + right rail */}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
           <div className="flex min-w-0 flex-col gap-5">
-            <ChartPanel
-              candles={currentCandles}
-              type={chartType}
-              onTypeChange={setChartType}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <WorkspaceMenu
+                current={{ chartType, symbol, tf: selected, indicatorIds: activeIndicatorIds }}
+                onApply={applyWorkspace}
+              />
+              <div className="flex items-center gap-2">
+                <span className="hidden text-[10px] text-ink-faint sm:inline">
+                  Press <Kbd>/</Kbd> to search · <Kbd>G</Kbd> grid
+                </span>
+                <div className="inline-flex items-center rounded-md border border-line bg-base p-0.5">
+                  <button
+                    onClick={() => setGridMode(false)}
+                    aria-pressed={!gridMode}
+                    title="Single chart"
+                    className={[
+                      'focus-ring inline-flex h-7 w-7 items-center justify-center rounded transition',
+                      !gridMode ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink',
+                    ].join(' ')}
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setGridMode(true)}
+                    aria-pressed={gridMode}
+                    title="Multi-timeframe grid"
+                    className={[
+                      'focus-ring inline-flex h-7 w-7 items-center justify-center rounded transition',
+                      gridMode ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink',
+                    ].join(' ')}
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {gridMode ? (
+              <MultiChartGrid
+                candlesByTf={candlesByTf}
+                gridTfs={GRID_TFS}
+                chartType={chartType}
+                activeIndicatorIds={activeIndicatorIds}
+                selected={selected}
+                onSelectTf={(tf) => {
+                  setSelected(tf);
+                  setGridMode(false);
+                }}
+              />
+            ) : (
+              <ChartPanel
+                candles={historyCandles ?? currentCandles}
+                type={chartType}
+                onTypeChange={setChartType}
+                selected={selected}
+                onSelectTf={setSelected}
+                symbol={symbol}
+                price={currentPrice}
+                change={currentChange}
+                status={status}
+                showVolume={showVolume}
+                onQuickTrade={() => setTab('trade')}
+                bid={bid}
+                ask={ask}
+                activeIndicatorIds={activeIndicatorIds}
+                onToggleIndicator={toggleIndicator}
+                onClearIndicators={clearIndicators}
+                onLoadOlder={handleLoadOlder}
+                historyActive={historyCandles != null}
+                onJumpToDate={jumpToDate}
+                onReturnToLive={returnToLive}
+                fitSignal={fitSignal}
+              />
+            )}
+
+            <ConfluenceRibbon
+              candlesByTf={candlesByTf}
+              timeframes={TIMEFRAMES}
               selected={selected}
+              snapshots={snapshots}
               onSelectTf={setSelected}
-              symbol={symbol}
-              price={currentPrice}
-              change={currentChange}
-              status={status}
-              showVolume={showVolume}
-              onQuickTrade={() => setTab('trade')}
-              bid={bid}
-              ask={ask}
-              activeIndicatorId={activeIndicatorId}
-              onIndicatorChange={setActiveIndicatorId}
             />
 
             <section>
@@ -447,13 +719,16 @@ export default function DashboardPage() {
               indicatorRows={indicatorRows}
               symbol={symbol}
               midPrice={currentPrice ?? mid}
-              hasPosition={!!hasPosition}
-              pos={pos}
-              upnl={upnl}
               tab={tab}
               onTabChange={setTab}
             />
           </aside>
+        </div>
+
+        {/* Trade history + backtest stats (below the chart) */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+          <TradeHistory />
+          <BacktestStats />
         </div>
 
         {/* Indicator management — full width */}
@@ -478,6 +753,15 @@ export default function DashboardPage() {
         </div>
       </main>
 
+      <SymbolSearch
+        open={searchOpen}
+        current={symbol}
+        onClose={() => setSearchOpen(false)}
+        onSelect={(s) => {
+          if (isCompareSymbol(s)) setSymbol(s);
+        }}
+      />
+
       <footer className="border-t border-line bg-base/60">
         <div className="mx-auto flex max-w-7xl flex-col gap-1 px-3 py-4 text-xs text-ink-faint sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <span>
@@ -486,7 +770,7 @@ export default function DashboardPage() {
           </span>
           <span className="flex items-center gap-3">
             <span className="hidden items-center gap-1 md:inline-flex">
-              <Kbd>1</Kbd>…<Kbd>6</Kbd> timeframe · <Kbd>H</Kbd> Heikin · <Kbd>C</Kbd> candles · <Kbd>R</Kbd> renko · <Kbd>F</Kbd> full
+              <Kbd>1</Kbd>…<Kbd>6</Kbd> timeframe · <Kbd>H</Kbd> Heikin · <Kbd>C</Kbd> candles · <Kbd>R</Kbd> renko · <Kbd>G</Kbd> grid · <Kbd>/</Kbd> search · <Kbd>F</Kbd> full
             </span>
             <span className="font-mono">
               ws: {wsStatus}
@@ -515,9 +799,6 @@ function DashboardAside({
   indicatorRows,
   symbol,
   midPrice,
-  hasPosition,
-  pos,
-  upnl,
   tab,
   onTabChange,
 }: {
@@ -528,9 +809,6 @@ function DashboardAside({
   indicatorRows: Array<{ key: string; label: string; sub: string; cells: Record<string, import('@/components/SignalMatrix').IndicatorCell> }>;
   symbol: CompareSymbol;
   midPrice: number;
-  hasPosition: boolean;
-  pos: ReturnType<typeof usePaperStore>['positions'][string];
-  upnl: number;
   tab: 'signals' | 'trade';
   onTabChange: (t: 'signals' | 'trade') => void;
 }) {
@@ -561,99 +839,8 @@ function DashboardAside({
           indicatorRows={indicatorRows}
         />
       ) : (
-        <div className="flex flex-col gap-3">
-          <OrderTicket
-            symbol={symbol}
-            midPrice={midPrice}
-            leverage={10}
-            onLeverageChange={() => {}}
-            reduceAvailable={hasPosition && pos ? pos.units : 0}
-          />
-          {hasPosition && pos && (
-            <MiniPosition pos={pos} midPrice={midPrice} upnl={upnl} />
-          )}
-        </div>
+        <TradingPanel symbol={symbol} midPrice={midPrice} />
       )}
     </div>
-  );
-}
-
-
-
-function MiniPosition({
-  pos,
-  midPrice,
-  upnl,
-}: {
-  pos: NonNullable<ReturnType<typeof usePaperStore>['positions'][string]>;
-  midPrice: number;
-  upnl: number;
-}) {
-  const paper = usePaperStore();
-  const upnlPct = pos.entryPrice > 0 ? ((midPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'long' ? 1 : -1) : 0;
-
-  return (
-    <div className="panel rounded-xl p-3">
-      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-ink-faint">
-        Open Position
-      </h3>
-      <div className="space-y-1 text-xs">
-        <div className="flex justify-between">
-          <span className="text-ink-faint">Side</span>
-          <span className={pos.side === 'long' ? 'text-bull-bright font-medium' : 'text-bear-bright font-medium'}>
-            {pos.side.toUpperCase()}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-ink-faint">Size</span>
-          <span className="text-ink font-mono">{pos.units} BTC</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-ink-faint">Entry</span>
-          <span className="text-ink font-mono">{pos.entryPrice.toFixed(0)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-ink-faint">Mark</span>
-          <span className="text-ink font-mono">{midPrice.toFixed(0)}</span>
-        </div>
-        {pos.tp != null && (
-          <div className="flex justify-between">
-            <span className="text-ink-faint">TP</span>
-            <span className="text-bull-bright font-mono">{pos.tp.toFixed(0)}</span>
-          </div>
-        )}
-        {pos.sl != null && (
-          <div className="flex justify-between">
-            <span className="text-ink-faint">SL</span>
-            <span className="text-bear-bright font-mono">{pos.sl.toFixed(0)}</span>
-          </div>
-        )}
-        <div className="mt-2 border-t border-line pt-2 flex justify-between">
-          <span className="text-ink-faint">uPNL</span>
-          <span className={['font-mono font-medium', upnl >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>
-            {upnl >= 0 ? '+' : ''}{upnl.toFixed(2)} ({upnlPct >= 0 ? '+' : ''}{upnlPct.toFixed(2)}%)
-          </span>
-        </div>
-        <button
-          onClick={() => paper.closePosition(midPrice, pos.symbol)}
-          className="mt-2 w-full rounded bg-surface-2 py-1 text-xs text-ink-muted hover:text-bear-bright transition"
-        >
-          Close Position
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function MarketSnapshotPlaceholder() {
-  return (
-    <section className="rounded-2xl border border-line bg-surface-1/40 p-4">
-      <h2 className="text-[11px] font-medium uppercase tracking-[0.2em] text-ink-faint">
-        Market snapshot
-      </h2>
-      <p className="mt-2 text-sm text-ink-muted">
-        Quick stats land here once a widget is wired up.
-      </p>
-    </section>
   );
 }

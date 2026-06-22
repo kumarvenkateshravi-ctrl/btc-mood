@@ -1,6 +1,19 @@
 import { computeSMACrossover } from './indicators/smaCrossover';
-import { computeSMARibbon } from './indicators/smaRibbon';
 import { computeSqueezeMomentum } from './indicators/squeezeMomentum';
+import { computeMaRibbon } from './indicators/maRibbon';
+import { computeMacd } from './indicators/macd';
+import { computeBollingerBands } from './indicators/bollingerBands';
+import { computeRsi } from './indicators/rsi';
+import { computeAtr } from './indicators/atr';
+import { computeParabolicSar } from './indicators/parabolicSar';
+import { computeStochastic } from './indicators/stochastic';
+import { computeKeltnerChannels } from './indicators/keltnerChannels';
+import { computeObv } from './indicators/obv';
+import { computeVolume } from './indicators/volume';
+import { computeVwap } from './indicators/vwap';
+import { computeAdx } from './indicators/adx';
+import { computeSuperTrend } from './indicators/superTrend';
+import { computeVwapBands } from './indicators/vwapBands';
 import { sma } from './indicators';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
@@ -75,19 +88,6 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     compute: computeSMACrossover,
   },
   {
-    id: 'sma_ribbon',
-    name: 'SMA Ribbon Signals',
-    description: '10 SMAs ribbon with alignment scoring for trend signals.',
-    inputs: [
-      { id: 'strictness', name: 'Strictness', type: 'number', default: 9, min: 5, max: 9, step: 1 },
-      { id: 'showFlipOnly', name: 'Show Flip Only', type: 'boolean', default: false },
-    ],
-    styles: [
-      { id: 'ribbonBase', name: 'Ribbon Base', color: '#22c55e', thickness: 1, lineStyle: 'solid', display: true },
-    ],
-    compute: computeSMARibbon,
-  },
-  {
     id: 'squeeze_momentum',
     name: 'Squeeze Momentum [LazyBear]',
     description: 'Carter TTM Squeeze: BB inside KC = squeeze building. Release with momentum = entry signal.',
@@ -103,5 +103,203 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'squeezeDots', name: 'Squeeze Dots', color: '#9E9E9E', thickness: 2, lineStyle: 'solid', display: true },
     ],
     compute: computeSqueezeMomentum,
+  },
+  {
+    id: 'ma_ribbon',
+    name: 'MA Ribbon (EMA 9/21/50)',
+    description: 'Three EMAs on the price pane; stacking order reads the trend.',
+    inputs: [
+      { id: 'fast', name: 'Fast EMA', type: 'number', default: 9, min: 1, max: 500, step: 1 },
+      { id: 'mid', name: 'Mid EMA', type: 'number', default: 21, min: 1, max: 500, step: 1 },
+      { id: 'slow', name: 'Slow EMA', type: 'number', default: 50, min: 1, max: 500, step: 1 },
+    ],
+    styles: [
+      { id: 'ema_fast', name: 'Fast EMA', color: '#5aa2e6', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'ema_mid', name: 'Mid EMA', color: '#f5b13b', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'ema_slow', name: 'Slow EMA', color: '#a855f7', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeMaRibbon,
+  },
+  {
+    id: 'macd',
+    name: 'MACD',
+    description: 'Moving Average Convergence Divergence with signal line and histogram.',
+    inputs: [
+      { id: 'fast', name: 'Fast Length', type: 'number', default: 12, min: 1, max: 200, step: 1 },
+      { id: 'slow', name: 'Slow Length', type: 'number', default: 26, min: 1, max: 200, step: 1 },
+      { id: 'signal', name: 'Signal Smoothing', type: 'number', default: 9, min: 1, max: 100, step: 1 },
+    ],
+    styles: [
+      { id: 'macd', name: 'MACD', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'signal', name: 'Signal', color: '#FF6D00', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'hist', name: 'Histogram', color: '#7b88a0', thickness: 4, lineStyle: 'solid', display: true },
+    ],
+    compute: computeMacd,
+  },
+  {
+    id: 'bollinger_bands',
+    name: 'Bollinger Bands (20, 2)',
+    description: 'SMA basis ± mult × population stdev. Matches TradingView.',
+    inputs: [
+      { id: 'length', name: 'Length', type: 'number', default: 20, min: 1, max: 500, step: 1 },
+      { id: 'mult', name: 'StdDev', type: 'number', default: 2, min: 0.1, max: 10, step: 0.1 },
+    ],
+    styles: [
+      { id: 'basis', name: 'Basis', color: '#FF6D00', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'upper', name: 'Upper', color: '#2962FF', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'lower', name: 'Lower', color: '#2962FF', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeBollingerBands,
+  },
+  {
+    id: 'rsi',
+    name: 'RSI',
+    description: 'Relative Strength Index with 70/50/30 bands, channel fill, and optional smoothing MA / Bollinger Bands. Matches TradingView.',
+    inputs: [
+      { id: 'length', name: 'RSI Length', type: 'number', default: 14, min: 1, max: 2000, step: 1, group: 'RSI Settings' },
+      { id: 'source', name: 'Source', type: 'source', default: 'close', options: [{ value: 'close', label: 'Close' }, { value: 'open', label: 'Open' }, { value: 'high', label: 'High' }, { value: 'low', label: 'Low' }], group: 'RSI Settings' },
+      { id: 'calculateDivergence', name: 'Calculate Divergence', type: 'boolean', default: false, group: 'RSI Settings', tooltip: 'Show regular bullish/bearish divergence labels.' },
+      { id: 'maType', name: 'Type', type: 'select', default: 'None', options: [{ value: 'None', label: 'None' }, { value: 'SMA', label: 'SMA' }, { value: 'SMA + Bollinger Bands', label: 'SMA + Bollinger Bands' }, { value: 'EMA', label: 'EMA' }, { value: 'SMMA (RMA)', label: 'SMMA (RMA)' }, { value: 'WMA', label: 'WMA' }, { value: 'VWMA', label: 'VWMA' }], group: 'Smoothing' },
+      { id: 'maLength', name: 'Length', type: 'number', default: 14, min: 1, max: 2000, step: 1, group: 'Smoothing', disabledIf: (i) => i['maType'] === 'None' },
+      { id: 'bbMult', name: 'BB StdDev', type: 'number', default: 2.0, min: 0.001, max: 50, step: 0.5, group: 'Smoothing', tooltip: 'Only applies when "SMA + Bollinger Bands" is selected.', disabledIf: (i) => i['maType'] !== 'SMA + Bollinger Bands' },
+    ],
+    styles: [
+      { id: 'rsi', name: 'RSI', color: '#7E57C2', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'rsiMa', name: 'RSI-based MA', color: '#FFEB3B', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'bbUpper', name: 'Upper Bollinger Band', color: '#4CAF50', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'bbLower', name: 'Lower Bollinger Band', color: '#4CAF50', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeRsi,
+  },
+  {
+    id: 'atr',
+    name: 'ATR (14)',
+    description: 'Average True Range volatility (Wilder smoothing).',
+    inputs: [
+      { id: 'length', name: 'Length', type: 'number', default: 14, min: 1, max: 500, step: 1 },
+    ],
+    styles: [
+      { id: 'atr', name: 'ATR', color: '#ef6c00', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeAtr,
+  },
+  {
+    id: 'parabolic_sar',
+    name: 'Parabolic SAR',
+    description: 'Stop-and-reverse trailing dots; trend by dot position vs price.',
+    inputs: [
+      { id: 'step', name: 'Step (AF)', type: 'number', default: 0.02, min: 0.001, max: 1, step: 0.001 },
+      { id: 'max', name: 'Max AF', type: 'number', default: 0.2, min: 0.01, max: 1, step: 0.01 },
+    ],
+    styles: [
+      { id: 'psar', name: 'PSAR', color: '#26A69A', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeParabolicSar,
+  },
+  {
+    id: 'stochastic',
+    name: 'Stochastic (14, 3, 3)',
+    description: 'Slow stochastic oscillator: %K and %D. Matches TradingView.',
+    inputs: [
+      { id: 'kPeriod', name: '%K Length', type: 'number', default: 14, min: 1, max: 500, step: 1 },
+      { id: 'smoothK', name: '%K Smoothing', type: 'number', default: 3, min: 1, max: 100, step: 1 },
+      { id: 'dPeriod', name: '%D Smoothing', type: 'number', default: 3, min: 1, max: 100, step: 1 },
+    ],
+    styles: [
+      { id: 'k', name: '%K', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'd', name: '%D', color: '#FF6D00', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeStochastic,
+  },
+  {
+    id: 'keltner_channels',
+    name: 'Keltner Channels',
+    description: 'EMA basis ± mult × ATR. Matches TradingView (EMA + Wilder ATR).',
+    inputs: [
+      { id: 'length', name: 'Length', type: 'number', default: 20, min: 1, max: 500, step: 1 },
+      { id: 'mult', name: 'Multiplier', type: 'number', default: 2, min: 0.1, max: 10, step: 0.1 },
+      { id: 'atrLength', name: 'ATR Length', type: 'number', default: 10, min: 1, max: 500, step: 1 },
+    ],
+    styles: [
+      { id: 'basis', name: 'Basis', color: '#FF6D00', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'upper', name: 'Upper', color: '#26A69A', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'lower', name: 'Lower', color: '#26A69A', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeKeltnerChannels,
+  },
+  {
+    id: 'volume',
+    name: 'Volume',
+    description: 'Per-bar volume, colored by candle direction.',
+    inputs: [],
+    styles: [
+      { id: 'volume', name: 'Volume', color: '#26A69A', thickness: 4, lineStyle: 'solid', display: true },
+    ],
+    compute: computeVolume,
+  },
+  {
+    id: 'obv',
+    name: 'OBV',
+    description: 'On-Balance Volume cumulative flow.',
+    inputs: [],
+    styles: [
+      { id: 'obv', name: 'OBV', color: '#5aa2e6', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeObv,
+  },
+  {
+    id: 'vwap',
+    name: 'VWAP',
+    description: 'Session-anchored Volume-Weighted Average Price (resets daily).',
+    inputs: [],
+    styles: [
+      { id: 'vwap', name: 'VWAP', color: '#42a5f5', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeVwap,
+  },
+  {
+    id: 'adx',
+    name: 'ADX (14) — Trend Strength',
+    description: "Wilder's Average Directional Index with +DI / -DI.",
+    inputs: [
+      { id: 'diLength', name: 'DI Length', type: 'number', default: 14, min: 1, max: 500, step: 1 },
+      { id: 'adxSmoothing', name: 'ADX Smoothing', type: 'number', default: 14, min: 1, max: 500, step: 1 },
+    ],
+    styles: [
+      { id: 'adx', name: 'ADX', color: '#eeeeee', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'plusDI', name: '+DI', color: '#26A69A', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'minusDI', name: '-DI', color: '#F23645', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeAdx,
+  },
+  {
+    id: 'supertrend',
+    name: 'SuperTrend',
+    description: 'ATR-banded trend follower; flips emit buy/sell signals.',
+    inputs: [
+      { id: 'atrPeriod', name: 'ATR Length', type: 'number', default: 10, min: 1, max: 500, step: 1 },
+      { id: 'mult', name: 'Factor', type: 'number', default: 3, min: 0.1, max: 20, step: 0.1 },
+    ],
+    styles: [
+      { id: 'supertrend', name: 'SuperTrend', color: '#26A69A', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeSuperTrend,
+  },
+  {
+    id: 'vwap_bands',
+    name: 'VWAP Bands',
+    description: 'Session VWAP with volume-weighted ±σ standard-deviation bands.',
+    inputs: [
+      { id: 'mult1', name: 'Band 1 ×σ', type: 'number', default: 1, min: 0.1, max: 10, step: 0.1 },
+      { id: 'mult2', name: 'Band 2 ×σ', type: 'number', default: 2, min: 0.1, max: 10, step: 0.1 },
+    ],
+    styles: [
+      { id: 'vwap', name: 'VWAP', color: '#42a5f5', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'upper1', name: '+σ', color: '#7e9cb5', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'lower1', name: '-σ', color: '#7e9cb5', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'upper2', name: '+2σ', color: '#5c7488', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'lower2', name: '-2σ', color: '#5c7488', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeVwapBands,
   },
 ];

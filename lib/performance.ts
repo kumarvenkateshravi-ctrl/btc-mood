@@ -29,6 +29,8 @@ export interface TradeStats {
   worstTrade: number | null;
   /** Worst peak-to-trough equity drawdown in USD. */
   maxDrawdown: number;
+  /** Average realized P&L per trade (expectancy). */
+  expectancy: number;
   /** Chronological equity curve (after each trade, oldest first).
    *  Used by the sparkline. */
   equityCurve: number[];
@@ -55,6 +57,7 @@ export function computeStats(trades: PaperTrade[]): TradeStats {
       bestTrade: null,
       worstTrade: null,
       maxDrawdown: 0,
+      expectancy: 0,
       equityCurve: [],
       empty: true,
     };
@@ -122,6 +125,7 @@ export function computeStats(trades: PaperTrade[]): TradeStats {
     bestTrade: Number.isFinite(bestTrade) ? bestTrade : null,
     worstTrade: Number.isFinite(worstTrade) ? worstTrade : null,
     maxDrawdown,
+    expectancy: count > 0 ? totalPnl / count : 0,
     equityCurve,
     empty: false,
   };

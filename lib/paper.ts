@@ -71,6 +71,14 @@ export interface PaperTrade {
   fee: number;
   realizedPnl: number;
   ts: number;
+  /** Direction of the closed position (for the trade history). */
+  direction?: PositionSide;
+  /** Average entry price of the closed position. */
+  entryPrice?: number;
+  /** Exit fill price (mirror of `price`). */
+  exitPrice?: number;
+  /** When the closed position was opened (unix seconds). */
+  entryTs?: number;
 }
 
 // ---- Defaults (Binance USDT-M futures BTCUSDT, paper) ---------------
@@ -157,6 +165,10 @@ export function applyFill(
     fee: feeShare,
     realizedPnl: closePnl - feeShare,
     ts: fill.ts,
+    direction: pos.side,
+    entryPrice: pos.entryPrice,
+    exitPrice: fill.price,
+    entryTs: pos.openedAt,
   };
 
   const leftover = fill.units - closeQty;
