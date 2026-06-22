@@ -1378,7 +1378,6 @@ export default function Chart({
               <span className="font-mono text-bear-bright/70">{ask.toFixed(1)}</span>
             )}
           </button>
-          <ChartOHLCStrip mode={type} />
           <button
             onClick={() => onQuickTrade('buy')}
             className="flex flex-col rounded-md bg-bull/20 px-3 py-1.5 text-xs ring-1 ring-bull/30 transition hover:bg-bull/30"
@@ -1388,6 +1387,7 @@ export default function Chart({
               <span className="font-mono text-bull-bright/70">{bid.toFixed(1)}</span>
             )}
           </button>
+          <ChartOHLCStrip mode={type} />
         </div>
       )}
 
