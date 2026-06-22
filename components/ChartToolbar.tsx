@@ -84,91 +84,89 @@ export default function ChartToolbar(props: ChartToolbarProps) {
   } = props;
 
   return (
-    <div className="border-b border-line bg-surface-2/60">
-      {/* Row 1 — info header: symbol / price / change (left), utility actions (right) */}
-      <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold tracking-tight text-ink">
-            {symbol}
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-surface-2/60 px-3 py-2">
+      {/* Symbol / price / change */}
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="truncate text-sm font-semibold tracking-tight text-ink">
+          {symbol}
+        </span>
+        {price != null && (
+          <span className="font-mono text-base tabular-nums text-ink">
+            {price.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
           </span>
-          {price != null && (
-            <span className="font-mono text-base tabular-nums text-ink">
-              {price.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </span>
-          )}
-          {change != null && (
-            <span
-              className={[
-                'font-mono text-xs tabular-nums',
-                change >= 0 ? 'text-bull-bright' : 'text-bear-bright',
-              ].join(' ')}
-            >
-              {change >= 0 ? '+' : ''}
-              {change.toFixed(2)}%
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={onToggleFullscreen}
-            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F)'}
-            className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition hover:bg-surface-3 hover:text-ink"
+        )}
+        {change != null && (
+          <span
+            className={[
+              'font-mono text-xs tabular-nums',
+              change >= 0 ? 'text-bull-bright' : 'text-bear-bright',
+            ].join(' ')}
           >
-            {isFullscreen ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
-          </button>
-          <MoreMenu onFitContent={onFitContent} />
-        </div>
+            {change >= 0 ? '+' : ''}
+            {change.toFixed(2)}%
+          </span>
+        )}
       </div>
 
-      {/* Row 2 — dedicated controls toolbar: TradingView-style chips with dividers */}
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-line bg-base/40 px-3 py-2">
-        {/* Timeframe dropdown */}
-        <TimeframeChip selected={selected} onSelect={onSelectTf} />
+      <ToolbarDivider />
 
-        <ToolbarDivider />
+      {/* Timeframe dropdown */}
+      <TimeframeChip selected={selected} onSelect={onSelectTf} />
 
-        {/* Chart type + price scale */}
-        <ChartTypeChip value={chartType} onChange={onSelectType} />
-        <PriceScaleChip value={priceScaleMode} onChange={onPriceScaleModeChange} />
+      <ToolbarDivider />
 
-        {/* Renko config (conditional) */}
-        {chartType === 'renko' && (
-          <>
-            <ToolbarDivider />
-            <RenkoChip renko={renko} onChange={onRenkoChange} lastPrice={price} />
-          </>
-        )}
+      {/* Chart type + price scale */}
+      <ChartTypeChip value={chartType} onChange={onSelectType} />
+      <PriceScaleChip value={priceScaleMode} onChange={onPriceScaleModeChange} />
 
-        <ToolbarDivider />
+      {/* Renko config (conditional) */}
+      {chartType === 'renko' && (
+        <>
+          <ToolbarDivider />
+          <RenkoChip renko={renko} onChange={onRenkoChange} lastPrice={price} />
+        </>
+      )}
 
-        {/* Indicators dropdown */}
-        <IndicatorChip
-          activeIds={activeIndicatorIds}
-          onToggle={onToggleIndicator}
-          onClear={onClearIndicators}
-        />
+      <ToolbarDivider />
 
-        <ToolbarDivider />
+      {/* Indicators dropdown */}
+      <IndicatorChip
+        activeIds={activeIndicatorIds}
+        onToggle={onToggleIndicator}
+        onClear={onClearIndicators}
+      />
 
-        {/* Replay + jump-to-date */}
-        <ChipButton
-          icon={<History className="h-3.5 w-3.5" />}
-          label="Replay"
-          active={replayActive}
-          onClick={onReplayToggle}
-          title="Bar Replay"
-        />
-        <DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
+      <ToolbarDivider />
+
+      {/* Replay + jump-to-date */}
+      <ChipButton
+        icon={<History className="h-3.5 w-3.5" />}
+        label="Replay"
+        active={replayActive}
+        onClick={onReplayToggle}
+        title="Bar Replay"
+      />
+      <DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
+
+      {/* Spacer pushes fullscreen + more to the right */}
+      <div className="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onToggleFullscreen}
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F)'}
+          className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition hover:bg-surface-3 hover:text-ink"
+        >
+          {isFullscreen ? (
+            <Minimize2 className="h-3.5 w-3.5" />
+          ) : (
+            <Maximize2 className="h-3.5 w-3.5" />
+          )}
+        </button>
+        <MoreMenu onFitContent={onFitContent} />
       </div>
     </div>
   );
