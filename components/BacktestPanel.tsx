@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { LineChart } from 'lucide-react';
 import { backtest, type BacktestResult } from '@/lib/backtest';
 import type { Candle, Timeframe } from '@/lib/types';
@@ -17,21 +17,28 @@ function formatPct(n: number): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
 }
 
+function formatSigned(n: number, digits = 2): string {
+  return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}`;
+}
+
 function Stat({
   label,
   value,
   positive,
+  muted,
 }: {
   label: string;
   value: string;
   positive?: boolean;
+  muted?: boolean;
 }) {
-  const color =
-    positive === undefined
+  const color = muted
+    ? 'text-ink-muted'
+    : positive === undefined
       ? 'text-ink'
       : positive
-      ? 'text-bull-bright'
-      : 'text-bear-bright';
+        ? 'text-bull-bright'
+        : 'text-bear-bright';
   return (
     <div className="rounded-lg border border-line bg-surface-2 px-3 py-2">
       <div className="text-[10px] uppercase tracking-wider text-ink-faint">{label}</div>
@@ -58,9 +65,19 @@ function PanelHeading({ tf, trailing }: { tf: Timeframe; trailing?: React.ReactN
 const BACKTEST_MAX_BARS = 2000;
 
 export default function BacktestPanel({ tf, candles }: BacktestPanelProps) {
+  // Cost config — surfaced as inputs so the trader can match their
+  // venue. Defaults are a reasonable Binance-spot assumption: 5 bps
+  // taker fee + 2 bps slippage = 7 bps round trip.
+  const [feeBps, setFeeBps] = useState(5);
+  const [slippageBps, setSlippageBps] = useState(2);
+
   const result: BacktestResult = useMemo(
-    () => backtest(tf, candles.length > BACKTEST_MAX_BARS ? candles.slice(-BACKTEST_MAX_BARS) : candles),
-    [tf, candles],
+    () =>
+      backtest(tf, candles.length > BACKTEST_MAX_BARS ? candles.slice(-BACKTEST_MAX_BARS) : candles, {
+        feeBps,
+        slippageBps,
+      }),
+    [tf, candles, feeBps, slippageBps],
   );
 
   if (candles.length < 60) {
@@ -73,13 +90,18 @@ export default function BacktestPanel({ tf, candles }: BacktestPanelProps) {
   }
 
   const positive = result.totalReturnPct >= 0;
+  const pf =
+    !Number.isFinite(result.profitFactor) ? '∞' : result.profitFactor.toFixed(2);
+  const sharpe =
+    result.sharpeRatio === null ? '—' : result.sharpeRatio.toFixed(2);
+
   return (
     <section className="panel rounded-2xl p-3 sm:p-4">
       <PanelHeading
         tf={tf}
         trailing={
           <span className="text-[10px] text-ink-faint">
-            {result.tradeCount} trades · long-only · no fees
+            {result.tradeCount} trades · long-only
           </span>
         }
       />
@@ -97,10 +119,100 @@ export default function BacktestPanel({ tf, candles }: BacktestPanelProps) {
           value={formatPct(-result.maxDrawdownPct)}
           positive={false}
         />
+        <Stat
+          label="Avg win"
+          value={result.avgWinPct === null ? '—' : formatPct(result.avgWinPct)}
+          positive
+        />
+        <Stat
+          label="Avg loss"
+          value={result.avgLossPct === null ? '—' : formatPct(result.avgLossPct)}
+          positive={false}
+        />
+        <Stat
+          label="Profit factor"
+          value={pf}
+          positive={result.profitFactor >= 1}
+        />
+        <Stat
+          label="Expectancy"
+          value={formatPct(result.expectancyPct)}
+          positive={result.expectancyPct >= 0}
+        />
+        <Stat
+          label="Best trade"
+          value={
+            result.bestTradePct === null ? '—' : formatPct(result.bestTradePct)
+          }
+          positive
+        />
+        <Stat
+          label="Worst trade"
+          value={
+            result.worstTradePct === null ? '—' : formatPct(result.worstTradePct)
+          }
+          positive={false}
+        />
+        <Stat
+          label="Sharpe (ann.)"
+          value={sharpe}
+          positive={
+            result.sharpeRatio !== null ? result.sharpeRatio >= 1 : undefined
+          }
+        />
+        <Stat label="Trade count" value={String(result.tradeCount)} muted />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px]">
+        <CostInput
+          label="Fee"
+          value={feeBps}
+          onChange={setFeeBps}
+          suffix="bps"
+        />
+        <CostInput
+          label="Slippage"
+          value={slippageBps}
+          onChange={setSlippageBps}
+          suffix="bps"
+        />
+        <span className="text-ink-faint">
+          Round-trip cost: {((feeBps + slippageBps) * 2 / 100).toFixed(3)}%
+        </span>
       </div>
 
       <Sparkline points={result.equityCurvePct} positive={positive} />
     </section>
+  );
+}
+
+function CostInput({
+  label,
+  value,
+  onChange,
+  suffix,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  suffix: string;
+}) {
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span className="text-ink-faint">{label}</span>
+      <input
+        type="number"
+        min={0}
+        step={1}
+        value={value}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (Number.isFinite(n) && n >= 0) onChange(Math.round(n));
+        }}
+        className="w-14 rounded border border-line bg-base px-1.5 py-0.5 text-right font-mono text-[11px] tabular-nums text-ink outline-none focus:border-line-strong"
+      />
+      <span className="text-ink-faint">{suffix}</span>
+    </label>
   );
 }
 
