@@ -1,6 +1,40 @@
 import type { Candle } from './types';
+import type { PaperTrade } from './paper';
+import { tradeDirection, tradeExit, tradePnlPct, tradeRR, tradeOutcome } from './trading';
 
 const CSV_HEADER = 'time,open,high,low,close,volume';
+
+const TRADE_HEADER =
+  '#,Side,Entry Price,Exit Price,Entry Time,Exit Time,Quantity,R:R,P&L ($),P&L (%),Outcome';
+
+const isoOrBlank = (sec?: number) => (sec ? new Date(sec * 1000).toISOString() : '');
+
+/** Serialize closed trades to CSV (newest-first, numbered from the top). */
+export function tradesToCsv(trades: PaperTrade[]): string {
+  const rows: string[] = [TRADE_HEADER];
+  trades.forEach((t, i) => {
+    const rr = tradeRR(t);
+    const pct = tradePnlPct(t);
+    rows.push(
+      [
+        i + 1,
+        tradeDirection(t).toUpperCase(),
+        t.entryPrice ?? '',
+        tradeExit(t),
+        isoOrBlank(t.entryTs),
+        isoOrBlank(t.ts),
+        t.units,
+        rr != null ? rr.toFixed(2) : '',
+        t.realizedPnl.toFixed(2),
+        pct != null ? pct.toFixed(2) : '',
+        tradeOutcome(t),
+      ]
+        .map(escapeField)
+        .join(','),
+    );
+  });
+  return rows.join('\n');
+}
 
 function escapeField(v: string | number): string {
   if (typeof v === 'number') return String(v);

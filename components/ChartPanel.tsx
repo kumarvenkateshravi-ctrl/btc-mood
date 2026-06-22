@@ -51,6 +51,12 @@ interface ChartPanelProps {
   onReturnToLive?: () => void;
   /** Bump to fit the chart to the current data (after a jump / return). */
   fitSignal?: number;
+  /** Grid layout controls forwarded to the toolbar. */
+  gridCount: import('@/lib/gridLayout').GridCount;
+  onGridChange: (n: import('@/lib/gridLayout').GridCount) => void;
+  /** Workspace controls forwarded to the toolbar. */
+  workspaceCurrent: import('@/lib/workspaces').WorkspaceConfig;
+  onWorkspaceApply: (cfg: import('@/lib/workspaces').WorkspaceConfig) => void;
 }
 
 
@@ -77,6 +83,10 @@ export default function ChartPanel({
   onJumpToDate,
   onReturnToLive,
   fitSignal,
+  gridCount,
+  onGridChange,
+  workspaceCurrent,
+  onWorkspaceApply,
 }: ChartPanelProps) {
   const primaryId = activeIndicatorIds[0] ?? '';
 
@@ -266,7 +276,37 @@ export default function ChartPanel({
   );
 
   // Indicator settings
-  const [indicatorSettings, setIndicatorSettings] = useState<Record<string, IndicatorSettings>>({});
+  const [indicatorSettings, setIndicatorSettings] = useState<Record<string, IndicatorSettings>>(() => {
+    const state: Record<string, IndicatorSettings> = {};
+    if (typeof window !== 'undefined') {
+      try {
+        const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
+        const defaultsObj = JSON.parse(defaultsStr);
+        activeIndicatorIds.forEach(id => {
+          if (defaultsObj[id]) state[id] = defaultsObj[id];
+        });
+      } catch {}
+    }
+    return state;
+  });
+
+  useEffect(() => {
+    setIndicatorSettings((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      try {
+        const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
+        const defaultsObj = JSON.parse(defaultsStr);
+        activeIndicatorIds.forEach((id) => {
+          if (!next[id] && defaultsObj[id]) {
+            next[id] = defaultsObj[id];
+            changed = true;
+          }
+        });
+      } catch {}
+      return changed ? next : prev;
+    });
+  }, [activeIndicatorIds]);
 
   const handleUpdateIndicatorSettings = useCallback((id: string, settings: IndicatorSettings) => {
     setIndicatorSettings((prev) => ({ ...prev, [id]: settings }));
@@ -361,15 +401,31 @@ export default function ChartPanel({
   const loading = candles.length === 0;
 
   // The whole indicator stack, computed once per candle/settings change.
+  // We process sequentially so that indicators can use prior indicators as inputs.
   const indicatorResults = useMemo(() => {
     if (loading) return [];
-    return activeIndicatorIds
-      .map((id) => {
-        const def = CUSTOM_INDICATORS.find((d) => d.id === id);
-        if (!def) return null;
-        return { key: id, result: def.compute(candles, { id, settings: indicatorSettings[id] }) };
-      })
-      .filter((r): r is { key: string; result: NonNullable<ReturnType<typeof CUSTOM_INDICATORS[number]['compute']>> } => r !== null);
+    
+    const computedSources: Record<string, (number | null)[]> = {};
+    const results: Array<{ key: string; result: NonNullable<ReturnType<typeof CUSTOM_INDICATORS[number]['compute']>> }> = [];
+    
+    activeIndicatorIds.forEach((id) => {
+      const def = CUSTOM_INDICATORS.find((d) => d.id === id);
+      if (!def) return;
+      
+      const result = def.compute(candles, { id, settings: indicatorSettings[id] }, computedSources);
+      
+      // Feed line/histogram plot outputs into the computed sources for downstream indicators
+      result.plots.forEach(plot => {
+        if (plot.type === 'line' || plot.type === 'histogram') {
+          const dataArr = plot.data.map(d => typeof d === 'number' ? d : (d?.value ?? null));
+          computedSources[`${id}:${plot.id}`] = dataArr;
+        }
+      });
+      
+      results.push({ key: id, result });
+    });
+    
+    return results;
   }, [candles, loading, activeIndicatorIds, indicatorSettings]);
 
   // The primary (first) indicator still drives the legend + settings modal.
@@ -421,6 +477,10 @@ export default function ChartPanel({
         historyActive={historyActive}
         onJumpToDate={onJumpToDate}
         onReturnToLive={onReturnToLive}
+        gridCount={gridCount}
+        onGridChange={onGridChange}
+        workspaceCurrent={workspaceCurrent}
+        onWorkspaceApply={onWorkspaceApply}
       />
       <div className="flex min-h-0 flex-1">
         <DrawingToolbar

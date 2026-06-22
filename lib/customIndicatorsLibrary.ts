@@ -1,6 +1,7 @@
 import { computeSMACrossover } from './indicators/smaCrossover';
 import { computeSqueezeMomentum } from './indicators/squeezeMomentum';
 import { computeMaRibbon } from './indicators/maRibbon';
+import { computeMaRibbonTV } from './indicators/maRibbonTV';
 import { computeMacd } from './indicators/macd';
 import { computeBollingerBands } from './indicators/bollingerBands';
 import { computeRsi } from './indicators/rsi';
@@ -14,6 +15,8 @@ import { computeVwap } from './indicators/vwap';
 import { computeAdx } from './indicators/adx';
 import { computeSuperTrend } from './indicators/superTrend';
 import { computeVwapBands } from './indicators/vwapBands';
+import { computeWilliamsR } from './indicators/williamsR';
+import { resolveSourceNum } from './indicators/itsTemplates';
 import { sma } from './indicators';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
@@ -45,12 +48,12 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     styles: [
       { id: 'smaLine', name: 'SMA', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true },
     ],
-    compute: (candles, config) => {
+    compute: (candles, config, computedSources) => {
       const inputs = config?.settings?.inputs || {};
       const length = Number(inputs['length']) || 9;
-      const source = (inputs['source'] as 'close' | 'open' | 'high' | 'low') || 'close';
+      const source = (inputs['source'] as string) || 'close';
       
-      const data = candles.map(c => c[source] as number);
+      const data = resolveSourceNum(candles, source, computedSources);
       const smaData = sma(data, length);
 
       return {
@@ -115,10 +118,55 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     ],
     styles: [
       { id: 'ema_fast', name: 'Fast EMA', color: '#5aa2e6', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'ema_mid', name: 'Mid EMA', color: '#f5b13b', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'ema_mid',  name: 'Mid EMA',  color: '#f5b13b', thickness: 2, lineStyle: 'solid', display: true },
       { id: 'ema_slow', name: 'Slow EMA', color: '#a855f7', thickness: 2, lineStyle: 'solid', display: true },
     ],
     compute: computeMaRibbon,
+  },
+  {
+    id: 'ma_ribbon_tv',
+    name: 'Moving Average Ribbon',
+    description: 'Port of the TradingView built-in MA Ribbon. Four independently-togglable MAs (SMA/EMA/SMMA/WMA/VWMA), each with configurable type, length, and source. Defaults: SMA 20/50/100/200.',
+    inputs: [
+      // MA #1
+      { id: 'showMa1',   name: 'MA #1',   type: 'boolean', default: true,   group: 'MA #1' },
+      { id: 'ma1Type',   name: 'Type',    type: 'select',  default: 'SMA',  group: 'MA #1',
+        options: ['SMA','EMA','SMMA (RMA)','WMA','VWMA'].map((v) => ({ value: v, label: v })),
+        disabledIf: (i) => !i['showMa1'] },
+      { id: 'ma1Length', name: 'Length',  type: 'number',  default: 20, min: 1, max: 2000, step: 1,
+        group: 'MA #1', disabledIf: (i) => !i['showMa1'] },
+      // MA #2
+      { id: 'showMa2',   name: 'MA #2',   type: 'boolean', default: true,   group: 'MA #2' },
+      { id: 'ma2Type',   name: 'Type',    type: 'select',  default: 'SMA',  group: 'MA #2',
+        options: ['SMA','EMA','SMMA (RMA)','WMA','VWMA'].map((v) => ({ value: v, label: v })),
+        disabledIf: (i) => !i['showMa2'] },
+      { id: 'ma2Length', name: 'Length',  type: 'number',  default: 50, min: 1, max: 2000, step: 1,
+        group: 'MA #2', disabledIf: (i) => !i['showMa2'] },
+      // MA #3
+      { id: 'showMa3',   name: 'MA #3',   type: 'boolean', default: true,   group: 'MA #3' },
+      { id: 'ma3Type',   name: 'Type',    type: 'select',  default: 'SMA',  group: 'MA #3',
+        options: ['SMA','EMA','SMMA (RMA)','WMA','VWMA'].map((v) => ({ value: v, label: v })),
+        disabledIf: (i) => !i['showMa3'] },
+      { id: 'ma3Length', name: 'Length',  type: 'number',  default: 100, min: 1, max: 2000, step: 1,
+        group: 'MA #3', disabledIf: (i) => !i['showMa3'] },
+      // MA #4
+      { id: 'showMa4',   name: 'MA #4',   type: 'boolean', default: true,   group: 'MA #4' },
+      { id: 'ma4Type',   name: 'Type',    type: 'select',  default: 'SMA',  group: 'MA #4',
+        options: ['SMA','EMA','SMMA (RMA)','WMA','VWMA'].map((v) => ({ value: v, label: v })),
+        disabledIf: (i) => !i['showMa4'] },
+      { id: 'ma4Length', name: 'Length',  type: 'number',  default: 200, min: 1, max: 2000, step: 1,
+        group: 'MA #4', disabledIf: (i) => !i['showMa4'] },
+      // CALCULATION
+      { id: 'timeframe', name: 'Timeframe', type: 'select', default: 'chart', options: [{ value: 'chart', label: 'Chart' }, { value: '1d', label: '1 Day' }], group: 'CALCULATION', tooltip: 'Timeframe for the indicator' },
+      { id: 'waitForTimeframeCloses', name: 'Wait for timeframe closes', type: 'boolean', default: true, group: 'CALCULATION' },
+    ],
+    styles: [
+      { id: 'ma_1', name: 'MA #1 (SMA 20)',  color: '#f6c309', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'ma_2', name: 'MA #2 (SMA 50)',  color: '#fb9800', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'ma_3', name: 'MA #3 (SMA 100)', color: '#fb6500', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'ma_4', name: 'MA #4 (SMA 200)', color: '#f60c0c', thickness: 2, lineStyle: 'solid', display: true },
+    ],
+    compute: computeMaRibbonTV,
   },
   {
     id: 'macd',
@@ -301,5 +349,24 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'lower2', name: '-2σ', color: '#5c7488', thickness: 1, lineStyle: 'solid', display: true },
     ],
     compute: computeVwapBands,
+  },
+  {
+    id: 'williams_r',
+    name: 'Williams %R',
+    description: 'Momentum indicator that measures overbought and oversold levels.',
+    inputs: [
+      { id: 'length', name: 'Length', type: 'number', default: 14, min: 1, max: 2000, step: 1 },
+      { id: 'source', name: 'Source', type: 'source', default: 'close', options: [{ value: 'close', label: 'Close' }, { value: 'open', label: 'Open' }, { value: 'high', label: 'High' }, { value: 'low', label: 'Low' }] },
+      { id: 'timeframe', name: 'Timeframe', type: 'select', default: 'chart', options: [{ value: 'chart', label: 'Chart' }, { value: '1d', label: '1 Day' }], group: 'CALCULATION', tooltip: 'Timeframe for the indicator' },
+      { id: 'waitForTimeframeCloses', name: 'Wait for timeframe closes', type: 'boolean', default: true, group: 'CALCULATION' },
+    ],
+    styles: [
+      { id: 'percentR', name: '%R', color: '#7E57C2', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'upperBand', name: 'Upper Band', color: '#787B86', thickness: 1, lineStyle: 'solid', display: true, hasValue: true, value: -20 },
+      { id: 'middleLevel', name: 'Middle Level', color: '#787B86', thickness: 1, lineStyle: 'dotted', display: true, hasValue: true, value: -50 },
+      { id: 'lowerBand', name: 'Lower Band', color: '#787B86', thickness: 1, lineStyle: 'solid', display: true, hasValue: true, value: -80 },
+      { id: 'background', name: 'Background', color: '#7E57C21A', thickness: 1, lineStyle: 'solid', display: true, isFill: true },
+    ],
+    compute: computeWilliamsR,
   },
 ];

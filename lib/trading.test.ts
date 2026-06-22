@@ -1,5 +1,56 @@
 import { describe, it, expect } from 'vitest';
-import { positionSize, riskReward, formatRR } from './trading';
+import {
+  positionSize,
+  riskReward,
+  formatRR,
+  tradeDirection,
+  tradePnlPct,
+  tradeRR,
+  tradeOutcome,
+} from './trading';
+import type { PaperTrade } from './paper';
+
+function mkTrade(over: Partial<PaperTrade>): PaperTrade {
+  return {
+    id: 't',
+    positionId: 'p',
+    side: 'sell',
+    units: 1,
+    price: 110,
+    fee: 0,
+    realizedPnl: 10,
+    ts: 2000,
+    direction: 'long',
+    entryPrice: 100,
+    exitPrice: 110,
+    entryTs: 1000,
+    tp: 120,
+    sl: 90,
+    ...over,
+  };
+}
+
+describe('trade derivations', () => {
+  it('direction falls back to the closing side', () => {
+    expect(tradeDirection(mkTrade({ direction: undefined, side: 'sell' }))).toBe('long');
+    expect(tradeDirection(mkTrade({ direction: undefined, side: 'buy' }))).toBe('short');
+  });
+  it('P&L % is direction-aware', () => {
+    expect(tradePnlPct(mkTrade({ entryPrice: 100, exitPrice: 110, direction: 'long' }))).toBeCloseTo(10, 6);
+    expect(tradePnlPct(mkTrade({ entryPrice: 100, exitPrice: 90, direction: 'short' }))).toBeCloseTo(10, 6);
+  });
+  it('planned R:R from entry/tp/sl', () => {
+    // long entry 100, tp 120 (reward 20), sl 90 (risk 10) → 2.0
+    expect(tradeRR(mkTrade({}))).toBeCloseTo(2, 6);
+    expect(tradeRR(mkTrade({ tp: null }))).toBeNull();
+  });
+  it('outcome detects TP / SL fills, else win/loss', () => {
+    expect(tradeOutcome(mkTrade({ exitPrice: 120, tp: 120 }))).toBe('TP');
+    expect(tradeOutcome(mkTrade({ exitPrice: 90, sl: 90, realizedPnl: -10 }))).toBe('SL');
+    expect(tradeOutcome(mkTrade({ exitPrice: 105, tp: 120, sl: 90, realizedPnl: 5 }))).toBe('WIN');
+    expect(tradeOutcome(mkTrade({ exitPrice: 100, tp: null, sl: null, realizedPnl: 0 }))).toBe('BE');
+  });
+});
 
 describe('positionSize', () => {
   it('sizes so a stop-out loses exactly risk% of balance', () => {

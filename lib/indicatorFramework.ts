@@ -23,12 +23,17 @@ export interface IndicatorStyleDef {
   thickness: 1 | 2 | 3 | 4;
   lineStyle: 'solid' | 'dashed' | 'dotted';
   display: boolean;
+  hasValue?: boolean;
+  value?: number;
+  isFill?: boolean;
 }
 
 export interface IndicatorSettings {
   inputs: Record<string, any>;
-  styles: Record<string, { color: string; thickness: number; lineStyle: string; display: boolean }>;
+  styles: Record<string, { color: string; thickness: number; lineStyle: string; display: boolean; value?: number }>;
   visibility: Record<string, boolean>; // e.g., 'minutes': true, 'hours': true
+  labelsOnPriceScale?: boolean;
+  valuesInStatusLine?: boolean;
 }
 
 export interface IndicatorPlot {
@@ -116,4 +121,8 @@ export interface CustomIndicatorConfig {
 }
 
 // Function signature that all PineScript translations will follow
-export type IndicatorComputeFn = (candles: Candle[], config?: CustomIndicatorConfig) => IndicatorResult;
+export type IndicatorComputeFn = (
+  candles: Candle[],
+  config?: CustomIndicatorConfig,
+  computedSources?: Record<string, (number | null)[]>,
+) => IndicatorResult;

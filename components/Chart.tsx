@@ -34,7 +34,7 @@ import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
-import { Eye, EyeOff, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import IndicatorSettingsModal from './trade/IndicatorSettingsModal';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 
@@ -235,6 +235,7 @@ export default function Chart({
   // indicators are hidden (eye toggled off).
   const [settingsForKey, setSettingsForKey] = useState<string | null>(null);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+  const [isLegendExpanded, setIsLegendExpanded] = useState<boolean>(true);
 
   // Normalize the single + stack props into one render list. Effects below
   // iterate this so one or many indicators render through the same path.
@@ -496,19 +497,44 @@ export default function Chart({
     // ---- Instant Price-axis (Y) wheel zoom ----
     const onAxisWheel = (e: WheelEvent) => {
       const c = chartRef.current;
-      const series = candleSeriesRef.current;
-      if (!c || !series) return;
+      if (!c) return;
       const rect = container.getBoundingClientRect();
-      const ps = c.priceScale('right');
+      const cursorY = e.clientY - rect.top;
+
+      let targetPane = null;
+      let accumulatedHeight = 0;
+      let paneLocalY = 0;
+      for (const pane of c.panes()) {
+        const h = pane.getHeight();
+        if (cursorY >= accumulatedHeight && cursorY < accumulatedHeight + h) {
+          targetPane = pane;
+          paneLocalY = cursorY - accumulatedHeight;
+          break;
+        }
+        accumulatedHeight += h;
+      }
+
+      if (!targetPane) return;
+
+      const seriesList = targetPane.getSeries();
+      const series = seriesList.length > 0 ? seriesList[0] : null;
+      if (!series) return;
+
+      let ps;
+      try {
+        ps = targetPane.priceScale('right');
+      } catch {
+        return;
+      }
+
       const axisW = ps.width();
       if (e.clientX < rect.right - axisW - 1) return;
       
       e.preventDefault();
       e.stopPropagation();
 
-      const paneH = rect.height - c.timeScale().height();
+      const paneH = targetPane.getHeight();
       if (paneH <= 0) return;
-      const cursorY = e.clientY - rect.top;
       const margins = ps.options().scaleMargins;
 
       let range = ps.getVisibleRange();
@@ -526,7 +552,7 @@ export default function Chart({
 
       const dataTopY = paneH * margins.top;
       const dataBotY = paneH * (1 - margins.bottom);
-      const frac = Math.min(1, Math.max(0, (cursorY - dataTopY) / (dataBotY - dataTopY)));
+      const frac = Math.min(1, Math.max(0, (paneLocalY - dataTopY) / (dataBotY - dataTopY)));
       const pivot = to - frac * span;
 
       const factor = e.deltaY > 0 ? 1.08 : 0.92;
@@ -576,6 +602,14 @@ export default function Chart({
       }
 
       if (!c) return;
+
+      const mainPaneSize = c.paneSize();
+      if (localY > mainPaneSize.height) {
+        // User clicked inside a lower pane (e.g. an oscillator).
+        // Let Lightweight Charts handle default drag behaviors (like X-axis pan)
+        return;
+      }
+
       const ps = c.priceScale('right');
       const series = candleSeriesRef.current;
       if (!series) return;
@@ -1021,7 +1055,11 @@ export default function Chart({
       const panes = indicatorPanesRef.current;
 
       const signature = visibleResults
-        .map((r) => `${r.key}#${r.result.plots.map((p) => `${p.id}:${p.type}:${p.pane ?? 'overlay'}`).join(',')}`)
+        .map((r) => {
+          const settings = indicatorSettingsMap?.[r.key];
+          const settingsSig = settings ? JSON.stringify({ styles: settings.styles, labelsOnPriceScale: settings.labelsOnPriceScale }) : '';
+          return `${r.key}#${settingsSig}#${r.result.plots.map((p) => `${p.id}:${p.type}:${p.pane ?? 'overlay'}`).join(',')}`;
+        })
         .join('|');
 
       if (signature !== indicatorSigRef.current) {
@@ -1077,11 +1115,12 @@ export default function Chart({
             const color = st?.color || plot.color;
             const lineWidth = (st?.thickness as 1 | 2 | 3 | 4) || (plot.lineWidth as 1 | 2 | 3 | 4) || 2;
             const visible = st?.display !== false;
+            const labelsOnPriceScale = indicatorSettingsMap?.[key]?.labelsOnPriceScale ?? true;
             let series: ISeriesApi<'Line'> | ISeriesApi<'Histogram'> | undefined;
             if (plot.type === 'histogram') {
               series = chart.addSeries(
                 HistogramSeries,
-                { color, visible, priceLineVisible: false, lastValueVisible: false, title: plot.title },
+                { color, visible, priceLineVisible: labelsOnPriceScale, lastValueVisible: labelsOnPriceScale, title: plot.title },
                 targetPane,
               );
             } else {
@@ -1092,8 +1131,8 @@ export default function Chart({
                   color,
                   lineWidth,
                   visible,
-                  priceLineVisible: false,
-                  lastValueVisible: false,
+                  priceLineVisible: labelsOnPriceScale,
+                  lastValueVisible: labelsOnPriceScale,
                   crosshairMarkerVisible: false,
                   title: plot.title,
                 },
@@ -1118,7 +1157,7 @@ export default function Chart({
                       : lv.lineStyle === 'dotted'
                         ? LineStyle.Dotted
                         : LineStyle.Solid,
-                  axisLabelVisible: true,
+                  axisLabelVisible: indicatorSettingsMap?.[key]?.labelsOnPriceScale ?? true,
                   title: lv.title ?? '',
                 });
               } catch {}
@@ -1209,7 +1248,7 @@ export default function Chart({
         to: toIndex,
       });
     }
-  }, [candles, type, renko, isRenko, tf, visibleResults]);
+  }, [candles, type, renko, isRenko, tf, visibleResults, indicatorSettingsMap]);
 
   // ---- FX: bear hatching ----
   useEffect(() => {
@@ -1398,7 +1437,7 @@ export default function Chart({
 
         return (
           <div className="pointer-events-none absolute left-2 top-16 z-10 flex flex-col gap-0.5">
-            {legendKeys.map((key) => {
+            {isLegendExpanded && legendKeys.map((key) => {
               const def = CUSTOM_INDICATORS.find((d) => d.id === key);
               if (!def) return null;
               const result = resultByKey.get(key);
@@ -1426,6 +1465,7 @@ export default function Chart({
                 latestValue != null
                   ? Number(latestValue).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })
                   : '';
+              const showValuesInStatusLine = settings?.valuesInStatusLine ?? true;
 
               return (
                 <div
@@ -1435,7 +1475,7 @@ export default function Chart({
                   <div className={`flex items-baseline gap-1.5 text-[13px] transition-opacity duration-200 ${hidden ? 'opacity-40' : 'opacity-100'}`}>
                     <span className={isOpen ? 'text-[#2962FF]' : 'text-[#d1d4dc]'}>{def.name}</span>
                     {paramText && <span className="text-[#787b86]">{paramText}</span>}
-                    {displayValue && <span style={{ color: valueColor }}>{displayValue}</span>}
+                    {displayValue && showValuesInStatusLine && <span style={{ color: valueColor }}>{displayValue}</span>}
                   </div>
                   <div className={`flex items-center transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                     <button
@@ -1473,21 +1513,46 @@ export default function Chart({
                 </div>
               );
             })}
+            <div className="pointer-events-auto mt-0.5 flex">
+              <button
+                className="flex h-[20px] w-[20px] items-center justify-center rounded border border-[#2a3247] bg-[#131722]/80 text-[#787b86] transition-colors hover:bg-[#2a3247] hover:text-[#d1d4dc]"
+                title={isLegendExpanded ? "Hide indicator legend" : "Show indicator legend"}
+                onClick={() => setIsLegendExpanded(!isLegendExpanded)}
+              >
+                {isLegendExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </div>
           </div>
         );
       })()}
 
-      {settingsForKey && CUSTOM_INDICATORS.find((d) => d.id === settingsForKey) && (
-        <IndicatorSettingsModal
-          indicatorDef={CUSTOM_INDICATORS.find((d) => d.id === settingsForKey)!}
-          initialSettings={indicatorSettingsMap?.[settingsForKey]}
-          onClose={() => setSettingsForKey(null)}
-          onSave={(settings) => {
-            if (onUpdateIndicatorSettingsFor) onUpdateIndicatorSettingsFor(settingsForKey, settings);
-            else onUpdateIndicatorSettings?.(settings);
-          }}
-        />
-      )}
+      {settingsForKey && CUSTOM_INDICATORS.find((d) => d.id === settingsForKey) && (() => {
+        // Build context of other indicators for "source" dropdown routing
+        const activeIndicatorsContext = renderResults
+          .filter(r => r.key !== settingsForKey) // Exclude self
+          .map(r => {
+            const def = CUSTOM_INDICATORS.find(d => d.id === r.key);
+            return {
+              id: r.key,
+              name: def?.name || r.key,
+              plots: r.result.plots.filter(p => p.type === 'line' || p.type === 'histogram').map(p => ({ id: p.id, title: p.title }))
+            };
+          })
+          .filter(ctx => ctx.plots.length > 0);
+
+        return (
+          <IndicatorSettingsModal
+            indicatorDef={CUSTOM_INDICATORS.find((d) => d.id === settingsForKey)!}
+            initialSettings={indicatorSettingsMap?.[settingsForKey]}
+            activeIndicatorsContext={activeIndicatorsContext}
+            onClose={() => setSettingsForKey(null)}
+            onSave={(settings) => {
+              if (onUpdateIndicatorSettingsFor) onUpdateIndicatorSettingsFor(settingsForKey, settings);
+              else onUpdateIndicatorSettings?.(settings);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

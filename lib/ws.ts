@@ -1,9 +1,24 @@
 import type { Candle, Timeframe } from './types';
-import { BinanceStreamEnvelopeSchema, BookTickerEnvelopeSchema } from './schemas';
+import {
+  BinanceStreamEnvelopeSchema,
+  BookTickerEnvelopeSchema,
+  AggTradeEnvelopeSchema,
+} from './schemas';
 
 type Listener = (bar: Candle, tf: Timeframe) => void;
 type StatusListener = (status: WSStatus) => void;
 export type BookTicker = { bid: number; bidQty: number; ask: number; askQty: number };
+
+/** A single aggregated taker trade from Binance @aggTrade. */
+export type Trade = {
+  id: number;
+  price: number;
+  qty: number;
+  /** Aggressor side: 'buy' = taker bought (hit the ask), 'sell' = taker sold. */
+  side: 'buy' | 'sell';
+  /** Trade time, unix seconds. */
+  time: number;
+};
 
 export type WSStatus = 'connecting' | 'open' | 'closed' | 'error';
 
@@ -145,6 +160,99 @@ export function subscribeKlines(
       } catch {
         // noop
       }
+      ws = null;
+    }
+    setStatus('closed');
+  };
+}
+
+/**
+ * Subscribe to Binance's @aggTrade stream — the live tape of aggressor
+ * trades for one symbol. Returns a disposer. `onTrade` fires once per
+ * aggregated trade; consumers should batch their own rendering since
+ * BTC can produce dozens of trades per second.
+ */
+export function subscribeTrades(
+  symbol: string,
+  onTrade: (trade: Trade) => void,
+  onStatus?: StatusListener,
+): () => void {
+  if (typeof window === 'undefined') return () => {};
+
+  const sym = symbol.toLowerCase();
+  const stream = `${sym}@aggTrade`;
+  const url = `wss://stream.binance.com:9443/stream?streams=${stream}`;
+
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let pingTimer: ReturnType<typeof setInterval> | null = null;
+
+  const setStatus = (s: WSStatus) => onStatus?.(s);
+
+  const connect = () => {
+    if (closed) return;
+    setStatus('connecting');
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      scheduleReconnect();
+      return;
+    }
+
+    ws.onopen = () => setStatus('open');
+
+    ws.onmessage = (evt) => {
+      let json: unknown;
+      try { json = JSON.parse(evt.data as string); } catch { return; }
+      const parsed = AggTradeEnvelopeSchema.safeParse(json);
+      if (!parsed.success) return;
+      const { data } = parsed.data;
+      if (!data) return;
+      const price = Number(data.p);
+      const qty = Number(data.q);
+      if (!Number.isFinite(price) || !Number.isFinite(qty)) return;
+      onTrade({
+        id: data.a,
+        price,
+        qty,
+        side: data.m ? 'sell' : 'buy',
+        time: Math.floor(data.T / 1000),
+      });
+    };
+
+    ws.onerror = () => setStatus('error');
+
+    ws.onclose = () => {
+      setStatus('closed');
+      ws = null;
+      scheduleReconnect();
+    };
+  };
+
+  const scheduleReconnect = () => {
+    if (closed) return;
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, 2500);
+  };
+
+  connect();
+
+  pingTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send('ping'); } catch {}
+    }
+  }, 30000);
+
+  return () => {
+    closed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (pingTimer) clearInterval(pingTimer);
+    if (ws) {
+      try { ws.close(); } catch {}
       ws = null;
     }
     setStatus('closed');

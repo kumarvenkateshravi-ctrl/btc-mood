@@ -13,10 +13,21 @@ import {
   BarChart3,
   Grid3x3,
   Check,
+  LayoutGrid,
+  Layers,
+  Save,
+  Square,
 } from 'lucide-react';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { RenkoConfig, RenkoMethod } from '@/lib/renko';
+import { GRID_COUNTS, type GridCount } from '@/lib/gridLayout';
+import {
+  useWorkspaces,
+  saveWorkspace,
+  deleteWorkspace,
+  type WorkspaceConfig,
+} from '@/lib/workspaces';
 
 
 export type ToolbarChartType = 'candlestick' | 'heikinAshi' | 'renko';
@@ -51,6 +62,12 @@ export interface ChartToolbarProps {
   historyActive: boolean;
   onJumpToDate?: (ms: number) => void;
   onReturnToLive?: () => void;
+  // Grid layout controls
+  gridCount: GridCount;
+  onGridChange: (n: GridCount) => void;
+  // Workspace controls
+  workspaceCurrent: WorkspaceConfig;
+  onWorkspaceApply: (cfg: WorkspaceConfig) => void;
 }
 
 export default function ChartToolbar(props: ChartToolbarProps) {
@@ -81,6 +98,10 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     historyActive,
     onJumpToDate,
     onReturnToLive,
+    gridCount,
+    onGridChange,
+    workspaceCurrent,
+    onWorkspaceApply,
   } = props;
 
   return (
@@ -150,6 +171,14 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         title="Bar Replay"
       />
       <DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
+
+      <ToolbarDivider />
+
+      {/* Grid layout chip */}
+      <GridChip value={gridCount} onChange={onGridChange} />
+
+      {/* Workspace chip */}
+      <WorkspaceChip current={workspaceCurrent} onApply={onWorkspaceApply} />
 
       {/* Spacer pushes fullscreen + more to the right */}
       <div className="ml-auto flex items-center gap-1">
@@ -659,6 +688,232 @@ function MoreMenu({ onFitContent }: { onFitContent: () => void }) {
             </button>
           </li>
         </ul>
+      )}
+    </div>
+  );
+}
+
+/** Grid layout chip — icon only, opens a dropdown with 1/2/4/6 selector. */
+function GridChip({
+  value,
+  onChange,
+}: {
+  value: GridCount;
+  onChange: (n: GridCount) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('mousedown', onClick);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onClick);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Grid layout"
+        aria-label="Grid layout"
+        aria-expanded={open}
+        className={[
+          'focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md border transition',
+          open || value > 1
+            ? 'border-line-strong bg-surface-3 text-ink'
+            : 'border-line bg-surface-1 text-ink-faint hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+        ].join(' ')}
+      >
+        <LayoutGrid className="h-3.5 w-3.5" />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full z-40 mt-1.5 w-[200px] overflow-hidden rounded-lg border border-line-strong bg-surface-1 shadow-2xl"
+        >
+          <div className="border-b border-line px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Layout</p>
+          </div>
+          <div className="p-3">
+            {/* Single chart shortcut */}
+            <button
+              type="button"
+              onClick={() => { onChange(1); setOpen(false); }}
+              aria-pressed={value === 1}
+              title="Single chart"
+              className={[
+                'focus-ring mb-2 inline-flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-[12px] font-medium transition',
+                value === 1
+                  ? 'border-line-strong bg-surface-3 text-ink'
+                  : 'border-line bg-surface-2 text-ink-muted hover:border-line-strong hover:bg-surface-3 hover:text-ink',
+              ].join(' ')}
+            >
+              <Square className="h-3.5 w-3.5" />
+              Single chart
+            </button>
+            {/* Grid count selector */}
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Multi-chart grid</p>
+            <div
+              role="radiogroup"
+              aria-label="Number of charts"
+              className="inline-flex w-full items-center rounded-md border border-line bg-surface-2 p-0.5 font-mono text-[12px]"
+            >
+              {GRID_COUNTS.filter((n) => n > 1).map((n) => {
+                const active = n === value;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => { onChange(n); setOpen(false); }}
+                    className={[
+                      'focus-ring min-w-0 flex-1 rounded px-2 py-1.5 transition',
+                      active
+                        ? 'bg-surface-3 text-ink'
+                        : 'text-ink-faint hover:bg-surface-2 hover:text-ink',
+                    ].join(' ')}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Workspace chip — icon only, opens a dropdown to save/restore/delete workspaces. */
+function WorkspaceChip({
+  current,
+  onApply,
+}: {
+  current: WorkspaceConfig;
+  onApply: (cfg: WorkspaceConfig) => void;
+}) {
+  const workspaces = useWorkspaces();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('mousedown', onClick);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onClick);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    saveWorkspace(name.trim(), current);
+    setName('');
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Workspaces"
+        aria-label="Workspaces"
+        aria-expanded={open}
+        className={[
+          'focus-ring relative inline-flex h-8 w-8 items-center justify-center rounded-md border transition',
+          open
+            ? 'border-line-strong bg-surface-3 text-ink'
+            : 'border-line bg-surface-1 text-ink-faint hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+        ].join(' ')}
+      >
+        <Layers className="h-3.5 w-3.5" />
+        {workspaces.length > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-white">
+            {workspaces.length}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-40 mt-1.5 w-[270px] overflow-hidden rounded-lg border border-line-strong bg-surface-1 shadow-2xl">
+          {/* Header */}
+          <div className="flex items-center gap-1.5 border-b border-line bg-surface-2/40 px-3 py-2">
+            <Layers className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+            <span className="text-[11px] font-semibold text-ink">Workspaces</span>
+          </div>
+          {/* Save row */}
+          <div className="flex items-center gap-1.5 border-b border-line p-2">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+              placeholder="Name this workspace…"
+              className="focus-ring min-w-0 flex-1 rounded bg-base px-2 py-1 text-xs text-ink outline-none placeholder:text-ink-faint"
+            />
+            <button
+              onClick={handleSave}
+              title="Save current layout"
+              disabled={!name.trim()}
+              className="focus-ring inline-flex items-center gap-1 rounded bg-accent/15 px-2 py-1 text-xs font-medium text-ink transition hover:bg-accent/25 disabled:opacity-40"
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save
+            </button>
+          </div>
+          {/* List */}
+          {workspaces.length === 0 ? (
+            <div className="px-3 py-4 text-center text-[11px] text-ink-faint">
+              No saved workspaces yet.
+            </div>
+          ) : (
+            <ul className="max-h-[40vh] overflow-auto py-1">
+              {workspaces.map((w) => (
+                <li key={w.id} className="group flex items-center">
+                  <button
+                    onClick={() => {
+                      onApply({ chartType: w.chartType, symbol: w.symbol, tf: w.tf, indicatorIds: w.indicatorIds });
+                      setOpen(false);
+                    }}
+                    className="min-w-0 flex-1 px-3 py-2 text-left transition-colors hover:bg-surface-2"
+                  >
+                    <div className="truncate text-[13px] font-medium text-ink">{w.name}</div>
+                    <div className="mt-0.5 truncate font-mono text-[10px] text-ink-faint">
+                      {w.symbol} · {w.tf} · {w.chartType} · {w.indicatorIds.length} ind
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => deleteWorkspace(w.id)}
+                    aria-label={`Delete ${w.name}`}
+                    className="mr-1 shrink-0 rounded p-1 text-ink-faint opacity-0 transition hover:bg-surface-2 hover:text-bear-bright group-hover:opacity-100"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

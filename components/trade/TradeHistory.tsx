@@ -1,8 +1,10 @@
 'use client';
 
+import { Download } from 'lucide-react';
 import { usePaperStore } from '@/lib/paperStore';
 import { useReplaySession } from '@/lib/replaySession';
-import type { PaperTrade } from '@/lib/paper';
+import { tradeDirection, tradePnlPct, tradeRR, tradeOutcome, formatRR } from '@/lib/trading';
+import { tradesToCsv, downloadCsv } from '@/lib/csv';
 
 function fmtTime(ts?: number): string {
   if (!ts) return '—';
@@ -14,24 +16,44 @@ function fmtTime(ts?: number): string {
   });
 }
 
-function direction(t: PaperTrade): 'long' | 'short' {
-  if (t.direction === 'long' || t.direction === 'short') return t.direction;
-  return t.side === 'sell' ? 'long' : 'short';
-}
+const OUTCOME_CLASS: Record<string, string> = {
+  TP: 'bg-bull/15 text-bull-bright',
+  WIN: 'bg-bull/15 text-bull-bright',
+  SL: 'bg-bear/15 text-bear-bright',
+  LOSS: 'bg-bear/15 text-bear-bright',
+  BE: 'bg-surface-2 text-ink-faint',
+};
 
 export default function TradeHistory() {
   const paper = usePaperStore();
   const session = useReplaySession();
   const trades = session.active ? session.trades : paper.trades;
 
+  const exportCsv = () => {
+    if (trades.length === 0) return;
+    const date = new Date().toISOString().slice(0, 10);
+    downloadCsv(`backtest_trades_${date}.csv`, tradesToCsv(trades));
+  };
+
   return (
     <section className="panel overflow-hidden rounded-2xl">
-      <h2 className="flex items-center justify-between border-b border-line px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.2em] text-ink-faint">
-        <span>Trade history</span>
-        <span className={session.active ? 'text-accent' : 'text-ink-faint'}>
-          {session.active ? 'Replay session' : 'Live'}
-        </span>
-      </h2>
+      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+        <h2 className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-ink-faint">
+          <span>Trade history</span>
+          <span className={session.active ? 'text-accent' : 'text-ink-faint'}>
+            · {session.active ? 'Replay session' : 'Live'}
+          </span>
+        </h2>
+        <button
+          onClick={exportCsv}
+          disabled={trades.length === 0}
+          title="Export trades to CSV"
+          className="focus-ring inline-flex items-center gap-1 rounded-md border border-line bg-surface-1 px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-surface-2 hover:text-ink disabled:opacity-30"
+        >
+          <Download className="h-3 w-3" />
+          CSV
+        </button>
+      </div>
 
       {trades.length === 0 ? (
         <div className="px-4 py-8 text-center text-xs text-ink-faint">
@@ -48,15 +70,21 @@ export default function TradeHistory() {
                 <Th className="text-right">Exit</Th>
                 <Th>Opened</Th>
                 <Th>Closed</Th>
+                <Th className="text-right">R:R</Th>
                 <Th className="text-right">P&L</Th>
-                <Th className="text-right">Result</Th>
+                <Th className="text-right">P&L %</Th>
+                <Th className="text-right">Outcome</Th>
               </tr>
             </thead>
             <tbody>
               {trades.map((t) => {
-                const dir = direction(t);
+                const dir = tradeDirection(t);
                 const win = t.realizedPnl > 0;
                 const flat = t.realizedPnl === 0;
+                const rr = tradeRR(t);
+                const pct = tradePnlPct(t);
+                const outcome = tradeOutcome(t);
+                const pnlClass = win ? 'text-bull-bright' : flat ? 'text-ink-muted' : 'text-bear-bright';
                 return (
                   <tr key={t.id} className="border-b border-line/60 last:border-0 hover:bg-surface-1/40">
                     <Td>
@@ -73,18 +101,17 @@ export default function TradeHistory() {
                     </Td>
                     <Td className="whitespace-nowrap text-ink-faint">{fmtTime(t.entryTs)}</Td>
                     <Td className="whitespace-nowrap text-ink-faint">{fmtTime(t.ts)}</Td>
-                    <Td className={['text-right font-mono font-medium tabular-nums', win ? 'text-bull-bright' : flat ? 'text-ink-muted' : 'text-bear-bright'].join(' ')}>
+                    <Td className="text-right font-mono tabular-nums text-ink-muted">{formatRR(rr)}</Td>
+                    <Td className={['text-right font-mono font-medium tabular-nums', pnlClass].join(' ')}>
                       {t.realizedPnl >= 0 ? '+' : ''}
                       {t.realizedPnl.toFixed(2)}
                     </Td>
+                    <Td className={['text-right font-mono tabular-nums', pnlClass].join(' ')}>
+                      {pct == null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`}
+                    </Td>
                     <Td className="text-right">
-                      <span
-                        className={[
-                          'rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                          flat ? 'bg-surface-2 text-ink-faint' : win ? 'bg-bull/15 text-bull-bright' : 'bg-bear/15 text-bear-bright',
-                        ].join(' ')}
-                      >
-                        {flat ? 'BE' : win ? 'WIN' : 'LOSS'}
+                      <span className={['rounded px-1.5 py-0.5 text-[10px] font-semibold', OUTCOME_CLASS[outcome]].join(' ')}>
+                        {outcome}
                       </span>
                     </Td>
                   </tr>

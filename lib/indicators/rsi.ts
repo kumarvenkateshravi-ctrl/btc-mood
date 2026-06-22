@@ -10,7 +10,7 @@ import type {
   CustomIndicatorConfig,
 } from '../indicatorFramework';
 import * as pm from '../pineMath';
-import { cols, neutralSignals, resolveInputs } from './itsTemplates';
+import { cols, neutralSignals, resolveInputs, resolveSourceNum } from './itsTemplates';
 
 export interface RsiInputs {
   length: number;
@@ -70,11 +70,15 @@ const BULL_COLOR = '#26A69A';
 const BEAR_COLOR = '#F23645';
 const NONE_COLOR = 'rgba(0,0,0,0)';
 
-export function computeRsi(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
+export function computeRsi(
+  candles: Candle[],
+  config?: CustomIndicatorConfig,
+  computedSources?: Record<string, (number | null)[]>
+): IndicatorResult {
   const { length, source, calculateDivergence, maType, maLength, bbMult } = resolveInputs(config, DEFAULTS);
   const n = candles.length;
 
-  const src = candles.map((c) => (c[source] ?? c.close) as number);
+  const src = resolveSourceNum(candles, source, computedSources);
 
   // ta.change → na on the first bar.
   const change: (number | null)[] = src.map((v, i) => (i === 0 ? null : v - src[i - 1]));

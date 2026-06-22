@@ -7,13 +7,11 @@ const ChartPanel = dynamic(() => import('@/components/ChartPanel'), { ssr: false
 import TimeframeStrip from '@/components/TimeframeStrip';
 import ConfluenceRibbon from '@/components/ConfluenceRibbon';
 import MultiChartGrid from '@/components/MultiChartGrid';
-import WorkspaceMenu from '@/components/WorkspaceMenu';
 import SymbolSearch from '@/components/SymbolSearch';
 import DashboardAside from '@/components/DashboardAside';
 import Kbd from '@/components/Kbd';
-import { Square } from 'lucide-react';
-import GridCountControl from '@/components/GridCountControl';
 import MoodStrip from '@/components/MoodStrip';
+import OrderFlowPanel from '@/components/OrderFlowPanel';
 import AlertsPanel from '@/components/AlertsPanel';
 import BacktestPanel from '@/components/BacktestPanel';
 import IndicatorPicker from '@/components/trade/IndicatorPicker';
@@ -159,33 +157,6 @@ export default function DashboardPage() {
       <main className="flex w-full flex-1 flex-col gap-5 px-3 py-4 sm:px-4 sm:py-6">
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
           <div className="flex min-w-0 flex-col gap-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <WorkspaceMenu
-                current={{ chartType, symbol, tf: selected, indicatorIds: activeIndicatorIds }}
-                onApply={applyWorkspace}
-              />
-              <div className="flex items-center gap-2">
-                <span className="hidden text-[10px] text-ink-faint sm:inline">
-                  Press <Kbd>/</Kbd> to search · <Kbd>G</Kbd> grid
-                </span>
-                <div className="inline-flex items-center gap-2">
-                  <button
-                    onClick={() => setGridCount(1)}
-                    aria-pressed={gridCount === 1}
-                    title="Single chart"
-                    className={[
-                      'focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border transition',
-                      gridCount === 1
-                        ? 'border-line-strong bg-surface-3 text-ink'
-                        : 'border-line bg-surface-1 text-ink-faint hover:bg-surface-2 hover:text-ink',
-                    ].join(' ')}
-                  >
-                    <Square className="h-3.5 w-3.5" />
-                  </button>
-                  <GridCountControl value={gridCount} onChange={handleGridCountChange} />
-                </div>
-              </div>
-            </div>
 
             {gridCount > 1 ? (
               <MultiChartGrid
@@ -220,6 +191,10 @@ export default function DashboardPage() {
                 onJumpToDate={jumpToDate}
                 onReturnToLive={returnToLive}
                 fitSignal={fitSignal}
+                gridCount={gridCount}
+                onGridChange={handleGridCountChange}
+                workspaceCurrent={{ chartType, symbol, tf: selected, indicatorIds: activeIndicatorIds }}
+                onWorkspaceApply={applyWorkspace}
               />
             )}
 
@@ -269,6 +244,7 @@ export default function DashboardPage() {
               tab={tab}
               onTabChange={setTab}
             />
+            <OrderFlowPanel symbol={symbol} tf={selected} />
           </aside>
         </div>
 

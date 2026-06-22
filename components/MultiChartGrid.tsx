@@ -83,15 +83,38 @@ function GridCell({
   onSelect: () => void;
   height: number;
 }) {
-  const indicatorResults = useMemo<IndicatorRender[]>(() => {
+  // Recompute custom indicators on price tick or settings change
+  const indicatorResults = useMemo(() => {
     if (candles.length === 0) return [];
-    const out: IndicatorRender[] = [];
-    for (const id of activeIndicatorIds) {
+    
+    const computedSources: Record<string, (number | null)[]> = {};
+    const results: Array<{ key: string; result: NonNullable<ReturnType<typeof CUSTOM_INDICATORS[number]['compute']>> }> = [];
+    
+    activeIndicatorIds.forEach((id) => {
       const def = CUSTOM_INDICATORS.find((d) => d.id === id);
-      if (def) out.push({ key: id, result: def.compute(candles, { id }) });
-    }
-    return out;
-  }, [activeIndicatorIds, candles]);
+      if (!def) return;
+      
+      let savedSettings;
+      try {
+        const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
+        savedSettings = JSON.parse(defaultsStr)[id];
+      } catch {}
+      
+      const result = def.compute(candles, { id, settings: savedSettings }, computedSources);
+      
+      // Feed line/histogram plot outputs into the computed sources for downstream indicators
+      result.plots.forEach(plot => {
+        if (plot.type === 'line' || plot.type === 'histogram') {
+          const dataArr = plot.data.map(d => typeof d === 'number' ? d : (d?.value ?? null));
+          computedSources[`${id}:${plot.id}`] = dataArr;
+        }
+      });
+      
+      results.push({ key: id, result });
+    });
+    
+    return results;
+  }, [candles, activeIndicatorIds]);
 
   return (
     <div

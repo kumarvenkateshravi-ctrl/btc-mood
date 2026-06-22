@@ -58,3 +58,39 @@ export function resolveInputs<T extends object>(
   }
   return merged as T;
 }
+
+/**
+ * Resolves the source data array given the source key.
+ * The source key can be a native OHLC key ('close', 'open', 'high', 'low'),
+ * or a dynamic indicator source key ('indicator_id:plot_id').
+ */
+export function resolveSource(
+  candles: Candle[],
+  sourceKey: string,
+  computedSources?: Record<string, (number | null)[]>
+): (number | null)[] {
+  if (computedSources && computedSources[sourceKey]) {
+    return computedSources[sourceKey];
+  }
+  if (sourceKey === 'open') return candles.map(c => c.open);
+  if (sourceKey === 'high') return candles.map(c => c.high);
+  if (sourceKey === 'low') return candles.map(c => c.low);
+  if (sourceKey === 'volume') return candles.map(c => c.volume);
+  
+  // Default to close
+  return candles.map(c => c.close);
+}
+
+/**
+ * Same as resolveSource but replaces nulls with a fallback (e.g. NaN or 0)
+ * if strict numerical arrays are required by underlying math libraries.
+ * Using 0/NaN depends on math, typically NaN is safer for avoiding weird averages.
+ */
+export function resolveSourceNum(
+  candles: Candle[],
+  sourceKey: string,
+  computedSources?: Record<string, (number | null)[]>
+): number[] {
+  const arr = resolveSource(candles, sourceKey, computedSources);
+  return arr.map(v => v === null ? NaN : v);
+}

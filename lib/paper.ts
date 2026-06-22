@@ -79,6 +79,9 @@ export interface PaperTrade {
   exitPrice?: number;
   /** When the closed position was opened (unix seconds). */
   entryTs?: number;
+  /** The position's TP/SL at close — for the trade history R:R + Outcome. */
+  tp?: number | null;
+  sl?: number | null;
 }
 
 // ---- Defaults (Binance USDT-M futures BTCUSDT, paper) ---------------
@@ -169,6 +172,8 @@ export function applyFill(
     entryPrice: pos.entryPrice,
     exitPrice: fill.price,
     entryTs: pos.openedAt,
+    tp: pos.tp,
+    sl: pos.sl,
   };
 
   const leftover = fill.units - closeQty;

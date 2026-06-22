@@ -84,3 +84,21 @@ export const BookTickerEnvelopeSchema = z.object({
   stream: z.string().optional(),
   data: BinanceBookTickerMessageSchema.optional(),
 });
+
+// Binance @aggTrade — aggregated taker trades. `m` = "is the buyer the
+// market maker?": true → the aggressor SOLD (hit the bid); false → BOUGHT.
+export const BinanceAggTradeMessageSchema = z.object({
+  e: z.literal('aggTrade'),
+  E: z.number(),
+  s: z.string(),
+  a: z.number(),
+  p: z.string(),
+  q: z.string(),
+  T: z.number(),
+  m: z.boolean(),
+});
+
+export const AggTradeEnvelopeSchema = z.object({
+  stream: z.string().optional(),
+  data: BinanceAggTradeMessageSchema.optional(),
+});
