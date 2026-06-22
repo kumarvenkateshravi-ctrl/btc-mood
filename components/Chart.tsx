@@ -29,7 +29,7 @@ import { toRenko, type RenkoOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import { ema } from '@/lib/indicators';
 import { buildSignalFlips } from '@/lib/signalMarkers';
-import { setHover, type HoverPayload } from '@/lib/chartHoverStore';
+import { setHover, useHover, type HoverPayload } from '@/lib/chartHoverStore';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
@@ -1368,25 +1368,28 @@ export default function Chart({
       )}
 
       {onQuickTrade && (
-        <div className="pointer-events-auto absolute left-2 top-2 z-10 flex gap-2">
-          <button
-            onClick={() => onQuickTrade('sell')}
-            className="flex flex-col rounded-md bg-bear/20 px-3 py-1.5 text-xs ring-1 ring-bear/30 transition hover:bg-bear/30"
-          >
-            <span className="font-semibold text-bear-bright">Sell</span>
-            {ask != null && Number.isFinite(ask) && (
-              <span className="font-mono text-bear-bright/70">{ask.toFixed(1)}</span>
-            )}
-          </button>
-          <button
-            onClick={() => onQuickTrade('buy')}
-            className="flex flex-col rounded-md bg-bull/20 px-3 py-1.5 text-xs ring-1 ring-bull/30 transition hover:bg-bull/30"
-          >
-            <span className="font-semibold text-bull-bright">Buy</span>
-            {bid != null && Number.isFinite(bid) && (
-              <span className="font-mono text-bull-bright/70">{bid.toFixed(1)}</span>
-            )}
-          </button>
+        <div className="pointer-events-auto absolute left-2 top-2 z-10 flex items-center gap-2">
+          <ChartOHLCStrip mode={type} />
+          <div className="flex gap-2">
+            <button
+              onClick={() => onQuickTrade('sell')}
+              className="flex flex-col rounded-md bg-bear/20 px-3 py-1.5 text-xs ring-1 ring-bear/30 transition hover:bg-bear/30"
+            >
+              <span className="font-semibold text-bear-bright">Sell</span>
+              {ask != null && Number.isFinite(ask) && (
+                <span className="font-mono text-bear-bright/70">{ask.toFixed(1)}</span>
+              )}
+            </button>
+            <button
+              onClick={() => onQuickTrade('buy')}
+              className="flex flex-col rounded-md bg-bull/20 px-3 py-1.5 text-xs ring-1 ring-bull/30 transition hover:bg-bull/30"
+            >
+              <span className="font-semibold text-bull-bright">Buy</span>
+              {bid != null && Number.isFinite(bid) && (
+                <span className="font-mono text-bull-bright/70">{bid.toFixed(1)}</span>
+              )}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1537,5 +1540,123 @@ function OverlayTooltip({ kind, price, y, side, units, leverage, entryPrice }: {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Inline OHLCV data strip rendered on the chart canvas next to the
+ * Buy/Sell quick-trade buttons. Shows the same data the standalone
+ * OHLCLegend used to expose (time, O, H, L, C, change%, vol), updated
+ * live from the chart hover store. When the cursor leaves the chart
+ * the strip falls back to the most recent bar's values.
+ *
+ * Collapses gracefully on narrow viewports — Vol drops first, then
+ * the change % chip — so the buttons stay reachable.
+ */
+function ChartOHLCStrip({ mode }: { mode: ChartType }) {
+  const { hover, last } = useHover();
+  const active = hover ?? last;
+  const isLive = hover !== null;
+  const isRenko = mode === 'renko';
+
+  const fmt = (n: number | null | undefined, digits = 2): string => {
+    if (n == null || !Number.isFinite(n)) return '—';
+    return n.toLocaleString('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+  };
+  const fmtVol = (n: number | null | undefined): string => {
+    if (n == null || !Number.isFinite(n)) return '—';
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+    return n.toFixed(0);
+  };
+  const fmtTime = (t: number): string => {
+    const d = new Date(t * 1000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
+  return (
+    <div
+      role="status"
+      aria-label="Chart OHLCV"
+      className={[
+        'flex items-center gap-2.5 rounded-md bg-surface-2/80 px-3 py-1.5 text-[11px] font-mono backdrop-blur-md ring-1 ring-line',
+        isLive ? 'text-ink' : 'text-ink-muted',
+      ].join(' ')}
+    >
+      <span
+        className={[
+          'shrink-0 tabular-nums',
+          isLive ? 'text-ink' : 'text-ink-faint',
+        ].join(' ')}
+        title={isLive ? 'Live hover' : 'Last bar'}
+      >
+        {active ? (isRenko ? `Brick · ${fmtTime(active.base.time)}` : fmtTime(active.base.time)) : '—'}
+      </span>
+
+      <span className="h-3 w-px shrink-0 bg-line" aria-hidden />
+
+      <OHLCCell label="O" value={active ? fmt(active.base.open) : '—'} />
+      <OHLCCell label="H" value={active ? fmt(isRenko ? Math.max(active.base.open, active.base.close) : active.base.high) : '—'} tone="up" />
+      <OHLCCell label="L" value={active ? fmt(isRenko ? Math.min(active.base.open, active.base.close) : active.base.low) : '—'} tone="down" />
+      <OHLCCell
+        label="C"
+        value={active ? fmt(active.base.close) : '—'}
+        tone={active && active.base.close >= active.base.open ? 'up' : 'down'}
+      />
+
+      {active?.prevBase && (
+        <span className="flex shrink-0 items-baseline gap-1 tabular-nums">
+          <span
+            className={
+              active.base.close - active.prevBase.close >= 0 ? 'text-bull-bright' : 'text-bear-bright'
+            }
+          >
+            {fmt(
+              ((active.base.close - active.prevBase.close) / active.prevBase.close) * 100,
+              2,
+            )}%
+          </span>
+        </span>
+      )}
+
+      {!isRenko && active && (
+        <>
+          <span className="h-3 w-px shrink-0 bg-line" aria-hidden />
+          <OHLCCell label="Vol" value={fmtVol(active.src.volume)} muted />
+        </>
+      )}
+    </div>
+  );
+}
+
+function OHLCCell({
+  label,
+  value,
+  tone,
+  muted,
+}: {
+  label: string;
+  value: string;
+  tone?: 'up' | 'down';
+  muted?: boolean;
+}) {
+  const toneClass =
+    tone === 'up'
+      ? 'text-bull-bright'
+      : tone === 'down'
+        ? 'text-bear-bright'
+        : muted
+          ? 'text-ink-muted'
+          : 'text-ink';
+  return (
+    <span className="inline-flex shrink-0 items-baseline gap-1">
+      <span className="text-[10px] uppercase tracking-wider text-ink-faint">{label}</span>
+      <span className={`tabular-nums ${toneClass}`}>{value}</span>
+    </span>
   );
 }

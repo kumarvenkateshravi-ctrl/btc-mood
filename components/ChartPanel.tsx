@@ -21,7 +21,6 @@ import { useDrawings, clearDrawings, DRAWING_COLORS, type Tool } from '@/lib/dra
 import ReplayBar from './ReplayBar';
 import ReplaySelector from './ReplaySelector';
 import ChartToolbar from './ChartToolbar';
-import OHLCLegend from './OHLCLegend';
 import { FALLBACK_HEIGHT } from '@/lib/chartHeight';
 import type { Candle, Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -348,8 +347,6 @@ export default function ChartPanel({
     setChartApi(api);
   }, []);
 
-  const compact = chartWidth > 0 && chartWidth < 640;
-
   const fitContent = useCallback(() => {
     chartApiRef.current?.fitContent();
   }, []);
@@ -425,7 +422,6 @@ export default function ChartPanel({
         onJumpToDate={onJumpToDate}
         onReturnToLive={onReturnToLive}
       />
-      <OHLCLegend compact={compact} mode={type} />
       <div className="flex min-h-0 flex-1">
         <DrawingToolbar
           tool={drawingTool}
