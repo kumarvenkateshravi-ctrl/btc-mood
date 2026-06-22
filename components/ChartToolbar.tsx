@@ -1,7 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Maximize2, Minimize2, MoreHorizontal, ChevronDown, History, CalendarSearch, X } from 'lucide-react';
+import {
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  ChevronDown,
+  History,
+  CalendarSearch,
+  X,
+  CandlestickChart,
+  BarChart3,
+  Grid3x3,
+  Check,
+} from 'lucide-react';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { RenkoConfig, RenkoMethod } from '@/lib/renko';
@@ -118,29 +130,29 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         </div>
       </div>
 
-      {/* Row 2 — dedicated controls toolbar: grouped segments with dividers */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
-        {/* Timeframe */}
-        <TimeframeSegmented selected={selected} onSelect={onSelectTf} />
+      {/* Row 2 — dedicated controls toolbar: TradingView-style chips with dividers */}
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-line bg-base/40 px-3 py-2">
+        {/* Timeframe dropdown */}
+        <TimeframeChip selected={selected} onSelect={onSelectTf} />
 
         <ToolbarDivider />
 
         {/* Chart type + price scale */}
-        <ChartTypeSelect value={chartType} onChange={onSelectType} />
-        <PriceScaleModeSelect value={priceScaleMode} onChange={onPriceScaleModeChange} />
+        <ChartTypeChip value={chartType} onChange={onSelectType} />
+        <PriceScaleChip value={priceScaleMode} onChange={onPriceScaleModeChange} />
 
         {/* Renko config (conditional) */}
         {chartType === 'renko' && (
           <>
             <ToolbarDivider />
-            <RenkoControl renko={renko} onChange={onRenkoChange} lastPrice={price} />
+            <RenkoChip renko={renko} onChange={onRenkoChange} lastPrice={price} />
           </>
         )}
 
         <ToolbarDivider />
 
-        {/* Indicators */}
-        <IndicatorSelect
+        {/* Indicators dropdown */}
+        <IndicatorChip
           activeIds={activeIndicatorIds}
           onToggle={onToggleIndicator}
           onClear={onClearIndicators}
@@ -148,22 +160,15 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
         <ToolbarDivider />
 
-        {/* Time navigation: replay + jump-to-date */}
-        <button
-          type="button"
+        {/* Replay + jump-to-date */}
+        <ChipButton
+          icon={<History className="h-3.5 w-3.5" />}
+          label="Replay"
+          active={replayActive}
           onClick={onReplayToggle}
-          aria-pressed={replayActive}
           title="Bar Replay"
-          className={[
-            'focus-ring inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition',
-            replayActive ? 'bg-accent/20 text-ink' : 'text-ink-faint hover:bg-surface-3 hover:text-ink',
-          ].join(' ')}
-        >
-          <History className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Replay</span>
-        </button>
-
-        <DateJump historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
+        />
+        <DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
       </div>
     </div>
   );
@@ -173,80 +178,248 @@ function ToolbarDivider() {
   return <span className="h-5 w-px shrink-0 bg-line" aria-hidden />;
 }
 
-function TimeframeSegmented({
+/** TradingView-style toolbar control: icon + label + caret, on a raised chip. */
+function Chip({
+  icon,
+  label,
+  active = false,
+  open = false,
+  onClick,
+  title,
+  ariaLabel,
+}: {
+  icon?: React.ReactNode;
+  label: React.ReactNode;
+  active?: boolean;
+  open?: boolean;
+  onClick?: () => void;
+  title?: string;
+  ariaLabel?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel ?? title}
+      aria-haspopup={onClick ? 'menu' : undefined}
+      aria-expanded={open}
+      className={[
+        'focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition',
+        active || open
+          ? 'border-line-strong bg-surface-3 text-ink'
+          : 'border-line bg-surface-1 text-ink-muted hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+      ].join(' ')}
+    >
+      {icon && <span className="flex h-3.5 w-3.5 items-center justify-center">{icon}</span>}
+      <span className="leading-none">{label}</span>
+      <ChevronDown className="h-3 w-3 opacity-70" />
+    </button>
+  );
+}
+
+/** Simple chip with no caret — for non-dropdown actions. */
+function ChipButton({
+  icon,
+  label,
+  active = false,
+  onClick,
+  title,
+  ariaLabel,
+}: {
+  icon?: React.ReactNode;
+  label: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
+  title?: string;
+  ariaLabel?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel ?? title}
+      aria-pressed={active}
+      className={[
+        'focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition',
+        active
+          ? 'border-line-strong bg-surface-3 text-ink'
+          : 'border-line bg-surface-1 text-ink-muted hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+      ].join(' ')}
+    >
+      {icon && <span className="flex h-3.5 w-3.5 items-center justify-center">{icon}</span>}
+      <span className="leading-none">{label}</span>
+    </button>
+  );
+}
+
+/** Popover menu anchored to a chip. Closes on outside click / Escape. */
+function ChipMenu({
+  open,
+  onClose,
+  children,
+  width = 220,
+  align = 'left',
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  width?: number;
+  align?: 'left' | 'right';
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('mousedown', onClick);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onClick);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      style={{ width, [align]: 0 } as React.CSSProperties}
+      className={[
+        'absolute top-full z-40 mt-1.5 rounded-md border border-line-strong bg-surface-1 py-1 shadow-2xl',
+        align === 'right' ? 'right-0' : 'left-0',
+      ].join(' ')}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MenuItem({
+  children,
+  onClick,
+  active = false,
+  danger = false,
+  disabled = false,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  active?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] font-medium transition',
+        active
+          ? 'bg-accent/15 text-ink'
+          : disabled
+            ? 'text-ink-faint/60'
+            : danger
+              ? 'text-bear-bright hover:bg-surface-2'
+              : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+      ].join(' ')}
+    >
+      <span className="flex-1">{children}</span>
+      {active && <Check className="h-3.5 w-3.5 text-accent" />}
+    </button>
+  );
+}
+
+function MenuDivider() {
+  return <div className="my-1 h-px bg-line" aria-hidden />;
+}
+
+function TimeframeChip({
   selected,
   onSelect,
 }: {
   selected: Timeframe;
   onSelect: (tf: Timeframe) => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div
-      role="tablist"
-      aria-label="Timeframe"
-      className="inline-flex items-center rounded-md border border-line bg-base p-0.5 text-[11px] font-mono"
-    >
-      {TIMEFRAMES.map((tf) => {
-        const active = tf === selected;
-        return (
-          <button
-            key={tf}
-            role="tab"
-            aria-selected={active}
-            onClick={() => onSelect(tf)}
-            className={[
-              'min-w-[34px] rounded px-2 py-1 transition focus-ring',
-              active
-                ? 'bg-surface-3 text-ink'
-                : 'text-ink-faint hover:bg-surface-1/60 hover:text-ink',
-            ].join(' ')}
-          >
-            {tf}
-          </button>
-        );
-      })}
+    <div className="relative">
+      <Chip
+        icon={<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2 1.5" /></svg>}
+        label={selected}
+        open={open}
+        onClick={() => setOpen((v) => !v)}
+        title="Timeframe"
+        ariaLabel="Timeframe"
+      />
+      <ChipMenu open={open} onClose={() => setOpen(false)} width={120}>
+        {TIMEFRAMES.map((tf) => (
+          <MenuItem key={tf} active={tf === selected} onClick={() => { onSelect(tf); setOpen(false); }}>
+            <span className="font-mono">{tf}</span>
+          </MenuItem>
+        ))}
+      </ChipMenu>
     </div>
   );
 }
 
-function ChartTypeSelect({
+function ChartTypeChip({
   value,
   onChange,
 }: {
   value: ToolbarChartType;
   onChange: (v: ToolbarChartType) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const ICONS: Record<ToolbarChartType, React.ReactNode> = {
+    candlestick: <CandlestickChart className="h-3.5 w-3.5" />,
+    heikinAshi: <BarChart3 className="h-3.5 w-3.5" />,
+    renko: <Grid3x3 className="h-3.5 w-3.5" />,
+  };
+  const LABELS: Record<ToolbarChartType, string> = {
+    candlestick: 'Candles',
+    heikinAshi: 'Heikin Ashi',
+    renko: 'Renko',
+  };
   return (
-    <div className="inline-flex items-center rounded-md border border-line bg-base p-0.5 text-[11px] font-medium">
-      {(
-        [
-          { v: 'candlestick', l: 'Candles' },
-          { v: 'heikinAshi', l: 'Heikin Ashi' },
-          { v: 'renko', l: 'Renko' },
-        ] as const
-      ).map((opt) => {
-        const active = opt.v === value;
-        return (
-          <button
-            key={opt.v}
-            onClick={() => onChange(opt.v)}
-            aria-pressed={active}
-            className={[
-              'rounded px-2 py-1 transition focus-ring',
-              active
-                ? 'bg-surface-3 text-ink'
-                : 'text-ink-faint hover:bg-surface-1/60 hover:text-ink',
-            ].join(' ')}
-          >
-            {opt.l}
-          </button>
-        );
-      })}
+    <div className="relative">
+      <Chip
+        icon={ICONS[value]}
+        label={LABELS[value]}
+        open={open}
+        onClick={() => setOpen((v) => !v)}
+        title="Chart type"
+        ariaLabel="Chart type"
+      />
+      <ChipMenu open={open} onClose={() => setOpen(false)} width={180}>
+        <MenuItem active={value === 'candlestick'} onClick={() => { onChange('candlestick'); setOpen(false); }}>
+          <span className="inline-flex items-center gap-2">
+            <CandlestickChart className="h-3.5 w-3.5" /> Candles
+          </span>
+        </MenuItem>
+        <MenuItem active={value === 'heikinAshi'} onClick={() => { onChange('heikinAshi'); setOpen(false); }}>
+          <span className="inline-flex items-center gap-2">
+            <BarChart3 className="h-3.5 w-3.5" /> Heikin Ashi
+          </span>
+        </MenuItem>
+        <MenuItem active={value === 'renko'} onClick={() => { onChange('renko'); setOpen(false); }}>
+          <span className="inline-flex items-center gap-2">
+            <Grid3x3 className="h-3.5 w-3.5" /> Renko
+          </span>
+        </MenuItem>
+      </ChipMenu>
     </div>
   );
 }
 
-function DateJump({
+function DateChip({
   historyActive,
   onJump,
   onReturn,
@@ -255,101 +428,103 @@ function DateJump({
   onJump?: (ms: number) => void;
   onReturn?: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   return (
-    <div className="hidden items-center gap-1 sm:inline-flex">
-      <label
+    <div className="relative">
+      <Chip
+        icon={<CalendarSearch className="h-3.5 w-3.5" />}
+        label="Date"
+        open={open}
+        onClick={() => setOpen((v) => !v)}
         title="Jump to date"
-        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-line bg-base px-2 text-[11px] text-ink-faint transition hover:text-ink"
-      >
-        <CalendarSearch className="h-3.5 w-3.5" />
-        <input
-          type="date"
-          max={today}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (!v || !onJump) return;
-            const ms = new Date(`${v}T00:00:00Z`).getTime();
-            if (Number.isFinite(ms)) onJump(ms);
-          }}
-          className="bg-transparent text-[11px] text-ink outline-none [color-scheme:dark]"
-          aria-label="Jump to date"
-        />
-      </label>
-      {historyActive && (
-        <button
-          type="button"
-          onClick={onReturn}
-          title="Return to latest"
-          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md bg-accent/20 px-2 text-[11px] font-medium text-ink transition hover:bg-accent/30"
-        >
-          <X className="h-3 w-3" />
-          Latest
-        </button>
-      )}
+        ariaLabel="Jump to date"
+      />
+      <ChipMenu open={open} onClose={() => setOpen(false)} width={210} align="right">
+        <div className="px-3 py-2">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+            Jump to date
+          </div>
+          <input
+            type="date"
+            max={today}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v || !onJump) return;
+              const ms = new Date(`${v}T00:00:00Z`).getTime();
+              if (Number.isFinite(ms)) {
+                onJump(ms);
+                setOpen(false);
+              }
+            }}
+            className="w-full rounded border border-line bg-base px-2 py-1.5 text-[12px] text-ink outline-none [color-scheme:dark] focus:border-line-strong"
+            aria-label="Jump to date"
+          />
+        </div>
+        {historyActive && (
+          <>
+            <MenuDivider />
+            <MenuItem
+              onClick={() => {
+                onReturn?.();
+                setOpen(false);
+              }}
+            >
+              <span className="inline-flex items-center gap-2">
+                <X className="h-3.5 w-3.5" /> Return to latest
+              </span>
+            </MenuItem>
+          </>
+        )}
+      </ChipMenu>
     </div>
   );
 }
 
-function PriceScaleModeSelect({
+function PriceScaleChip({
   value,
   onChange,
 }: {
   value: ToolbarPriceScaleMode;
   onChange: (v: ToolbarPriceScaleMode) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const LABELS: Record<ToolbarPriceScaleMode, string> = {
+    normal: 'Lin',
+    log: 'Log',
+    percent: '%',
+  };
   return (
-    <div
-      className="inline-flex items-center rounded-md border border-line bg-base p-0.5 text-[11px] font-medium"
-      role="group"
-      aria-label="Price scale"
-    >
-      {(
-        [
-          { v: 'normal', l: 'Lin', title: 'Linear scale' },
-          { v: 'log', l: 'Log', title: 'Logarithmic scale' },
-          { v: 'percent', l: '%', title: 'Percentage scale' },
-        ] as const
-      ).map((opt) => {
-        const active = opt.v === value;
-        return (
-          <button
-            key={opt.v}
-            onClick={() => onChange(opt.v)}
-            aria-pressed={active}
-            title={opt.title}
-            className={[
-              'rounded px-2 py-1 transition focus-ring',
-              active
-                ? 'bg-surface-3 text-ink'
-                : 'text-ink-faint hover:bg-surface-1/60 hover:text-ink',
-            ].join(' ')}
-          >
-            {opt.l}
-          </button>
-        );
-      })}
+    <div className="relative">
+      <Chip
+        icon={
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1.5 13.5L4 11l3 2 3.5-3.5 4 3" />
+            <path d="M14.5 2.5v8M11.5 5.5h6" />
+          </svg>
+        }
+        label={LABELS[value]}
+        open={open}
+        onClick={() => setOpen((v) => !v)}
+        title="Price scale"
+        ariaLabel="Price scale"
+      />
+      <ChipMenu open={open} onClose={() => setOpen(false)} width={150}>
+        <MenuItem active={value === 'normal'} onClick={() => { onChange('normal'); setOpen(false); }}>
+          Lin (Linear)
+        </MenuItem>
+        <MenuItem active={value === 'log'} onClick={() => { onChange('log'); setOpen(false); }}>
+          Log
+        </MenuItem>
+        <MenuItem active={value === 'percent'} onClick={() => { onChange('percent'); setOpen(false); }}>
+          %
+        </MenuItem>
+      </ChipMenu>
     </div>
   );
 }
 
-function roundNice(raw: number): number {
-  if (raw >= 100) return Math.round(raw);
-  if (raw >= 1) return Math.round(raw * 10) / 10;
-  if (raw >= 0.01) return Math.round(raw * 100) / 100;
-  return Math.round(raw * 10000) / 10000;
-}
-
-const RENKO_INPUT_CLASS =
-  'focus-ring w-[64px] rounded bg-transparent px-1.5 py-1 text-right tabular-nums text-ink outline-none placeholder:text-ink-faint';
-
-const RENKO_METHODS: { v: RenkoMethod; l: string; title: string }[] = [
-  { v: 'traditional', l: 'Trad', title: 'Traditional — fixed box size in price units' },
-  { v: 'atr', l: 'ATR', title: 'ATR — box size from ATR(length) of the source candles' },
-  { v: 'percentage', l: '%', title: 'Percentage — box size as a percent of the last traded price' },
-];
-
-function RenkoControl({
+function RenkoChip({
   renko,
   onChange,
   lastPrice,
@@ -358,91 +533,94 @@ function RenkoControl({
   onChange: (c: RenkoConfig) => void;
   lastPrice: number | null;
 }) {
+  const [open, setOpen] = useState(false);
   const set = (patch: Partial<RenkoConfig>) => onChange({ ...renko, ...patch });
-
-  const pctPreview = useMemo(() => {
-    if (renko.method !== 'percentage') return null;
-    if (lastPrice == null || !Number.isFinite(lastPrice)) return null;
-    return roundNice(lastPrice * (renko.percentage / 100));
-  }, [renko.method, renko.percentage, lastPrice]);
-
+  const METHOD_LABELS: Record<RenkoMethod, string> = {
+    traditional: 'Trad',
+    atr: 'ATR',
+    percentage: '%',
+  };
   return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-line bg-base p-0.5 text-[11px] font-mono">
-      <div className="inline-flex items-center" role="group" aria-label="Renko box size method">
-        {RENKO_METHODS.map((m) => {
-          const active = renko.method === m.v;
-          return (
-            <button
-              key={m.v}
-              type="button"
-              onClick={() => set({ method: m.v })}
-              aria-pressed={active}
-              title={m.title}
-              className={[
-                'rounded px-2 py-1 transition focus-ring',
-                active ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:bg-surface-1/60 hover:text-ink',
-              ].join(' ')}
-            >
-              {m.l}
-            </button>
-          );
-        })}
-      </div>
-
-      {renko.method === 'traditional' && (
-        <input
-          type="number"
-          min={0}
-          step="any"
-          value={renko.boxSize ?? ''}
-          placeholder="box"
-          title="Fixed box size in price units"
-          aria-label="Renko box size"
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === '') return set({ boxSize: null });
-            const n = Number(v);
-            if (Number.isFinite(n) && n > 0) set({ boxSize: n });
-          }}
-          className={RENKO_INPUT_CLASS}
-        />
-      )}
-
-      {renko.method === 'atr' && (
-        <label className="flex items-center gap-1 pr-1 text-ink-faint" title="ATR length used for the box size">
-          <span>Len</span>
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={renko.atrLength}
-            aria-label="ATR length"
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isFinite(n) && n >= 1) set({ atrLength: Math.round(n) });
-            }}
-            className={RENKO_INPUT_CLASS}
-          />
-        </label>
-      )}
-
-      {renko.method === 'percentage' && (
-        <label className="flex items-center gap-1 pr-1 text-ink-faint" title="Percent of the last traded price">
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={renko.percentage}
-            aria-label="Percentage of last traded price"
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isFinite(n) && n > 0) set({ percentage: n });
-            }}
-            className={RENKO_INPUT_CLASS}
-          />
-          <span>%{pctPreview != null ? ` ≈ ${pctPreview}` : ''}</span>
-        </label>
-      )}
+    <div className="relative">
+      <Chip
+        icon={<Grid3x3 className="h-3.5 w-3.5" />}
+        label={`Renko · ${METHOD_LABELS[renko.method]}`}
+        open={open}
+        onClick={() => setOpen((v) => !v)}
+        title="Renko box size"
+        ariaLabel="Renko box size"
+      />
+      <ChipMenu open={open} onClose={() => setOpen(false)} width={210} align="right">
+        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          Box size method
+        </div>
+        <MenuItem active={renko.method === 'traditional'} onClick={() => set({ method: 'traditional' })}>
+          Traditional (fixed)
+        </MenuItem>
+        <MenuItem active={renko.method === 'atr'} onClick={() => set({ method: 'atr' })}>
+          ATR
+        </MenuItem>
+        <MenuItem active={renko.method === 'percentage'} onClick={() => set({ method: 'percentage' })}>
+          Percentage
+        </MenuItem>
+        <MenuDivider />
+        {renko.method === 'traditional' && (
+          <div className="px-3 py-2">
+            <label className="flex items-center gap-2 text-[11px] text-ink-faint">
+              Box size
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={renko.boxSize ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '') return set({ boxSize: null });
+                  const n = Number(v);
+                  if (Number.isFinite(n) && n > 0) set({ boxSize: n });
+                }}
+                className="ml-auto w-20 rounded border border-line bg-base px-1.5 py-1 text-right font-mono text-[12px] text-ink outline-none focus:border-line-strong"
+              />
+            </label>
+          </div>
+        )}
+        {renko.method === 'atr' && (
+          <div className="px-3 py-2">
+            <label className="flex items-center gap-2 text-[11px] text-ink-faint">
+              ATR length
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={renko.atrLength}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n >= 1) set({ atrLength: Math.round(n) });
+                }}
+                className="ml-auto w-20 rounded border border-line bg-base px-1.5 py-1 text-right font-mono text-[12px] text-ink outline-none focus:border-line-strong"
+              />
+            </label>
+          </div>
+        )}
+        {renko.method === 'percentage' && (
+          <div className="px-3 py-2">
+            <label className="flex items-center gap-2 text-[11px] text-ink-faint">
+              Percent
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={renko.percentage}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n > 0) set({ percentage: n });
+                }}
+                className="ml-auto w-20 rounded border border-line bg-base px-1.5 py-1 text-right font-mono text-[12px] text-ink outline-none focus:border-line-strong"
+              />
+            </label>
+          </div>
+        )}
+      </ChipMenu>
     </div>
   );
 }
@@ -488,7 +666,7 @@ function MoreMenu({ onFitContent }: { onFitContent: () => void }) {
   );
 }
 
-export function IndicatorSelect({
+export function IndicatorChip({
   activeIds,
   onToggle,
   onClear,
@@ -498,80 +676,46 @@ export function IndicatorSelect({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [open]);
-
   const count = activeIds.length;
+  const label = count > 0 ? `Indicators · ${count}` : 'Indicators';
 
   return (
-    <div ref={ref} className="relative hidden sm:block">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-7 items-center gap-2 rounded px-2 py-0.5 transition-colors hover:bg-surface-2 text-ink-muted hover:text-ink focus-ring"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-          <polyline points="2 11 8 5 12 9 22 1" />
-          <path d="M2 22 L2 14 M6 22 L6 14 M6 14 L2 14" strokeWidth="0" fill="currentColor" />
-          <rect x="2" y="15" width="4" height="7" stroke="currentColor" fill="none" />
-          <rect x="8" y="11" width="4" height="11" stroke="currentColor" fill="none" />
-          <rect x="14" y="13" width="4" height="9" stroke="currentColor" fill="none" />
-        </svg>
-        <span className="text-[13px] font-medium tracking-wide">Indicators</span>
+    <div className="relative">
+      <Chip
+        icon={
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1.5 12L5 8l3 3 6.5-7" />
+            <path d="M1.5 14h13" />
+          </svg>
+        }
+        label={label}
+        active={count > 0}
+        open={open}
+        onClick={() => setOpen((v) => !v)}
+        title="Indicators"
+        ariaLabel="Indicators"
+      />
+      <ChipMenu open={open} onClose={() => setOpen(false)} width={260}>
+        <div className="max-h-[60vh] overflow-auto">
+          {CUSTOM_INDICATORS.map((ind) => (
+            <MenuItem
+              key={ind.id}
+              active={activeIds.includes(ind.id)}
+              onClick={() => onToggle(ind.id)}
+            >
+              {ind.name}
+            </MenuItem>
+          ))}
+        </div>
         {count > 0 && (
-          <span className="rounded-full bg-accent/20 px-1.5 text-[10px] font-semibold tabular-nums text-ink">
-            {count}
-          </span>
+          <>
+            <MenuDivider />
+            <MenuItem danger onClick={() => { onClear(); setOpen(false); }}>
+              Clear all ({count})
+            </MenuItem>
+          </>
         )}
-        <ChevronDown size={14} className="opacity-70" />
-      </button>
-      {open && (
-        <ul className="absolute left-3 top-full z-30 mt-1 max-h-[60vh] min-w-[240px] overflow-auto rounded-lg border border-line bg-surface-1 shadow-2xl py-1">
-          {CUSTOM_INDICATORS.map((ind) => {
-            const on = activeIds.includes(ind.id);
-            return (
-              <li key={ind.id}>
-                <button
-                  onClick={() => onToggle(ind.id)}
-                  aria-pressed={on}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium transition-colors ${
-                    on ? 'text-ink' : 'text-ink-muted hover:bg-surface-2 hover:text-ink'
-                  }`}
-                >
-                  <span
-                    className={`flex h-4 w-4 flex-none items-center justify-center rounded border text-[10px] ${
-                      on ? 'border-accent bg-accent/20 text-ink' : 'border-line text-transparent'
-                    }`}
-                  >
-                    ✓
-                  </span>
-                  {ind.name}
-                </button>
-              </li>
-            );
-          })}
-          {count > 0 && (
-            <li className="border-t border-line mt-1 pt-1">
-              <button
-                onClick={() => {
-                  onClear();
-                  setOpen(false);
-                }}
-                className="block w-full px-3 py-2 text-left text-[13px] font-medium transition-colors text-bear-bright hover:bg-surface-2"
-              >
-                Clear all ({count})
-              </button>
-            </li>
-          )}
-        </ul>
-      )}
+      </ChipMenu>
     </div>
   );
 }

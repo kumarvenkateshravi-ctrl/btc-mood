@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { Candle, Timeframe } from '@/lib/types';
 import { parseCandlesFromBinance } from '@/lib/schemas';
 import { COMPARE_SYMBOLS, isCompareSymbol } from '@/lib/compare';
+import {
+  DEFAULT_DATA_SOURCE_ID,
+  hasDataSource,
+  listDataSourceMetas,
+} from '@/lib/dataSource';
 
 const VALID_TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const CACHE_TTL_MS = 5000;
@@ -130,6 +135,7 @@ function recordError(message: string) {
 export async function GET(req: NextRequest) {
   const tf = req.nextUrl.searchParams.get('tf') ?? '15m';
   const symbolParam = req.nextUrl.searchParams.get('symbol') ?? 'BTCUSDT';
+  const sourceParam = req.nextUrl.searchParams.get('source') ?? DEFAULT_DATA_SOURCE_ID;
 
   if (!(VALID_TIMEFRAMES as string[]).includes(tf)) {
     return NextResponse.json(
@@ -143,6 +149,34 @@ export async function GET(req: NextRequest) {
         error: `Invalid symbol. Allowed: ${COMPARE_SYMBOLS.map((c) => c.symbol).join(', ')}`,
       },
       { status: 400 },
+    );
+  }
+
+  // Data-source seam. The route still hard-codes Binance-specific
+  // behavior (rate limiting, cache, upstream URL) because Binance
+  // is the only active source today. Unknown / unimplemented sources
+  // get a 501 that lists the registered sources so the client can
+  // surface a useful error.
+  if (sourceParam !== 'binance-spot') {
+    if (!hasDataSource(sourceParam)) {
+      return NextResponse.json(
+        {
+          error: 'unknown_source',
+          requested: sourceParam,
+          available: listDataSourceMetas().map((m) => m.id),
+        },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json(
+      {
+        error: 'not_implemented',
+        source: sourceParam,
+        message:
+          'This data source is registered but not yet wired into /api/klines. ' +
+          'Only binance-spot is currently active.',
+      },
+      { status: 501 },
     );
   }
 
