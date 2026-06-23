@@ -249,10 +249,11 @@ export default function Chart({
     return [];
   }, [indicatorResults, indicatorResult, activeIndicatorId]);
 
-  // Indicators with their eye toggled off are dropped from rendering entirely.
+  // All active indicators are kept in structure so their panes don't collapse when hidden.
+  // We simply turn off visibility of their plots.
   const visibleResults = useMemo<IndicatorRender[]>(
-    () => renderResults.filter((r) => !hiddenKeys.has(r.key)),
-    [renderResults, hiddenKeys],
+    () => renderResults,
+    [renderResults],
   );
 
   // Live style edits (color / thickness / per-plot visibility) applied to
@@ -264,16 +265,18 @@ export default function Chart({
       const instKey = sep >= 0 ? seriesKey.slice(0, sep) : seriesKey;
       const plotId = sep >= 0 ? seriesKey.slice(sep + 2) : seriesKey;
       const st = indicatorSettingsMap?.[instKey]?.styles?.[plotId];
-      if (!st) return;
+      // If the entire indicator is hidden via the eye toggle, hide all its plots
+      const isHidden = hiddenKeys.has(instKey);
+      
       try {
         series.applyOptions({
-          color: st.color || undefined,
-          lineWidth: (st.thickness as 1 | 2 | 3 | 4) || undefined,
-          visible: st.display !== false,
+          color: st?.color || undefined,
+          lineWidth: (st?.thickness as 1 | 2 | 3 | 4) || undefined,
+          visible: isHidden ? false : (st?.display !== false),
         });
       } catch {}
     });
-  }, [indicatorSettingsMap, visibleResults]);
+  }, [indicatorSettingsMap, visibleResults, hiddenKeys]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const priceCardRef = useRef<HTMLDivElement | null>(null);
@@ -1093,7 +1096,8 @@ export default function Chart({
         .map((r) => {
           const settings = indicatorSettingsMap?.[r.key];
           const settingsSig = settings ? JSON.stringify({ styles: settings.styles, labelsOnPriceScale: settings.labelsOnPriceScale }) : '';
-          return `${r.key}#${settingsSig}#${r.result.plots.map((p) => `${p.id}:${p.type}:${p.pane ?? 'overlay'}`).join(',')}`;
+          const isHidden = hiddenKeys.has(r.key);
+          return `${r.key}#${settingsSig}#${isHidden}#${r.result.plots.map((p) => `${p.id}:${p.type}:${p.pane ?? 'overlay'}`).join(',')}`;
         })
         .join('|');
 
@@ -1149,7 +1153,8 @@ export default function Chart({
             const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
             const color = st?.color || plot.color;
             const lineWidth = (st?.thickness as 1 | 2 | 3 | 4) || (plot.lineWidth as 1 | 2 | 3 | 4) || 2;
-            const visible = st?.display !== false;
+            const isHidden = hiddenKeys.has(key);
+            const visible = isHidden ? false : (st?.display !== false);
             const labelsOnPriceScale = indicatorSettingsMap?.[key]?.labelsOnPriceScale ?? true;
             let series: ISeriesApi<'Line'> | ISeriesApi<'Histogram'> | undefined;
             if (plot.type === 'histogram') {
