@@ -61,6 +61,29 @@ export function ema(src: (number | null)[], length: number): (number | null)[] {
   return out;
 }
 
+/**
+ * EMA exactly as TradingView's `ta.ema` (documented `pine_ema`):
+ *   sum := na(sum[1]) ? src : alpha*src + (1 - alpha)*sum[1]
+ * i.e. it SEEDS with the first non-null source value and emits from that bar
+ * onward — it is NOT SMA-seeded like `ema()` above. Use this whenever matching
+ * TradingView's `ta.ema` to the bar (MACD, etc.). Leading nulls stay null; the
+ * series seeds at the first real value.
+ */
+export function emaPine(src: (number | null)[], length: number): (number | null)[] {
+  const out = new Array<number | null>(src.length).fill(null);
+  if (length <= 0) return out;
+
+  const alpha = 2 / (length + 1);
+  let prev: number | null = null;
+  for (let i = 0; i < src.length; i++) {
+    const val = src[i];
+    if (val === null) continue; // warm-up / na: leave null, keep prior seed state
+    prev = prev === null ? val : alpha * val + (1 - alpha) * prev;
+    out[i] = prev;
+  }
+  return out;
+}
+
 export function rma(src: (number | null)[], length: number): (number | null)[] {
   const out = new Array<number | null>(src.length).fill(null);
   if (length <= 0) return out;

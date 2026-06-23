@@ -76,7 +76,10 @@ export function resolveSource(
   if (sourceKey === 'high') return candles.map(c => c.high);
   if (sourceKey === 'low') return candles.map(c => c.low);
   if (sourceKey === 'volume') return candles.map(c => c.volume);
-  
+  if (sourceKey === 'hl2') return candles.map(c => (c.high + c.low) / 2);
+  if (sourceKey === 'hlc3') return candles.map(c => (c.high + c.low + c.close) / 3);
+  if (sourceKey === 'ohlc4') return candles.map(c => (c.open + c.high + c.low + c.close) / 4);
+
   // Default to close
   return candles.map(c => c.close);
 }

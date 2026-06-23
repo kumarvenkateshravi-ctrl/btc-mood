@@ -164,11 +164,25 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'macd',
     name: 'MACD',
-    description: 'Moving Average Convergence Divergence with signal line and histogram.',
+    description: 'Faithful port of TradingView’s built-in MACD: configurable source, fast/slow/signal lengths, and EMA/SMA selection for both the oscillator and the signal line.',
     inputs: [
       { id: 'fast', name: 'Fast Length', type: 'number', default: 12, min: 1, max: 200, step: 1 },
       { id: 'slow', name: 'Slow Length', type: 'number', default: 26, min: 1, max: 200, step: 1 },
+      { id: 'source', name: 'Source', type: 'source', default: 'close',
+        options: [
+          { value: 'close', label: 'Close' },
+          { value: 'open', label: 'Open' },
+          { value: 'high', label: 'High' },
+          { value: 'low', label: 'Low' },
+          { value: 'hl2', label: 'HL2' },
+          { value: 'hlc3', label: 'HLC3' },
+          { value: 'ohlc4', label: 'OHLC4' },
+        ] },
       { id: 'signal', name: 'Signal Smoothing', type: 'number', default: 9, min: 1, max: 100, step: 1 },
+      { id: 'oscMaType', name: 'Oscillator MA Type', type: 'select', default: 'EMA',
+        options: [{ value: 'EMA', label: 'EMA' }, { value: 'SMA', label: 'SMA' }] },
+      { id: 'signalMaType', name: 'Signal Line MA Type', type: 'select', default: 'EMA',
+        options: [{ value: 'EMA', label: 'EMA' }, { value: 'SMA', label: 'SMA' }] },
     ],
     styles: [
       { id: 'macd', name: 'MACD', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true },

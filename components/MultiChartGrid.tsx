@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 import Chart, { type ChartType, type IndicatorRender } from './Chart';
+import { useBaseCandles } from '@/lib/chartHelpers';
+import { DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { Candle, Timeframe } from '@/lib/types';
 import { GRID_COLS_CLASS, type GridCount } from '@/lib/gridLayout';
@@ -83,6 +85,9 @@ function GridCell({
   onSelect: () => void;
   height: number;
 }) {
+  const renkoOptions = useMemo(() => renkoConfigToOptions(DEFAULT_RENKO), []);
+  const baseCandlesForIndicators = useBaseCandles(candles, type, renkoOptions);
+
   // Recompute custom indicators on price tick or settings change
   const indicatorResults = useMemo(() => {
     if (candles.length === 0) return [];
@@ -100,7 +105,7 @@ function GridCell({
         savedSettings = JSON.parse(defaultsStr)[id];
       } catch {}
       
-      const result = def.compute(candles, { id, settings: savedSettings }, computedSources);
+      const result = def.compute(baseCandlesForIndicators, { id, settings: savedSettings }, computedSources);
       
       // Feed line/histogram plot outputs into the computed sources for downstream indicators
       result.plots.forEach((plot) => {
@@ -119,7 +124,7 @@ function GridCell({
     });
     
     return results;
-  }, [candles, activeIndicatorIds]);
+  }, [baseCandlesForIndicators, activeIndicatorIds]);
 
   return (
     <div
@@ -145,11 +150,12 @@ function GridCell({
         </div>
       ) : (
         <Chart
-          candles={candles}
+          candles={baseCandlesForIndicators}
           type={type}
           height={height}
           tf={tf}
           indicatorResults={indicatorResults}
+          renko={renkoOptions}
           showSignals={false}
           activeIndicatorId=""
           onIndicatorChange={() => {}}

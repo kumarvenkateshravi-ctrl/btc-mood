@@ -997,12 +997,7 @@ export default function Chart({
     prevTypeRef.current = type;
     prevTfRef.current = tf ?? null;
 
-    const baseCandles =
-      type === 'heikinAshi'
-        ? toHeikinAshi(candles)
-        : type === 'renko'
-        ? toRenko(candles, renko ?? {})
-        : candles;
+    const baseCandles = candles;
     const closes = candles.map((c) => c.close);
     hoverInputsRef.current = { src: candles, base: baseCandles, isRenko };
 
@@ -1298,12 +1293,7 @@ export default function Chart({
       fx.setOptions({ bars: [], latestIndex: -1 });
       return;
     }
-    const baseCandles =
-      type === 'heikinAshi'
-        ? toHeikinAshi(candles)
-        : type === 'renko'
-        ? toRenko(candles, renko ?? {})
-        : candles;
+    const baseCandles = candles;
     if (baseCandles.length === 0) {
       fx.setOptions({ bars: [], latestIndex: -1 });
       return;

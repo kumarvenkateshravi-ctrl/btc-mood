@@ -26,6 +26,7 @@ import { FALLBACK_HEIGHT } from '@/lib/chartHeight';
 import type { Candle, Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
+import { useBaseCandles } from '@/lib/chartHelpers';
 
 interface ChartPanelProps {
   candles: Candle[];
@@ -407,6 +408,10 @@ export default function ChartPanel({
 
   const loading = candles.length === 0;
 
+  // Pre-calculate synthetic/smoothed candles (Renko/Heikin Ashi) so indicators
+  // align with the actual visual bricks/smoothed prices rather than raw time-based candles.
+  const baseCandlesForIndicators = useBaseCandles(candles, type, renkoOptions);
+
   // The whole indicator stack, computed once per candle/settings change.
   // We process sequentially so that indicators can use prior indicators as inputs.
   const indicatorResults = useMemo(() => {
@@ -419,7 +424,7 @@ export default function ChartPanel({
       const def = CUSTOM_INDICATORS.find((d) => d.id === id);
       if (!def) return;
       
-      const result = def.compute(candles, { id, settings: indicatorSettings[id] }, computedSources);
+      const result = def.compute(baseCandlesForIndicators, { id, settings: indicatorSettings[id] }, computedSources);
       
       // Feed line/histogram plot outputs into the computed sources for downstream indicators
       result.plots.forEach(plot => {
@@ -438,7 +443,7 @@ export default function ChartPanel({
     });
     
     return results;
-  }, [candles, loading, activeIndicatorIds, indicatorSettings]);
+  }, [baseCandlesForIndicators, loading, activeIndicatorIds, indicatorSettings]);
 
   // The primary (first) indicator still drives the legend + settings modal.
   const indicatorResult = indicatorResults[0]?.result ?? null;
@@ -513,7 +518,7 @@ export default function ChartPanel({
         {loading && <ChartSkeleton height={chartHeight} />}
         {!loading && (
           <Chart
-            candles={replayCandles}
+            candles={baseCandlesForIndicators}
             type={type}
             height={chartHeight}
             indicatorResult={indicatorResult}
