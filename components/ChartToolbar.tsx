@@ -17,6 +17,7 @@ import {
   Layers,
   Save,
   Square,
+  Bitcoin,
 } from 'lucide-react';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -52,8 +53,6 @@ export interface ChartToolbarProps {
   // Renko controls — only shown when chartType === 'renko'.
   renko: RenkoConfig;
   onRenkoChange: (c: RenkoConfig) => void;
-  priceScaleMode: ToolbarPriceScaleMode;
-  onPriceScaleModeChange: (m: ToolbarPriceScaleMode) => void;
   activeIndicatorIds: string[];
   onToggleIndicator: (id: string) => void;
   onClearIndicators: () => void;
@@ -68,6 +67,9 @@ export interface ChartToolbarProps {
   // Workspace controls
   workspaceCurrent: WorkspaceConfig;
   onWorkspaceApply: (cfg: WorkspaceConfig) => void;
+  // Layout toggles
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export default function ChartToolbar(props: ChartToolbarProps) {
@@ -88,8 +90,6 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onFitContent,
     renko,
     onRenkoChange,
-    priceScaleMode,
-    onPriceScaleModeChange,
     activeIndicatorIds,
     onToggleIndicator,
     onClearIndicators,
@@ -102,27 +102,36 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onGridChange,
     workspaceCurrent,
     onWorkspaceApply,
+    isSidebarOpen,
+    onToggleSidebar,
   } = props;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-surface-2/60 px-3 py-2">
+    <div className="flex h-[40px] w-full shrink-0 flex-nowrap items-center gap-0.5 overflow-visible border-b border-line bg-base px-2">
+      {/* App Logo */}
+      <div className="flex shrink-0 items-center justify-center px-1 pr-3">
+        <Bitcoin className="h-5 w-5 text-regime-hot" />
+      </div>
+
+      <ToolbarDivider />
+
       {/* Symbol / price / change */}
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-sm font-semibold tracking-tight text-ink">
+      <div className="flex shrink-0 items-center gap-2 px-2">
+        <span className="text-[14px] font-semibold tracking-tight text-ink">
           {symbol}
         </span>
         {price != null && (
-          <span className="font-mono text-base tabular-nums text-ink">
+          <span className="font-mono text-[14px] tabular-nums text-ink">
             {price.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
             })}
           </span>
         )}
         {change != null && (
           <span
             className={[
-              'font-mono text-xs tabular-nums',
+              'font-mono text-[12px] tabular-nums',
               change >= 0 ? 'text-bull-bright' : 'text-bear-bright',
             ].join(' ')}
           >
@@ -134,65 +143,111 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* Timeframe dropdown */}
-      <TimeframeChip selected={selected} onSelect={onSelectTf} />
+      {/* Timeframes Quick-Row */}
+      <div className="flex shrink-0 items-center h-full">
+        <TimeframeChip value={selected} onChange={onSelectTf} />
+      </div>
 
       <ToolbarDivider />
 
-      {/* Chart type + price scale */}
-      <ChartTypeChip value={chartType} onChange={onSelectType} />
-      <PriceScaleChip value={priceScaleMode} onChange={onPriceScaleModeChange} />
+      {/* Chart type */}
+      <div className="flex shrink-0 items-center h-full">
+        <ChartTypeChip value={chartType} onChange={onSelectType} />
+      </div>
 
       {/* Renko config (conditional) */}
       {chartType === 'renko' && (
         <>
           <ToolbarDivider />
-          <RenkoChip renko={renko} onChange={onRenkoChange} lastPrice={price} />
+          <div className="flex shrink-0 items-center h-full">
+            <RenkoChip renko={renko} onChange={onRenkoChange} lastPrice={price} />
+          </div>
         </>
       )}
 
       <ToolbarDivider />
 
       {/* Indicators dropdown */}
-      <IndicatorChip
-        activeIds={activeIndicatorIds}
-        onToggle={onToggleIndicator}
-        onClear={onClearIndicators}
-      />
+      <div className="flex shrink-0 items-center h-full">
+        <IndicatorChip
+          activeIds={activeIndicatorIds}
+          onToggle={onToggleIndicator}
+          onClear={onClearIndicators}
+        />
+      </div>
 
       <ToolbarDivider />
 
       {/* Replay + jump-to-date */}
-      <ChipButton
-        icon={<History className="h-3.5 w-3.5" />}
-        label="Replay"
-        active={replayActive}
-        onClick={onReplayToggle}
-        title="Bar Replay"
-      />
-      <DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
+      <div className="flex shrink-0 items-center h-full">
+        <ChipButton
+          icon={<History className="h-3.5 w-3.5" />}
+          label="Replay"
+          active={replayActive}
+          onClick={onReplayToggle}
+          title="Bar Replay"
+        />
+        <DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
+      </div>
 
       <ToolbarDivider />
 
       {/* Grid layout chip */}
-      <GridChip value={gridCount} onChange={onGridChange} />
+      <div className="flex shrink-0 items-center h-full">
+        <GridChip value={gridCount} onChange={onGridChange} />
+      </div>
 
       {/* Workspace chip */}
-      <WorkspaceChip current={workspaceCurrent} onApply={onWorkspaceApply} />
+      <div className="flex shrink-0 items-center h-full">
+        <WorkspaceChip current={workspaceCurrent} onApply={onWorkspaceApply} />
+      </div>
 
       {/* Spacer pushes fullscreen + more to the right */}
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center h-full px-1">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            title={isSidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar'}
+            className="focus-ring inline-flex h-full px-2 items-center justify-center text-ink-faint transition hover:text-ink hidden xl:inline-flex"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {isSidebarOpen ? (
+                <>
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <path d="M15 3v18" />
+                  <path d="m10 15-3-3 3-3" />
+                </>
+              ) : (
+                <>
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <path d="M15 3v18" />
+                  <path d="m8 9 3 3-3 3" />
+                </>
+              )}
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           onClick={onToggleFullscreen}
           aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F)'}
-          className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition hover:bg-surface-3 hover:text-ink"
+          className="focus-ring inline-flex h-full px-2 items-center justify-center text-ink-faint transition hover:text-ink"
         >
           {isFullscreen ? (
-            <Minimize2 className="h-3.5 w-3.5" />
+            <Minimize2 className="h-4 w-4" />
           ) : (
-            <Maximize2 className="h-3.5 w-3.5" />
+            <Maximize2 className="h-4 w-4" />
           )}
         </button>
         <MoreMenu onFitContent={onFitContent} />
@@ -202,7 +257,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 }
 
 function ToolbarDivider() {
-  return <span className="h-5 w-px shrink-0 bg-line" aria-hidden />;
+  return <span className="mx-0.5 h-[20px] w-px shrink-0 bg-line" aria-hidden />;
 }
 
 /** TradingView-style toolbar control: icon + label + caret, on a raised chip. */
@@ -232,15 +287,15 @@ function Chip({
       aria-haspopup={onClick ? 'menu' : undefined}
       aria-expanded={open}
       className={[
-        'focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition',
+        'focus-ring inline-flex h-full items-center gap-1.5 px-2 text-[13px] font-medium transition-colors',
         active || open
-          ? 'border-line-strong bg-surface-3 text-ink'
-          : 'border-line bg-surface-1 text-ink-muted hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+          ? 'text-accent'
+          : 'text-ink-muted hover:text-ink',
       ].join(' ')}
     >
       {icon && <span className="flex h-3.5 w-3.5 items-center justify-center">{icon}</span>}
       <span className="leading-none">{label}</span>
-      <ChevronDown className="h-3 w-3 opacity-70" />
+      <ChevronDown className="ml-0.5 h-3 w-3 opacity-70" />
     </button>
   );
 }
@@ -269,10 +324,10 @@ function ChipButton({
       aria-label={ariaLabel ?? title}
       aria-pressed={active}
       className={[
-        'focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition',
+        'focus-ring inline-flex h-full items-center gap-1.5 px-2 text-[13px] font-medium transition-colors',
         active
-          ? 'border-line-strong bg-surface-3 text-ink'
-          : 'border-line bg-surface-1 text-ink-muted hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+          ? 'text-accent'
+          : 'text-ink-muted hover:text-ink',
       ].join(' ')}
     >
       {icon && <span className="flex h-3.5 w-3.5 items-center justify-center">{icon}</span>}
@@ -348,7 +403,7 @@ function MenuItem({
       onClick={onClick}
       disabled={disabled}
       className={[
-        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] font-medium transition',
+        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] font-medium transition',
         active
           ? 'bg-accent/15 text-ink'
           : disabled
@@ -369,33 +424,49 @@ function MenuDivider() {
 }
 
 function TimeframeChip({
-  selected,
-  onSelect,
+  value,
+  onChange,
 }: {
-  selected: Timeframe;
-  onSelect: (tf: Timeframe) => void;
+  value: Timeframe;
+  onChange: (t: Timeframe) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <Chip
-        icon={<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2 1.5" /></svg>}
-        label={selected}
-        open={open}
+      <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
         title="Timeframe"
-        ariaLabel="Timeframe"
-      />
+        aria-label="Timeframe"
+        aria-expanded={open}
+        className={[
+          'focus-ring inline-flex h-[24px] items-center justify-center px-1.5 text-[14px] font-medium transition-colors rounded hover:bg-surface-2',
+          open ? 'text-accent bg-surface-2' : 'text-ink hover:text-ink',
+        ].join(' ')}
+      >
+        <span className="leading-none">{value}</span>
+      </button>
       <ChipMenu open={open} onClose={() => setOpen(false)} width={120}>
-        {TIMEFRAMES.map((tf) => (
-          <MenuItem key={tf} active={tf === selected} onClick={() => { onSelect(tf); setOpen(false); }}>
-            <span className="font-mono">{tf}</span>
+        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          Timeframe
+        </div>
+        {['1m', '5m', '15m', '1h', '4h', '1d'].map((tf) => (
+          <MenuItem
+            key={tf}
+            active={value === tf}
+            onClick={() => {
+              onChange(tf as Timeframe);
+              setOpen(false);
+            }}
+          >
+            {tf}
           </MenuItem>
         ))}
       </ChipMenu>
     </div>
   );
 }
+
 
 function ChartTypeChip({
   value,
@@ -508,48 +579,7 @@ function DateChip({
   );
 }
 
-function PriceScaleChip({
-  value,
-  onChange,
-}: {
-  value: ToolbarPriceScaleMode;
-  onChange: (v: ToolbarPriceScaleMode) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const LABELS: Record<ToolbarPriceScaleMode, string> = {
-    normal: 'Lin',
-    log: 'Log',
-    percent: '%',
-  };
-  return (
-    <div className="relative">
-      <Chip
-        icon={
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1.5 13.5L4 11l3 2 3.5-3.5 4 3" />
-            <path d="M14.5 2.5v8M11.5 5.5h6" />
-          </svg>
-        }
-        label={LABELS[value]}
-        open={open}
-        onClick={() => setOpen((v) => !v)}
-        title="Price scale"
-        ariaLabel="Price scale"
-      />
-      <ChipMenu open={open} onClose={() => setOpen(false)} width={150}>
-        <MenuItem active={value === 'normal'} onClick={() => { onChange('normal'); setOpen(false); }}>
-          Lin (Linear)
-        </MenuItem>
-        <MenuItem active={value === 'log'} onClick={() => { onChange('log'); setOpen(false); }}>
-          Log
-        </MenuItem>
-        <MenuItem active={value === 'percent'} onClick={() => { onChange('percent'); setOpen(false); }}>
-          %
-        </MenuItem>
-      </ChipMenu>
-    </div>
-  );
-}
+
 
 function RenkoChip({
   renko,
@@ -669,7 +699,7 @@ function MoreMenu({ onFitContent }: { onFitContent: () => void }) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition hover:bg-surface-3 hover:text-ink"
+        className="focus-ring inline-flex h-full px-2 items-center justify-center text-ink-faint transition hover:text-ink"
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
@@ -729,10 +759,10 @@ function GridChip({
         aria-label="Grid layout"
         aria-expanded={open}
         className={[
-          'focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md border transition',
+          'focus-ring inline-flex h-full px-2 items-center justify-center transition-colors',
           open || value > 1
-            ? 'border-line-strong bg-surface-3 text-ink'
-            : 'border-line bg-surface-1 text-ink-faint hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+            ? 'text-accent'
+            : 'text-ink-faint hover:text-ink',
         ].join(' ')}
       >
         <LayoutGrid className="h-3.5 w-3.5" />
@@ -841,10 +871,10 @@ function WorkspaceChip({
         aria-label="Workspaces"
         aria-expanded={open}
         className={[
-          'focus-ring relative inline-flex h-8 w-8 items-center justify-center rounded-md border transition',
+          'focus-ring relative inline-flex h-full px-2 items-center justify-center transition-colors',
           open
-            ? 'border-line-strong bg-surface-3 text-ink'
-            : 'border-line bg-surface-1 text-ink-faint hover:border-line-strong hover:bg-surface-2 hover:text-ink',
+            ? 'text-accent'
+            : 'text-ink-faint hover:text-ink',
         ].join(' ')}
       >
         <Layers className="h-3.5 w-3.5" />

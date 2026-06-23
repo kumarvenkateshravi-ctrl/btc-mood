@@ -103,9 +103,14 @@ function GridCell({
       const result = def.compute(candles, { id, settings: savedSettings }, computedSources);
       
       // Feed line/histogram plot outputs into the computed sources for downstream indicators
-      result.plots.forEach(plot => {
+      result.plots.forEach((plot) => {
         if (plot.type === 'line' || plot.type === 'histogram') {
-          const dataArr = plot.data.map(d => typeof d === 'number' ? d : (d?.value ?? null));
+          const dataArr = plot.data.map((d) => {
+            if (typeof d === 'number') return d;
+            if (!d) return null;
+            if ('value' in d) return d.value;
+            return null;
+          });
           computedSources[`${id}:${plot.id}`] = dataArr;
         }
       });

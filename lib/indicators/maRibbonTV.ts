@@ -14,11 +14,14 @@
  */
 
 import * as pm from '../pineMath';
-import type { Candle } from '../types';
+import type { Candle, Timeframe } from '../types';
 import type { IndicatorResult, CustomIndicatorConfig } from '../indicatorFramework';
 import { neutralSignals, resolveInputs } from './itsTemplates';
+import { TF_SECONDS } from '../confluence';
 
 type MAType = 'SMA' | 'EMA' | 'SMMA (RMA)' | 'WMA' | 'VWMA';
+/** 'chart' = compute on the chart's own bars; otherwise resample up to this TF. */
+type RibbonTimeframe = 'chart' | '5m' | '15m' | '1h' | '4h' | '1d';
 
 export interface MaRibbonTVInputs {
   showMa1: boolean;
@@ -33,6 +36,10 @@ export interface MaRibbonTVInputs {
   showMa4: boolean;
   ma4Type: MAType;
   ma4Length: number;
+  /** Calculate the ribbon on a higher timeframe, then project onto chart bars. */
+  timeframe: RibbonTimeframe;
+  /** Non-repainting: only reveal a HTF value once that HTF bar has closed. */
+  waitForTimeframeCloses: boolean;
 }
 
 const DEFAULTS: MaRibbonTVInputs = {
@@ -40,7 +47,39 @@ const DEFAULTS: MaRibbonTVInputs = {
   showMa2: true,  ma2Type: 'SMA', ma2Length: 50,
   showMa3: true,  ma3Type: 'SMA', ma3Length: 100,
   showMa4: true,  ma4Type: 'SMA', ma4Length: 200,
+  timeframe: 'chart',
+  waitForTimeframeCloses: true,
 };
+
+/**
+ * Resample chart candles into `seconds`-wide buckets (OHLCV aggregation), and
+ * record which higher-timeframe bucket each chart bar falls into so HTF series
+ * can be projected back onto the chart's x-axis.
+ */
+function resample(
+  candles: Candle[],
+  seconds: number,
+): { htf: Candle[]; bucketOf: number[] } {
+  const htf: Candle[] = [];
+  const bucketOf = new Array<number>(candles.length);
+  let curId: number | null = null;
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const id = Math.floor(c.time / seconds);
+    if (curId === null || id !== curId) {
+      htf.push({ time: id * seconds, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume });
+      curId = id;
+    } else {
+      const b = htf[htf.length - 1];
+      if (c.high > b.high) b.high = c.high;
+      if (c.low < b.low) b.low = c.low;
+      b.close = c.close;
+      b.volume += c.volume;
+    }
+    bucketOf[i] = htf.length - 1;
+  }
+  return { htf, bucketOf };
+}
 
 /** TV default colors, matching the PineScript hex values. */
 const COLORS = ['#f6c309', '#fb9800', '#fb6500', '#f60c0c'] as const;
@@ -71,8 +110,37 @@ export function computeMaRibbonTV(
 ): IndicatorResult {
   const inputs = resolveInputs<MaRibbonTVInputs>(config, DEFAULTS);
   const n = candles.length;
-  const closes  = candles.map((c) => c.close);
-  const volumes = candles.map((c) => c.volume);
+  const waitClose = Boolean(inputs.waitForTimeframeCloses);
+
+  // Decide whether to run on a higher timeframe. We only resample UP: if the
+  // requested TF is finer than (or equal to) the chart's bar spacing we have no
+  // sub-bar data, so fall back to the chart's own resolution.
+  const chartSpacing = n >= 2 ? candles[1].time - candles[0].time : 0;
+  const targetSeconds =
+    inputs.timeframe !== 'chart' ? (TF_SECONDS[inputs.timeframe as Timeframe] ?? 0) : 0;
+  const useMTF = targetSeconds > chartSpacing && targetSeconds > 0;
+
+  // Source series the MAs are computed on, and a projector back to chart bars.
+  let srcCloses: number[];
+  let srcVolumes: number[];
+  let project: (htfMA: (number | null)[]) => (number | null)[];
+
+  if (useMTF) {
+    const { htf, bucketOf } = resample(candles, targetSeconds);
+    srcCloses = htf.map((c) => c.close);
+    srcVolumes = htf.map((c) => c.volume);
+    // Each chart bar shows its HTF bucket's value; with "wait for closes" we lag
+    // by one bucket so a value only appears after its HTF bar has closed.
+    project = (htfMA) =>
+      bucketOf.map((b) => {
+        const idx = waitClose ? b - 1 : b;
+        return idx >= 0 ? (htfMA[idx] ?? null) : null;
+      });
+  } else {
+    srcCloses = candles.map((c) => c.close);
+    srcVolumes = candles.map((c) => c.volume);
+    project = (ma) => ma; // already aligned to chart bars
+  }
 
   const mas: { show: boolean; type: MAType; length: number; label: string; color: string }[] = [
     { show: Boolean(inputs.showMa1), type: inputs.ma1Type, length: Number(inputs.ma1Length), label: 'MA #1', color: COLORS[0] },
@@ -89,7 +157,7 @@ export function computeMaRibbonTV(
     pane:      'overlay' as const,
     lineWidth: 2 as const,
     data:      m.show && m.length >= 1
-      ? computeMA(closes, volumes, m.length, m.type)
+      ? project(computeMA(srcCloses, srcVolumes, m.length, m.type))
       : new Array<null>(n).fill(null),
   }));
 

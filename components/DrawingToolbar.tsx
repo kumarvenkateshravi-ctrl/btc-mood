@@ -58,7 +58,7 @@ export default function DrawingToolbar({
   count,
 }: DrawingToolbarProps) {
   return (
-    <div className="flex w-9 flex-col items-center gap-0.5 border-r border-line bg-surface-2/40 py-2">
+    <div className="flex w-10 flex-col items-center gap-1 border-r border-line bg-base py-2">
       {TOOLS.map((t) => (
         <RailButton
           key={t.tool}
@@ -128,12 +128,12 @@ function RailButton({
       aria-label={label}
       aria-pressed={active}
       className={[
-        'focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-30',
+        'focus-ring inline-flex h-8 w-8 items-center justify-center rounded transition disabled:opacity-30',
         active
-          ? 'bg-accent/20 text-ink'
+          ? 'text-accent'
           : danger
-            ? 'text-ink-faint hover:bg-surface-2 hover:text-bear-bright'
-            : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+            ? 'text-ink-faint hover:text-bear-bright'
+            : 'text-ink-muted hover:text-ink',
       ].join(' ')}
     >
       {children}

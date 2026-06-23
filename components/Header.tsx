@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Bitcoin } from 'lucide-react';
 import HealthDot from './HealthDot';
 
-export default function Header() {
+export default function Header({ rightControls }: { rightControls?: React.ReactNode }) {
   const pathname = usePathname();
   const isApp = pathname?.startsWith('/app');
   return (
@@ -37,6 +37,7 @@ export default function Header() {
           >
             Dashboard
           </Link>
+          {rightControls}
         </nav>
       </div>
     </header>

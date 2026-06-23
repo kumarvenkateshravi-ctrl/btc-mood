@@ -1,6 +1,5 @@
 import { computeSMACrossover } from './indicators/smaCrossover';
 import { computeSqueezeMomentum } from './indicators/squeezeMomentum';
-import { computeMaRibbon } from './indicators/maRibbon';
 import { computeMaRibbonTV } from './indicators/maRibbonTV';
 import { computeMacd } from './indicators/macd';
 import { computeBollingerBands } from './indicators/bollingerBands';
@@ -25,7 +24,7 @@ export interface CustomIndicatorDef {
   id: string;
   name: string;
   description: string;
-  compute: (candles: Candle[], config?: CustomIndicatorConfig) => IndicatorResult;
+  compute: (candles: Candle[], config?: CustomIndicatorConfig, computedSources?: Record<string, (number | null)[]>) => IndicatorResult;
   inputs?: IndicatorInputDef[];
   styles?: IndicatorStyleDef[];
 }
@@ -108,25 +107,9 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     compute: computeSqueezeMomentum,
   },
   {
-    id: 'ma_ribbon',
-    name: 'MA Ribbon (EMA 9/21/50)',
-    description: 'Three EMAs on the price pane; stacking order reads the trend.',
-    inputs: [
-      { id: 'fast', name: 'Fast EMA', type: 'number', default: 9, min: 1, max: 500, step: 1 },
-      { id: 'mid', name: 'Mid EMA', type: 'number', default: 21, min: 1, max: 500, step: 1 },
-      { id: 'slow', name: 'Slow EMA', type: 'number', default: 50, min: 1, max: 500, step: 1 },
-    ],
-    styles: [
-      { id: 'ema_fast', name: 'Fast EMA', color: '#5aa2e6', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'ema_mid',  name: 'Mid EMA',  color: '#f5b13b', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'ema_slow', name: 'Slow EMA', color: '#a855f7', thickness: 2, lineStyle: 'solid', display: true },
-    ],
-    compute: computeMaRibbon,
-  },
-  {
     id: 'ma_ribbon_tv',
     name: 'Moving Average Ribbon',
-    description: 'Port of the TradingView built-in MA Ribbon. Four independently-togglable MAs (SMA/EMA/SMMA/WMA/VWMA), each with configurable type, length, and source. Defaults: SMA 20/50/100/200.',
+    description: 'Port of the TradingView built-in MA Ribbon. Four independently-togglable MAs (SMA/EMA/SMMA/WMA/VWMA), each with configurable type and length. Optional higher-timeframe calculation (5m/15m/1h/4h/1d). Defaults: SMA 20/50/100/200.',
     inputs: [
       // MA #1
       { id: 'showMa1',   name: 'MA #1',   type: 'boolean', default: true,   group: 'MA #1' },
@@ -157,8 +140,18 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'ma4Length', name: 'Length',  type: 'number',  default: 200, min: 1, max: 2000, step: 1,
         group: 'MA #4', disabledIf: (i) => !i['showMa4'] },
       // CALCULATION
-      { id: 'timeframe', name: 'Timeframe', type: 'select', default: 'chart', options: [{ value: 'chart', label: 'Chart' }, { value: '1d', label: '1 Day' }], group: 'CALCULATION', tooltip: 'Timeframe for the indicator' },
-      { id: 'waitForTimeframeCloses', name: 'Wait for timeframe closes', type: 'boolean', default: true, group: 'CALCULATION' },
+      { id: 'timeframe', name: 'Timeframe', type: 'select', default: 'chart',
+        options: [
+          { value: 'chart', label: 'Chart' },
+          { value: '5m', label: '5 minutes' },
+          { value: '15m', label: '15 minutes' },
+          { value: '1h', label: '1 hour' },
+          { value: '4h', label: '4 hours' },
+          { value: '1d', label: '1 day' },
+        ],
+        group: 'CALCULATION', tooltip: 'Compute the ribbon on a higher timeframe, then project onto the chart bars.' },
+      { id: 'waitForTimeframeCloses', name: 'Wait for timeframe closes', type: 'boolean', default: true, group: 'CALCULATION',
+        tooltip: 'Only reveal a higher-timeframe value once that bar has closed (non-repainting).' },
     ],
     styles: [
       { id: 'ma_1', name: 'MA #1 (SMA 20)',  color: '#f6c309', thickness: 2, lineStyle: 'solid', display: true },

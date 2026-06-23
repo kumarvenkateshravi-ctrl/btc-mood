@@ -34,7 +34,7 @@ import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
-import { Eye, EyeOff, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { Eye, EyeOff, Trash2, ChevronUp, ChevronDown, ChevronsRight } from 'lucide-react';
 import IndicatorSettingsModal from './trade/IndicatorSettingsModal';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 
@@ -145,8 +145,8 @@ interface ChartProps {
   indicatorResult?: IndicatorResult | null;
   /** Full indicator stack to render. Falls back to [indicatorResult] when omitted. */
   indicatorResults?: IndicatorRender[];
-  /** Right price-scale mode: linear / logarithmic / percentage. */
   priceScaleMode?: PriceScaleModeOption;
+  onPriceScaleModeChange?: (mode: PriceScaleModeOption) => void;
   showSignals?: boolean;
   /** Renko box-size configuration (method + params). */
   renko?: RenkoOptions;
@@ -187,6 +187,7 @@ interface ChartProps {
   onRemoveIndicator?: (id: string) => void;
   /** Save settings for a specific indicator id (legend gear). */
   onUpdateIndicatorSettingsFor?: (id: string, settings: IndicatorSettings) => void;
+  resetTick?: number;
 }
 
 export default function Chart({
@@ -197,6 +198,7 @@ export default function Chart({
   indicatorResult = null,
   indicatorResults,
   priceScaleMode = 'normal',
+  onPriceScaleModeChange,
   showSignals = true,
   renko,
   priceLines,
@@ -230,12 +232,14 @@ export default function Chart({
   indicatorSettingsMap,
   onRemoveIndicator,
   onUpdateIndicatorSettingsFor,
+  resetTick,
 }: ChartProps) {
   // Per-instance legend: which indicator's settings modal is open, and which
   // indicators are hidden (eye toggled off).
   const [settingsForKey, setSettingsForKey] = useState<string | null>(null);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [isLegendExpanded, setIsLegendExpanded] = useState<boolean>(true);
+  const [isScrolledBack, setIsScrolledBack] = useState<boolean>(false);
 
   // Normalize the single + stack props into one render list. Effects below
   // iterate this so one or many indicators render through the same path.
@@ -292,6 +296,8 @@ export default function Chart({
   const indicatorMarkersRef = useRef<Map<string, ISeriesMarkersPluginApi<Time>>>(new Map());
   const [hasSeparatePane, setHasSeparatePane] = useState(false);
   const fxPrimitiveRef = useRef<ChartFxPrimitive | null>(null);
+  const daySepCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const daySepRafRef = useRef<number>(0);
 
   const [hover, setHoverLine] = useState<{
     kind: OverlayKind;
@@ -323,6 +329,27 @@ export default function Chart({
 
   const prevTypeRef = useRef<ChartType | null>(null);
   const initialZoomDoneRef = useRef(false);
+
+  // Applies the canonical default view: latest ~150 bars visible, 10-bar
+  // gap between the last candle and the right edge (like TradingView).
+  const applyDefaultView = useCallback(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const timeScale = chart.timeScale();
+    const src = hoverInputsRef.current;
+    const totalBars = src.base.length;
+    if (totalBars === 0) return;
+    const barSpacing = timeScale.options().barSpacing ?? 6;
+    const visibleBars = Math.max(50, Math.round(timeScale.width() / barSpacing));
+    const rightGap = 10; // bars of empty space to the right of the last candle
+    const toIndex = totalBars - 1 + rightGap;
+    const fromIndex = toIndex - visibleBars;
+    try {
+      timeScale.setVisibleLogicalRange({ from: fromIndex, to: toIndex });
+    } catch {}
+    try { chart.priceScale('right').applyOptions({ autoScale: true }); } catch {}
+  }, []);
+
   const prevOpenRef = useRef<number | null>(null);
   const prevCloseRef = useRef<number | null>(null);
   const prevTfRef = useRef<string | null>(null);
@@ -350,8 +377,8 @@ export default function Chart({
       layout: {
         background: { type: ColorType.Solid, color: C.chartBg },
         textColor: '#d1d4dc',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: 12,
+        fontFamily: 'Inter, ui-sans-serif, system-ui',
+        fontSize: 13,
         attributionLogo: false,
       },
       grid: {
@@ -369,7 +396,7 @@ export default function Chart({
         secondsVisible: false,
         rightOffset: 10,
         barSpacing: 14,
-        minBarSpacing: 6,
+        minBarSpacing: 0.5,
         borderVisible: false,
       },
       crosshair: {
@@ -402,7 +429,7 @@ export default function Chart({
       priceLineWidth: 1,
       priceLineStyle: LineStyle.Dashed,
       lastValueVisible: false,
-      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+      priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
       wickVisible: true,
       borderVisible: true,
     });
@@ -413,6 +440,7 @@ export default function Chart({
       visible: false,
       priceLineVisible: false,
       lastValueVisible: false,
+      priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
     });
 
     const markers = createSeriesMarkers(candleSeries, []);
@@ -481,6 +509,12 @@ export default function Chart({
     // Lazy-load older history when the user scrolls near the left edge.
     const onLogicalRange = (range: LogicalRange | null) => {
       if (range && range.from < 10) onLoadOlderRef.current?.();
+      
+      const ts = chartRef.current?.timeScale();
+      if (ts) {
+        // scrollPosition() < 0 means we have scrolled backward in time.
+        setIsScrolledBack(ts.scrollPosition() < 0);
+      }
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onLogicalRange);
 
@@ -827,7 +861,7 @@ export default function Chart({
       
       const isGreen = prevOpenRef.current != null ? priceVal >= prevOpenRef.current : true;
       cardEl.style.backgroundColor = isGreen ? C.bullFace : C.downFace;
-      priceEl.textContent = priceVal.toFixed(2);
+      priceEl.textContent = priceVal.toFixed(1);
       
       cardEl.style.display = 'flex';
       cardEl.style.top = `${y}px`;
@@ -857,6 +891,7 @@ export default function Chart({
       candleSeriesRef.current = null;
       markersRef.current = null;
       overlayPrimitiveRef.current = null;
+      if (daySepRafRef.current) cancelAnimationFrame(daySepRafRef.current);
       fxPrimitiveRef.current = null;
       indicatorSeriesRef.current.clear();
       indicatorPanesRef.current.clear();
@@ -1240,13 +1275,8 @@ export default function Chart({
     lastBarTimeRef.current = lastTime;
 
     if (isNewContext && chartRef.current) {
-      const timeScale = chartRef.current.timeScale();
-      const toIndex = baseCandles.length - 1 + 10; // Force exact 10 bar gap
-      const barsOnScreen = timeScale.width() / 14; // Default barSpacing is 14
-      timeScale.setVisibleLogicalRange({
-        from: toIndex - barsOnScreen,
-        to: toIndex,
-      });
+      // Defer one frame so the chart has finished laying out before we measure width.
+      requestAnimationFrame(() => applyDefaultView());
     }
   }, [candles, type, renko, isRenko, tf, visibleResults, indicatorSettingsMap]);
 
@@ -1371,6 +1401,98 @@ export default function Chart({
     );
   }, [overlays, overlaySide, overlayUnitsLabel, overlayTypeLabel, overlayHasTp, overlayHasSl, overlayTpPrice, overlaySlPrice, overlayEntryPrice, overlayPnL]);
 
+  // ---- Reset Chart View ----
+  useEffect(() => {
+    if (!resetTick || !chartRef.current) return;
+    applyDefaultView();
+  }, [resetTick, applyDefaultView]);
+
+  // ---- Day Separator Lines ----
+  // Runs whenever candles or visible range changes — draws dotted vertical
+  // lines at UTC day boundaries, matching TradingView's style.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const canvas = daySepCanvasRef.current;
+    if (!chart || !canvas || isRenko || tf === '1d') {
+      // Clear canvas if not applicable
+      const ctx = canvas?.getContext('2d');
+      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    const drawSeparators = () => {
+      const c = chartRef.current;
+      const container = containerRef.current;
+      if (!c || !canvas || !container) return;
+
+      const ts = c.timeScale();
+      const dpr = window.devicePixelRatio || 1;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
+
+      // Resize canvas backing store only if dimensions changed
+      const needsResize = canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr);
+      if (needsResize) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      // Skip separators for daily chart (the days ARE the bars)
+      if (!tf || tf === '1d') return;
+
+      // Find day boundaries in the candle data
+      const src = hoverInputsRef.current.src;
+      if (src.length < 2) return;
+
+      const seenDays = new Set<number>();
+      for (let i = 1; i < src.length; i++) {
+        const t = src[i].time as number;
+        // UTC day number
+        const dayNum = Math.floor(t / 86400);
+        const prevDayNum = Math.floor((src[i - 1].time as number) / 86400);
+        if (dayNum !== prevDayNum && !seenDays.has(dayNum)) {
+          seenDays.add(dayNum);
+          const x = ts.timeToCoordinate(shiftTime(t) as Time);
+          if (x == null || x < 0 || x > w) continue;
+          const xRounded = Math.round(x) + 0.5;
+
+          ctx.save();
+          ctx.strokeStyle = 'rgba(82, 133, 195, 0.70)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 4]);
+          ctx.lineDashOffset = 0;
+          ctx.beginPath();
+          ctx.moveTo(xRounded, 0);
+          ctx.lineTo(xRounded, h);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    };
+
+    drawSeparators();
+
+    const onChange = () => {
+      cancelAnimationFrame(daySepRafRef.current);
+      daySepRafRef.current = requestAnimationFrame(drawSeparators);
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onChange);
+    return () => {
+      cancelAnimationFrame(daySepRafRef.current);
+      try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onChange); } catch {}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candles, tf, isRenko]);
+
   // ---- Render ----
   return (
     <div className="relative h-full w-full overflow-hidden" style={{ background: C.chartBg }}>
@@ -1378,13 +1500,20 @@ export default function Chart({
         ref={containerRef}
         className="absolute inset-0 z-0"
       />
+      {/* Day separator canvas — sits above the chart but below crosshair/overlays */}
+      <canvas
+        ref={daySepCanvasRef}
+        className="pointer-events-none absolute left-0 top-0 z-[2]"
+        width={1}
+        height={1}
+      />
       <div
         ref={priceCardRef}
         className="pointer-events-none absolute right-0 z-[50] hidden flex-col items-stretch text-center font-mono tabular-nums tracking-tight text-white transition-colors duration-100"
         style={{ transform: 'translateY(-50%)' }}
       >
-        <div ref={priceTextRef} className="py-[3px] text-[11px] font-semibold leading-none shadow-sm" />
-        <div ref={countdownTextRef} className="pb-[4px] text-[10px] leading-none text-white/80" />
+        <div ref={priceTextRef} className="py-[3px] text-[13px] font-semibold leading-none shadow-sm" />
+        <div ref={countdownTextRef} className="pb-[4px] text-[12px] leading-none text-white/80" />
       </div>
       <div
         aria-hidden
@@ -1406,29 +1535,34 @@ export default function Chart({
         />
       )}
 
-      {onQuickTrade && (
-        <div className="pointer-events-auto absolute left-2 top-2 z-10 flex items-center gap-2">
-          <button
-            onClick={() => onQuickTrade('sell')}
-            className="flex flex-col rounded-md bg-bear/20 px-3 py-1.5 text-xs ring-1 ring-bear/30 transition hover:bg-bear/30"
-          >
-            <span className="font-semibold text-bear-bright">Sell</span>
-            {ask != null && Number.isFinite(ask) && (
-              <span className="font-mono text-bear-bright/70">{ask.toFixed(1)}</span>
-            )}
-          </button>
-          <button
-            onClick={() => onQuickTrade('buy')}
-            className="flex flex-col rounded-md bg-bull/20 px-3 py-1.5 text-xs ring-1 ring-bull/30 transition hover:bg-bull/30"
-          >
-            <span className="font-semibold text-bull-bright">Buy</span>
-            {bid != null && Number.isFinite(bid) && (
-              <span className="font-mono text-bull-bright/70">{bid.toFixed(1)}</span>
-            )}
-          </button>
+      {/* Floating Controls & OHLC Legend */}
+      <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col gap-1">
+        <div className="flex items-center gap-3">
+          {onQuickTrade && (
+            <div className="pointer-events-auto flex items-center gap-1.5">
+              <button
+                onClick={() => onQuickTrade('sell')}
+                className="flex min-w-[70px] flex-col items-center justify-center rounded bg-surface-1/80 backdrop-blur-md px-2 py-1 text-[13px] border border-bear-bright/30 transition hover:border-bear-bright/60 hover:bg-bear-bright/10"
+              >
+                <span className="font-semibold text-bear-bright text-[13px]">Sell</span>
+                {ask != null && Number.isFinite(ask) && (
+                  <span className="font-mono text-[11px] text-bear-bright/80">{ask.toFixed(1)}</span>
+                )}
+              </button>
+              <button
+                onClick={() => onQuickTrade('buy')}
+                className="flex min-w-[70px] flex-col items-center justify-center rounded bg-surface-1/80 backdrop-blur-md px-2 py-1 text-[13px] border border-bull-bright/30 transition hover:border-bull-bright/60 hover:bg-bull-bright/10"
+              >
+                <span className="font-semibold text-bull-bright text-[13px]">Buy</span>
+                {bid != null && Number.isFinite(bid) && (
+                  <span className="font-mono text-[11px] text-bull-bright/80">{bid.toFixed(1)}</span>
+                )}
+              </button>
+            </div>
+          )}
           <ChartOHLCStrip mode={type} />
         </div>
-      )}
+      </div>
 
       {(() => {
         const legendKeys = activeIndicatorIds ?? renderResults.map((r) => r.key);
@@ -1436,7 +1570,7 @@ export default function Chart({
         const resultByKey = new Map(renderResults.map((r) => [r.key, r.result] as const));
 
         return (
-          <div className="pointer-events-none absolute left-2 top-16 z-10 flex flex-col gap-0.5">
+          <div className="pointer-events-none absolute left-2 top-[60px] z-10 flex flex-col gap-0">
             {isLegendExpanded && legendKeys.map((key) => {
               const def = CUSTOM_INDICATORS.find((d) => d.id === key);
               if (!def) return null;
@@ -1468,13 +1602,13 @@ export default function Chart({
               const showValuesInStatusLine = settings?.valuesInStatusLine ?? true;
 
               return (
-                <div
+                  <div
                   key={key}
-                  className={`pointer-events-auto group flex cursor-default items-center gap-2 rounded px-2 py-0.5 transition-colors ${isOpen ? 'bg-white/[0.08]' : 'bg-transparent hover:bg-white/[0.04]'}`}
+                  className={`pointer-events-auto group flex cursor-default items-center gap-2 rounded px-2 py-0 transition-colors ${isOpen ? 'bg-white/[0.08]' : 'bg-transparent hover:bg-white/[0.04]'}`}
                 >
                   <div className={`flex items-baseline gap-1.5 text-[13px] transition-opacity duration-200 ${hidden ? 'opacity-40' : 'opacity-100'}`}>
-                    <span className={isOpen ? 'text-[#2962FF]' : 'text-[#d1d4dc]'}>{def.name}</span>
-                    {paramText && <span className="text-[#787b86]">{paramText}</span>}
+                    <span className={isOpen ? 'text-[#2962FF] font-medium' : 'text-[#d1d4dc] font-medium'}>{def.name}</span>
+                    {paramText && <span className="text-ink-muted">{paramText}</span>}
                     {displayValue && showValuesInStatusLine && <span style={{ color: valueColor }}>{displayValue}</span>}
                   </div>
                   <div className={`flex items-center transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -1553,6 +1687,45 @@ export default function Chart({
           />
         );
       })()}
+
+      {/* Price Scale Toggles (Bottom Right Floating) */}
+      <div className="absolute bottom-[28px] right-2 z-20 flex gap-1 bg-surface-1/80 backdrop-blur-md rounded px-1 py-0.5 border border-line">
+        <button
+          onClick={() => onPriceScaleModeChange?.('normal')}
+          className={['text-[10px] font-bold px-1.5 py-0.5 rounded transition', priceScaleMode === 'normal' ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink'].join(' ')}
+          title="Auto (Linear)"
+        >
+          A
+        </button>
+        <button
+          onClick={() => onPriceScaleModeChange?.('log')}
+          className={['text-[10px] font-bold px-1.5 py-0.5 rounded transition', priceScaleMode === 'log' ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink'].join(' ')}
+          title="Logarithmic"
+        >
+          L
+        </button>
+        <button
+          onClick={() => onPriceScaleModeChange?.('percent')}
+          className={['text-[10px] font-bold px-1.5 py-0.5 rounded transition', priceScaleMode === 'percent' ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink'].join(' ')}
+          title="Percentage"
+        >
+          %
+        </button>
+      </div>
+
+      {/* Scroll to Realtime */}
+      {isScrolledBack && (
+        <button
+          onClick={() => {
+            chartRef.current?.timeScale().scrollToRealTime();
+            setIsScrolledBack(false);
+          }}
+          className="absolute bottom-[2px] right-[65px] z-20 flex h-[24px] w-[24px] items-center justify-center rounded-full bg-surface-2 border border-line-strong text-ink drop-shadow-md transition hover:bg-surface-3"
+          title="Scroll to realtime"
+        >
+          <ChevronsRight size={14} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1647,7 +1820,7 @@ function ChartOHLCStrip({ mode }: { mode: ChartType }) {
       role="status"
       aria-label="Chart OHLCV"
       className={[
-        'flex items-center gap-2.5 rounded-md bg-surface-2/80 px-3 py-1.5 text-[11px] font-mono backdrop-blur-md ring-1 ring-line',
+        'flex items-center gap-2 text-[13px] font-mono drop-shadow-md',
         isLive ? 'text-ink' : 'text-ink-muted',
       ].join(' ')}
     >
@@ -1718,7 +1891,7 @@ function OHLCCell({
           : 'text-ink';
   return (
     <span className="inline-flex shrink-0 items-baseline gap-1">
-      <span className="text-[10px] uppercase tracking-wider text-ink-faint">{label}</span>
+      <span className="text-[12px] text-ink-faint">{label}</span>
       <span className={`tabular-nums ${toneClass}`}>{value}</span>
     </span>
   );

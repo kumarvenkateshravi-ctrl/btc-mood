@@ -29,9 +29,9 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${jetbrains.variable} h-full antialiased`}
     >
-      <body className="min-h-full font-sans bg-base text-ink">
+      <body className="min-h-screen w-screen font-sans bg-base text-ink">
         <div className="app-aurora" aria-hidden />
-        <div className="relative z-[1]">
+        <div className="relative z-[1] h-full w-full">
           <Providers>{children}</Providers>
         </div>
       </body>

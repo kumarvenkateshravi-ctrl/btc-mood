@@ -57,6 +57,8 @@ interface ChartPanelProps {
   /** Workspace controls forwarded to the toolbar. */
   workspaceCurrent: import('@/lib/workspaces').WorkspaceConfig;
   onWorkspaceApply: (cfg: import('@/lib/workspaces').WorkspaceConfig) => void;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 
@@ -87,6 +89,8 @@ export default function ChartPanel({
   onGridChange,
   workspaceCurrent,
   onWorkspaceApply,
+  isSidebarOpen,
+  onToggleSidebar,
 }: ChartPanelProps) {
   const primaryId = activeIndicatorIds[0] ?? '';
 
@@ -222,6 +226,7 @@ export default function ChartPanel({
   const mid = price ?? (candles.length > 0 ? candles[candles.length - 1].close : 0);
 
   const [ctxMenu, setCtxMenu] = useState<{ price: number; x: number; y: number } | null>(null);
+  const [resetTick, setResetTick] = useState(0);
 
   // Draw the open position as entry / TP / SL lines; TP & SL are draggable.
   const overlays = useMemo<ChartOverlay[]>(() => {
@@ -417,7 +422,12 @@ export default function ChartPanel({
       // Feed line/histogram plot outputs into the computed sources for downstream indicators
       result.plots.forEach(plot => {
         if (plot.type === 'line' || plot.type === 'histogram') {
-          const dataArr = plot.data.map(d => typeof d === 'number' ? d : (d?.value ?? null));
+          const dataArr = plot.data.map(d => {
+            if (typeof d === 'number') return d;
+            if (!d) return null;
+            if ('value' in d) return d.value;
+            return null;
+          });
           computedSources[`${id}:${plot.id}`] = dataArr;
         }
       });
@@ -447,8 +457,8 @@ export default function ChartPanel({
     <section
       ref={sectionRef}
       className={[
-        'panel flex min-h-[400px] flex-col overflow-hidden rounded-2xl',
-        isFullscreen ? 'h-screen' : 'h-[calc(100dvh-7rem)]',
+        'flex flex-col flex-1 min-h-0 w-full overflow-hidden',
+        isFullscreen ? 'fixed inset-0 z-50 bg-base' : '',
       ].join(' ')}
     >
       <ChartToolbar
@@ -467,8 +477,6 @@ export default function ChartPanel({
         onFitContent={fitContent}
         renko={renkoConfig}
         onRenkoChange={setRenkoConfig}
-        priceScaleMode={priceScaleMode}
-        onPriceScaleModeChange={setPriceScaleMode}
         activeIndicatorIds={activeIndicatorIds}
         onToggleIndicator={onToggleIndicator}
         onClearIndicators={onClearIndicators}
@@ -481,6 +489,8 @@ export default function ChartPanel({
         onGridChange={onGridChange}
         workspaceCurrent={workspaceCurrent}
         onWorkspaceApply={onWorkspaceApply}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={onToggleSidebar}
       />
       <div className="flex min-h-0 flex-1">
         <DrawingToolbar
@@ -507,6 +517,7 @@ export default function ChartPanel({
             indicatorResult={indicatorResult}
             indicatorResults={indicatorResults}
             priceScaleMode={priceScaleMode}
+            onPriceScaleModeChange={setPriceScaleMode}
             showSignals={showSignals}
             renko={renkoOptions}
             onReady={handleChartReady}
@@ -537,6 +548,7 @@ export default function ChartPanel({
             indicatorSettingsMap={indicatorSettings}
             onRemoveIndicator={onToggleIndicator}
             onUpdateIndicatorSettingsFor={handleUpdateIndicatorSettings}
+            resetTick={resetTick}
           />
         )}
         {!loading && (
@@ -629,6 +641,7 @@ export default function ChartPanel({
           midPrice={mid}
           leverage={LEVERAGE}
           onClose={() => setCtxMenu(null)}
+          onResetChart={() => setResetTick(t => t + 1)}
         />
       )}
     </section>
