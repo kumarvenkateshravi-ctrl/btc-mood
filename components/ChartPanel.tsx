@@ -21,6 +21,7 @@ import { useDrawings, clearDrawings, DRAWING_COLORS, type Tool } from '@/lib/dra
 import ReplayBar from './ReplayBar';
 import ReplaySelector from './ReplaySelector';
 import ChartToolbar from './ChartToolbar';
+import RenkoSettingsModal from './trade/RenkoSettingsModal';
 import { FALLBACK_HEIGHT } from '@/lib/chartHeight';
 import type { Candle, Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -104,6 +105,7 @@ export default function ChartPanel({
   // Renko box-size config (method + params).
   const [renkoConfig, setRenkoConfig] = useState<RenkoConfig>(DEFAULT_RENKO);
   const renkoOptions = useMemo(() => renkoConfigToOptions(renkoConfig), [renkoConfig]);
+  const [showRenkoSettings, setShowRenkoSettings] = useState(false);
 
   // Price-scale mode: linear / log / percentage.
   const [priceScaleMode, setPriceScaleMode] = useState<PriceScaleModeOption>('normal');
@@ -525,6 +527,7 @@ export default function ChartPanel({
             tf={selected}
             showVolume={parentShowVolume}
             onQuickTrade={onQuickTrade}
+            onOpenRenkoSettings={() => setShowRenkoSettings(true)}
             bid={bid}
             ask={ask}
             overlays={overlays}
@@ -630,6 +633,14 @@ export default function ChartPanel({
             </span>
           ))}
         </div>
+      )}
+
+      {showRenkoSettings && (
+        <RenkoSettingsModal
+          initialConfig={renkoConfig}
+          onClose={() => setShowRenkoSettings(false)}
+          onSave={setRenkoConfig}
+        />
       )}
 
       {ctxMenu && (
