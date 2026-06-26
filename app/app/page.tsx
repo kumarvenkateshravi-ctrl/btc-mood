@@ -233,9 +233,6 @@ export default function DashboardPage() {
                 onToggleVolume={toggleVolume}
                 candlesByTf={candlesByTf}
                 snapshots={snapshots}
-                prices={prices}
-                changes={changes}
-                errors={errorsByTf}
                 selected={selected}
                 onSelectTf={setSelected}
                 onToggleCollapse={() => {

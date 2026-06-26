@@ -4,30 +4,33 @@ import type {
   IndicatorPlot,
   CustomIndicatorConfig,
 } from '../indicatorFramework';
-import { neutralSignals, resolveInputs } from './itsTemplates';
+import { neutralSignals, resolveInputs, resolveSourceNum } from './itsTemplates';
+import { vwapPeriodKey, type VwapAnchor } from './vwapAnchor';
 
 export interface VwapBandsInputs {
   mult1: number;
   mult2: number;
+  anchor: VwapAnchor;
+  source: string;
 }
 
-const DEFAULTS: VwapBandsInputs = { mult1: 1, mult2: 2 };
-const SECONDS_PER_DAY = 86_400;
+const DEFAULTS: VwapBandsInputs = { mult1: 1, mult2: 2, anchor: 'session', source: 'hlc3' };
 
 /**
- * VWAP Bands — session-anchored VWAP with volume-weighted standard-deviation
- * bands (±mult1, ±mult2), all on the price pane.
- *
- * Within each UTC session: vwap = Σ(tp·vol)/Σvol, and the band half-width is
- * mult · sqrt(Σ(tp²·vol)/Σvol − vwap²) — the volume-weighted variance of the
- * typical price around the VWAP, matching TradingView's VWAP bands.
+ * VWAP Bands — faithful to TradingView's VWAP standard-deviation bands.
+ * Within each anchored period: vwap = Σ(src·vol)/Σvol and the band half-width is
+ * mult · sqrt(max(0, Σ(src²·vol)/Σvol − vwap²)) — the volume-weighted variance
+ * of the source around the VWAP, exactly as TV computes its bands. Anchor /
+ * source default to Session / hlc3 like TradingView.
  */
 export function computeVwapBands(
   candles: Candle[],
   config?: CustomIndicatorConfig,
+  computedSources?: Record<string, (number | null)[]>,
 ): IndicatorResult {
-  const { mult1, mult2 } = resolveInputs(config, DEFAULTS);
+  const { mult1, mult2, anchor, source } = resolveInputs(config, DEFAULTS);
   const n = candles.length;
+  const src = resolveSourceNum(candles, source, computedSources);
 
   const vwap = new Array<number | null>(n).fill(null);
   const u1 = new Array<number | null>(n).fill(null);
@@ -38,21 +41,21 @@ export function computeVwapBands(
   let cumPV = 0;
   let cumV = 0;
   let cumPV2 = 0;
-  let day: number | null = null;
+  let period: number | null = null;
 
   for (let i = 0; i < n; i++) {
     const c = candles[i];
-    const d = Math.floor(c.time / SECONDS_PER_DAY);
-    if (d !== day) {
+    const key = vwapPeriodKey(c.time, anchor);
+    if (key !== period) {
       cumPV = 0;
       cumV = 0;
       cumPV2 = 0;
-      day = d;
+      period = key;
     }
-    const tp = (c.high + c.low + c.close) / 3;
-    cumPV += tp * c.volume;
+    const p = src[i];
+    cumPV += p * c.volume;
     cumV += c.volume;
-    cumPV2 += tp * tp * c.volume;
+    cumPV2 += p * p * c.volume;
 
     if (cumV > 0) {
       const v = cumPV / cumV;

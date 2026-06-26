@@ -17,13 +17,13 @@ export interface TFSnapshot {
   confluenceScore: number; // -3..+3, internal per-tf agreement
 }
 
-const FRESH_BAR_AGE_SEC: Record<Timeframe, number> = {
-  '1m': 90,
-  '5m': 360,
-  '15m': 1080,
-  '1h': 4200,
-  '4h': 16200,
-  '1d': 90000,
+const MIN_BARS: Record<Timeframe, number> = {
+  '5m': 90,
+  '15m': 100,
+  '30m': 100,
+  '1h': 100,
+  '4h': 100,
+  '1d': 100,
 };
 
 /**
@@ -83,7 +83,7 @@ export function computeSignal(
     confluenceScore: 0,
   };
 
-  if (candles.length < 30) return empty;
+  if (candles.length < MIN_BARS[tf]) return empty;
 
   const closes = candles.map((c) => c.close);
   const highs = candles.map((c) => c.high);
@@ -114,7 +114,7 @@ export function computeSignal(
   // Freshness: a bar isn't "fresh" if it's much older than its interval.
   const lastBar = candles[candles.length - 1];
   const barAge = Math.max(0, now - lastBar.time);
-  const fresh = barAge <= FRESH_BAR_AGE_SEC[tf];
+  const fresh = barAge <= FRESH_THRESHOLD_HOURS[tf] * 3600;
 
   return {
     tf,
@@ -144,10 +144,19 @@ export interface MoodVerdict {
   summary: string; // e.g. "4/6 bullish"
 }
 
+const FRESH_THRESHOLD_HOURS: Record<Timeframe, number> = {
+  '5m': 0.5, // 30m
+  '15m': 1,
+  '30m': 2,
+  '1h': 4,
+  '4h': 12,
+  '1d': 72,
+};
+
 const TF_WEIGHT: Record<Timeframe, number> = {
-  '1m': 0.5,
   '5m': 0.75,
   '15m': 1,
+  '30m': 1.25,
   '1h': 1.5,
   '4h': 2,
   '1d': 2.5,

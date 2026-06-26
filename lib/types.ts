@@ -1,4 +1,4 @@
-export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+export type Timeframe = '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 
 export interface Candle {
   time: number;
@@ -15,4 +15,4 @@ export interface Signal {
   fresh?: boolean;
 }
 
-export const TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
+export const TIMEFRAMES: Timeframe[] = ['5m', '15m', '30m', '1h', '4h', '1d'];

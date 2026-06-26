@@ -96,7 +96,7 @@ function computeMA(
 ): (number | null)[] {
   switch (type) {
     case 'SMA':        return pm.sma(closes, length);
-    case 'EMA':        return pm.ema(closes, length);
+    case 'EMA':        return pm.emaPine(closes, length); // TV ta.ema (src-seeded)
     case 'SMMA (RMA)': return pm.rma(closes, length);
     case 'WMA':        return pm.wma(closes, length);
     case 'VWMA':       return pm.vwma(closes, volumes, length);

@@ -48,7 +48,7 @@ describe('alerts: isRule', () => {
   });
   it('rejects an object with the wrong shape', () => {
     expect(isRule({ id: 'x' })).toBe(false);
-    expect(isRule({ id: 'x', tf: '1m', side: 'buy', enabled: true, createdAt: 1, lastFiredAt: 'no' })).toBe(false);
+    expect(isRule({ id: 'x', tf: '5m', side: 'buy', enabled: true, createdAt: 1, lastFiredAt: 'no' })).toBe(false);
   });
   it('rejects a rule with a non-bool enabled', () => {
     expect(isRule(rule({ enabled: 'yes' as unknown as boolean }))).toBe(false);
@@ -84,9 +84,10 @@ describe('alerts: rulesToFire', () => {
   it('fires a buy rule when the snapshot is buy', () => {
     const r = rule({ tf: '15m', side: 'buy' });
     const snaps: Record<Timeframe, Signal | null> = {
-      '1m': null,
+
       '5m': null,
       '15m': signal('buy'),
+      '30m': null,
       '1h': null,
       '4h': null,
       '1d': null,
@@ -97,9 +98,10 @@ describe('alerts: rulesToFire', () => {
   it('does not fire a disabled rule', () => {
     const r = rule({ tf: '15m', side: 'buy', enabled: false });
     const snaps: Record<Timeframe, Signal | null> = {
-      '1m': null,
+
       '5m': null,
       '15m': signal('buy'),
+      '30m': null,
       '1h': null,
       '4h': null,
       '1d': null,
@@ -110,9 +112,10 @@ describe('alerts: rulesToFire', () => {
   it('does not fire a sell rule when the snapshot is buy', () => {
     const r = rule({ tf: '15m', side: 'sell' });
     const snaps: Record<Timeframe, Signal | null> = {
-      '1m': null,
+
       '5m': null,
       '15m': signal('buy'),
+      '30m': null,
       '1h': null,
       '4h': null,
       '1d': null,
@@ -123,9 +126,10 @@ describe('alerts: rulesToFire', () => {
   it('dedupes: a rule that already fired for the same side does not re-fire', () => {
     const r = rule({ tf: '15m', side: 'buy' });
     const snaps: Record<Timeframe, Signal | null> = {
-      '1m': null,
+
       '5m': null,
       '15m': signal('buy'),
+      '30m': null,
       '1h': null,
       '4h': null,
       '1d': null,
@@ -136,9 +140,10 @@ describe('alerts: rulesToFire', () => {
   it('re-fires a rule when the side flips through neutral and back', () => {
     const r = rule({ tf: '15m', side: 'buy' });
     const snaps: Record<Timeframe, Signal | null> = {
-      '1m': null,
+
       '5m': null,
       '15m': signal('buy'),
+      '30m': null,
       '1h': null,
       '4h': null,
       '1d': null,
@@ -151,9 +156,10 @@ describe('alerts: rulesToFire', () => {
   it('skips rules whose TF snapshot is null', () => {
     const r = rule({ tf: '15m', side: 'buy' });
     const snaps: Record<Timeframe, Signal | null> = {
-      '1m': null,
+
       '5m': null,
       '15m': null,
+      '30m': null,
       '1h': null,
       '4h': null,
       '1d': null,

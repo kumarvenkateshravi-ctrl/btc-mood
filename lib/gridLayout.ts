@@ -22,7 +22,7 @@ const DEFAULT_TFS_BY_COUNT: Record<GridCount, Timeframe[]> = {
   1: ['15m'],
   2: ['15m', '1h'],
   4: ['15m', '1h', '4h', '1d'],
-  6: ['1m', '5m', '15m', '1h', '4h', '1d'],
+  6: ['5m', '15m', '30m', '1h', '4h', '1d'],
 };
 
 // CSS class names emitted as the `data-count` attribute on the grid
@@ -146,7 +146,7 @@ export function saveGrid(state: PersistedGrid): void {
 }
 
 const VALID_TFS = new Set<Timeframe>([
-  '1m', '5m', '15m', '1h', '4h', '1d',
+  '5m', '15m', '30m', '1h', '4h', '1d',
 ]);
 function isTimeframe(s: string): s is Timeframe {
   return VALID_TFS.has(s as Timeframe);

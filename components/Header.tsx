@@ -14,7 +14,7 @@ export default function Header({ rightControls }: { rightControls?: React.ReactN
         <Link href="/" className="group flex items-center gap-2">
           <Bitcoin className="h-5 w-5 text-regime-hot" />
           <span className="font-semibold tracking-tight text-ink">
-            BTC Market Mood
+            MyCryptoStack
           </span>
         </Link>
         <nav className="flex items-center gap-3 text-sm">
@@ -26,6 +26,18 @@ export default function Header({ rightControls }: { rightControls?: React.ReactN
             Home
           </Link>
           <Link
+            href="/mycryptostack"
+            aria-current={pathname?.startsWith('/mycryptostack') ? 'page' : undefined}
+            className={[
+              'focus-ring rounded-lg px-3 py-1.5 font-medium transition',
+              pathname?.startsWith('/mycryptostack')
+                ? 'bg-bull/15 text-bull-bright ring-1 ring-bull/30'
+                : 'text-ink-muted hover:text-ink',
+            ].join(' ')}
+          >
+            Dashboard
+          </Link>
+          <Link
             href="/app"
             aria-current={isApp ? 'page' : undefined}
             className={[
@@ -35,7 +47,19 @@ export default function Header({ rightControls }: { rightControls?: React.ReactN
                 : 'text-ink-muted hover:text-ink',
             ].join(' ')}
           >
-            Dashboard
+            Chart
+          </Link>
+          <Link
+            href="/mystack"
+            aria-current={pathname?.startsWith('/mystack') ? 'page' : undefined}
+            className={[
+              'focus-ring rounded-lg px-3 py-1.5 font-medium transition',
+              pathname?.startsWith('/mystack')
+                ? 'bg-bull/15 text-bull-bright ring-1 ring-bull/30'
+                : 'text-ink-muted hover:text-ink',
+            ].join(' ')}
+          >
+            MyStack
           </Link>
           {rightControls}
         </nav>

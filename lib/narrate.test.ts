@@ -54,9 +54,9 @@ describe('buildNarration', () => {
 
   it('reads a broad bullish verdict led by higher timeframes', () => {
     const snapshots = mapOf({
-      '1m': 'buy',
       '5m': 'buy',
       '15m': 'buy',
+      '30m': 'buy',
       '1h': 'buy',
       '4h': 'buy',
       '1d': 'sell',
@@ -76,7 +76,6 @@ describe('buildNarration', () => {
 
   it('describes a neutral/mixed market', () => {
     const snapshots = mapOf({
-      '1m': 'buy',
       '5m': 'sell',
       '15m': 'neutral',
       '1h': 'buy',
@@ -93,7 +92,7 @@ describe('buildNarration', () => {
   });
 
   it('marks a lower-timeframe-only move as leaning', () => {
-    const snapshots = mapOf({ '1m': 'buy', '5m': 'buy', '15m': 'buy' });
+    const snapshots = mapOf({ '5m': 'buy', '15m': 'buy' });
     const n = buildNarration(
       mood({ side: 'neutral', bullishCount: 3, bearishCount: 0, neutralCount: 0, totalCount: 3 }),
       snapshots,
@@ -118,7 +117,7 @@ describe('buildNarration', () => {
   it('is deterministic', () => {
     const args = [
       mood({ side: 'bearish', bullishCount: 1, bearishCount: 4, neutralCount: 1, totalCount: 6 }),
-      mapOf({ '1m': 'sell', '5m': 'sell', '1h': 'sell', '4h': 'sell', '15m': 'buy', '1d': 'neutral' }),
+      mapOf({ '5m': 'sell', '1h': 'sell', '4h': 'sell', '15m': 'buy', '1d': 'neutral' }),
       TIMEFRAMES,
     ] as const;
     expect(buildNarration(...args)).toEqual(buildNarration(...args));

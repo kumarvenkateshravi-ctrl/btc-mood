@@ -44,7 +44,7 @@ function applyMa(src: (number | null)[], length: number, type: string, volume: n
     case 'SMA + Bollinger Bands':
       return pm.sma(src, length);
     case 'EMA':
-      return pm.ema(src, length);
+      return pm.emaPine(src, length); // TV ta.ema (src-seeded), not SMA-seeded
     case 'SMMA (RMA)':
       return pm.rma(src, length);
     case 'WMA':

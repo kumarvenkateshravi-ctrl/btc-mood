@@ -46,18 +46,18 @@ describe('gridLayout', () => {
       }
     });
     it('pins the user-selected TF when it is not in the default ladder', () => {
-      // '1m' is in the default ladder for count=6 but not for count=1.
-      // count=1 with selected='1m' should produce ['1m'].
-      const out = tfsForCount(1, '1m');
-      expect(out[0]).toBe('1m');
+      // '5m' is in the default ladder for count=6 but not for count=1.
+      // count=1 with selected='5m' should produce ['5m'].
+      const out = tfsForCount(1, '5m');
+      expect(out[0]).toBe('5m');
     });
     it('falls back to the default ladder when the selected TF is already included', () => {
       expect(tfsForCount(4, '15m')).toEqual(['15m', '1h', '4h', '1d']);
-      expect(tfsForCount(6, '15m')).toEqual(['1m', '5m', '15m', '1h', '4h', '1d']);
+      expect(tfsForCount(6, '15m')).toEqual(['5m', '15m', '30m', '1h', '4h', '1d']);
     });
     it('never produces duplicates within the result', () => {
       for (const n of GRID_COUNTS) {
-        const out = tfsForCount(n, '1m');
+        const out = tfsForCount(n, '5m');
         expect(new Set(out).size).toBe(out.length);
       }
     });
@@ -72,8 +72,8 @@ describe('gridLayout', () => {
     });
     it('shrinks by truncation when count shrinks', () => {
       expect(
-        reconcileGridTfs(['1m', '5m', '15m', '1h', '4h', '1d'], 2, '15m'),
-      ).toEqual(['1m', '5m']);
+        reconcileGridTfs(['5m', '15m', '1h', '4h', '1d'], 2, '15m'),
+      ).toEqual(['5m', '15m']);
     });
     it('grows by appending default TFs not already present', () => {
       expect(

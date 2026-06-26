@@ -70,7 +70,7 @@ describe('computeSignal', () => {
   });
 
   it('flags a long uptrend as buy on the 15m timeframe', () => {
-    const out = computeSignal('15m', uptrend(60));
+    const out = computeSignal('15m', uptrend(120));
     // The noisy uptrend has a positive EMA gap and RSI drifts into the
     // 55-70 range; together confluenceScore >= 0.5.
     expect(out.confluenceScore).toBeGreaterThan(0);
@@ -79,13 +79,13 @@ describe('computeSignal', () => {
   });
 
   it('flags a long downtrend as sell', () => {
-    const out = computeSignal('15m', downtrend(60));
+    const out = computeSignal('15m', downtrend(120));
     expect(out.confluenceScore).toBeLessThan(0);
     expect(out.signal.side).toBe('sell');
   });
 
   it('a flat series keeps the signal neutral and populates a regime', () => {
-    const out = computeSignal('15m', flat(60));
+    const out = computeSignal('15m', flat(120));
     // With truly zero close-to-close change, EMA9 == EMA21 (both equal
     // to `base`) and rsi14 stays null. confluenceScore = 0.
     expect(out.confluenceScore).toBe(0);
@@ -109,17 +109,19 @@ describe('computeSignal', () => {
     expect(out.signal.fresh).toBe(false);
   });
 
-  it('fresh=true on a 1m candle 10 seconds old', () => {
+  it('fresh=true on a recent 5m candle', () => {
     const now = 1_700_000_000;
-    const recentCandles: Candle[] = Array.from({ length: 40 }, (_, i) => ({
-      time: now - 30 * 60 + i * 60,
+    // 100 bars ending at `now` (≥ MIN_BARS['5m']); the last bar's age is 0,
+    // well within the 30-minute 5m freshness window.
+    const recentCandles: Candle[] = Array.from({ length: 100 }, (_, i) => ({
+      time: now - (99 - i) * 60,
       open: 100 + i,
       high: 101 + i,
       low: 99 + i,
       close: 100 + i,
       volume: 0,
     }));
-    const out = computeSignal('1m', recentCandles, now);
+    const out = computeSignal('5m', recentCandles, now);
     expect(out.signal.fresh).toBe(true);
   });
 });
@@ -127,7 +129,7 @@ describe('computeSignal', () => {
 describe('aggregateMood', () => {
   it('all neutral → neutral side and 0/N bullish summary', () => {
     const v = aggregateMood([
-      snap('1m', 'neutral'),
+      snap('5m', 'neutral'),
       snap('5m', 'neutral'),
       snap('15m', 'neutral'),
     ]);
@@ -136,20 +138,20 @@ describe('aggregateMood', () => {
     expect(v.summary).toBe('0/3 bullish');
   });
 
-  it('a 1d sell outweighs a 1m buy when computing the side', () => {
+  it('a 1d sell outweighs a 5m buy when computing the side', () => {
     const v = aggregateMood([
-      snap('1m', 'buy'),
+      snap('5m', 'buy'),
       snap('1d', 'sell'),
     ]);
-    // weightedBull = 0.5, weightedBear = 2.5 → bearish
+    // weightedBull = 0.75 (5m), weightedBear = 2.5 (1d) → bearish
     expect(v.side).toBe('bearish');
-    expect(v.weightedBull).toBe(0.5);
+    expect(v.weightedBull).toBe(0.75);
     expect(v.weightedBear).toBe(2.5);
   });
 
   it('summary uses raw counts, not weighted sums', () => {
     const v = aggregateMood([
-      snap('1m', 'buy'),
+      snap('5m', 'buy'),
       snap('5m', 'buy'),
       snap('15m', 'sell'),
       snap('1h', 'neutral'),

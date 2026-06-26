@@ -4,39 +4,46 @@ import type {
   IndicatorPlot,
   CustomIndicatorConfig,
 } from '../indicatorFramework';
-import { neutralSignals } from './itsTemplates';
+import { neutralSignals, resolveInputs, resolveSourceNum } from './itsTemplates';
+import { vwapPeriodKey, type VwapAnchor } from './vwapAnchor';
 
-const SECONDS_PER_DAY = 86_400;
+export interface VwapInputs {
+  anchor: VwapAnchor;
+  source: string;
+}
+
+// TradingView VWAP defaults: Anchor = Session, Source = hlc3.
+const DEFAULTS: VwapInputs = { anchor: 'session', source: 'hlc3' };
 
 /**
- * VWAP — session-anchored Volume-Weighted Average Price, price pane.
- *
- * Implemented directly (not via `indicatorts.vwap`, which is a rolling-period
- * VWAP) because TradingView's default VWAP anchors to the trading *session*
- * and resets each day. We reset the cumulative sums at every UTC day boundary
- * and use the typical price (H+L+C)/3, matching TradingView's session VWAP.
+ * VWAP — faithful to TradingView's built-in "Volume Weighted Average Price":
+ * within each anchored period, VWAP = Σ(src·vol)/Σvol. Source defaults to hlc3
+ * and the anchor defaults to Session (UTC day), matching TV; Week/Month/Quarter/
+ * Year re-anchor at the corresponding UTC calendar boundary.
  */
 export function computeVwap(
   candles: Candle[],
-  _config?: CustomIndicatorConfig,
+  config?: CustomIndicatorConfig,
+  computedSources?: Record<string, (number | null)[]>,
 ): IndicatorResult {
+  const { anchor, source } = resolveInputs(config, DEFAULTS);
   const n = candles.length;
+  const src = resolveSourceNum(candles, source, computedSources);
   const data = new Array<number | null>(n).fill(null);
 
   let cumPV = 0;
   let cumV = 0;
-  let currentDay: number | null = null;
+  let period: number | null = null;
 
   for (let i = 0; i < n; i++) {
     const c = candles[i];
-    const day = Math.floor(c.time / SECONDS_PER_DAY);
-    if (day !== currentDay) {
+    const key = vwapPeriodKey(c.time, anchor);
+    if (key !== period) {
       cumPV = 0;
       cumV = 0;
-      currentDay = day;
+      period = key;
     }
-    const typical = (c.high + c.low + c.close) / 3;
-    cumPV += typical * c.volume;
+    cumPV += src[i] * c.volume;
     cumV += c.volume;
     data[i] = cumV > 0 ? cumPV / cumV : null;
   }

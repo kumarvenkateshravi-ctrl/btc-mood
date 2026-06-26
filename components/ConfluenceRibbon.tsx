@@ -2,10 +2,11 @@
 
 import { useMemo } from 'react';
 import type { Candle, Timeframe } from '@/lib/types';
-import type { TFSnapshot } from '@/lib/signals';
 import { buildRibbonSegments, type Side } from '@/lib/confluence';
+import { aggregateMood, type TFSnapshot } from '@/lib/signals';
+import { buildNarration } from '@/lib/narrate';
 import { detectDivergence } from '@/lib/divergence';
-import { TriangleAlert } from 'lucide-react';
+import { TriangleAlert, Info } from 'lucide-react';
 
 interface ConfluenceRibbonProps {
   candlesByTf: Record<Timeframe, Candle[]>;
@@ -59,6 +60,13 @@ export default function ConfluenceRibbon({
       return { tf, segments, current, fresh };
     });
   }, [domain, timeframes, candlesByTf, snapshots]);
+
+  const narration = useMemo(() => {
+    const snaps = Object.values(snapshots).filter((s): s is TFSnapshot => s !== null);
+    if (snaps.length === 0) return null;
+    const mood = aggregateMood(snaps);
+    return buildNarration(mood, snapshots, timeframes);
+  }, [snapshots, timeframes]);
 
   return (
     <section className="panel rounded-2xl p-3 sm:p-4" aria-label="Multi-timeframe posture">
@@ -146,6 +154,16 @@ export default function ConfluenceRibbon({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {narration && !narration.insufficient && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-surface-1/50 p-3 text-[12px] leading-snug text-ink-muted">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
+          <div>
+            <strong className="font-semibold text-ink">{narration.headline}.</strong>{' '}
+            {narration.summary}
+          </div>
         </div>
       )}
     </section>

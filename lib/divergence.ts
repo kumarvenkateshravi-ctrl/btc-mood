@@ -9,7 +9,7 @@ import type { TFSnapshot } from './signals';
 
 export type Bias = 'bullish' | 'bearish' | 'neutral';
 
-export const LOWER_TFS: Timeframe[] = ['1m', '5m', '15m'];
+export const LOWER_TFS: Timeframe[] = ['5m', '15m'];
 export const HIGHER_TFS: Timeframe[] = ['1h', '4h', '1d'];
 
 export interface GroupBias {

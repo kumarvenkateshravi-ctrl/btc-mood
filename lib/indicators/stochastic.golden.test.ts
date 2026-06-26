@@ -6,6 +6,6 @@ describe('Stochastic golden master', () => {
   defineGoldenTest({
     name: 'stochastic',
     compute: computeStochastic,
-    params: { kPeriod: 14, smoothK: 3, dPeriod: 3 },
+    params: { kPeriod: 14, smoothK: 1, dPeriod: 3 },
   });
 });

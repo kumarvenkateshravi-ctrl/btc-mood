@@ -70,18 +70,17 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
   return (
     <div className="panel space-y-3 rounded-xl p-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.15em] text-ink-faint">Trade</h3>
-        <span className="font-mono text-[11px] text-ink-muted">{symbol}</span>
+        <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-ink-faint">Trade</h3>
+        <span className="font-mono text-sm text-ink-muted">{symbol}</span>
       </div>
 
       {replay && (
-        <div className="flex items-center justify-between rounded-md border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px]">
+        <div className="flex items-center justify-between rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-xs">
           <span className="font-semibold uppercase tracking-wider text-accent">Replay session</span>
           <span className="font-mono tabular-nums text-ink">${balance.toFixed(2)}</span>
         </div>
       )}
 
-      {/* Quantity */}
       <Field label="Quantity">
         <input
           type="number"
@@ -89,36 +88,36 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
           step="any"
           value={qty}
           onChange={(e) => setQty(e.target.value)}
-          className="num-input"
+          className="num-input text-base"
         />
-        <span className="px-1 text-[11px] text-ink-faint">units</span>
+        <span className="px-1 text-sm text-ink-faint">units</span>
       </Field>
 
       {/* Buy / Sell */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => place('BUY')}
-          className="focus-ring rounded-md bg-[#089981] py-2 text-sm font-semibold text-white transition hover:bg-[#0aa888]"
+          className="focus-ring rounded-lg bg-[#089981] py-3 text-base font-bold text-white shadow-sm transition hover:bg-[#0aa888]"
         >
           Buy / Long
         </button>
         <button
           onClick={() => place('SELL')}
-          className="focus-ring rounded-md bg-[#f23645] py-2 text-sm font-semibold text-white transition hover:bg-[#ff4757]"
+          className="focus-ring rounded-lg bg-[#f23645] py-3 text-base font-bold text-white shadow-sm transition hover:bg-[#ff4757]"
         >
           Sell / Short
         </button>
       </div>
       {markPrice > 0 && (
-        <p className="text-center font-mono text-[11px] text-ink-faint">≈ market {markPrice.toFixed(1)}</p>
+        <p className="text-center font-mono text-xs text-ink-faint">≈ market {markPrice.toFixed(1)}</p>
       )}
 
       {/* Position size calculator */}
-      <details className="rounded-lg border border-line bg-base/40 px-2.5 py-2" open>
-        <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-          Position size calculator
+      <details className="rounded-xl border border-line bg-base/40 px-3 py-3" open>
+        <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-ink-faint outline-none">
+          ▼ Position size calculator
         </summary>
-        <div className="mt-2 space-y-2">
+        <div className="mt-3 space-y-3">
           <Field label="Account balance">
             <input
               type="number"
@@ -127,26 +126,26 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
               value={balanceInput}
               placeholder={balance.toFixed(0)}
               onChange={(e) => setBalanceInput(e.target.value)}
-              className="num-input"
+              className="num-input text-sm"
             />
-            <span className="px-1 text-[11px] text-ink-faint">$</span>
+            <span className="px-1 text-sm text-ink-faint">$</span>
           </Field>
           <Field label="Risk per trade">
-            <input type="number" min={0} step="any" value={riskPct} onChange={(e) => setRiskPct(e.target.value)} className="num-input" />
-            <span className="px-1 text-[11px] text-ink-faint">%</span>
+            <input type="number" min={0} step="any" value={riskPct} onChange={(e) => setRiskPct(e.target.value)} className="num-input text-sm" />
+            <span className="px-1 text-sm text-ink-faint">%</span>
           </Field>
           <Field label="Stop-loss distance">
-            <input type="number" min={0} step="any" value={slDist} placeholder="price units" onChange={(e) => setSlDist(e.target.value)} className="num-input" />
-            <span className="px-1 text-[11px] text-ink-faint">$</span>
+            <input type="number" min={0} step="any" value={slDist} placeholder="price units" onChange={(e) => setSlDist(e.target.value)} className="num-input text-sm" />
+            <span className="px-1 text-sm text-ink-faint">$</span>
           </Field>
-          <div className="flex items-center justify-between border-t border-line pt-2">
-            <span className="text-[11px] text-ink-faint">Recommended</span>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm text-ink">{recommendedQty > 0 ? recommendedQty.toFixed(4) : '—'}</span>
+          <div className="flex items-center justify-between border-t border-line pt-3">
+            <span className="text-sm text-ink-faint">Recommended</span>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-base font-semibold text-ink">{recommendedQty > 0 ? recommendedQty.toFixed(4) : '—'}</span>
               <button
                 onClick={() => recommendedQty > 0 && setQty(recommendedQty.toFixed(4))}
                 disabled={recommendedQty <= 0}
-                className="focus-ring rounded bg-surface-2 px-2 py-0.5 text-[11px] text-ink-muted transition hover:text-ink disabled:opacity-30"
+                className="focus-ring rounded bg-surface-2 px-3 py-1 text-xs font-medium text-ink-muted transition hover:bg-surface-3 hover:text-ink disabled:opacity-30"
               >
                 Use
               </button>
@@ -240,8 +239,8 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex items-center gap-2 rounded-md border border-line bg-base px-2 py-1.5 text-xs">
-      <span className="shrink-0 text-ink-faint">{label}</span>
+    <label className="flex items-center gap-3 rounded-lg border border-line bg-base px-3 py-2.5 text-sm">
+      <span className="shrink-0 font-medium text-ink-faint">{label}</span>
       {children}
     </label>
   );
@@ -264,17 +263,17 @@ function LevelRow({
 }) {
   if (value == null) {
     return (
-      <div className="flex items-center justify-between">
-        <span className={['text-xs font-semibold', color].join(' ')}>{label}</span>
-        <button onClick={onAdd} className="focus-ring rounded bg-surface-2 px-2 py-0.5 text-[11px] text-ink-muted transition hover:text-ink">
+      <div className="flex items-center justify-between py-1">
+        <span className={['text-sm font-semibold', color].join(' ')}>{label}</span>
+        <button onClick={onAdd} className="focus-ring rounded bg-surface-2 px-3 py-1 text-xs font-medium text-ink-muted transition hover:bg-surface-3 hover:text-ink">
           Add {label}
         </button>
       </div>
     );
   }
   return (
-    <label className="flex items-center gap-2 rounded-md border border-line bg-base px-2 py-1 text-xs">
-      <span className={['w-6 shrink-0 font-semibold', color].join(' ')}>{label}</span>
+    <label className="flex items-center gap-3 rounded-lg border border-line bg-base px-3 py-2 text-sm">
+      <span className={['w-8 shrink-0 font-bold', color].join(' ')}>{label}</span>
       <input
         type="number"
         min={0}
@@ -284,9 +283,9 @@ function LevelRow({
           const n = Number(e.target.value);
           if (Number.isFinite(n) && n > 0) onChange(n);
         }}
-        className="num-input"
+        className="num-input text-sm"
       />
-      <button onClick={onClear} aria-label={`Remove ${label}`} className="text-ink-faint transition hover:text-bear-bright">
+      <button onClick={onClear} aria-label={`Remove ${label}`} className="text-ink-faint transition hover:text-bear-bright p-1">
         ✕
       </button>
     </label>

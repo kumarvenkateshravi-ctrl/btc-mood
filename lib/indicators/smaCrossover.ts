@@ -29,7 +29,7 @@ export function computeSMACrossover(candles: Candle[], config?: SMACrossoverConf
   const ma = (src: (number | null)[], len: number, type: string) => {
     switch (type) {
       case 'SMA': return pm.sma(src, len);
-      case 'EMA': return pm.ema(src, len);
+      case 'EMA': return pm.emaPine(src, len); // TV ta.ema (src-seeded)
       case 'WMA': return pm.wma(src, len);
       case 'RMA': return pm.rma(src, len);
       case 'VWMA': return pm.vwma(src, volumes, len);

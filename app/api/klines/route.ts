@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { Candle, Timeframe } from '@/lib/types';
+import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
 import { parseCandlesFromBinance } from '@/lib/schemas';
 import { COMPARE_SYMBOLS, isCompareSymbol } from '@/lib/compare';
 import {
@@ -8,7 +8,9 @@ import {
   listDataSourceMetas,
 } from '@/lib/dataSource';
 
-const VALID_TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
+// Sourced from the canonical TIMEFRAMES so this allowlist can never drift
+// (e.g. when 30m was added). Binance accepts each of these interval strings.
+const VALID_TIMEFRAMES: Timeframe[] = [...TIMEFRAMES];
 const CACHE_TTL_MS = 5000;
 // Older history pages are immutable, so cache them far longer.
 const HISTORY_CACHE_TTL_MS = 10 * 60_000;

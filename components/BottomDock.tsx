@@ -6,7 +6,6 @@ import BacktestStats from './trade/BacktestStats';
 import BacktestPanel from './BacktestPanel';
 import AlertsPanel from './AlertsPanel';
 import ConfluenceRibbon from './ConfluenceRibbon';
-import TimeframeStrip from './TimeframeStrip';
 import IndicatorPicker, { type ActiveIndicator } from './trade/IndicatorPicker';
 import { type IndicatorDef } from '@/lib/indicatorLibrary';
 import { type Candle, type Timeframe, TIMEFRAMES } from '@/lib/types';
@@ -26,9 +25,6 @@ export default function BottomDock({
   // Confluence-tab data
   candlesByTf,
   snapshots,
-  prices,
-  changes,
-  errors,
   selected,
   onSelectTf,
 }: {
@@ -43,20 +39,17 @@ export default function BottomDock({
   onToggleCollapse?: () => void;
   candlesByTf: Record<Timeframe, Candle[]>;
   snapshots: Record<Timeframe, TFSnapshot | null>;
-  prices: Record<Timeframe, number | null>;
-  changes: Record<Timeframe, number | null>;
-  errors: Record<Timeframe, string | null>;
   selected: Timeframe;
   onSelectTf: (tf: Timeframe) => void;
 }) {
-  type TabId = 'confluence' | 'trades' | 'stats' | 'backtest' | 'alerts' | 'indicators';
+  type TabId = 'confluence' | 'trades' | 'stats' | 'backtest' | 'alerts';
   const [activeTab, setActiveTab] = useState<TabId>('confluence');
 
   // Restore the last-open tab (client-only, after mount to stay SSR-safe).
   useEffect(() => {
     try {
       const saved = localStorage.getItem('bottomDockTab') as TabId | null;
-      if (saved && ['confluence', 'trades', 'stats', 'backtest', 'alerts', 'indicators'].includes(saved)) {
+      if (saved && ['confluence', 'trades', 'stats', 'backtest', 'alerts'].includes(saved)) {
         setActiveTab(saved);
       }
     } catch {}
@@ -96,7 +89,6 @@ export default function BottomDock({
     { id: 'stats', label: 'Stats' },
     { id: 'backtest', label: 'Backtest' },
     { id: 'alerts', label: 'Alerts' },
-    { id: 'indicators', label: 'Indicators' },
   ] as const;
 
   return (
@@ -139,40 +131,18 @@ export default function BottomDock({
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-base p-4">
         {activeTab === 'confluence' && (
-          <div className="flex flex-col gap-4">
-            <ConfluenceRibbon
-              candlesByTf={candlesByTf}
-              timeframes={TIMEFRAMES}
-              selected={selected}
-              snapshots={snapshots}
-              onSelectTf={onSelectTf}
-            />
-            <TimeframeStrip
-              selected={selected}
-              onSelect={onSelectTf}
-              prices={prices}
-              changes={changes}
-              snapshots={snapshots}
-              errors={errors}
-              timeframes={TIMEFRAMES}
-            />
-          </div>
+          <ConfluenceRibbon
+            candlesByTf={candlesByTf}
+            timeframes={TIMEFRAMES}
+            selected={selected}
+            snapshots={snapshots}
+            onSelectTf={onSelectTf}
+          />
         )}
         {activeTab === 'trades' && <TradeHistory />}
         {activeTab === 'stats' && <BacktestStats />}
         {activeTab === 'backtest' && <BacktestPanel tf={tf} candles={candles} />}
         {activeTab === 'alerts' && <AlertsPanel defaultTf={tf} />}
-        {activeTab === 'indicators' && (
-          <IndicatorPicker
-            active={activeIndicators ?? []}
-            onToggle={onToggleIndicator ?? (() => {})}
-            onAdd={onAddIndicator ?? (() => {})}
-            onRemove={onRemoveIndicator ?? (() => {})}
-            onParam={() => {}} // Removed in favor of gear icon on chart
-            showVolume={showVolume ?? true}
-            onToggleVolume={onToggleVolume ?? (() => {})}
-          />
-        )}
       </div>
     </div>
   );

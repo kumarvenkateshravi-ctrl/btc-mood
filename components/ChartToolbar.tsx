@@ -18,7 +18,10 @@ import {
   Save,
   Square,
   Bitcoin,
+  Calculator,
+  LayoutDashboard,
 } from 'lucide-react';
+import Link from 'next/link';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { RenkoConfig, RenkoMethod } from '@/lib/renko';
@@ -203,7 +206,23 @@ export default function ChartToolbar(props: ChartToolbarProps) {
       </div>
 
       {/* Spacer pushes fullscreen + more to the right */}
-      <div className="ml-auto flex shrink-0 items-center h-full px-1">
+      <div className="ml-auto flex shrink-0 items-center h-full gap-1 px-1">
+        <Link
+          href="/mycryptostack"
+          title="MyCryptoStack — multi-timeframe intelligence dashboard"
+          className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
+        >
+          <LayoutDashboard className="h-3.5 w-3.5" />
+          Dashboard
+        </Link>
+        <Link
+          href="/mystack"
+          title="MyStack — risk & position-size cockpit"
+          className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
+        >
+          <Calculator className="h-3.5 w-3.5" />
+          MyStack
+        </Link>
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
@@ -450,7 +469,7 @@ function TimeframeChip({
         <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
           Timeframe
         </div>
-        {['1m', '5m', '15m', '1h', '4h', '1d'].map((tf) => (
+        {['5m', '15m', '1h', '4h', '1d'].map((tf) => (
           <MenuItem
             key={tf}
             active={value === tf}

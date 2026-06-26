@@ -5,7 +5,7 @@ import type { Timeframe } from './types';
 
 function snap(side: 'buy' | 'sell' | 'neutral'): TFSnapshot {
   return {
-    tf: '1m',
+    tf: '5m',
     signal: { side, source: 'test', fresh: true },
     ema9: null,
     ema21: null,
@@ -16,17 +16,17 @@ function snap(side: 'buy' | 'sell' | 'neutral'): TFSnapshot {
 }
 
 function build(sides: Partial<Record<Timeframe, 'buy' | 'sell' | 'neutral'>>): Record<Timeframe, TFSnapshot | null> {
-  const all: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
+  const all: Timeframe[] = ['5m', '15m', '1h', '4h', '1d'];
   return Object.fromEntries(all.map((tf) => [tf, sides[tf] ? snap(sides[tf]!) : null])) as Record<Timeframe, TFSnapshot | null>;
 }
 
 describe('groupBias', () => {
   it('reports the majority side', () => {
-    const snaps = build({ '1m': 'buy', '5m': 'buy', '15m': 'sell' });
+    const snaps = build({ '5m': 'buy', '15m': 'neutral' });
     expect(groupBias(snaps, LOWER_TFS).bias).toBe('bullish');
   });
   it('is neutral on a tie', () => {
-    const snaps = build({ '1m': 'buy', '5m': 'sell' });
+    const snaps = build({ '5m': 'buy', '15m': 'sell' });
     expect(groupBias(snaps, LOWER_TFS).bias).toBe('neutral');
   });
 });
@@ -34,7 +34,7 @@ describe('groupBias', () => {
 describe('detectDivergence', () => {
   it('flags lower-bearish vs higher-bullish', () => {
     const snaps = build({
-      '1m': 'sell', '5m': 'sell', '15m': 'sell',
+      '5m': 'sell', '15m': 'sell',
       '1h': 'buy', '4h': 'buy', '1d': 'buy',
     });
     const d = detectDivergence(snaps);
@@ -46,7 +46,7 @@ describe('detectDivergence', () => {
 
   it('flags lower-bullish vs higher-bearish', () => {
     const snaps = build({
-      '1m': 'buy', '5m': 'buy', '15m': 'buy',
+      '5m': 'buy', '15m': 'buy',
       '1h': 'sell', '4h': 'sell', '1d': 'sell',
     });
     const d = detectDivergence(snaps);
@@ -56,14 +56,14 @@ describe('detectDivergence', () => {
 
   it('does not flag when aligned', () => {
     const snaps = build({
-      '1m': 'buy', '5m': 'buy', '15m': 'buy',
+      '5m': 'buy', '15m': 'buy',
       '1h': 'buy', '4h': 'buy', '1d': 'buy',
     });
     expect(detectDivergence(snaps).diverging).toBe(false);
   });
 
   it('does not flag when a group is neutral', () => {
-    const snaps = build({ '1m': 'sell', '5m': 'buy', '1h': 'buy', '4h': 'buy' });
+    const snaps = build({ '5m': 'sell', '15m': 'buy', '1h': 'buy', '4h': 'buy' });
     expect(detectDivergence(snaps).diverging).toBe(false);
   });
 });

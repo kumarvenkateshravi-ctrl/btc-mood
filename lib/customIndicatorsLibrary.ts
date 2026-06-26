@@ -15,8 +15,7 @@ import { computeAdx } from './indicators/adx';
 import { computeSuperTrend } from './indicators/superTrend';
 import { computeVwapBands } from './indicators/vwapBands';
 import { computeWilliamsR } from './indicators/williamsR';
-import { resolveSourceNum } from './indicators/itsTemplates';
-import { sma } from './indicators';
+import { computeSma } from './indicators/sma';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -47,27 +46,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     styles: [
       { id: 'smaLine', name: 'SMA', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true },
     ],
-    compute: (candles, config, computedSources) => {
-      const inputs = config?.settings?.inputs || {};
-      const length = Number(inputs['length']) || 9;
-      const source = (inputs['source'] as string) || 'close';
-      
-      const data = resolveSourceNum(candles, source, computedSources);
-      const smaData = sma(data, length);
-
-      return {
-        plots: [
-          {
-            id: 'smaLine',
-            title: 'SMA',
-            color: '#2962FF',
-            type: 'line',
-            data: smaData
-          }
-        ],
-        signals: new Array(candles.length).fill('neutral')
-      };
-    },
+    compute: computeSma,
   },
   {
     id: 'sma_crossover_bb',
@@ -229,9 +208,16 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'atr',
     name: 'ATR (14)',
-    description: 'Average True Range volatility (Wilder smoothing).',
+    description: 'Faithful port of TradingView’s built-in ATR: ta.tr(true) smoothed by RMA/SMA/EMA/WMA (default RMA / Wilder).',
     inputs: [
       { id: 'length', name: 'Length', type: 'number', default: 14, min: 1, max: 500, step: 1 },
+      { id: 'smoothing', name: 'Smoothing', type: 'select', default: 'RMA',
+        options: [
+          { value: 'RMA', label: 'RMA' },
+          { value: 'SMA', label: 'SMA' },
+          { value: 'EMA', label: 'EMA' },
+          { value: 'WMA', label: 'WMA' },
+        ] },
     ],
     styles: [
       { id: 'atr', name: 'ATR', color: '#ef6c00', thickness: 2, lineStyle: 'solid', display: true },
@@ -241,10 +227,11 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'parabolic_sar',
     name: 'Parabolic SAR',
-    description: 'Stop-and-reverse trailing dots; trend by dot position vs price.',
+    description: 'Faithful port of TradingView’s ta.sar (Wilder stop-and-reverse); trend by dot position vs price.',
     inputs: [
-      { id: 'step', name: 'Step (AF)', type: 'number', default: 0.02, min: 0.001, max: 1, step: 0.001 },
-      { id: 'max', name: 'Max AF', type: 'number', default: 0.2, min: 0.01, max: 1, step: 0.01 },
+      { id: 'start', name: 'Start', type: 'number', default: 0.02, min: 0.001, max: 1, step: 0.001 },
+      { id: 'increment', name: 'Increment', type: 'number', default: 0.02, min: 0.001, max: 1, step: 0.001 },
+      { id: 'max', name: 'Maximum', type: 'number', default: 0.2, min: 0.01, max: 1, step: 0.01 },
     ],
     styles: [
       { id: 'psar', name: 'PSAR', color: '#26A69A', thickness: 2, lineStyle: 'solid', display: true },
@@ -253,11 +240,11 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   },
   {
     id: 'stochastic',
-    name: 'Stochastic (14, 3, 3)',
-    description: 'Slow stochastic oscillator: %K and %D. Matches TradingView.',
+    name: 'Stochastic',
+    description: 'Faithful port of TradingView’s built-in Stochastic: %K = SMA(ta.stoch, %K smoothing), %D = SMA(%K). TV defaults 14 / 1 / 3, with 80/50/20 bands.',
     inputs: [
       { id: 'kPeriod', name: '%K Length', type: 'number', default: 14, min: 1, max: 500, step: 1 },
-      { id: 'smoothK', name: '%K Smoothing', type: 'number', default: 3, min: 1, max: 100, step: 1 },
+      { id: 'smoothK', name: '%K Smoothing', type: 'number', default: 1, min: 1, max: 100, step: 1 },
       { id: 'dPeriod', name: '%D Smoothing', type: 'number', default: 3, min: 1, max: 100, step: 1 },
     ],
     styles: [
@@ -305,8 +292,26 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'vwap',
     name: 'VWAP',
-    description: 'Session-anchored Volume-Weighted Average Price (resets daily).',
-    inputs: [],
+    description: 'Faithful port of TradingView’s VWAP: Σ(src·vol)/Σvol per anchored period. Source hlc3, anchor Session/Week/Month/Quarter/Year.',
+    inputs: [
+      { id: 'anchor', name: 'Anchor Period', type: 'select', default: 'session',
+        options: [
+          { value: 'session', label: 'Session' },
+          { value: 'week', label: 'Week' },
+          { value: 'month', label: 'Month' },
+          { value: 'quarter', label: 'Quarter' },
+          { value: 'year', label: 'Year' },
+        ] },
+      { id: 'source', name: 'Source', type: 'source', default: 'hlc3',
+        options: [
+          { value: 'hlc3', label: 'HLC3' },
+          { value: 'hl2', label: 'HL2' },
+          { value: 'ohlc4', label: 'OHLC4' },
+          { value: 'close', label: 'Close' },
+          { value: 'high', label: 'High' },
+          { value: 'low', label: 'Low' },
+        ] },
+    ],
     styles: [
       { id: 'vwap', name: 'VWAP', color: '#42a5f5', thickness: 2, lineStyle: 'solid', display: true },
     ],
@@ -343,10 +348,25 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'vwap_bands',
     name: 'VWAP Bands',
-    description: 'Session VWAP with volume-weighted ±σ standard-deviation bands.',
+    description: 'VWAP with volume-weighted ±σ bands (TV formula). Anchor Session/Week/Month/Quarter/Year, source hlc3.',
     inputs: [
       { id: 'mult1', name: 'Band 1 ×σ', type: 'number', default: 1, min: 0.1, max: 10, step: 0.1 },
       { id: 'mult2', name: 'Band 2 ×σ', type: 'number', default: 2, min: 0.1, max: 10, step: 0.1 },
+      { id: 'anchor', name: 'Anchor Period', type: 'select', default: 'session',
+        options: [
+          { value: 'session', label: 'Session' },
+          { value: 'week', label: 'Week' },
+          { value: 'month', label: 'Month' },
+          { value: 'quarter', label: 'Quarter' },
+          { value: 'year', label: 'Year' },
+        ] },
+      { id: 'source', name: 'Source', type: 'source', default: 'hlc3',
+        options: [
+          { value: 'hlc3', label: 'HLC3' },
+          { value: 'hl2', label: 'HL2' },
+          { value: 'ohlc4', label: 'OHLC4' },
+          { value: 'close', label: 'Close' },
+        ] },
     ],
     styles: [
       { id: 'vwap', name: 'VWAP', color: '#42a5f5', thickness: 2, lineStyle: 'solid', display: true },

@@ -6,6 +6,6 @@ describe('Parabolic SAR golden master', () => {
   defineGoldenTest({
     name: 'parabolicSar',
     compute: computeParabolicSar,
-    params: { step: 0.02, max: 0.2 },
+    params: { start: 0.02, increment: 0.02, max: 0.2 },
   });
 });

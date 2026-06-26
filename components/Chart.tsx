@@ -363,7 +363,6 @@ export default function Chart({
 
   function getTfMinutes(tfStr: string): number {
     switch (tfStr) {
-      case '1m': return 1;
       case '5m': return 5;
       case '15m': return 15;
       case '1h': return 60;

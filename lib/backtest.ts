@@ -74,9 +74,9 @@ const MIN_BARS_FOR_BACKTEST = 60;
 
 // Crypto trades 24/7; bars-per-year for each timeframe.
 const BARS_PER_YEAR: Record<Timeframe, number> = {
-  '1m': 365 * 24 * 60,
   '5m': 365 * 24 * 12,
   '15m': 365 * 24 * 4,
+  '30m': 365 * 24 * 2,
   '1h': 365 * 24,
   '4h': 365 * 6,
   '1d': 365,

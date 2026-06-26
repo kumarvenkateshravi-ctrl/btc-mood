@@ -1,5 +1,36 @@
 import { describe, it, expect } from 'vitest';
-import { highest, lowest, tr, linreg, pivotHigh, pivotLow, valueWhen, barsSince } from './pineMath';
+import { highest, lowest, tr, linreg, pivotHigh, pivotLow, valueWhen, barsSince, ema, emaPine } from './pineMath';
+
+describe('emaPine (TradingView ta.ema)', () => {
+  it('seeds with src[0] and emits from bar 0 (pine_ema)', () => {
+    // alpha = 2/(3+1) = 0.5. ema0 = 10; then 0.5*src + 0.5*prev.
+    const src = [10, 20, 30, 40];
+    const out = emaPine(src, 3);
+    expect(out[0]).toBeCloseTo(10, 10);
+    expect(out[1]).toBeCloseTo(0.5 * 20 + 0.5 * 10, 10); // 15
+    expect(out[2]).toBeCloseTo(0.5 * 30 + 0.5 * 15, 10); // 22.5
+    expect(out[3]).toBeCloseTo(0.5 * 40 + 0.5 * 22.5, 10); // 31.25
+  });
+
+  it('differs from the SMA-seeded ema (which is null until index length-1)', () => {
+    const src = [10, 20, 30, 40];
+    const smaSeeded = ema(src, 3);
+    expect(smaSeeded[0]).toBeNull(); // SMA-seeded warms up
+    expect(smaSeeded[1]).toBeNull();
+    expect(smaSeeded[2]).toBeCloseTo((10 + 20 + 30) / 3, 10); // seed = SMA = 20
+    // emaPine has a value at bar 0 where the SMA-seeded one is still null.
+    expect(emaPine(src, 3)[0]).not.toBeNull();
+  });
+
+  it('skips leading nulls then seeds at the first real value', () => {
+    const src = [null, null, 10, 20];
+    const out = emaPine(src, 3);
+    expect(out[0]).toBeNull();
+    expect(out[1]).toBeNull();
+    expect(out[2]).toBeCloseTo(10, 10); // seed
+    expect(out[3]).toBeCloseTo(0.5 * 20 + 0.5 * 10, 10); // 15
+  });
+});
 
 describe('pivotHigh / pivotLow', () => {
   it('confirms a pivot high `right` bars after it occurs', () => {

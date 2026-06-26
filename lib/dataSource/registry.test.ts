@@ -27,7 +27,7 @@ function makeStubSource(id: string, exchange: string): DataSource {
     },
     fetchHistory: async (): Promise<Candle[]> => [],
     subscribe: (): (() => void) => () => {},
-    supportsTimeframe: (tf: Timeframe) => tf === '1m',
+    supportsTimeframe: (tf: Timeframe) => tf === '5m',
   };
 }
 
