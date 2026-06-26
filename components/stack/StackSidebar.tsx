@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, ScanLine, Layers, Gauge, Target, Bell, FlaskConical, BookOpen,
-  Briefcase, Boxes, FileBarChart, HelpCircle, Settings, TrendingUp, type LucideIcon,
+  Briefcase, Boxes, FileBarChart, BrainCircuit, HelpCircle, Settings, TrendingUp, type LucideIcon,
 } from 'lucide-react';
 
 export interface MarketState {
@@ -14,7 +14,7 @@ export interface MarketState {
   energy: string;
 }
 
-const ITEMS: { label: string; icon: LucideIcon; href?: string }[] = [
+const ITEMS: { label: string; icon: LucideIcon; href?: string; badge?: string }[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/mycryptostack' },
   { label: 'Market Scanner', icon: ScanLine },
   { label: 'Multi-Timeframe', icon: Layers, href: '/multi-timeframe' },
@@ -26,6 +26,7 @@ const ITEMS: { label: string; icon: LucideIcon; href?: string }[] = [
   { label: 'Positions', icon: Briefcase, href: '/positions' },
   { label: 'Strategies', icon: Boxes, href: '/strategies' },
   { label: 'Reports', icon: FileBarChart, href: '/reports' },
+  { label: 'MyStack IQ', icon: BrainCircuit, href: '/mystack-iq', badge: 'NEW' },
   { label: 'Help & Learn', icon: HelpCircle },
   { label: 'Settings', icon: Settings },
 ];
@@ -48,7 +49,7 @@ export default function StackSidebar({ marketState, fearGreed, extra }: { market
       </div>
 
       <nav className="flex-1 space-y-0.5 p-2">
-        {ITEMS.map(({ label, icon: Icon, href }) => {
+        {ITEMS.map(({ label, icon: Icon, href, badge }) => {
           const active = href ? pathname?.startsWith(href) : false;
           const cls = [
             'flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition',
@@ -56,7 +57,7 @@ export default function StackSidebar({ marketState, fearGreed, extra }: { market
               : href ? 'text-ink-muted hover:bg-surface-2 hover:text-ink'
                 : 'cursor-default text-ink-faint/60',
           ].join(' ');
-          const inner = <><Icon className="h-4 w-4 shrink-0" />{label}</>;
+          const inner = <><Icon className="h-4 w-4 shrink-0" /><span className="flex-1">{label}</span>{badge && <span className="rounded bg-accent px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">{badge}</span>}</>;
           return href
             ? <Link key={label} href={href} className={cls}>{inner}</Link>
             : <div key={label} className={cls} title="Coming soon">{inner}</div>;
