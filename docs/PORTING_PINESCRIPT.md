@@ -147,6 +147,10 @@ This turns a snapshot baseline into a true correctness check.
    `expected.plots[plotId][barIndex]` (sparse is fine) and `expected.signals`.
 5. Run `npx vitest run <name>.golden` — it should pass without `UPDATE_GOLDEN`.
 
+For CSV exports, prefer `buildTradingViewFixtureFromCsv` in
+`lib/testing/tradingViewCsv.ts`. The RSI-specific column contract is documented
+in `docs/TRADINGVIEW_FIXTURE_WORKFLOW.md`.
+
 If it fails, the harness prints exactly which bar/plot diverged and by how much
 (`formatGoldenReport`) — that's your port bug, found before a user trades on it.
 

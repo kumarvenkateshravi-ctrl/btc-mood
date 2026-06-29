@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Info, HelpCircle } from 'lucide-react';
+import { X, HelpCircle } from 'lucide-react';
 import type { CustomIndicatorDef } from '@/lib/customIndicatorsLibrary';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 
@@ -157,7 +157,7 @@ function ColorPickerPopover({
               <button
                 key={styleDef.id}
                 className={`flex-1 flex items-center justify-center h-[26px] border-r border-[#363a45] last:border-r-0 hover:bg-[#2a2e39] transition-colors ${lineStyle === styleDef.id ? 'bg-[#2a2e39]' : ''}`}
-                onClick={() => onLineStyleChange(styleDef.id as any)}
+                onClick={() => onLineStyleChange(styleDef.id as 'solid' | 'dashed' | 'dotted')}
               >
                 <svg width="24" height="2" viewBox="0 0 24 2">
                   <line x1="0" y1="1" x2="24" y2="1" stroke="#d1d4dc" strokeWidth="2" strokeDasharray={styleDef.dashArray} />
@@ -183,8 +183,8 @@ export default function IndicatorSettingsModal({
   const [openColorPickerId, setOpenColorPickerId] = useState<string | null>(null);
   
   // Initialize state from existing settings or defaults
-  const [inputsState, setInputsState] = useState<Record<string, any>>(() => {
-    const state: Record<string, any> = { ...initialSettings?.inputs };
+  const [inputsState, setInputsState] = useState<IndicatorSettings['inputs']>(() => {
+    const state: IndicatorSettings['inputs'] = { ...initialSettings?.inputs };
     indicatorDef.inputs?.forEach((inp) => {
       if (state[inp.id] === undefined) {
         state[inp.id] = inp.default;
@@ -193,8 +193,8 @@ export default function IndicatorSettingsModal({
     return state;
   });
 
-  const [stylesState, setStylesState] = useState<Record<string, any>>(() => {
-    const state: Record<string, any> = { ...initialSettings?.styles };
+  const [stylesState, setStylesState] = useState<IndicatorSettings['styles']>(() => {
+    const state: IndicatorSettings['styles'] = { ...initialSettings?.styles };
     indicatorDef.styles?.forEach((st) => {
       if (state[st.id] === undefined) {
         state[st.id] = { color: st.color, thickness: st.thickness, lineStyle: st.lineStyle, display: st.display };
@@ -222,13 +222,13 @@ export default function IndicatorSettingsModal({
     onSave({ inputs: i, styles: s, visibility: v, labelsOnPriceScale: l, valuesInStatusLine: val });
   };
 
-  const updateInputs = (key: string, value: any) => {
+  const updateInputs = (key: string, value: IndicatorSettings['inputs'][string]) => {
     const next = { ...inputsState, [key]: value };
     setInputsState(next);
     notifySave(next, stylesState, visibilityState, labelsOnPriceScale, valuesInStatusLine);
   };
 
-  const updateStyles = (key: string, value: any) => {
+  const updateStyles = (key: string, value: IndicatorSettings['styles'][string]) => {
     const next = { ...stylesState, [key]: value };
     setStylesState(next);
     notifySave(inputsState, next, visibilityState, labelsOnPriceScale, valuesInStatusLine);
@@ -502,7 +502,7 @@ export default function IndicatorSettingsModal({
                 )}
 
                 {/* ── Generic groups ── */}
-                {genericGroups.map(([groupName, inputs], groupIdx) => (
+                {genericGroups.map(([groupName, inputs]) => (
                   <div key={groupName} className="space-y-4 pt-4">
                     {groupName !== 'default' && (
                       <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[#787b86] pt-2">
@@ -613,7 +613,7 @@ export default function IndicatorSettingsModal({
           {activeTab === 'Style' && (
             <div className="space-y-4">
               {indicatorDef.styles?.map((st) => {
-                const currentStyle = stylesState[st.id] || {};
+                const currentStyle = stylesState[st.id] || ({} as IndicatorSettings['styles'][string]);
                 const isColorPickerOpen = openColorPickerId === st.id;
                 return (
                   <div key={st.id} className="flex items-center justify-between">
@@ -674,7 +674,7 @@ export default function IndicatorSettingsModal({
                         <ColorPickerPopover
                           color={currentStyle.color}
                           thickness={st.isFill ? undefined : currentStyle.thickness}
-                          lineStyle={st.isFill ? undefined : currentStyle.lineStyle}
+                          lineStyle={st.isFill ? undefined : (currentStyle.lineStyle as 'solid' | 'dashed' | 'dotted')}
                           onColorChange={(c) => updateStyles(st.id, { ...currentStyle, color: c })}
                           onThicknessChange={st.isFill ? undefined : ((t) => updateStyles(st.id, { ...currentStyle, thickness: t }))}
                           onLineStyleChange={st.isFill ? undefined : ((s) => updateStyles(st.id, { ...currentStyle, lineStyle: s }))}

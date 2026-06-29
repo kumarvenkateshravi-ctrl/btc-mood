@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Maximize2,
   Minimize2,
@@ -22,7 +22,7 @@ import {
   LayoutDashboard,
 } from 'lucide-react';
 import Link from 'next/link';
-import { TIMEFRAMES, type Timeframe } from '@/lib/types';
+import { type Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { RenkoConfig, RenkoMethod } from '@/lib/renko';
 import { GRID_COUNTS, type GridCount } from '@/lib/gridLayout';
@@ -84,9 +84,6 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onSelectTf,
     chartType,
     onSelectType,
-
-    showSignals,
-    onToggleSignals,
 
     isFullscreen,
     onToggleFullscreen,
@@ -603,7 +600,6 @@ function DateChip({
 function RenkoChip({
   renko,
   onChange,
-  lastPrice,
 }: {
   renko: RenkoConfig;
   onChange: (c: RenkoConfig) => void;
@@ -718,9 +714,11 @@ function MoreMenu({ onFitContent }: { onFitContent: () => void }) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
+        aria-label="More options"
+        aria-expanded={open}
         className="focus-ring inline-flex h-full px-2 items-center justify-center text-ink-faint transition hover:text-ink"
       >
-        <MoreHorizontal className="h-4 w-4" />
+        <MoreHorizontal aria-hidden className="h-4 w-4" />
       </button>
 
       {open && (

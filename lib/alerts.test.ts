@@ -7,7 +7,6 @@ import {
   rulesToFire,
   saveRules,
   type AlertRule,
-  type AlertSide,
 } from './alerts';
 import type { Signal, Timeframe } from './types';
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  KPIS, STRATEGY_ROWS, PORTFOLIO, STACK_SCORE_ROWS, EMOTIONS, GOALS, CALENDAR,
+  KPIS, PORTFOLIO, STACK_SCORE_ROWS, EMOTIONS, GOALS, CALENDAR,
   gradeForScore, totalStrategyProfit, bestStrategy, allocationSum, EXEC_SUMMARY,
 } from './reportsEngine';
 

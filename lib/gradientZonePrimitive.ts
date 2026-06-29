@@ -16,14 +16,14 @@ class ZoneRenderer implements IPrimitivePaneRenderer {
     private _prim: GradientZonePrimitive,
   ) {}
 
-  draw(target: any) {
-    target.useBitmapCoordinateSpace((scope: any) => {
+  draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]) {
+    target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
       const hpr = scope.horizontalPixelRatio;
       const vpr = scope.verticalPixelRatio;
       const series = this._api.series;
       const ts = this._api.chart.timeScale();
-      const barSpacing = (ts.options() as any).barSpacing ?? 6;
+      const barSpacing = ts.options().barSpacing ?? 6;
       const halfW = Math.max(1, (barSpacing * hpr) / 2);
 
       const { values, times, zones } = this._prim;

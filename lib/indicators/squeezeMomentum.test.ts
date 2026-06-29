@@ -49,7 +49,7 @@ describe('squeeze momentum', () => {
     const valid = dots?.data.filter((v) => v !== null) ?? [];
     expect(valid.length).toBeGreaterThan(0);
     for (const v of valid) {
-      if (typeof v === 'object' && v !== null) expect((v as any).value).toBe(0);
+      if (typeof v === 'object' && v !== null) expect((v as { value: number }).value).toBe(0);
     }
   });
 

@@ -82,9 +82,9 @@ export function computeWilliamsR(
     ],
     signals: neutralSignals(n),
     levels: [
-      ...(showUpper ? [{ value: upperVal, color: upperColor, lineStyle: upperDash as any, lineWidth: styles['upperBand']?.thickness || 1 }] : []),
-      ...(showMid ? [{ value: midVal, color: midColor, lineStyle: midDash as any, lineWidth: styles['middleLevel']?.thickness || 1 }] : []),
-      ...(showLower ? [{ value: lowerVal, color: lowerColor, lineStyle: lowerDash as any, lineWidth: styles['lowerBand']?.thickness || 1 }] : [])
+      ...(showUpper ? [{ value: upperVal, color: upperColor, lineStyle: upperDash as 'solid' | 'dashed' | 'dotted', lineWidth: styles['upperBand']?.thickness || 1 }] : []),
+      ...(showMid ? [{ value: midVal, color: midColor, lineStyle: midDash as 'solid' | 'dashed' | 'dotted', lineWidth: styles['middleLevel']?.thickness || 1 }] : []),
+      ...(showLower ? [{ value: lowerVal, color: lowerColor, lineStyle: lowerDash as 'solid' | 'dashed' | 'dotted', lineWidth: styles['lowerBand']?.thickness || 1 }] : [])
     ],
     fills: showBg && showUpper && showLower ? [
       { from: upperVal, to: lowerVal, color: bgCol }

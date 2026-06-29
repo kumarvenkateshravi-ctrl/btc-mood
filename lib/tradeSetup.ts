@@ -64,7 +64,7 @@ function qualityRating(s: number): string {
 }
 
 export function generateTradeSetup(input: TradeSetupInput): TradeSetup {
-  const { price, atr, side, structure, factors, qualityScore, consensus, confidence, regimeState, balance, riskPct, leverage } = input;
+  const { price, atr, side, structure, factors, qualityScore, confidence, regimeState, balance, riskPct, leverage } = input;
   const sign = side === 'long' ? 1 : -1;
   const a = atr > 0 ? atr : price * 0.004;
 

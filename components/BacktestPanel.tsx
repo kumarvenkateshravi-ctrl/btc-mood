@@ -17,9 +17,6 @@ function formatPct(n: number): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
 }
 
-function formatSigned(n: number, digits = 2): string {
-  return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}`;
-}
 
 function Stat({
   label,

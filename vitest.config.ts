@@ -4,7 +4,7 @@ import path from 'node:path';
 export default defineConfig({
   test: {
     environment: 'happy-dom',
-    include: ['lib/**/*.test.ts'],
+    include: ['lib/**/*.test.ts', 'components/**/*.test.{ts,tsx}'],
   },
   resolve: {
     alias: {

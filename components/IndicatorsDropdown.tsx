@@ -24,7 +24,6 @@ export default function IndicatorsDropdown(props: IndicatorsDropdownProps) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
-  const activeIds = useMemo(() => new Set(props.activeIndicators.map((a) => a.id)), [props.activeIndicators]);
 
   const filtered = useMemo(() => {
     if (!search) return [];

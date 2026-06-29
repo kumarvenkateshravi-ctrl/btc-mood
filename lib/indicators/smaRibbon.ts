@@ -60,9 +60,7 @@ export function computeSMARibbon(candles: Candle[], config?: SMARibbonConfig): I
   const lineWidths = [1, 2, 1, 1, 3, 1, 2, 1, 1, 3];
 
   for (let j = 0; j < smas.length; j++) {
-    // We map data to include the color per segment
-    // But IndicatorPlot signature is (number | null)[]. We need to update it!
-    // Wait, let's update IndicatorPlot in indicatorFramework.ts to support { value, color }
+    // Per-segment color — IndicatorPlot.data accepts { value, color } points.
     const coloredData = smas[j].map((val, i) => {
       if (val === null) return null;
       return { value: val, color: ribbonColors[i] };
@@ -74,7 +72,7 @@ export function computeSMARibbon(candles: Candle[], config?: SMARibbonConfig): I
       color: cNeutral, // Base color
       type: 'line',
       lineWidth: lineWidths[j],
-      data: coloredData as any, // Cast to any for now until we update the interface
+      data: coloredData,
     });
   }
 

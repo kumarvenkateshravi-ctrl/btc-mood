@@ -10,12 +10,14 @@ import { useMoodEngine } from '@/lib/hooks/useMoodEngine';
 import { computeAlignmentMatrix, type Verdict } from '@/lib/alignment';
 import {
   computeConsensus, computeWeightedScore, computeHeatmap, computeTimeframeDetails,
-  detectStructure, buildSummary, TF_WEIGHT, type HeatmapRow,
+  detectStructure, buildSummary, type HeatmapRow,
 } from '@/lib/multiTimeframe';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import { Panel } from '@/components/ui';
+import { formatNumber, formatPercent } from '@/lib/format';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5M', '15m': '15M', '30m': '30M', '1h': '1H', '4h': '4H', '1d': '1D' };
-const fmt = (n: number | null | undefined, d = 1) => (n != null && Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
+const fmt = (n: number | null | undefined, d = 1) => formatNumber(n ?? NaN, { precision: d });
 const Cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const vColor = (v: Verdict) => (v === 'bullish' ? 'text-bull-bright' : v === 'bearish' ? 'text-bear-bright' : 'text-neutral');
 const vTint = (v: Verdict) => (v === 'bullish' ? 'bg-bull/[0.05]' : v === 'bearish' ? 'bg-bear/[0.05]' : '');
@@ -89,7 +91,7 @@ export default function MultiTimeframePage() {
           </div>
           <span className="font-mono text-lg font-semibold tabular-nums">{fmt(price)}</span>
           <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>
-            {change >= 0 ? '+' : ''}{fmt(priceAbs, 2)} ({change >= 0 ? '+' : ''}{change.toFixed(2)}%)
+            {change >= 0 ? '+' : ''}{fmt(priceAbs, 2)} ({formatPercent(change)})
           </span>
           <div className="ml-2 flex items-center gap-1 rounded-lg border border-line bg-base p-0.5">
             {TIMEFRAMES.map((tf) => (
@@ -120,11 +122,11 @@ export default function MultiTimeframePage() {
               </Panel>
 
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
-                <Panel title="Timeframe Heatmap"><Heatmap rows={heatmap} /></Panel>
-                <Panel title={`Timeframe Details (${TF_LABEL[structTf]})`}><Details d={details} /></Panel>
+                <Panel eyebrow title="Timeframe Heatmap"><Heatmap rows={heatmap} /></Panel>
+                <Panel eyebrow title={`Timeframe Details (${TF_LABEL[structTf]})`}><Details d={details} /></Panel>
               </div>
 
-              <Panel title="Timeframe Summary">
+              <Panel eyebrow title="Timeframe Summary">
                 <p className="mb-3 text-xs text-ink-muted">
                   {consensus.bear > consensus.bull
                     ? `All major timeframes lean bearish (${consensus.bear}/${consensus.total}). Higher timeframes carry the most weight.`
@@ -146,7 +148,7 @@ export default function MultiTimeframePage() {
 
             {/* ===== RIGHT (consensus / persistence / structure / weighted) ===== */}
             <div className="space-y-3">
-              <Panel title="Timeframe Consensus">
+              <Panel eyebrow title="Timeframe Consensus">
                 <div className="flex items-center gap-4">
                   <ConsensusDial bull={consensus.bull} total={consensus.total} pctBull={consensus.pctBull} />
                   <ul className="space-y-1.5 text-xs">
@@ -160,7 +162,7 @@ export default function MultiTimeframePage() {
                 </div>
               </Panel>
 
-              <Panel title="Alignment Persistence" hint="time in current bias">
+              <Panel eyebrow title="Alignment Persistence" badge="time in current bias">
                 <div className="grid grid-cols-6 gap-1.5">
                   {TIMEFRAMES.map((tf) => {
                     const rec = sinceRef.current[tf];
@@ -179,7 +181,7 @@ export default function MultiTimeframePage() {
                 </p>
               </Panel>
 
-              <Panel title="Market Structure View">
+              <Panel eyebrow title="Market Structure View">
                 <div className="mb-2 flex items-center gap-1 rounded-lg border border-line bg-base p-0.5">
                   {TIMEFRAMES.map((tf) => (
                     <button key={tf} onClick={() => setStructTf(tf)}
@@ -195,7 +197,7 @@ export default function MultiTimeframePage() {
                 <MiniCandles candles={(candlesByTf[structTf] ?? []).slice(-44)} verdict={structure.verdict} />
               </Panel>
 
-              <Panel title="Timeframe Weighted Score" hint="spec weights">
+              <Panel eyebrow title="Timeframe Weighted Score" badge="spec weights">
                 <div className="flex items-center gap-4">
                   <div className="flex-1 space-y-1.5">
                     {weighted.perTf.map(({ tf, weight, score }) => (
@@ -229,19 +231,7 @@ export default function MultiTimeframePage() {
 }
 
 // ---- panels ----
-function Panel({ title, hint, children }: { title?: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-xl border border-line bg-surface-1 p-3">
-      {title && (
-        <div className="mb-2 flex items-center gap-2">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-accent">{title}</h3>
-          {hint && <span className="rounded border border-line px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-ink-faint">{hint}</span>}
-        </div>
-      )}
-      {children}
-    </section>
-  );
-}
+// Panel now imported from @/components/ui (MDS Phase C migration); eyebrow style.
 
 function MatrixTable({ matrix }: { matrix: ReturnType<typeof computeAlignmentMatrix> }) {
   return (
@@ -317,7 +307,7 @@ function Details({ d }: { d: ReturnType<typeof computeTimeframeDetails> }) {
       <DetailCol title="Trend" verdict={d.trend.verdict} rows={[['EMA 20', fmt(d.trend.ema20)], ['EMA 50', fmt(d.trend.ema50)], ['EMA 200', fmt(d.trend.ema200)]]} />
       <DetailCol title="Momentum" verdict={d.momentum.verdict} rows={[['RSI (14)', fmt(d.momentum.rsi)], ['MACD', fmt(d.momentum.macd, 2)], ['Signal', fmt(d.momentum.signal, 2)], ['Histogram', fmt(d.momentum.histogram, 2)]]} />
       <DetailCol title="Strength" verdict={d.strength.verdict} rows={[['ADX (14)', fmt(d.strength.adx)], ['+DI', fmt(d.strength.diPlus)], ['-DI', fmt(d.strength.diMinus)]]} />
-      <DetailCol title="Volume" verdict={d.volume.verdict} rows={[['Volume', fmt(d.volume.current, 0)], ['SMA 20', fmt(d.volume.sma20, 0)], ['vs SMA', d.volume.vsPct == null ? '—' : `${d.volume.vsPct >= 0 ? '+' : ''}${d.volume.vsPct.toFixed(0)}%`]]} />
+      <DetailCol title="Volume" verdict={d.volume.verdict} rows={[['Volume', fmt(d.volume.current, 0)], ['SMA 20', fmt(d.volume.sma20, 0)], ['vs SMA', d.volume.vsPct == null ? '—' : formatPercent(d.volume.vsPct, { precision: 0 })]]} />
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import {
-  Bitcoin, Info, Quote, TrendingUp, TrendingDown, Target, Gauge, Clock, BarChart3, Crosshair,
+  Bitcoin, Info, TrendingUp, TrendingDown, Gauge, Clock, BarChart3, Crosshair,
   CheckCircle2, AlertTriangle, XCircle, Bookmark, Star, Share2, Bell, type LucideIcon,
 } from 'lucide-react';
 import { TIMEFRAMES, type Timeframe, type Candle } from '@/lib/types';
@@ -16,11 +16,13 @@ import { computeAtr } from '@/lib/indicators/atr';
 import { computeStackScoreFactors } from '@/lib/stackScoreFactors';
 import { generateTradeSetup, type Side } from '@/lib/tradeSetup';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import { Panel } from '@/components/ui';
+import { formatNumber, formatPercent } from '@/lib/format';
 
 const FOCUS_TF: Timeframe = '1h';
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmtN = (n: number | null | undefined, d = 1) => (n != null && Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
-const fmtP = (n: number) => Math.round(n).toLocaleString('en-US');
+const fmtN = (n: number | null | undefined, d = 1) => formatNumber(n ?? NaN, { precision: d });
+const fmtP = (n: number) => formatNumber(Math.round(n), { precision: 0 });
 function lastFinite(data: readonly unknown[] | null | undefined): number | null {
   if (!Array.isArray(data)) return null;
   for (let i = data.length - 1; i >= 0; i--) { const d = data[i]; if (d == null) continue; if (typeof d === 'number') { if (Number.isFinite(d)) return d; continue; } if (typeof d === 'object' && 'value' in d) { const v = (d as { value?: number }).value; if (v != null && Number.isFinite(v)) return v; } }
@@ -75,7 +77,7 @@ export default function TradeSetupPage() {
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-1.5"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span></div>
           <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
-          <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{change >= 0 ? '+' : ''}{fmtN(priceAbs)} ({change >= 0 ? '+' : ''}{change.toFixed(2)}%)</span>
+          <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{change >= 0 ? '+' : ''}{fmtN(priceAbs)} ({formatPercent(change)})</span>
           <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
             <span className="inline-flex items-center gap-1.5"><span className={['h-2 w-2 rounded-full', status === 'live' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />{status === 'live' ? 'Live' : status}</span>
             <Link href="/app" className="rounded-md border border-line px-2 py-1 transition hover:text-ink">Chart →</Link>
@@ -101,7 +103,7 @@ export default function TradeSetupPage() {
                 <Summary icon={Clock} label="Timeframe" value="1H" />
                 <Summary icon={BarChart3} label="Market Regime" value={regimeState} />
               </div>
-              <Panel title="Execution Readiness">
+              <Panel eyebrow title="Execution Readiness">
                 <ReadinessGauge score={setup.execution.score} verdict={setup.execution.verdict} />
                 <p className="mt-1 text-center text-[11px] text-ink-muted">{setup.execution.note}</p>
               </Panel>
@@ -109,7 +111,7 @@ export default function TradeSetupPage() {
 
             {/* Entry / Stop / TP */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <Panel title="1. Entry Zone">
+              <Panel eyebrow title="1. Entry Zone">
                 <div className="grid grid-cols-[1fr_1fr] gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-ink-faint">Ideal Entry Zone</div>
@@ -117,7 +119,7 @@ export default function TradeSetupPage() {
                   </div>
                   <div className="space-y-1 text-xs">
                     <KV k="Current Price" v={fmtN(price)} />
-                    <KV k="Distance" v={`${setup.entry.distancePct >= 0 ? '+' : ''}${setup.entry.distancePct.toFixed(2)}%`} />
+                    <KV k="Distance" v={formatPercent(setup.entry.distancePct)} />
                     <KV k="Status" v={setup.entry.status} tone={setup.entry.status === 'In Zone' ? 'bull' : 'warn'} />
                   </div>
                 </div>
@@ -125,7 +127,7 @@ export default function TradeSetupPage() {
                   lines={[{ price: setup.stopLoss.price, color: '#f23645', label: `${fmtP(setup.stopLoss.price)} SL`, dashed: true }]} />
               </Panel>
 
-              <Panel title="2. Stop Loss">
+              <Panel eyebrow title="2. Stop Loss">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-ink-faint">Recommended Stop</div>
@@ -140,7 +142,7 @@ export default function TradeSetupPage() {
                 <SetupChart candles={focusCandles} lines={[{ price: setup.stopLoss.price, color: '#f23645', label: fmtP(setup.stopLoss.price), dashed: true }]} />
               </Panel>
 
-              <Panel title="3. Take Profit Targets">
+              <Panel eyebrow title="3. Take Profit Targets">
                 <table className="w-full text-left text-xs">
                   <thead className="text-[10px] uppercase tracking-wider text-ink-faint"><tr><th className="pb-1">Target</th><th className="pb-1 text-right">Price</th><th className="pb-1 text-right">Dist</th><th className="pb-1 text-right">R:R</th><th className="pb-1 text-right">Action</th></tr></thead>
                   <tbody>
@@ -148,55 +150,55 @@ export default function TradeSetupPage() {
                       <tr key={t.name} className="border-t border-line/50">
                         <td className="py-2 font-medium text-bull-bright">{t.name} <span className="text-ink-faint">({t.alloc}%)</span></td>
                         <td className="py-2 text-right font-mono">{fmtP(t.price)}</td>
-                        <td className="py-2 text-right font-mono text-bull-bright">{t.distancePct >= 0 ? '+' : ''}{t.distancePct.toFixed(2)}%</td>
-                        <td className="py-2 text-right font-mono">{t.r.toFixed(1)}R</td>
+                        <td className="py-2 text-right font-mono text-bull-bright">{formatPercent(t.distancePct)}</td>
+                        <td className="py-2 text-right font-mono">{formatNumber(t.r, { precision: 1 })}R</td>
                         <td className="py-2 text-right"><span className="rounded border border-bull/40 px-1.5 py-0.5 text-[10px] font-medium text-bull-bright">Take {t.alloc}%</span></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-xs">
-                  <div><div className="text-[10px] uppercase tracking-wider text-ink-faint">Potential Reward</div><div className="font-mono text-base font-bold text-bull-bright">{setup.potentialRewardPoints.toLocaleString()} pts</div></div>
-                  <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-ink-faint">Reward / Risk</div><div className="font-mono text-base font-bold">{setup.rr.toFixed(1)} : 1</div></div>
+                  <div><div className="text-[10px] uppercase tracking-wider text-ink-faint">Potential Reward</div><div className="font-mono text-base font-bold text-bull-bright">{formatNumber(setup.potentialRewardPoints)} pts</div></div>
+                  <div className="text-right"><div className="text-[10px] uppercase tracking-wider text-ink-faint">Reward / Risk</div><div className="font-mono text-base font-bold">{formatNumber(setup.rr, { precision: 1 })} : 1</div></div>
                 </div>
               </Panel>
             </div>
 
             {/* Risk-Reward / Position / Quality */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <Panel title="4. Risk / Reward Overview">
+              <Panel eyebrow title="4. Risk / Reward Overview">
                 <div className="flex items-center gap-4">
                   <div className="text-center"><div className="font-mono text-3xl font-bold">1 : {setup.rr}</div><div className="text-[10px] uppercase tracking-wider text-ink-faint">Risk : Reward</div></div>
                   <div className="flex-1 space-y-1 text-xs">
-                    <KV k="Risk (if stop hit)" v={`${setup.risk.potentialLoss.toFixed(0)} USDT`} tone="bear" />
-                    <KV k="Reward (at TP3)" v={`${setup.risk.potentialProfit.toFixed(0)} USDT`} tone="bull" />
+                    <KV k="Risk (if stop hit)" v={`${formatNumber(setup.risk.potentialLoss, { precision: 0 })} USDT`} tone="bear" />
+                    <KV k="Reward (at TP3)" v={`${formatNumber(setup.risk.potentialProfit, { precision: 0 })} USDT`} tone="bull" />
                     <KV k="Win Rate Needed" v={`${Math.round(setup.risk.breakEvenWinRate * 100)}%`} />
                   </div>
                 </div>
                 <RRSlider lower={setup.entry.lower} upper={setup.entry.upper} sl={setup.stopLoss.price} tp3={setup.takeProfits[2].price} long={long} />
                 <div className="mt-2 grid grid-cols-3 gap-2 border-t border-line pt-2 text-center text-[11px]">
-                  <Lc k="If TP1" v={`+${setup.lifecycle.ifTp1.toFixed(0)}`} tone="bull" />
-                  <Lc k="If TP3" v={`+${setup.lifecycle.ifTp3.toFixed(0)}`} tone="bull" />
-                  <Lc k="If SL" v={`${setup.lifecycle.ifSl.toFixed(0)}`} tone="bear" />
+                  <Lc k="If TP1" v={formatNumber(setup.lifecycle.ifTp1, { precision: 0, signed: true })} tone="bull" />
+                  <Lc k="If TP3" v={formatNumber(setup.lifecycle.ifTp3, { precision: 0, signed: true })} tone="bull" />
+                  <Lc k="If SL" v={formatNumber(setup.lifecycle.ifSl, { precision: 0 })} tone="bear" />
                 </div>
               </Panel>
 
-              <Panel title="5. Position Sizing">
+              <Panel eyebrow title="5. Position Sizing">
                 <div className="flex items-center gap-3">
                   <div className="flex-1 space-y-1 text-xs">
-                    <KV k="Account Balance" v={`${setup.sizing.balance.toLocaleString()} USDT`} />
+                    <KV k="Account Balance" v={`${formatNumber(setup.sizing.balance, { precision: 0 })} USDT`} />
                     <KV k="Risk Per Trade" v={`${setup.sizing.riskPct}%`} />
-                    <KV k="Risk Amount" v={`${setup.sizing.riskAmount.toFixed(0)} USDT`} tone="bear" />
+                    <KV k="Risk Amount" v={`${formatNumber(setup.sizing.riskAmount, { precision: 0 })} USDT`} tone="bear" />
                     <KV k="Stop Distance" v={`${Math.round(setup.sizing.stopDistance)} pts`} />
-                    <KV k="Position Size" v={`${setup.sizing.size.toFixed(3)} BTC`} tone="bull" />
+                    <KV k="Position Size" v={`${formatNumber(setup.sizing.size, { precision: 3 })} BTC`} tone="bull" />
                     <KV k="Position Value" v={`${fmtP(setup.sizing.value)} USDT`} />
                     <KV k="Margin (Isolated)" v={`${fmtP(setup.sizing.margin)} USDT · ${setup.sizing.leverage}x`} />
                   </div>
-                  <Donut label={`${setup.sizing.size.toFixed(3)} BTC`} value={clamp((setup.sizing.value / (setup.sizing.balance * setup.sizing.leverage)) * 100, 4, 100)} />
+                  <Donut label={`${formatNumber(setup.sizing.size, { precision: 3 })} BTC`} value={clamp((setup.sizing.value / (setup.sizing.balance * setup.sizing.leverage)) * 100, 4, 100)} />
                 </div>
               </Panel>
 
-              <Panel title="6. Setup Quality Score">
+              <Panel eyebrow title="6. Setup Quality Score">
                 <div className="flex items-center gap-3">
                   <div className="text-center">
                     <div className="font-mono text-4xl font-bold text-bull-bright">{setup.quality.score}<span className="text-base text-ink-faint">/100</span></div>
@@ -218,7 +220,7 @@ export default function TradeSetupPage() {
 
             {/* Plan / Checklist / Probability / Insights */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
-              <Panel title="7. Trade Plan">
+              <Panel eyebrow title="7. Trade Plan">
                 <div className="space-y-1 text-xs">
                   <KV k="Direction" v={setup.plan.direction} tone={long ? 'bull' : 'bear'} />
                   <KV k="Entry Zone" v={setup.plan.entryZone} />
@@ -234,7 +236,7 @@ export default function TradeSetupPage() {
                 </div>
               </Panel>
 
-              <Panel title="8. Trade Checklist">
+              <Panel eyebrow title="8. Trade Checklist">
                 <ul className="space-y-1.5 text-xs">
                   {setup.checklist.map((c) => {
                     const Icon: LucideIcon = c.status === 'pass' ? CheckCircle2 : c.status === 'warn' ? AlertTriangle : XCircle;
@@ -244,7 +246,7 @@ export default function TradeSetupPage() {
                 </ul>
               </Panel>
 
-              <Panel title="9. Probability Model">
+              <Panel eyebrow title="9. Probability Model">
                 <div className="space-y-1 text-xs">
                   <KV k="Historical Win Rate" v={`${factorsResult.probability}%`} />
                   <KV k="Risk / Reward Quality" v={factorsResult.riskReward.includes('1.0') ? 'Low' : 'High'} tone="bull" />
@@ -261,7 +263,7 @@ export default function TradeSetupPage() {
                 </div>
               </Panel>
 
-              <Panel title="10. Key Insights & Alerts">
+              <Panel eyebrow title="10. Key Insights & Alerts">
                 <ul className="space-y-1.5 text-xs">
                   {factorsResult.insights.slice(0, 5).map((ins, i) => {
                     const Icon: LucideIcon = ins.tone === 'bull' || ins.tone === 'ok' ? CheckCircle2 : ins.tone === 'warn' ? AlertTriangle : XCircle;
@@ -286,9 +288,7 @@ export default function TradeSetupPage() {
 }
 
 // ---- helpers ----
-function Panel({ title, children }: { title?: string; children: React.ReactNode }) {
-  return <section className="rounded-xl border border-line bg-surface-1 p-3">{title && <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-accent">{title}</h3>}{children}</section>;
-}
+// Panel now imported from @/components/ui (MDS Phase C migration); eyebrow style.
 function Summary({ icon: Icon, label, value, tone, stars }: { icon: LucideIcon; label: string; value: string; tone?: 'bull' | 'bear'; stars?: number }) {
   const c = tone === 'bull' ? 'text-bull-bright' : tone === 'bear' ? 'text-bear-bright' : 'text-ink';
   return (

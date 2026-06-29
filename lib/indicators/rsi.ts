@@ -25,7 +25,7 @@ const DEFAULTS: RsiInputs = {
   length: 14,
   source: 'close',
   calculateDivergence: false,
-  maType: 'None',
+  maType: 'SMA',
   maLength: 14,
   bbMult: 2,
 };
@@ -57,16 +57,15 @@ function applyMa(src: (number | null)[], length: number, type: string, volume: n
 }
 
 /**
- * Relative Strength Index — faithful port of TradingView's built-in RSI (v6):
+ * Relative Strength Index - faithful port of TradingView's built-in RSI (v6):
  *   change = ta.change(src); up = rma(max(change,0)); down = rma(-min(change,0))
  *   rsi = down==0 ? 100 : up==0 ? 0 : 100 - 100/(1 + up/down)
- * Plus the 70/50/30 bands, the 70↔30 channel fill, and the optional Smoothing
+ * Plus the 70/50/30 bands, the 70<->30 channel fill, and the optional Smoothing
  * MA group (None / SMA / SMA+BB / EMA / SMMA(RMA) / WMA / VWMA).
  *
- * Deferred vs the original: the green/red overbought/oversold *gradient* fills
- * and the (default-off) divergence labels.
+ * The source Pine is archived in docs/TRADINGVIEW_PINESCRIPTS.md.
  */
-const BULL_COLOR = '#26A69A';
+const BULL_COLOR = '#4CAF50';
 const BEAR_COLOR = '#F23645';
 const NONE_COLOR = 'rgba(0,0,0,0)';
 
@@ -80,7 +79,7 @@ export function computeRsi(
 
   const src = resolveSourceNum(candles, source, computedSources);
 
-  // ta.change → na on the first bar.
+  // ta.change -> na on the first bar.
   const change: (number | null)[] = src.map((v, i) => (i === 0 ? null : v - src[i - 1]));
   const maxUp = change.map((v) => (v == null ? null : Math.max(v, 0)));
   const maxDown = change.map((v) => (v == null ? null : Math.max(-v, 0)));

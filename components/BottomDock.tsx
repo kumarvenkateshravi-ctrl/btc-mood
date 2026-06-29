@@ -6,7 +6,7 @@ import BacktestStats from './trade/BacktestStats';
 import BacktestPanel from './BacktestPanel';
 import AlertsPanel from './AlertsPanel';
 import ConfluenceRibbon from './ConfluenceRibbon';
-import IndicatorPicker, { type ActiveIndicator } from './trade/IndicatorPicker';
+import { type ActiveIndicator } from './trade/IndicatorPicker';
 import { type IndicatorDef } from '@/lib/indicatorLibrary';
 import { type Candle, type Timeframe, TIMEFRAMES } from '@/lib/types';
 import { type TFSnapshot } from '@/lib/signals';
@@ -15,12 +15,6 @@ import { ChevronDown } from 'lucide-react';
 export default function BottomDock({
   tf,
   candles,
-  activeIndicators,
-  onToggleIndicator,
-  onAddIndicator,
-  onRemoveIndicator,
-  showVolume,
-  onToggleVolume,
   onToggleCollapse,
   // Confluence-tab data
   candlesByTf,

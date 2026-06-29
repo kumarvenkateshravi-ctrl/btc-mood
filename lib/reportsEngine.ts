@@ -4,16 +4,24 @@
 // review (page shows a "Representative" badge) plus the genuine aggregation /
 // grading helpers, all pure + unit-tested.
 
-export interface Kpi { key: string; label: string; value: string; delta: string; deltaPos: boolean; kind: 'spark' | 'ring' | 'shield'; ringValue?: number; color: string; }
+// Raw values + a render variant so the page renders them through the Num language
+// (DESIGN.md §B5-FREEZE). `text` overrides the value display (e.g. Risk "Low").
+export type KpiVariant = 'money' | 'pct' | 'plain' | 'score';
+export interface Kpi {
+  key: string; label: string;
+  value: number; variant: KpiVariant; text?: string; sub?: string;
+  delta?: number; deltaPercent?: boolean;
+  kind: 'spark' | 'ring' | 'shield'; ringValue?: number; down?: boolean;
+}
 export const KPIS: Kpi[] = [
-  { key: 'net', label: 'Net Profit', value: '$18,420.35', delta: '+18.42%', deltaPos: true, kind: 'spark', color: '#26A69A' },
-  { key: 'win', label: 'Win Rate', value: '73.2%', delta: '+6.21%', deltaPos: true, kind: 'spark', color: '#26A69A' },
-  { key: 'pf', label: 'Profit Factor', value: '2.46', delta: '+0.32', deltaPos: true, kind: 'spark', color: '#26A69A' },
-  { key: 'exp', label: 'Expectancy', value: '$42.31', delta: '+12.4%', deltaPos: true, kind: 'spark', color: '#26A69A' },
-  { key: 'sharpe', label: 'Sharpe Ratio', value: '1.86', delta: '+0.22', deltaPos: true, kind: 'spark', color: '#26A69A' },
-  { key: 'dd', label: 'Max Drawdown', value: '-8.41%', delta: '-1.32%', deltaPos: false, kind: 'spark', color: '#f23645' },
-  { key: 'disc', label: 'Discipline Score', value: '94', delta: '+8', deltaPos: true, kind: 'ring', ringValue: 94, color: '#26A69A' },
-  { key: 'risk', label: 'Risk Score', value: 'Low', delta: '22/100', deltaPos: true, kind: 'shield', color: '#26A69A' },
+  { key: 'net', label: 'Net Profit', value: 18420.35, variant: 'money', delta: 18.42, deltaPercent: true, kind: 'spark' },
+  { key: 'win', label: 'Win Rate', value: 73.2, variant: 'pct', delta: 6.21, deltaPercent: true, kind: 'spark' },
+  { key: 'pf', label: 'Profit Factor', value: 2.46, variant: 'plain', delta: 0.32, kind: 'spark' },
+  { key: 'exp', label: 'Expectancy', value: 42.31, variant: 'money', delta: 12.4, deltaPercent: true, kind: 'spark' },
+  { key: 'sharpe', label: 'Sharpe Ratio', value: 1.86, variant: 'plain', delta: 0.22, kind: 'spark' },
+  { key: 'dd', label: 'Max Drawdown', value: -8.41, variant: 'pct', delta: -1.32, deltaPercent: true, kind: 'spark', down: true },
+  { key: 'disc', label: 'Discipline Score', value: 94, variant: 'score', delta: 8, kind: 'ring', ringValue: 94 },
+  { key: 'risk', label: 'Risk Score', value: 22, variant: 'score', text: 'Low', sub: '22 / 100', kind: 'shield' },
 ];
 
 const ramp = (a: number, b: number, n: number, noise = 0.05) => Array.from({ length: n }, (_, i) => a + (b - a) * (i / (n - 1)) + Math.sin(i * 1.4) * (b - a) * noise);

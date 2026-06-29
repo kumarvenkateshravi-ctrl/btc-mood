@@ -3,11 +3,17 @@ import type { IndicatorDef } from './indicatorLibrary';
 import { candleColumns } from './indicatorLibrary';
 import * as its from 'indicatorts';
 
+/** A single chart series point ({ time, value }) after null/NaN filtering. */
+export interface ChartPoint {
+  time: Candle['time'];
+  value: number | null;
+}
+
 export interface ComputedLine {
   label: string;
   type: 'line' | 'histogram';
   values: (number | null)[];
-  data: any[];
+  data: ChartPoint[];
   color: string;
 }
 
@@ -19,9 +25,9 @@ export interface ComputedBand {
   upperColor: string;
   lowerColor: string;
   middleColor: string;
-  upperData: any[];
-  lowerData: any[];
-  middleData: any[];
+  upperData: ChartPoint[];
+  lowerData: ChartPoint[];
+  middleData: ChartPoint[];
 }
 
 export interface ComputedCloud {
@@ -64,7 +70,6 @@ export function computeIndicator(def: IndicatorDef, candles: Candle[], params: P
   const c = Array.from(candleColumns(candles).close);
   const h = Array.from(candleColumns(candles).high);
   const l = Array.from(candleColumns(candles).low);
-  const v = Array.from(candleColumns(candles).volume);
 
   const out: ComputedIndicator = {
     id: def.id,
@@ -84,17 +89,16 @@ export function computeIndicator(def: IndicatorDef, candles: Candle[], params: P
       case 'rsi':         out.lines.push(L('RSI', 'line', pad(its.rsi(c, { period: p('period', 14) }), n), '#5aa2e6', candles)); break;
       case 'macd': {
         const r = its.macd(c, { fast: p('fast', 12), slow: p('slow', 26), signal: p('signal', 9) });
-        // Assuming indicatorts macd returns { macd, signal, histogram } or similar
-        // We handle fallback if property names differ
-        out.lines.push(L('MACD', 'line', pad(r.macdLine || (r as any).macd || [], n), '#5aa2e6', candles));
-        out.lines.push(L('Signal', 'line', pad(r.signalLine || (r as any).signal || [], n), '#f5b13b', candles));
-        out.lines.push(L('Hist', 'histogram', pad((r as any).histogramLine || (r as any).histogram || [], n), '#7b88a0', candles));
+        const histogram = r.macdLine.map((m, i) => m - (r.signalLine[i] ?? 0));
+        out.lines.push(L('MACD', 'line', pad(r.macdLine, n), '#5aa2e6', candles));
+        out.lines.push(L('Signal', 'line', pad(r.signalLine, n), '#f5b13b', candles));
+        out.lines.push(L('Hist', 'histogram', pad(histogram, n), '#7b88a0', candles));
         break;
       }
-      case 'atr':         out.lines.push(L('ATR', 'line', pad(its.atr(h, l, c, { period: p('period', 14) }) as any || [], n), '#5aa2e6', candles)); break;
+      case 'atr':         out.lines.push(L('ATR', 'line', pad(its.atr(h, l, c, { period: p('period', 14) }).atrLine, n), '#5aa2e6', candles)); break;
       case 'bb': {
-        // bb doesn't use stdDev directly in standard indicatorts config? We'll pass it anyway.
-        const r: any = its.bb(c, { period: p('period', 20), stdDev: p('stdDev', 2) } as any);
+        // BBConfig only accepts `period`; indicatorts derives the 2-stdDev bands internally.
+        const r = its.bb(c, { period: p('period', 20) });
         if (r && r.upper && r.lower && r.middle) {
           const upper = pad(r.upper, n);
           const lower = pad(r.lower, n);

@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Bitcoin, ChevronDown, Bell, Info, RefreshCw, Search, SlidersHorizontal, MoreHorizontal,
-  ArrowUp, ArrowDown, Minus, ArrowRight, Check, X, Sparkles, Circle, CheckCircle2,
-  AlertTriangle, TrendingUp, Bot, type LucideIcon,
+  Bitcoin, ChevronDown, Bell, RefreshCw, Search, SlidersHorizontal, MoreHorizontal,
+  ArrowUp, ArrowDown, Minus, Check, X, Circle, CheckCircle2,
+  AlertTriangle, TrendingUp,
 } from 'lucide-react';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { DEFAULT_COMPARE_SYMBOL } from '@/lib/compare';
@@ -15,14 +15,15 @@ import {
   type Position, type Arrow,
 } from '@/lib/positionsEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
+import { Panel, Pill, FootLink, Num, PositionRow, Cell, DataTable, textColumn, AICard, type AICardData, type Column } from '@/components/ui';
+import { formatNumber } from '@/lib/format';
+/** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
+const r1 = (n: number) => Math.round(n * 10) / 10;
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D' };
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmtN = (n: number, d = 1) => (Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
-const sgn = (n: number) => (n >= 0 ? '+' : '');
-const money = (n: number) => `${sgn(n)}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const tone = (n: number) => (n >= 0 ? 'text-bull-bright' : 'text-bear-bright');
-const ALLOC = [{ k: 'BTC', v: 40, c: '#f7931a' }, { k: 'ETH', v: 25, c: '#6aa6ff' }, { k: 'SOL', v: 15, c: '#26A69A' }, { k: 'BNB', v: 10, c: '#f0a020' }, { k: 'Others', v: 10, c: '#8b93a7' }];
+// All financial values render through <Num.* /> (lib/format). No local formatters.
+const ALLOC =[{ k: 'BTC', v: 40, c: '#f7931a' }, { k: 'ETH', v: 25, c: '#6aa6ff' }, { k: 'SOL', v: 15, c: '#26A69A' }, { k: 'BNB', v: 10, c: '#f0a020' }, { k: 'Others', v: 10, c: '#8b93a7' }];
 
 // Representative portfolio snapshot (matches the design). Live BTC ticker shown in the header.
 const SNAP = {
@@ -31,9 +32,17 @@ const SNAP = {
   longExposurePct: 68.4, shortExposurePct: 31.6, equity: 29172.40, marginLevel: 358.35,
 };
 
+// Live MTF Monitor columns: arrow grid as a fully-custom-cell DataTable.
+const MTF_TFS = ['5m', '15m', '30m', '1H', '4H', '1D'];
+const MTF_MONITOR_COLS: Column<Position>[] = [
+  textColumn({ key: 'symbol', header: 'Symbol', value: (p) => p.symbol, className: 'font-medium' }),
+  ...MTF_TFS.map((t, i) => ({ key: `tf${i}`, header: t, align: 'center' as const, cell: (p: Position) => <Cell align="center"><ArrowCell d={p.mtf[i]} /></Cell> })),
+  { key: 'alignment', header: 'Alignment', align: 'right', cell: (p) => <Cell align="right" className={['font-semibold', p.alignment >= 5 ? 'text-bull-bright' : p.alignment >= 4 ? 'text-regime-hot' : 'text-ink-muted'].join(' ')}>{p.alignment}/6</Cell> },
+];
+
 export default function PositionsPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
   const price = prices['5m'] ?? prices['1d'] ?? 0;
   const change = changes['1d'] ?? 0;
@@ -46,15 +55,36 @@ export default function PositionsPage() {
   const positions = pf.positions;
   const selected = positions[0];
 
+  // AI Position Coach -> the Explainable-AI Grammar (verdict/confidence/evidence/...).
+  const positionCoach: AICardData = {
+    title: 'AI Position Coach',
+    verdict: `${selected.recommendation} ${selected.symbol}`,
+    confidence: 84,
+    direction: selected.direction === 'Long' ? 'Bullish' : 'Bearish',
+    evidence: [
+      { factor: `Aligned across ${selected.alignment}/6 timeframes`, weight: 85, direction: 'support' },
+      { factor: 'Volume above 20-period average', weight: 70, direction: 'support' },
+      { factor: 'Momentum (MACD) bullish', weight: 65, direction: 'support' },
+      { factor: '1D timeframe turning down', weight: 40, direction: 'oppose' },
+      { factor: 'Approaching resistance zone', weight: 35, direction: 'oppose' },
+    ],
+    risk: 'Invalidated below 61,200 (current stop).',
+    historical: 'Trend Continuation longs resolved 74% over 152 trades.',
+    uncertainty: 'Hold while alignment stays at 5/6 or better.',
+    sources: ['Multi-TF alignment', 'Stack Score', 'Volume', 'MACD'],
+    timestamp: `${clock} UTC`,
+    action: { label: 'Move SL to Break Even', tone: 'bull' },
+  };
+
   const sidebarExtra = (
     <>
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Account Summary</div>
-      <SRow k="Account Balance" v={`$${fmtN(SNAP.portfolioValue, 2)}`} />
-      <SRow k="Equity" v={`$${fmtN(SNAP.equity, 2)}`} />
-      <SRow k="Unrealized P&L" v={money(SNAP.todayPnl)} c="text-bull-bright" />
-      <SRow k="Margin Used" v={`$${fmtN(SNAP.marginUsed, 2)}`} />
-      <SRow k="Free Margin" v={`$${fmtN(SNAP.freeMargin, 2)}`} />
-      <SRow k="Margin Level" v={`${fmtN(SNAP.marginLevel, 2)}%`} c="text-bull-bright" />
+      <SRow k="Account Balance" v={<Num.Money value={SNAP.portfolioValue} />} />
+      <SRow k="Equity" v={<Num.Money value={SNAP.equity} />} />
+      <SRow k="Unrealized P&L" v={<Num.Pnl value={SNAP.todayPnl} />} />
+      <SRow k="Margin Used" v={<Num.Money value={SNAP.marginUsed} />} />
+      <SRow k="Free Margin" v={<Num.Money value={SNAP.freeMargin} />} />
+      <SRow k="Margin Level" v={<Num.Pct value={SNAP.marginLevel} signed={false} />} c="text-bull-bright" />
 
       <div className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Portfolio Allocation</div>
       <div className="flex items-center gap-3">
@@ -74,8 +104,8 @@ export default function PositionsPage() {
         {/* Header */}
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
           <button className="flex items-center gap-1.5 rounded-lg border border-line bg-base px-2.5 py-1.5 text-sm"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></button>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
-          <span className={['font-mono text-sm tabular-nums', tone(change)].join(' ')}>{sgn(change)}{fmtN((price * change) / 100, 2)} ({sgn(change)}{fmtN(change, 2)}%)</span>
+          <Num value={price} precision={1} className="text-lg font-semibold" />
+          <span className="text-sm"><Num value={(price * change) / 100} precision={2} signed tone /> (<Num.Pct value={change} tone />)</span>
           <div className="ml-4 hidden items-center gap-0.5 rounded-lg border border-line bg-base p-0.5 md:flex">
             {TIMEFRAMES.map((tf) => <span key={tf} className={['rounded-md px-2.5 py-1 text-xs font-medium', tf === '1h' ? 'bg-accent/20 text-accent' : 'text-ink-faint'].join(' ')}>{TF_LABEL[tf]}</span>)}
           </div>
@@ -98,14 +128,14 @@ export default function PositionsPage() {
           <div className="min-w-0 flex-1 space-y-3">
             {/* Summary cards */}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-              <SumCard k="Portfolio Value" v={`$${fmtN(SNAP.portfolioValue, 2)}`} sub={`${sgn(SNAP.todayPnlPct)}${SNAP.todayPnlPct}%`} subPos spark="#6aa6ff" />
-              <SumCard k="Today's P&L" v={money(SNAP.todayPnl)} sub={`${sgn(SNAP.todayPnlPct)}${SNAP.todayPnlPct}%`} subPos valTone="bull" spark="#26A69A" />
-              <SumCard k="Open P&L" v={money(SNAP.openPnl)} sub={`${sgn(SNAP.openPnlPct)}${SNAP.openPnlPct}%`} subPos valTone="bull" spark="#26A69A" />
-              <SumCard k="Open Positions" v={String(positions.length)} sub="Active" />
-              <SumCard k="Margin Used" v={`$${fmtN(SNAP.marginUsed, 2)}`} sub={`${SNAP.marginUsedPct}%`} bar={SNAP.marginUsedPct} barColor="#6aa6ff" />
-              <SumCard k="Free Margin" v={`$${fmtN(SNAP.freeMargin, 2)}`} sub={`${SNAP.freeMarginPct}%`} subPos bar={SNAP.freeMarginPct} barColor="#26A69A" />
-              <SumCard k="Long Exposure" v={`${SNAP.longExposurePct}%`} half={SNAP.longExposurePct} halfColor="#26A69A" />
-              <SumCard k="Short Exposure" v={`${SNAP.shortExposurePct}%`} half={SNAP.shortExposurePct} halfColor="#f23645" />
+              <SumCard k="Portfolio Value" v={<Num.Money value={SNAP.portfolioValue} />} sub={<Num.Pct value={SNAP.todayPnlPct} />} subPos spark="#6aa6ff" />
+              <SumCard k="Today's P&L" v={<Num.Pnl value={SNAP.todayPnl} />} sub={<Num.Pct value={SNAP.todayPnlPct} />} subPos spark="#26A69A" />
+              <SumCard k="Open P&L" v={<Num.Pnl value={SNAP.openPnl} />} sub={<Num.Pct value={SNAP.openPnlPct} />} subPos spark="#26A69A" />
+              <SumCard k="Open Positions" v={<Num value={positions.length} />} sub="Active" />
+              <SumCard k="Margin Used" v={<Num.Money value={SNAP.marginUsed} />} sub={<Num.Pct value={SNAP.marginUsedPct} signed={false} />} bar={SNAP.marginUsedPct} barColor="#6aa6ff" />
+              <SumCard k="Free Margin" v={<Num.Money value={SNAP.freeMargin} />} sub={<Num.Pct value={SNAP.freeMarginPct} signed={false} />} subPos bar={SNAP.freeMarginPct} barColor="#26A69A" />
+              <SumCard k="Long Exposure" v={<Num.Pct value={SNAP.longExposurePct} signed={false} />} half={SNAP.longExposurePct} halfColor="#26A69A" />
+              <SumCard k="Short Exposure" v={<Num.Pct value={SNAP.shortExposurePct} signed={false} />} half={SNAP.shortExposurePct} halfColor="#f23645" />
             </div>
 
             {/* Open positions | MTF monitor */}
@@ -115,25 +145,16 @@ export default function PositionsPage() {
                   <table className="w-full min-w-[640px] text-left text-[11px]">
                     <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">Symbol</th><th className="py-1 font-medium">Direction</th><th className="py-1 text-right font-medium">Entry Price</th><th className="py-1 text-right font-medium">Current Price</th><th className="py-1 text-right font-medium">Unrealized P&amp;L</th><th className="py-1 text-right font-medium">P&amp;L %</th><th className="py-1 text-right font-medium">R:R</th><th className="py-1 text-right font-medium">Leverage</th><th className="py-1 text-right font-medium">Holding</th><th className="py-1 text-center font-medium">Health</th><th className="py-1 text-center font-medium">Action</th></tr></thead>
                     <tbody>
-                      {positions.map((p) => <PositionRow key={p.symbol} p={p} />)}
+                      {positions.map((p) => (
+                        <PositionRow key={p.symbol} asset={p.asset} direction={p.direction} entry={p.entry} current={p.current} pnl={p.unrealizedPnl} pnlPct={p.priceMovePct} rr={p.rr} leverage={p.leverage} holdingMin={p.holdingMin} health={p.health} action={p.recommendation} />
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </Panel>
 
               <Panel title="Live Multi-Timeframe Monitor" info footer={<FootLink>View Full MTF Analysis</FootLink>}>
-                <table className="w-full text-left text-[11px]">
-                  <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">Symbol</th>{(['5m', '15m', '30m', '1H', '4H', '1D'] as const).map((t) => <th key={t} className="py-1 text-center font-medium">{t}</th>)}<th className="py-1 text-right font-medium">Alignment</th></tr></thead>
-                  <tbody>
-                    {positions.map((p) => (
-                      <tr key={p.symbol} className="border-t border-line/50">
-                        <td className="py-1.5 font-medium">{p.symbol}</td>
-                        {p.mtf.map((d, i) => <td key={i} className="py-1.5 text-center"><ArrowCell d={d} /></td>)}
-                        <td className={['py-1.5 text-right font-mono font-semibold', p.alignment >= 5 ? 'text-bull-bright' : p.alignment >= 4 ? 'text-regime-hot' : 'text-ink-muted'].join(' ')}>{p.alignment}/6</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DataTable columns={MTF_MONITOR_COLS} rows={positions} rowKey={(p) => p.symbol} />
               </Panel>
             </div>
 
@@ -194,7 +215,7 @@ export default function PositionsPage() {
                   <thead className="text-[9px] text-ink-faint"><tr><th className="py-1" />{CORR_ASSETS.map((a) => <th key={a} className="py-1 font-medium">{a}</th>)}</tr></thead>
                   <tbody>
                     {CORRELATION.map((row, i) => (
-                      <tr key={i}><td className="py-1 pr-1 text-left font-medium text-ink-faint">{CORR_ASSETS[i]}</td>{row.map((v, j) => <td key={j} className="px-0.5 py-0.5"><span className="block rounded py-1 font-mono" style={corrStyle(v, i === j)}>{v.toFixed(2)}</span></td>)}</tr>
+                      <tr key={i}><td className="py-1 pr-1 text-left font-medium text-ink-faint">{CORR_ASSETS[i]}</td>{row.map((v, j) => <td key={j} className="px-0.5 py-0.5"><span className="block rounded py-1 font-mono" style={corrStyle(v, i === j)}>{formatNumber(v, { precision: 2 })}</span></td>)}</tr>
                     ))}
                   </tbody>
                 </table>
@@ -221,9 +242,9 @@ export default function PositionsPage() {
                 <div className="flex items-center gap-4">
                   <HalfGauge value={SNAP.marginUsedPct} label="Margin Used" />
                   <ul className="flex-1 space-y-1.5 text-[11px]">
-                    <KVRow k="Used Margin" v={`$${fmtN(SNAP.marginUsed, 2)}`} />
-                    <KVRow k="Free Margin" v={`$${fmtN(SNAP.freeMargin, 2)}`} />
-                    <KVRow k="Margin Level" v={`${SNAP.marginLevel}%`} />
+                    <KVRow k="Used Margin" v={<Num.Money value={SNAP.marginUsed} />} />
+                    <KVRow k="Free Margin" v={<Num.Money value={SNAP.freeMargin} />} />
+                    <KVRow k="Margin Level" v={<Num.Pct value={SNAP.marginLevel} signed={false} />} />
                     <KVRow k="Liquidation Risk" v="Low" c="text-bull-bright" />
                     <KVRow k="Funding Cost (Daily)" v="-$12.35" c="text-bear-bright" />
                   </ul>
@@ -234,24 +255,14 @@ export default function PositionsPage() {
 
           {/* RIGHT RAIL */}
           <aside className="hidden w-[300px] shrink-0 space-y-3 xl:block">
-            <Panel title="AI Position Coach" badge="Beta" icon={Bot} footer={<button className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 py-2 text-xs font-semibold text-accent transition hover:bg-accent/20"><Sparkles className="h-3.5 w-3.5" /> Ask AI Coach</button>}>
-              <ul className="space-y-2.5 text-[11px]">
-                {[
-                  ['BTCUSDT:', ' Strong uptrend across 4/6 timeframes.'],
-                  ['', 'Holding is justified. Consider moving SL to Break Even after TP1.'],
-                  ['ETHUSDT:', ' Momentum strong. Hold with confidence.'],
-                  ['SOLUSDT:', ' 1H strength weakening. Watch closely for trend change.'],
-                  ['XRPUSDT:', ' Short setup healthy. Target 0.5080 next.'],
-                ].map(([h, t], i) => <li key={i} className="flex items-start gap-2 text-ink-muted"><Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-accent" /><span>{h && <span className="font-semibold text-ink">{h}</span>}{t}</span></li>)}
-              </ul>
-            </Panel>
+            <AICard {...positionCoach} onWhy={() => {}} onWhatChanged={() => {}} />
 
             <Panel title="Portfolio Risk Dashboard" info footer={<FootLink>View Full Risk Report</FootLink>}>
               <KVRow k="Portfolio Risk" v={risk.level} c="text-regime-hot" />
-              <KVRow k="Open Risk" v={`$${fmtN(risk.openRisk, 2)} (${risk.openRiskPct}%)`} />
+              <KVRow k="Open Risk" v={<><Num.Money value={risk.openRisk} /> (<Num.Pct value={risk.openRiskPct} signed={false} />)</>} />
               <KVRow k="Risk Concentration" v={risk.concentration} c="text-bear-bright" />
-              <KVRow k="Max Drawdown (Open)" v={`${risk.maxDrawdownOpenPct}%`} c="text-bear-bright" />
-              <KVRow k="Margin Level" v={`${SNAP.marginLevel}%`} c="text-bull-bright" />
+              <KVRow k="Max Drawdown (Open)" v={<Num.Pct value={risk.maxDrawdownOpenPct} signed={false} />} c="text-bear-bright" />
+              <KVRow k="Margin Level" v={<Num.Pct value={SNAP.marginLevel} signed={false} />} c="text-bull-bright" />
             </Panel>
 
             <Panel title="Live Alerts" count={4} footer={<FootLink>View All Alerts</FootLink>}>
@@ -265,7 +276,7 @@ export default function PositionsPage() {
             <Panel title="Scenario Simulator" info footer={<FootLink>Open Simulator</FootLink>}>
               <button className="focus-ring mb-2 flex w-full items-center justify-between rounded-lg border border-line bg-base px-2.5 py-1.5 text-[11px] text-ink-faint">Select Scenario <ChevronDown className="h-3.5 w-3.5" /></button>
               <ul className="space-y-1.5 text-[11px]">
-                {scen.map((s) => <li key={s.label} className="flex items-center justify-between rounded-md bg-base/60 px-2 py-1.5"><span className="text-ink-muted">{s.label}</span><span className={['font-mono font-semibold', tone(s.value)].join(' ')}>{money(s.value)}</span></li>)}
+                {scen.map((s) => <li key={s.label} className="flex items-center justify-between rounded-md bg-base/60 px-2 py-1.5"><span className="text-ink-muted">{s.label}</span><Num.Pnl value={s.value} /></li>)}
               </ul>
             </Panel>
           </aside>
@@ -283,24 +294,7 @@ export default function PositionsPage() {
 }
 
 // ---- rows / cells ----
-function PositionRow({ p }: { p: Position }) {
-  const hCol = p.health >= 80 ? '#26A69A' : p.health >= 60 ? '#f0a020' : '#f23645';
-  return (
-    <tr className="border-t border-line/50 hover:bg-surface-2/30">
-      <td className="py-2"><span className="inline-flex items-center gap-1.5 font-medium"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-surface-3 text-[8px] font-bold text-ink-muted">{p.asset.slice(0, 1)}</span>{p.asset}USDT</span></td>
-      <td className="py-2"><span className={['rounded px-1.5 py-0.5 text-[10px] font-semibold', p.direction === 'Long' ? 'bg-bull/15 text-bull-bright' : 'bg-bear/15 text-bear-bright'].join(' ')}>{p.direction}</span></td>
-      <td className="py-2 text-right font-mono text-ink-muted">{fmtN(p.entry, p.entry < 10 ? 4 : p.entry < 1000 ? 2 : 1)}</td>
-      <td className="py-2 text-right font-mono">{fmtN(p.current, p.current < 10 ? 4 : p.current < 1000 ? 2 : 1)}</td>
-      <td className={['py-2 text-right font-mono font-semibold', tone(p.unrealizedPnl)].join(' ')}>{money(p.unrealizedPnl)}</td>
-      <td className={['py-2 text-right font-mono', tone(p.priceMovePct)].join(' ')}>{sgn(p.priceMovePct)}{p.priceMovePct}%</td>
-      <td className="py-2 text-right font-mono">{p.rr}R</td>
-      <td className="py-2 text-right text-ink-muted">{p.leverage}x</td>
-      <td className="py-2 text-right text-ink-faint">{p.holdingMin >= 60 ? `${Math.floor(p.holdingMin / 60)}h ${String(p.holdingMin % 60).padStart(2, '0')}m` : `${p.holdingMin}m`}</td>
-      <td className="py-2"><div className="flex justify-center"><span className="flex h-6 w-6 items-center justify-center rounded-full border-2 font-mono text-[10px] font-bold" style={{ borderColor: hCol, color: hCol }}>{p.health}</span></div></td>
-      <td className="py-2"><div className="flex justify-center"><span className={['inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium', p.recommendation === 'Hold' ? 'border-bull/40 bg-bull/10 text-bull-bright' : p.recommendation === 'Watch' ? 'border-regime-hot/40 bg-regime-hot/10 text-regime-hot' : 'border-bear/40 bg-bear/10 text-bear-bright'].join(' ')}>{p.recommendation} <ChevronDown className="h-3 w-3" /></span></div></td>
-    </tr>
-  );
-}
+// PositionRow now imported from @/components/ui (Financial Cells composition).
 function ArrowCell({ d }: { d: Arrow }) {
   if (d === 'up') return <ArrowUp className="mx-auto h-3.5 w-3.5 text-bull-bright" />;
   if (d === 'down') return <ArrowDown className="mx-auto h-3.5 w-3.5 text-bear-bright" />;
@@ -314,26 +308,9 @@ function corrStyle(v: number, diag: boolean): React.CSSProperties {
 }
 
 // ---- panels / atoms ----
-function Panel({ title, sym, count, info, badge, icon: Icon, action, footer, children }: { title?: string; sym?: string; count?: number; info?: boolean; badge?: string; icon?: LucideIcon; action?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col rounded-xl border border-line bg-gradient-to-b from-surface-1 to-surface-1/60 p-3 transition-colors duration-300 hover:border-line/80">
-      {title && (
-        <div className="mb-2.5 flex items-center gap-2">
-          {Icon && <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/15 text-accent"><Icon className="h-3.5 w-3.5" /></span>}
-          <h3 className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-ink">{title}{sym && <span className="font-normal text-ink-faint">({sym})</span>}{count != null && <span className="rounded bg-surface-3 px-1.5 text-[10px] text-ink-muted">{count}</span>}{info && <Info className="h-3 w-3 text-ink-faint" />}</h3>
-          {badge && <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">{badge}</span>}
-          {action && <span className="ml-auto flex items-center gap-1.5 text-[11px] text-ink-faint">{action}</span>}
-        </div>
-      )}
-      <div className="flex-1">{children}</div>
-      {footer && <div className="mt-3 border-t border-line/60 pt-2 text-center">{footer}</div>}
-    </section>
-  );
-}
-function Pill({ children }: { children: React.ReactNode }) { return <span className="inline-flex items-center gap-1 rounded-md border border-line bg-base px-2 py-1 text-[10px] text-ink-muted">{children}</span>; }
-function FootLink({ children }: { children: React.ReactNode }) { return <button className="inline-flex items-center gap-1 text-[11px] font-medium text-regime-hot transition hover:opacity-80">{children}<ArrowRight className="h-3 w-3" /></button>; }
-function SRow({ k, v, c }: { k: string; v: string; c?: string }) { return <div className="flex items-center justify-between py-0.5 text-xs"><span className="text-ink-faint">{k}</span><span className={['font-mono font-semibold tabular-nums', c ?? 'text-ink'].join(' ')}>{v}</span></div>; }
-function KVRow({ k, v, c }: { k: string; v: string; c?: string }) { return <div className="flex items-center justify-between py-1 text-[11px]"><span className="text-ink-faint">{k}</span><span className={['font-mono font-semibold', c ?? 'text-ink'].join(' ')}>{v}</span></div>; }
+// Panel, Pill, FootLink now imported from @/components/ui (MDS Phase C migration).
+function SRow({ k, v, c }: { k: string; v: React.ReactNode; c?: string }) { return <div className="flex items-center justify-between py-0.5 text-xs"><span className="text-ink-faint">{k}</span><span className={['font-semibold', c ?? 'text-ink'].join(' ')}>{v}</span></div>; }
+function KVRow({ k, v, c }: { k: string; v: React.ReactNode; c?: string }) { return <div className="flex items-center justify-between py-1 text-[11px]"><span className="text-ink-faint">{k}</span><span className={['font-semibold', c ?? 'text-ink'].join(' ')}>{v}</span></div>; }
 function Mini({ k, v, sub, c, small }: { k: string; v: string; sub?: string; c?: string; small?: boolean }) { return <div className="rounded-lg bg-base/70 px-2 py-1.5"><div className="text-[9px] uppercase tracking-wider text-ink-faint">{k}</div><div className={['font-mono font-semibold', small ? 'text-[11px]' : 'text-sm', c ?? 'text-ink'].join(' ')}>{v}</div>{sub && <div className="text-[9px] text-ink-faint">{sub}</div>}</div>; }
 function TpRow({ tp, price, status, badge, reached }: { tp: string; price: string; status: string; badge: React.ReactNode; reached?: boolean }) {
   return (
@@ -346,7 +323,7 @@ function TpRow({ tp, price, status, badge, reached }: { tp: string; price: strin
   );
 }
 
-function SumCard({ k, v, sub, subPos, valTone, spark, bar, barColor, half, halfColor }: { k: string; v: string; sub?: string; subPos?: boolean; valTone?: 'bull'; spark?: string; bar?: number; barColor?: string; half?: number; halfColor?: string }) {
+function SumCard({ k, v, sub, subPos, valTone, spark, bar, barColor, half, halfColor }: { k: string; v: React.ReactNode; sub?: React.ReactNode; subPos?: boolean; valTone?: 'bull'; spark?: string; bar?: number; barColor?: string; half?: number; halfColor?: string }) {
   return (
     <div className="group relative overflow-hidden rounded-xl border border-line bg-gradient-to-b from-surface-1 to-surface-1/50 p-3 transition-colors duration-300 hover:border-accent/30">
       <div className="text-[10px] uppercase tracking-wider text-ink-faint">{k}</div>
@@ -363,7 +340,7 @@ function MiniSpark({ color }: { color: string }) {
   const pts = [10, 12, 9, 13, 11, 15, 14, 16, 15, 20];
   const W = 50, H = 22, max = Math.max(...pts), min = Math.min(...pts), range = max - min || 1;
   const X = (i: number) => (i / (pts.length - 1)) * W, Y = (pt: number) => H - 2 - ((pt - min) / range) * (H - 4);
-  const line = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${X(i).toFixed(1)} ${Y(pt).toFixed(1)}`).join(' ');
+  const line = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${r1(X(i))} ${r1(Y(pt))}`).join(' ');
   const id = `ps${color.replace('#', '')}`;
   return <svg viewBox={`0 0 ${W} ${H}`} className="h-6 w-12 shrink-0"><defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.3" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs><path d={`${line} L ${W} ${H} L 0 ${H} Z`} fill={`url(#${id})`} /><path d={line} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
@@ -407,11 +384,13 @@ function Lifecycle() {
   );
 }
 function AllocDonut() {
-  const r = 22, c = 2 * Math.PI * r; let off = 0;
+  const r = 22, c = 2 * Math.PI * r;
+  const angles = ALLOC.map((a) => (a.v / 100) * c);
+  const offsets = angles.map((_, i) => angles.slice(0, i).reduce((s, x) => s + x, 0));
   return (
     <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90 shrink-0">
       <circle cx="32" cy="32" r={r} fill="none" stroke="#2a3247" strokeWidth="9" />
-      {ALLOC.map((a) => { const dash = (a.v / 100) * c; const el = <circle key={a.k} cx="32" cy="32" r={r} fill="none" stroke={a.c} strokeWidth="9" strokeDasharray={`${dash} ${c}`} strokeDashoffset={-off} />; off += dash; return el; })}
+      {ALLOC.map((a, i) => <circle key={a.k} cx="32" cy="32" r={r} fill="none" stroke={a.c} strokeWidth="9" strokeDasharray={`${angles[i]} ${c}`} strokeDashoffset={-offsets[i]} />)}
     </svg>
   );
 }

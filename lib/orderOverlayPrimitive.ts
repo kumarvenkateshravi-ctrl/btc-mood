@@ -7,11 +7,24 @@ import {
 } from 'lightweight-charts';
 import type { ChartOverlay, OverlayKind } from '@/components/Chart';
 
+/** Overlay chrome options, set per-render by the Chart host (see Chart.tsx). */
+export interface OrderOverlayOptions {
+  side?: 'buy' | 'sell' | null;
+  unitsLabel?: string;
+  typeLabel?: string;
+  hasTp?: boolean;
+  hasSl?: boolean;
+  tpPrice?: number | null;
+  slPrice?: number | null;
+  entryPrice?: number | null;
+  pnl?: number | null;
+}
+
 class OrderRenderer implements IPrimitivePaneRenderer {
   constructor(private _api: SeriesAttachedParameter<Time, 'Candlestick'>, private _prim: OrderOverlayPrimitive) {}
 
-  draw(target: any) {
-    target.useBitmapCoordinateSpace((scope: any) => {
+  draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]) {
+    target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
       const series = this._api.series;
       const ts = this._api.chart.timeScale();
@@ -74,7 +87,7 @@ class OrderPaneView implements IPrimitivePaneView {
 }
 
 export class OrderOverlayPrimitive implements ISeriesPrimitive {
-  public options: any = {};
+  public options: OrderOverlayOptions = {};
   public overlays: ChartOverlay[] = [];
   private _api: SeriesAttachedParameter<Time, 'Candlestick'> | null = null;
   private _dragging: OverlayKind | null = null;

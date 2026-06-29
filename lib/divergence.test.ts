@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectDivergence, groupBias, LOWER_TFS, HIGHER_TFS } from './divergence';
+import { detectDivergence, groupBias, LOWER_TFS } from './divergence';
 import type { TFSnapshot } from './signals';
 import type { Timeframe } from './types';
 

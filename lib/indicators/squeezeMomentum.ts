@@ -59,7 +59,7 @@ export function computeSqueezeMomentum(
   const kcMa = pm.sma(closes, kcLength);
   const rangeVal = useTrueRange
     ? pm.tr(candles)
-    : candles.map((c, i) => c.high - c.low);
+    : candles.map((c) => c.high - c.low);
   const rangeMa = pm.sma(rangeVal, kcLength);
   const upperKC = pm.add(kcMa, pm.multiply(rangeMa, kcMult));
   const lowerKC = pm.subtract(kcMa, pm.multiply(rangeMa, kcMult));
@@ -97,11 +97,6 @@ export function computeSqueezeMomentum(
   // midline = math.avg(math.avg(highest(high,kcLen), lowest(low,kcLen)), sma(close,kcLen))
   const hiK = pm.highest(highs, kcLength);
   const loK = pm.lowest(lows, kcLength);
-  const avgHL = pm.add(hiK, pm.multiply(loK, 0.5));
-  const midline = pm.add(
-    pm.multiply(avgHL, 1 / 3),
-    pm.multiply(closes.map((c) => c), 0),
-  );
   // PineScript: math.avg(math.avg(a, b), c) = (a + b) / 2 then (that + c) / 2
   // = (a + b + 2c) / 4. Use the direct form to avoid confusion.
   const midlineDirect: (number | null)[] = closes.map((_, i) => {
@@ -187,7 +182,7 @@ export function computeSqueezeMomentum(
       color: barColorHex[barColorHex.length - 1] || '#26A69A',
       type: 'histogram',
       lineWidth: 4,
-      data: momentumColored as any,
+      data: momentumColored,
       pane: 'separate',
     },
     {
@@ -196,7 +191,7 @@ export function computeSqueezeMomentum(
       color: '#9E9E9E',
       type: 'line',
       lineWidth: 2,
-      data: dotsColored as any,
+      data: dotsColored,
       pane: 'separate',
     },
   ];

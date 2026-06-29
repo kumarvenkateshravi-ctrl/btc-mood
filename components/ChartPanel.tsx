@@ -664,7 +664,7 @@ export default function ChartPanel({
   );
 }
 
-function ChartSkeleton({ height }: { height: number }) {
+function ChartSkeleton(_props: { height: number }) {
   return (
     <div
       role="status"

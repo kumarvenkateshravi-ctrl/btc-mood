@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bitcoin, ChevronDown, Bell, Info, Search, SlidersHorizontal, LayoutGrid, List, RefreshCw,
-  Star, Crown, ArrowRight, Check, Sparkles, Bot, Wrench, FlaskConical, Play, FileText, BookOpen,
-  type LucideIcon,
+  Star, Crown, ArrowRight, Sparkles, Wrench, FlaskConical, Play, FileText, BookOpen,
 } from 'lucide-react';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { DEFAULT_COMPARE_SYMBOL } from '@/lib/compare';
@@ -16,16 +15,47 @@ import { computeAdx } from '@/lib/indicators/adx';
 import { computeSuperTrend } from '@/lib/indicators/superTrend';
 import {
   STRATEGIES, CATEGORIES, comparisonRows, OPPORTUNITIES, LESSONS,
-  healthLabel, type Strategy, type Category,
+  healthLabel, type Strategy, type Category, type CompareRow,
 } from '@/lib/strategiesEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
+import { Panel, Pill, FootLink, Cell, DataTable, textColumn, numColumn, percentColumn, AICard, type AICardData, type Column } from '@/components/ui';
+import { formatNumber } from '@/lib/format';
+
+const STRATEGY_COACH: AICardData = {
+  title: 'AI Strategy Coach',
+  verdict: 'Trend Continuation has the highest probability today',
+  confidence: 88,
+  direction: 'Bullish',
+  evidence: [
+    { factor: 'Market in a strong trending phase', weight: 85, direction: 'support' },
+    { factor: 'Momentum aligns across 5/6 timeframes', weight: 78, direction: 'support' },
+    { factor: 'Volume above average', weight: 72, direction: 'support' },
+    { factor: 'Extended above mean, pullback risk', weight: 35, direction: 'oppose' },
+  ],
+  risk: 'Thesis fails if the trend breaks; avoid ranging markets.',
+  historical: 'Trend Continuation: 74% win rate over 642 trades.',
+  uncertainty: 'Strongest on 1H-4H; weaker intraday.',
+  sources: ['Market regime', 'Multi-TF alignment', 'Volume', 'Stack Score'],
+  action: { label: 'Focus: Trend Continuation & Pullback', tone: 'bull' },
+};
+
+const STRATEGY_COMPARE_COLS: Column<CompareRow>[] = [
+  textColumn({ key: 'name', header: 'Strategy', value: (r) => r.name, className: 'font-medium text-regime-hot' }),
+  percentColumn({ key: 'winRate', header: 'Win Rate', value: (r) => r.winRate, plain: true, precision: 1 }),
+  numColumn({ key: 'profitFactor', header: 'Profit Factor', value: (r) => r.profitFactor, precision: 2 }),
+  numColumn({ key: 'avgRR', header: 'Avg. R:R', value: (r) => r.avgRR, precision: 2 }),
+  percentColumn({ key: 'maxDD', header: 'Max DD', value: (r) => r.maxDD, plain: true, precision: 1 }),
+  { key: 'difficulty', header: 'Difficulty', align: 'right', cell: (r) => <Cell align="right" className={r.difficulty === 'Easy' ? 'text-bull-bright' : r.difficulty === 'Medium' ? 'text-regime-hot' : 'text-bear-bright'}>{r.difficulty}</Cell> },
+];
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D' };
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmtN = (n: number, d = 1) => (Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
+const fmtN = (n: number, d = 1) => formatNumber(n, { precision: d });
 const sgn = (n: number) => (n >= 0 ? '+' : '');
 const tone = (n: number) => (n >= 0 ? 'text-bull-bright' : 'text-bear-bright');
-const compactVol = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(2)}K` : n.toFixed(1));
+const compactVol = (n: number) => (n >= 1e6 ? `${formatNumber(n / 1e6, { precision: 2 })}M` : n >= 1e3 ? `${formatNumber(n / 1e3, { precision: 2 })}K` : formatNumber(n, { precision: 1 }));
+/** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
+const r1 = (n: number) => Math.round(n * 10) / 10;
 function lastFinite(data: readonly unknown[] | undefined): number | null {
   if (!data) return null;
   for (let i = data.length - 1; i >= 0; i--) {
@@ -245,11 +275,8 @@ export default function StrategiesPage() {
 
                 {/* Comparison + Recent perf + Builder */}
                 <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-                  <Panel title="Strategy Comparison" action={<Pill>Compare (3)</Pill>}>
-                    <table className="w-full text-left text-[11px]">
-                      <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">Strategy</th><th className="py-1 text-right font-medium">Win Rate</th><th className="py-1 text-right font-medium">Profit Factor</th><th className="py-1 text-right font-medium">Avg. R:R</th><th className="py-1 text-right font-medium">Max DD</th><th className="py-1 text-right font-medium">Difficulty</th></tr></thead>
-                      <tbody>{comparisonRows().map((r) => <tr key={r.name} className="border-t border-line/50"><td className="py-1.5 font-medium text-regime-hot">{r.name}</td><td className="py-1.5 text-right font-mono">{r.winRate}%</td><td className="py-1.5 text-right font-mono">{r.profitFactor}</td><td className="py-1.5 text-right font-mono">{r.avgRR}</td><td className="py-1.5 text-right font-mono">{r.maxDD}%</td><td className={['py-1.5 text-right', r.difficulty === 'Easy' ? 'text-bull-bright' : r.difficulty === 'Medium' ? 'text-regime-hot' : 'text-bear-bright'].join(' ')}>{r.difficulty}</td></tr>)}</tbody>
-                    </table>
+                  <Panel title="Strategy Comparison" action={<Pill tone="accent">Compare (3)</Pill>}>
+                    <DataTable columns={STRATEGY_COMPARE_COLS} rows={comparisonRows()} rowKey={(r) => r.name} />
                   </Panel>
 
                   <Panel title="Recent Performance" badge="This Month">
@@ -275,17 +302,7 @@ export default function StrategiesPage() {
 
           {/* RIGHT RAIL */}
           <aside className="hidden w-[300px] shrink-0 space-y-3 xl:block">
-            <Panel title="AI Strategy Coach" badge="Beta" icon={Bot} footer={<FootLink>View Full Analysis</FootLink>}>
-              <p className="text-[11px] text-ink-faint">Based on current market conditions:</p>
-              <p className="mt-1 text-[11px] text-ink-muted"><span className="font-semibold text-ink">Trend Continuation</span> has the highest probability of success today.</p>
-              <ul className="mt-2 space-y-1.5 text-[11px]">
-                {['Market is in strong trending phase.', 'Volume is above average.', 'Momentum aligns across 5/6 timeframes.'].map((t) => <li key={t} className="flex items-start gap-2 text-ink-muted"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-bull-bright" />{t}</li>)}
-              </ul>
-              <div className="mt-2 rounded-lg bg-base/60 p-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-accent">Recommendation:</div>
-                <p className="mt-0.5 text-[11px] text-ink-muted">Focus on <span className="text-bull-bright">Trend Continuation</span> and <span className="text-bull-bright">Pullback</span> strategies. Avoid <span className="text-bear-bright">Mean Reversion</span>.</p>
-              </div>
-            </Panel>
+            <AICard {...STRATEGY_COACH} onWhy={() => {}} onWhatChanged={() => {}} />
 
             <Panel title="Live Opportunity Scanner" action={<RefreshCw className="h-3.5 w-3.5 text-ink-faint" />} footer={<FootLink>View All Opportunities</FootLink>}>
               <ul className="space-y-2">
@@ -347,24 +364,7 @@ function StrategyCard({ s, active, onClick }: { s: Strategy; active: boolean; on
     </button>
   );
 }
-function Panel({ title, badge, icon: Icon, action, footer, children }: { title?: string; badge?: string; icon?: LucideIcon; action?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col rounded-xl border border-line bg-gradient-to-b from-surface-1 to-surface-1/60 p-3 transition-colors duration-300 hover:border-line/80">
-      {title && (
-        <div className="mb-2.5 flex items-center gap-2">
-          {Icon && <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/15 text-accent"><Icon className="h-3.5 w-3.5" /></span>}
-          <h3 className="text-[12px] font-semibold text-ink">{title}</h3>
-          {badge && <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">{badge}</span>}
-          {action && <span className="ml-auto flex items-center gap-1.5 text-[11px] text-ink-faint">{action}</span>}
-        </div>
-      )}
-      <div className="flex-1">{children}</div>
-      {footer && <div className="mt-3 border-t border-line/60 pt-2 text-center">{footer}</div>}
-    </section>
-  );
-}
-function Pill({ children }: { children: React.ReactNode }) { return <span className="inline-flex items-center gap-1 rounded-md border border-line bg-base px-2 py-1 text-[10px] text-accent">{children}</span>; }
-function FootLink({ children }: { children: React.ReactNode }) { return <button className="inline-flex items-center gap-1 text-[11px] font-medium text-accent transition hover:opacity-80">{children}<ArrowRight className="h-3 w-3" /></button>; }
+// Panel, Pill, FootLink now imported from @/components/ui (MDS Phase C migration).
 function Attr({ k, v, tone: t }: { k: string; v: string; tone?: 'bull' }) { return <div><div className="text-[9px] uppercase tracking-wider text-ink-faint">{k}</div><div className={['text-[11px] font-semibold', t === 'bull' ? 'text-bull-bright' : 'text-ink'].join(' ')}>{v}</div></div>; }
 function Stat({ k, v, c }: { k: string; v: string; c?: string }) { return <div className="flex items-center justify-between"><span className="text-ink-faint">{k}</span><span className={['font-mono font-semibold', c ?? 'text-ink'].join(' ')}>{v}</span></div>; }
 function MiniStat({ k, v, c }: { k: string; v: string; c?: string }) { return <div className="rounded-lg bg-base/60 py-1.5"><div className="text-[9px] uppercase tracking-wider text-ink-faint">{k}</div><div className={['font-mono text-sm font-bold', c ?? 'text-ink'].join(' ')}>{v}</div></div>; }
@@ -398,8 +398,10 @@ function RadarDNA({ dna }: { dna: Strategy['dna'] }) {
   );
 }
 function MarketsDonut({ slices }: { slices: Strategy['bestMarkets'] }) {
-  const r = 20, c = 2 * Math.PI * r; let off = 0;
-  return <svg viewBox="0 0 56 56" className="h-14 w-14 -rotate-90 shrink-0"><circle cx="28" cy="28" r={r} fill="none" stroke="#2a3247" strokeWidth="8" />{slices.map((s) => { const dash = (s.pct / 100) * c; const el = <circle key={s.label} cx="28" cy="28" r={r} fill="none" stroke={s.color} strokeWidth="8" strokeDasharray={`${dash} ${c}`} strokeDashoffset={-off} />; off += dash; return el; })}</svg>;
+  const r = 20, c = 2 * Math.PI * r;
+  const angles = slices.map((s) => (s.pct / 100) * c);
+  const offsets = angles.map((_, i) => angles.slice(0, i).reduce((a, b) => a + b, 0));
+  return <svg viewBox="0 0 56 56" className="h-14 w-14 -rotate-90 shrink-0"><circle cx="28" cy="28" r={r} fill="none" stroke="#2a3247" strokeWidth="8" />{slices.map((s, i) => <circle key={s.label} cx="28" cy="28" r={r} fill="none" stroke={s.color} strokeWidth="8" strokeDasharray={`${angles[i]} ${c}`} strokeDashoffset={-offsets[i]} />)}</svg>;
 }
 function HealthGauge({ value }: { value: number }) {
   const v = clamp(value, 0, 100), angle = -90 + (v / 100) * 180;
@@ -422,7 +424,7 @@ function PerfChart({ series }: { series: number[] }) {
   const W = 320, H = 110, pad = 4;
   const hi = Math.max(...series, 0), lo = Math.min(...series, 0), range = hi - lo || 1;
   const x = (i: number) => pad + (i / (series.length - 1)) * (W - 2 * pad), y = (v: number) => pad + (1 - (v - lo) / range) * (H - 2 * pad);
-  const line = series.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const line = series.map((v, i) => `${i === 0 ? 'M' : 'L'} ${r1(x(i))} ${r1(y(v))}`).join(' ');
   const zero = y(0);
   return (
     <div className="flex gap-1.5">

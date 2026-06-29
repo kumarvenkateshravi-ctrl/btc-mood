@@ -33,7 +33,6 @@ export default function IndicatorPicker({
   onAdd,
   onRemove,
   onToggle,
-  onParam,
   showVolume,
   onToggleVolume,
 }: IndicatorPickerProps) {

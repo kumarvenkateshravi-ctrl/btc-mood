@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { upsertWorkspace, removeWorkspace, isWorkspace, type Workspace } from './workspaces';
+import { upsertWorkspace, removeWorkspace, isWorkspace } from './workspaces';
 
 const cfg = { chartType: 'candlestick', symbol: 'BTCUSDT', tf: '15m', indicatorIds: ['rsi'] };
 

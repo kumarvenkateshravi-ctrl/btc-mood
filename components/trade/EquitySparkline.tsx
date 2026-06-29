@@ -39,7 +39,6 @@ export default function EquitySparkline({
 
   const gradientId = up ? 'spark-grad-up' : 'spark-grad-down';
   // Close the area: line goes to bottom-right, then bottom-left, then back to start.
-  const lastY = Number(path.split(' L').pop()?.split(',')[1] ?? '0');
   const areaPath = `${path} L${width},${height} L0,${height} Z`;
 
   return (

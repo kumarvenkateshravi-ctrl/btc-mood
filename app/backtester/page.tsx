@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Bitcoin, Info, Play, Check, X, Plus, Save, FilePlus, TrendingUp, Sparkles, Calendar, type LucideIcon } from 'lucide-react';
+import { Bitcoin, Info, Play, Check, X, Plus, Save, FilePlus, TrendingUp, Sparkles, Calendar } from 'lucide-react';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { DEFAULT_COMPARE_SYMBOL } from '@/lib/compare';
 import { useMarketData } from '@/lib/hooks/useMarketData';
@@ -12,10 +12,13 @@ import {
   type BacktestConfig, type Condition, type Operator, type BTrade, type EquityPoint,
 } from '@/lib/setupBacktest';
 import StackSidebar from '@/components/stack/StackSidebar';
+import { Panel } from '@/components/ui';
+import { formatNumber } from '@/lib/format';
 
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmtN = (n: number, d = 1) => (Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
+const fmtN = (n: number, d = 1) => formatNumber(n, { precision: d });
 const sgn = (n: number) => (n >= 0 ? '+' : '');
+/** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
+const r1 = (n: number) => Math.round(n * 10) / 10;
 const fmtDate = (t: number) => new Date(t * 1000).toLocaleDateString('en-CA');
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D' };
 const DATE_RANGES: [string, number][] = [['1M', 30], ['3M', 90], ['6M', 180], ['1Y', 365], ['2Y', 730], ['3Y', 1095], ['5Y', 1825]];
@@ -107,15 +110,15 @@ export default function BacktesterPage() {
   const avgWin = LIBRARY.reduce((s, l) => s + l.win, 0) / LIBRARY.length;
   const bestPF = Math.max(...LIBRARY.map((l) => l.pf));
   const spanDays = result.coverage.bars > 1 ? Math.max(1, Math.round((result.coverage.to - result.coverage.from) / 86400)) : 0;
-  const histLabel = spanDays >= 365 ? `${(spanDays / 365).toFixed(1)} Years` : `${spanDays} Days`;
+  const histLabel = spanDays >= 365 ? `${formatNumber(spanDays / 365, { precision: 1 })} Years` : `${spanDays} Days`;
   const sidebarExtra = (
     <>
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Quick Stats</div>
       <SRow k="Total Strategies" v={String(LIBRARY.length + saved.length)} />
       <SRow k="Backtests Run" v={String(runs)} />
       <SRow k="Winning Strategies" v={String(LIBRARY.filter((l) => l.pf >= 1.5).length + saved.length)} />
-      <SRow k="Avg Win Rate" v={`${avgWin.toFixed(1)}%`} tone="bull" />
-      <SRow k="Best Profit Factor" v={bestPF.toFixed(2)} tone="bull" />
+      <SRow k="Avg Win Rate" v={`${formatNumber(avgWin, { precision: 1 })}%`} tone="bull" />
+      <SRow k="Best Profit Factor" v={formatNumber(bestPF, { precision: 2 })} tone="bull" />
       <div className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Data Coverage</div>
       <SRow k="Symbols Supported" v="5" />
       <SRow k="Historical Data" v={histLabel} tone="bull" />
@@ -168,7 +171,7 @@ export default function BacktesterPage() {
             {/* Config row */}
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1fr_1fr_1fr]">
               {/* Strategy Builder */}
-              <Panel title="Strategy Builder">
+              <Panel eyebrow title="Strategy Builder">
                 <div className="mb-3 flex items-center gap-2">
                   <input value={name} onChange={(e) => setName(e.target.value)} className="h-8 flex-1 rounded-lg border border-line bg-base px-2 text-sm text-ink outline-none focus:border-line-strong" />
                   <button onClick={() => saveStrategy(false)} className="focus-ring inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-ink-muted transition hover:bg-surface-2 hover:text-ink"><Save className="h-3.5 w-3.5" /> Save</button>
@@ -189,7 +192,7 @@ export default function BacktesterPage() {
               </Panel>
 
               {/* Setup Library */}
-              <Panel title="Setup Library">
+              <Panel eyebrow title="Setup Library">
                 <select value={libFilter} onChange={(e) => setLibFilter(e.target.value)} className="mb-2 h-8 w-full rounded-lg border border-line bg-base px-2 text-xs text-ink outline-none focus:border-line-strong [color-scheme:dark]">
                   {['All Strategies', 'My Saved', 'Built-in'].map((o) => <option key={o}>{o}</option>)}
                 </select>
@@ -212,7 +215,7 @@ export default function BacktesterPage() {
               </Panel>
 
               {/* Data Configuration */}
-              <Panel title="Data Configuration">
+              <Panel eyebrow title="Data Configuration">
                 <div className="space-y-2 text-xs">
                   <Field label="Symbol"><div className="flex h-9 items-center rounded-lg border border-line bg-base px-2">{symbol}</div></Field>
                   <Field label="Timeframe">
@@ -225,14 +228,14 @@ export default function BacktesterPage() {
                   <Field label="Data Source"><select value={source} onChange={(e) => setSource(e.target.value)} className="h-9 w-full rounded-lg border border-line bg-base px-2 text-xs text-ink outline-none focus:border-line-strong [color-scheme:dark]">{DATA_SOURCES.map((s) => <option key={s} value={s} disabled={s !== 'Binance'}>{s}{s !== 'Binance' ? ' (soon)' : ''}</option>)}</select></Field>
                   <div className="rounded-lg border border-accent/30 bg-accent/5 p-2.5">
                     <div className="text-[10px] uppercase tracking-wider text-ink-faint">Data Loaded</div>
-                    <div className="font-mono text-base font-bold text-bull-bright">{result.coverage.bars.toLocaleString()} bars</div>
+                    <div className="font-mono text-base font-bold text-bull-bright">{formatNumber(result.coverage.bars, { precision: 0 })} bars</div>
                     <div className="text-[10px] text-ink-faint">{result.coverage.quality}% quality · loaded window</div>
                   </div>
                 </div>
               </Panel>
 
               {/* Risk Configuration */}
-              <Panel title="Risk Configuration">
+              <Panel eyebrow title="Risk Configuration">
                 <div className="space-y-2 text-xs">
                   <Field label="Initial Capital (USDT)"><Num value={risk.initialCapital} onChange={(v) => setRisk((r) => ({ ...r, initialCapital: v }))} step={1000} wide /></Field>
                   <div className="grid grid-cols-2 gap-2">
@@ -256,7 +259,7 @@ export default function BacktesterPage() {
               <>
                 <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.6fr_1fr_1fr]">
                   <div className="space-y-3">
-                    <Panel title="Performance Overview">
+                    <Panel eyebrow title="Performance Overview">
                       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                         <Metric k="Total Return" v={`${sgn(result.metrics.totalReturnPct)}${result.metrics.totalReturnPct}%`} sub={`${sgn(result.metrics.totalReturnAbs)}${Math.round(result.metrics.totalReturnAbs)}`} tone={result.metrics.totalReturnPct >= 0 ? 'bull' : 'bear'} />
                         <Metric k="Win Rate" v={`${result.metrics.winRate}%`} />
@@ -266,11 +269,11 @@ export default function BacktesterPage() {
                         <Metric k="Expectancy" v={`${result.metrics.expectancy}R`} tone={result.metrics.expectancy >= 0 ? 'bull' : 'bear'} />
                       </div>
                     </Panel>
-                    <Panel title="Equity Curve"><EquityChart points={result.equity} initial={risk.initialCapital} /></Panel>
+                    <Panel eyebrow title="Equity Curve"><EquityChart points={result.equity} initial={risk.initialCapital} /></Panel>
                   </div>
                   <div className="space-y-3">
-                    <Panel title="Trade Distribution"><Distribution d={result.distribution} /></Panel>
-                    <Panel title="Drawdown Analysis">
+                    <Panel eyebrow title="Trade Distribution"><Distribution d={result.distribution} /></Panel>
+                    <Panel eyebrow title="Drawdown Analysis">
                       <div className="space-y-1 text-xs">
                         <KV k="Max Drawdown" v={`${result.drawdown.maxPct}%`} tone="bear" /><KV k="Average Drawdown" v={`${result.drawdown.avgPct}%`} />
                         <KV k="Max DD Duration" v={`${result.drawdown.maxDurationBars} bars`} /><KV k="Recovery Factor" v={`${result.drawdown.recoveryFactor}`} tone="bull" />
@@ -278,7 +281,7 @@ export default function BacktesterPage() {
                       <DrawdownChart points={result.equity} />
                     </Panel>
                   </div>
-                  <Panel title="Trade List (recent 10)">
+                  <Panel eyebrow title="Trade List (recent 10)">
                     <table className="w-full text-left text-[11px]">
                       <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1">Date</th><th className="py-1">Side</th><th className="py-1 text-right">Entry</th><th className="py-1 text-right">Exit</th><th className="py-1 text-right">R</th><th className="py-1 text-right">PnL</th></tr></thead>
                       <tbody>{result.trades.slice(-10).reverse().map((t, i) => <TradeRow key={i} t={t} />)}</tbody>
@@ -287,13 +290,13 @@ export default function BacktesterPage() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
-                  <Panel title="Setup Breakdown" approx>
+                  <Panel eyebrow title="Setup Breakdown" badge="approx alignment" badgeTone="warn">
                     <table className="w-full text-left text-[11px]">
                       <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1">Alignment</th><th className="py-1 text-right">Trades</th><th className="py-1 text-right">Win%</th><th className="py-1 text-right">PF</th><th className="py-1 text-right">RR</th></tr></thead>
                       <tbody>{result.setupBreakdown.map((b) => <tr key={b.label} className="border-t border-line/50"><td className="py-1.5">{b.label}</td><td className="py-1.5 text-right">{b.trades}</td><td className="py-1.5 text-right">{b.winRate}%</td><td className={['py-1.5 text-right font-mono', b.profitFactor >= 1.5 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{b.profitFactor}</td><td className="py-1.5 text-right font-mono">{b.avgRR}R</td></tr>)}</tbody>
                     </table>
                   </Panel>
-                  <Panel title="Parameter Optimization">
+                  <Panel eyebrow title="Parameter Optimization">
                     <table className="w-full text-left text-[11px]">
                       <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1">Parameter</th><th className="py-1 text-right">Current</th><th className="py-1 text-right">Optimal</th><th className="py-1 text-right">Improve</th></tr></thead>
                       <tbody>
@@ -304,7 +307,7 @@ export default function BacktesterPage() {
                     </table>
                     {opt.optimal !== opt.current && <button onClick={() => setEntry((l) => l.map((c) => (c.metric === 'Stack Score' ? { ...c, value: opt.optimal } : c)))} className="focus-ring mt-2 w-full rounded-lg border border-accent/40 py-1.5 text-xs font-medium text-accent transition hover:bg-accent/10">Apply optimal threshold</button>}
                   </Panel>
-                  <Panel title="Monte Carlo (1000 runs)">
+                  <Panel eyebrow title="Monte Carlo (1000 runs)">
                     <BellCurve worst={mc.worst} expected={mc.expected} best={mc.best} />
                     <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
                       <div><div className="text-[9px] uppercase tracking-wider text-ink-faint">Worst (5%)</div><div className="font-mono font-bold text-bear-bright">{sgn(mc.worst)}{mc.worst}%</div></div>
@@ -312,7 +315,7 @@ export default function BacktesterPage() {
                       <div><div className="text-[9px] uppercase tracking-wider text-ink-faint">Best (95%)</div><div className="font-mono font-bold text-bull-bright">{sgn(mc.best)}{mc.best}%</div></div>
                     </div>
                   </Panel>
-                  <Panel title="AI Insights">
+                  <Panel eyebrow title="AI Insights">
                     <div className="mb-2 flex items-center gap-2 rounded-lg border border-line bg-base/40 px-2.5 py-2"><Sparkles className="h-4 w-4 text-accent" /><div><div className="text-[10px] uppercase tracking-wider text-ink-faint">Setup Confidence</div><div className={['font-mono text-lg font-bold', confidence >= 80 ? 'text-bull-bright' : confidence >= 60 ? 'text-regime-hot' : 'text-bear-bright'].join(' ')}>{confidence}/100</div></div></div>
                     <ul className="space-y-1.5 text-[11px]">{insights.map((t, i) => <li key={i} className="flex items-start gap-2 text-ink-muted"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-bull-bright" />{t}</li>)}</ul>
                   </Panel>
@@ -351,9 +354,7 @@ function AddBtn({ onClick }: { onClick: () => void }) {
 }
 
 // ---- shared helpers (charts/panels) ----
-function Panel({ title, approx, children }: { title?: string; approx?: boolean; children: React.ReactNode }) {
-  return <section className="rounded-xl border border-line bg-surface-1 p-3">{title && <div className="mb-2 flex items-center gap-2"><h3 className="text-[11px] font-semibold uppercase tracking-wider text-accent">{title}</h3>{approx && <span className="rounded bg-regime-hot/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-regime-hot">approx alignment</span>}</div>}{children}</section>;
-}
+// Panel now imported from @/components/ui (MDS Phase C migration); eyebrow style.
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">{label}</div>{children}</label>; }
 function SRow({ k, v, tone }: { k: string; v: string; tone?: 'bull' }) {
   return <div className="flex items-center justify-between py-0.5 text-xs"><span className="text-ink-faint">{k}</span><span className={['font-mono font-semibold tabular-nums', tone === 'bull' ? 'text-bull-bright' : 'text-ink'].join(' ')}>{v}</span></div>;
@@ -382,13 +383,14 @@ function TradeRow({ t }: { t: BTrade }) {
 }
 function Distribution({ d }: { d: { wins: number; losses: number; breakeven: number; total: number } }) {
   const r = 34, c = 2 * Math.PI * r, segs = [{ v: d.wins, color: '#26A69A' }, { v: d.losses, color: '#f23645' }, { v: d.breakeven, color: '#9ab2d7' }];
-  let off = 0;
+  const angles = segs.map((s) => (d.total ? s.v / d.total : 0) * c);
+  const offsets = angles.map((_, i) => angles.slice(0, i).reduce((a, b) => a + b, 0));
   return (
     <div className="flex items-center gap-4">
-      <div className="relative h-[92px] w-[92px] shrink-0"><svg viewBox="0 0 92 92" className="h-full w-full -rotate-90"><circle cx="46" cy="46" r={r} fill="none" stroke="#2a3247" strokeWidth="9" />{segs.map((s, i) => { const dash = (d.total ? s.v / d.total : 0) * c; const el = <circle key={i} cx="46" cy="46" r={r} fill="none" stroke={s.color} strokeWidth="9" strokeDasharray={`${dash} ${c}`} strokeDashoffset={-off} />; off += dash; return el; })}</svg><div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-[9px] text-ink-faint">Total</span><span className="text-xl font-bold">{d.total}</span></div></div>
+      <div className="relative h-[92px] w-[92px] shrink-0"><svg viewBox="0 0 92 92" className="h-full w-full -rotate-90"><circle cx="46" cy="46" r={r} fill="none" stroke="#2a3247" strokeWidth="9" />{segs.map((s, i) => <circle key={i} cx="46" cy="46" r={r} fill="none" stroke={s.color} strokeWidth="9" strokeDasharray={`${angles[i]} ${c}`} strokeDashoffset={-offsets[i]} />)}</svg><div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-[9px] text-ink-faint">Total</span><span className="text-xl font-bold">{d.total}</span></div></div>
       <ul className="space-y-1.5 text-xs">
-        <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-bull" /> Wins <span className="ml-auto font-mono font-semibold">{d.wins} ({d.total ? ((d.wins / d.total) * 100).toFixed(1) : 0}%)</span></li>
-        <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-bear" /> Losses <span className="ml-auto font-mono font-semibold">{d.losses} ({d.total ? ((d.losses / d.total) * 100).toFixed(1) : 0}%)</span></li>
+        <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-bull" /> Wins <span className="ml-auto font-mono font-semibold">{d.wins} ({d.total ? formatNumber((d.wins / d.total) * 100, { precision: 1 }) : 0}%)</span></li>
+        <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-bear" /> Losses <span className="ml-auto font-mono font-semibold">{d.losses} ({d.total ? formatNumber((d.losses / d.total) * 100, { precision: 1 }) : 0}%)</span></li>
         <li className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-neutral" /> Breakeven <span className="ml-auto font-mono font-semibold">{d.breakeven}</span></li>
       </ul>
     </div>
@@ -399,19 +401,19 @@ function EquityChart({ points, initial }: { points: EquityPoint[]; initial: numb
   const W = 640, H = 160, pad = 6, all = [...points.map((p) => p.equity), ...points.map((p) => p.benchmark), initial];
   const hi = Math.max(...all), lo = Math.min(...all), range = hi - lo || 1;
   const x = (i: number) => pad + (i / (points.length - 1)) * (W - 2 * pad), y = (v: number) => pad + (1 - (v - lo) / range) * (H - 2 * pad);
-  const path = (key: 'equity' | 'benchmark') => points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
+  const path = (key: 'equity' | 'benchmark') => points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${r1(x(i))} ${r1(y(p[key]))}`).join(' ');
   return <svg viewBox={`0 0 ${W} ${H}`} className="h-[160px] w-full" preserveAspectRatio="none"><path d={`${path('equity')} L ${x(points.length - 1)} ${H - pad} L ${pad} ${H - pad} Z`} fill="#6aa6ff" opacity="0.08" /><path d={path('benchmark')} fill="none" stroke="#7b88a0" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" /><path d={path('equity')} fill="none" stroke="#6aa6ff" strokeWidth="1.6" /></svg>;
 }
 function DrawdownChart({ points }: { points: EquityPoint[] }) {
   if (points.length < 2) return null;
   const W = 240, H = 56, pad = 3, minDD = Math.min(...points.map((p) => p.drawdownPct), -0.1);
   const x = (i: number) => pad + (i / (points.length - 1)) * (W - 2 * pad), y = (v: number) => pad + (v / minDD) * (H - 2 * pad);
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.drawdownPct).toFixed(1)}`).join(' ');
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${r1(x(i))} ${r1(y(p.drawdownPct))}`).join(' ');
   return <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 h-[56px] w-full" preserveAspectRatio="none"><path d={`${path} L ${x(points.length - 1)} ${pad} L ${pad} ${pad} Z`} fill="#f23645" opacity="0.15" /><path d={path} fill="none" stroke="#f23645" strokeWidth="1" /></svg>;
 }
 function BellCurve({ worst, expected, best }: { worst: number; expected: number; best: number }) {
   const W = 240, H = 70, pad = 4, lo = Math.min(worst, 0) - 5, hi = Math.max(best, 0) + 5, range = hi - lo || 1;
   const xpos = (v: number) => pad + ((v - lo) / range) * (W - 2 * pad), mu = xpos(expected), sigma = (xpos(best) - xpos(worst)) / 3.3 || 20;
-  const pts = Array.from({ length: 60 }, (_, i) => { const px = pad + (i / 59) * (W - 2 * pad); const g = Math.exp(-((px - mu) ** 2) / (2 * sigma * sigma)); return `${px.toFixed(1)} ${(H - pad - g * (H - 2 * pad)).toFixed(1)}`; });
+  const pts = Array.from({ length: 60 }, (_, i) => { const px = pad + (i / 59) * (W - 2 * pad); const g = Math.exp(-((px - mu) ** 2) / (2 * sigma * sigma)); return `${r1(px)} ${r1(H - pad - g * (H - 2 * pad))}`; });
   return <svg viewBox={`0 0 ${W} ${H}`} className="h-[70px] w-full"><path d={`M ${pad} ${H - pad} L ${pts.join(' L ')} L ${W - pad} ${H - pad} Z`} fill="#6aa6ff" opacity="0.18" /><polyline points={pts.join(' ')} fill="none" stroke="#6aa6ff" strokeWidth="1.4" /><line x1={mu} y1={pad} x2={mu} y2={H - pad} stroke="#e9eef7" strokeWidth="1" strokeDasharray="2 2" opacity="0.6" /></svg>;
 }

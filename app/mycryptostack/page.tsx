@@ -13,11 +13,14 @@ import { computeAlignmentMatrix, type Verdict } from '@/lib/alignment';
 import { computeStackScore } from '@/lib/stackScore';
 import { computeAtr } from '@/lib/indicators/atr';
 import { analyzeTrade } from '@/lib/tradeAnalysis';
+import { usd, formatNumber, formatPercent } from '@/lib/format';
+import { Panel } from '@/components/ui';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D' };
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-const fmt = (n: number, d = 1) => Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+// Numbers route through the MDS B5 contract (lib/format). Prices keep their
+// 1-decimal exchange tick; money values keep cents via usd().
+const fmt = (n: number, d = 1) => formatNumber(n, { precision: d });
 
 const vColor = (v: Verdict) => (v === 'bullish' ? 'text-bull-bright' : v === 'bearish' ? 'text-bear-bright' : 'text-ink-faint');
 const vDot = (v: Verdict) => (v === 'bullish' ? 'bg-bull' : v === 'bearish' ? 'bg-bear' : 'bg-neutral');
@@ -140,7 +143,7 @@ export default function MyCryptoStackPage() {
           </div>
           <span className="font-mono text-lg font-semibold tabular-nums">{fmt(price)}</span>
           <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>
-            {change >= 0 ? '+' : ''}{change.toFixed(2)}%
+            {formatPercent(change)}
           </span>
           <div className="ml-2 flex items-center gap-1 rounded-lg border border-line bg-base p-0.5">
             {TIMEFRAMES.map((tf) => (
@@ -166,7 +169,7 @@ export default function MyCryptoStackPage() {
             {/* ===== CENTER COLUMN ===== */}
             <div className="space-y-3">
               {/* Alignment table */}
-              <Panel title="Multi-Timeframe Indicator Alignment">
+              <Panel eyebrow title="Multi-Timeframe Indicator Alignment">
                 <div className="overflow-x-auto">
                   <table className="w-full border-separate border-spacing-0 text-left text-sm">
                     <thead>
@@ -253,7 +256,7 @@ export default function MyCryptoStackPage() {
 
               {/* Signal history + Best setups */}
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <Panel title="Signal History">
+                <Panel eyebrow title="Signal History">
                   <table className="w-full text-left text-xs">
                     <thead className="text-[10px] uppercase tracking-wider text-ink-faint">
                       <tr><th className="py-1">Time</th>{TIMEFRAMES.map((tf) => <th key={tf} className="py-1 text-center">{TF_LABEL[tf]}</th>)}<th className="py-1 text-right">Score</th><th className="py-1 text-right">Signal</th></tr>
@@ -273,7 +276,7 @@ export default function MyCryptoStackPage() {
                   </table>
                 </Panel>
 
-                <Panel title="Best Setups Today" hint="live · scanner next">
+                <Panel eyebrow title="Best Setups Today" badge="live · scanner next">
                   <table className="w-full text-left text-xs">
                     <thead className="text-[10px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1">Pair</th><th className="py-1 text-right">Score</th><th className="py-1 text-right">Signal</th><th className="py-1 text-right">TF</th></tr></thead>
                     <tbody>
@@ -293,7 +296,7 @@ export default function MyCryptoStackPage() {
             {/* ===== RIGHT COLUMN ===== */}
             <div className="space-y-3">
               {/* Signal strength meter */}
-              <Panel title="Signal Strength Meter">
+              <Panel eyebrow title="Signal Strength Meter">
                 <div className="flex items-center gap-4">
                   <BigGauge value={stack.score} />
                   <ul className="space-y-1 text-[11px]">
@@ -305,16 +308,16 @@ export default function MyCryptoStackPage() {
               </Panel>
 
               {/* Trade setup */}
-              <Panel title="Trade Setup" hint={setup.long ? 'LONG' : 'SHORT'}>
+              <Panel eyebrow title="Trade Setup" badge={setup.long ? 'LONG' : 'SHORT'}>
                 <div className="space-y-1.5 text-sm">
                   <Row k="Entry Zone" v={`${fmt(setup.zoneLo)} – ${fmt(setup.zoneHi)}`} />
                   <Row k="Stop Loss" v={fmt(setup.sl)} tone="bear" />
                   <Row k="Take Profit 1" v={fmt(setup.tp1)} tone="bull" />
                   <Row k="Take Profit 2" v={fmt(setup.tp2)} tone="bull" />
                   <div className="my-1 h-px bg-line" />
-                  <Row k="Risk / Reward" v={setup.a.rr == null ? '—' : `1 : ${setup.a.rr.toFixed(1)}`} tone={setup.a.rr != null && setup.a.rr >= 2 ? 'bull' : undefined} />
+                  <Row k="Risk / Reward" v={setup.a.rr == null ? '—' : `1 : ${formatNumber(setup.a.rr, { precision: 1 })}`} tone={setup.a.rr != null && setup.a.rr >= 2 ? 'bull' : undefined} />
                   <Row k="Win Probability" v={`${setup.winProb}%`} />
-                  <Row k="Position Size (1% risk)" v={`${setup.a.positionSize > 0 ? setup.a.positionSize.toFixed(3) : '—'} BTC`} />
+                  <Row k="Position Size (1% risk)" v={`${setup.a.positionSize > 0 ? fmt(setup.a.positionSize, 3) : '—'} BTC`} />
                 </div>
                 <Link href="/mystack" className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-accent/15 py-2 text-sm font-medium text-accent transition hover:bg-accent/25">
                   Open in MyStack calculator →
@@ -322,7 +325,7 @@ export default function MyCryptoStackPage() {
               </Panel>
 
               {/* Alignment breakdown */}
-              <Panel title="Alignment Breakdown" hint="exit rule">
+              <Panel eyebrow title="Alignment Breakdown" badge="exit rule">
                 <ul className="space-y-1.5 text-xs">
                   {[['6 Green', 'Maximum holding (trend strong)', 'text-bull-bright'], ['5 Green', 'Hold position', 'text-bull-bright'], ['4 Green', 'Caution (watch closely)', 'text-regime-hot'], ['3 Green', 'Reduce position (take partial)', 'text-regime-hot'], ['2 or less', 'Exit position', 'text-bear-bright']].map(([n, d, c]) => (
                     <li key={n} className="flex items-center gap-2">
@@ -337,13 +340,13 @@ export default function MyCryptoStackPage() {
               </Panel>
 
               {/* Performance */}
-              <Panel title="Performance" hint="paper account">
+              <Panel eyebrow title="Performance" badge="paper account">
                 <div className="flex items-center gap-4">
                   <Donut value={perf.winRate} color={perf.winRate >= 50 ? '#26A69A' : perf.winRate >= 40 ? '#f0a020' : '#f23645'} center={<div className="text-center"><div className="text-lg font-bold">{perf.winRate}%</div><div className="text-[9px] text-ink-faint">Win Rate</div></div>} />
                   <div className="flex-1 space-y-1 text-xs">
                     <Row k="Total Trades" v={String(perf.total)} />
                     <Row k="Winning / Losing" v={`${perf.wins} / ${perf.losses}`} />
-                    <Row k="Net P&L" v={`${perf.net >= 0 ? '+' : ''}${usd(perf.net)}`} tone={perf.net >= 0 ? 'bull' : 'bear'} />
+                    <Row k="Net P&L" v={usd(perf.net, { signed: true })} tone={perf.net >= 0 ? 'bull' : 'bear'} />
                     <Row k="Avg Win / Loss" v={`${usd(perf.avgWin)} / ${usd(perf.avgLoss)}`} />
                   </div>
                 </div>
@@ -363,20 +366,7 @@ export default function MyCryptoStackPage() {
   );
 }
 
-// ---- presentational helpers ----
-function Panel({ title, hint, children }: { title?: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-xl border border-line bg-surface-1 p-3">
-      {title && (
-        <div className="mb-2 flex items-center gap-2">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-accent">{title}</h3>
-          {hint && <span className="rounded border border-line px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-ink-faint">{hint}</span>}
-        </div>
-      )}
-      {children}
-    </section>
-  );
-}
+// ---- presentational helpers (Panel now from @/components/ui, MDS Phase C) ----
 function Stat({ k, v }: { k: string; v: string }) {
   return <span className="inline-flex items-center gap-1.5"><span className="text-ink-faint">{k}:</span><span className="font-semibold text-ink">{v}</span></span>;
 }

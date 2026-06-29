@@ -14,21 +14,18 @@ import {
   type IChartApi,
   type IPaneApi,
   type ISeriesApi,
+  type SeriesType,
   type LogicalRange,
   type ISeriesMarkersPluginApi,
   type SeriesMarker,
   type CandlestickData,
-  type HistogramData,
   type LineData,
   type WhitespaceData,
   type MouseEventParams,
   type Time,
 } from 'lightweight-charts';
-import { toHeikinAshi } from '@/lib/heikinAshi';
-import { toRenko, type RenkoOptions } from '@/lib/renko';
+import { type RenkoOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
-import { ema } from '@/lib/indicators';
-import { buildSignalFlips } from '@/lib/signalMarkers';
 import { setHover, useHover, type HoverPayload } from '@/lib/chartHoverStore';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
@@ -63,7 +60,7 @@ function shiftTime(t: number): Time {
   return (t - tzOffset) as Time;
 }
 import type { Candle } from '@/lib/types';
-import type { IndicatorResult, IndicatorPlot } from '@/lib/indicatorFramework';
+import type { IndicatorResult } from '@/lib/indicatorFramework';
 
 export type ChartType = 'candlestick' | 'heikinAshi' | 'renko';
 
@@ -218,18 +215,14 @@ export default function Chart({
   overlayLeverage = 10,
   onReady,
   onLoadOlder,
-  regime = 0.2,
   overlayPnL = null,
   onChartContextMenu,
-  showVolume = true,
-  onToggleVolume,
   onQuickTrade,
   onOpenRenkoSettings,
   bid = null,
   ask = null,
   activeIndicatorId,
   onIndicatorChange,
-  indicatorSettings,
   onUpdateIndicatorSettings,
   activeIndicatorIds,
   indicatorSettingsMap,
@@ -287,7 +280,7 @@ export default function Chart({
   const countdownTextRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const indicatorSeriesRef = useRef<Map<string, ISeriesApi<any>>>(new Map());
+  const indicatorSeriesRef = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const dummySeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const overlayPrimitiveRef = useRef<OrderOverlayPrimitive | null>(null);
@@ -300,7 +293,7 @@ export default function Chart({
   // Per-indicator gradient-zone primitives + marker plugins, keyed by instance.
   const indicatorGradientRef = useRef<Map<string, GradientZonePrimitive>>(new Map());
   const indicatorMarkersRef = useRef<Map<string, ISeriesMarkersPluginApi<Time>>>(new Map());
-  const [hasSeparatePane, setHasSeparatePane] = useState(false);
+  const [, setHasSeparatePane] = useState(false);
   const fxPrimitiveRef = useRef<ChartFxPrimitive | null>(null);
   const daySepCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const daySepRafRef = useRef<number>(0);
@@ -997,7 +990,6 @@ export default function Chart({
     prevTfRef.current = tf ?? null;
 
     const baseCandles = candles;
-    const closes = candles.map((c) => c.close);
     hoverInputsRef.current = { src: candles, base: baseCandles, isRenko };
 
     if (baseCandles.length === 0) return;
@@ -1032,7 +1024,6 @@ export default function Chart({
 
     if (isIncremental) {
       const last = baseCandles[baseCandles.length - 1];
-      const lastSrc = candles[candles.length - 1];
       candleSeries.update({
         time: shiftTime(last.time as number),
         open: last.open,
@@ -1235,7 +1226,7 @@ export default function Chart({
             .filter((d): d is { time: Time; value: number; color?: string } => d !== null);
           if (formatted.length > 0) {
             try {
-              series.setData(formatted as any[]);
+              series.setData(formatted as LineData[]);
             } catch (err) {
               console.error(`Failed to set indicator data for ${key}::${plot.id}:`, err);
             }
@@ -1487,7 +1478,6 @@ export default function Chart({
       cancelAnimationFrame(daySepRafRef.current);
       try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onChange); } catch {}
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles, tf, isRenko]);
 
   // ---- Render ----
@@ -1865,6 +1855,10 @@ function ChartOHLCStrip({ mode }: { mode: ChartType }) {
               active.base.close - active.prevBase.close >= 0 ? 'text-bull-bright' : 'text-bear-bright'
             }
           >
+            {active.base.close - active.prevBase.close > 0 ? '+' : ''}
+            {fmt(active.base.close - active.prevBase.close)}
+            {' '}
+            {active.base.close - active.prevBase.close > 0 ? '+' : ''}
             {fmt(
               ((active.base.close - active.prevBase.close) / active.prevBase.close) * 100,
               2,

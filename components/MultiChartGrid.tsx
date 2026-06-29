@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import Chart, { type ChartType, type IndicatorRender } from './Chart';
+import Chart, { type ChartType } from './Chart';
 import { useBaseCandles } from '@/lib/chartHelpers';
 import { DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';

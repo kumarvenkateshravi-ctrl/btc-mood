@@ -36,9 +36,8 @@ export function listDataSourceMetas(): DataSourceMeta[] {
 export function defaultDataSource(): DataSource {
   // The default id is set when the package index registers the default
   // source. Fall back to whatever was registered first.
-  // The DEFAULT_DATA_SOURCE_ID constant is intentionally imported lazily
-  // here to avoid a circular import (index.ts imports registry.ts).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // DEFAULT_DATA_SOURCE_ID is read lazily off globalThis here to avoid a
+  // circular import (index.ts imports registry.ts).
   const id = (globalThis as { __DEFAULT_DATA_SOURCE_ID?: string }).__DEFAULT_DATA_SOURCE_ID;
   if (id && _sources.has(id)) return _sources.get(id)!;
   const first = _sources.values().next().value;

@@ -337,7 +337,7 @@ export function cancelOrder(id: string) {
   const order = state.pending.find((o) => o.id === id);
   if (!order) return;
   // OCO: cancel siblings too and refund their margin.
-  let cancelIds = new Set([id]);
+  const cancelIds = new Set([id]);
   let refund = 0;
   const group = order.ocoGroup;
   if (group) {

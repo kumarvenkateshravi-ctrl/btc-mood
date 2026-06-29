@@ -5,16 +5,14 @@ import Link from 'next/link';
 import { ArrowUp, ArrowDown, Info, RotateCcw, ChevronRight, Lightbulb, Check, ShieldCheck, BarChart3, ArrowLeft } from 'lucide-react';
 import { analyzeTrade, type TradeSide, type TradeInput } from '@/lib/tradeAnalysis';
 import { executeOrder, setPositionOverlay } from '@/lib/paperStore';
+import { usd, formatNumber, formatPercent } from '@/lib/format';
 
 const SYMBOL = 'BTCUSDT';
 const QUICK_RISK = [0.25, 0.5, 1, 2, 3];
 
-// ---- formatting helpers ----
-const usd = (n: number) =>
-  n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const num = (n: number, d = 1) =>
-  Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
-const pct = (n: number, d = 2) => `${Number.isFinite(n) ? n.toFixed(d) : '—'}%`;
+// ---- formatting helpers (MDS §B5 — delegate to lib/format) ----
+const num = (n: number, d = 1) => formatNumber(n, { precision: d });
+const pct = (n: number, d = 2) => formatPercent(n, { signed: false, precision: d });
 
 export default function MyStackPage() {
   const [side, setSide] = useState<TradeSide>('long');
@@ -56,7 +54,7 @@ export default function MyStackPage() {
     if (!(a.positionSize > 0) || !(input.entry > 0)) return;
     executeOrder({
       type: side === 'long' ? 'BUY' : 'SELL',
-      size: Number(a.positionSize.toFixed(4)),
+      size: Math.round(a.positionSize * 1e4) / 1e4,
       orderType: 'MARKET',
       symbol: SYMBOL,
       midPrice: input.entry,
@@ -64,7 +62,7 @@ export default function MyStackPage() {
     });
     if (input.takeProfit != null) setPositionOverlay('tp', input.takeProfit, SYMBOL);
     if (input.stopLoss != null) setPositionOverlay('sl', input.stopLoss, SYMBOL);
-    setPlaced(`${side === 'long' ? 'Long' : 'Short'} ${a.positionSize.toFixed(4)} ${SYMBOL} placed on your paper account.`);
+    setPlaced(`${side === 'long' ? 'Long' : 'Short'} ${num(a.positionSize, 4)} ${SYMBOL} placed on your paper account.`);
   };
 
   const long = side === 'long';
@@ -109,7 +107,7 @@ export default function MyStackPage() {
                 </Labeled>
                 <Labeled label="Position Size (calc)">
                   <div className="flex h-11 items-center justify-between rounded-lg border border-line bg-base px-3">
-                    <span className="font-mono tabular-nums text-ink">{a.positionSize > 0 ? a.positionSize.toFixed(4) : '—'}</span>
+                    <span className="font-mono tabular-nums text-ink">{a.positionSize > 0 ? num(a.positionSize, 4) : '—'}</span>
                     <span className="text-xs text-ink-faint">BTC</span>
                   </div>
                 </Labeled>
@@ -197,7 +195,7 @@ export default function MyStackPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-line bg-base px-3 py-2.5">
                   <div className="text-xs text-ink-faint">Position Size</div>
-                  <div className="font-mono text-xl font-semibold text-ink">{a.positionSize > 0 ? a.positionSize.toFixed(4) : '—'} <span className="text-sm text-ink-faint">BTC</span></div>
+                  <div className="font-mono text-xl font-semibold text-ink">{a.positionSize > 0 ? num(a.positionSize, 4) : '—'} <span className="text-sm text-ink-faint">BTC</span></div>
                   <div className="text-xs text-ink-faint">≈ {usd(a.positionValue)}</div>
                 </div>
                 <div className="rounded-lg border border-line bg-base px-3 py-2.5">
@@ -240,12 +238,12 @@ export default function MyStackPage() {
               <div className="space-y-2 text-sm">
                 <Row label="Account Balance" value={usd(input.balance)} />
                 <Row label="Risk Amount" value={usd(a.riskAmount)} tone="bear" />
-                <Row label="Position Size" value={`${a.positionSize > 0 ? a.positionSize.toFixed(4) : '—'} BTC`} />
+                <Row label="Position Size" value={`${a.positionSize > 0 ? num(a.positionSize, 4) : '—'} BTC`} />
                 <Row label="Position Value" value={usd(a.positionValue)} />
                 <Row label="Potential Loss (SL)" value={usd(a.potentialLoss)} tone="bear" />
                 <Row label="Potential Profit (TP)" value={usd(a.potentialProfit)} tone="bull" />
                 <div className="my-2 h-px bg-line" />
-                <Row label="Risk / Reward" value={a.rr == null ? '—' : `1 : ${a.rr.toFixed(2)}`} tone={a.rr != null && a.rr >= 2 ? 'bull' : undefined} />
+                <Row label="Risk / Reward" value={a.rr == null ? '—' : `1 : ${num(a.rr, 2)}`} tone={a.rr != null && a.rr >= 2 ? 'bull' : undefined} />
                 <Row label="Break-even Win Rate" value={a.breakEvenWinRate == null ? '—' : pct(a.breakEvenWinRate * 100)} />
                 {a.breakEvenWinRate != null && (
                   <p className="text-xs text-ink-faint">You only need to win {pct(a.breakEvenWinRate * 100)} of trades to break even.</p>
@@ -258,7 +256,7 @@ export default function MyStackPage() {
               <h3 className="mb-2 text-sm font-semibold tracking-wide text-accent">RISK METER</h3>
               <Gauge zone={a.riskZone} />
               <p className="mt-2 text-center text-xs text-ink-muted">
-                You're risking {pct(input.riskPct)} of your account.
+                You&apos;re risking {pct(input.riskPct)} of your account.
               </p>
             </Card>
 

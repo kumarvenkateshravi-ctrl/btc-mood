@@ -8,7 +8,6 @@ import {
   updateDrawing,
   removeDrawing,
   newDrawingId,
-  distToSegment,
   fibLevelPrices,
   TOOL_POINTS,
   type Drawing,
@@ -55,7 +54,6 @@ export default function DrawingLayer({
   hidden,
   width,
   height,
-  revision,
   onToolUsed,
 }: DrawingLayerProps) {
   const drawings = useDrawings(symbol);
@@ -168,7 +166,6 @@ export default function DrawingLayer({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keydown', onKey);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startCreate = (lx: number, ly: number) => {

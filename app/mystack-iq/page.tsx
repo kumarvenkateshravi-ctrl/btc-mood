@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bitcoin, ChevronDown, Bell, Clock, Circle, Info, Check, X, Plus, Trash2, Eye, Settings2,
-  ArrowRight, ArrowDown, Star, Zap, BrainCircuit, Sparkles, BellRing, type LucideIcon,
+  Star, Zap, BrainCircuit, Sparkles, BellRing,
 } from 'lucide-react';
 import { type Candle } from '@/lib/types';
 import { DEFAULT_COMPARE_SYMBOL } from '@/lib/compare';
@@ -14,9 +14,11 @@ import {
   type TradingStyle, type Qualification,
 } from '@/lib/myStackIqEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
+import { Panel, FootLink } from '@/components/ui';
+import { formatNumber } from '@/lib/format';
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmtN = (n: number, d = 1) => (Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
+const fmtN = (n: number, d = 1) => formatNumber(n, { precision: d });
 const sgn = (n: number) => (n >= 0 ? '+' : '');
 const tone = (n: number) => (n >= 0 ? 'text-bull-bright' : 'text-bear-bright');
 const INDICATOR_TABS = ['Trend', 'Momentum', 'Volume', 'Volatility', 'Levels', 'Others'];
@@ -48,7 +50,7 @@ export default function MyStackIqPage() {
     const P = qual.price;
     const entryHi = Math.round(P) - 110, entryLo = entryHi - 50;
     const sl = entryLo - maxRisk, tp1 = entryHi + Math.round(points * 0.66), tp2 = entryHi + points;
-    return { entryLo, entryHi, sl, tp1, tp2, rr: `1 : ${(points / Math.max(1, maxRisk)).toFixed(1)}`, slPts: -(maxRisk + (entryHi - entryLo + maxRisk - maxRisk)), tp1Pts: tp1 - entryHi, tp2Pts: tp2 - entryHi };
+    return { entryLo, entryHi, sl, tp1, tp2, rr: `1 : ${formatNumber(points / Math.max(1, maxRisk), { precision: 1 })}`, slPts: -(maxRisk + (entryHi - entryLo + maxRisk - maxRisk)), tp1Pts: tp1 - entryHi, tp2Pts: tp2 - entryHi };
   }, [qual.price, points, maxRisk]);
 
   const qualGrid = [
@@ -177,7 +179,7 @@ export default function MyStackIqPage() {
                     <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-faint">Risk &amp; Reward Plan</div>
                     <NumRow label="Points to capture" value={points} onChange={setPoints} unit="Points" />
                     <NumRow label="Maximum Risk" value={maxRisk} onChange={setMaxRisk} unit="Points" />
-                    <KV k="Risk-Reward Ratio" v={`1 : ${(points / Math.max(1, maxRisk)).toFixed(1)}`} c="text-bull-bright" />
+                    <KV k="Risk-Reward Ratio" v={setup.rr} c="text-bull-bright" />
                     <KV k="Account Risk" v={style.objective.accountRisk} />
                     <KV k="Position Size" v={style.objective.positionSize} />
                     <button className="focus-ring mt-1 w-full text-[10px] font-medium text-accent">Recalculate</button>
@@ -188,7 +190,7 @@ export default function MyStackIqPage() {
                     <KV k="Stop Loss (SL)" v={`${setup.sl}`} mono sub={`(${setup.slPts} Points)`} subBad />
                     <KV k="Take Profit (TP1)" v={`${setup.tp1}`} mono sub={`(+${setup.tp1Pts} Points)`} subGood />
                     <KV k="Take Profit (TP2)" v={`${setup.tp2}`} mono sub={`(+${setup.tp2Pts} Points)`} subGood />
-                    <KV k="R:R Overall" v={`1 : ${(points / Math.max(1, maxRisk)).toFixed(1)}`} c="text-bull-bright" />
+                    <KV k="R:R Overall" v={setup.rr} c="text-bull-bright" />
                     <KV k="Potential Profit" v={`+${points} Points`} c="text-bull-bright" sub={`(+$${Math.round(points * 2)})`} subGood />
                     <KV k="Potential Loss" v={`-${maxRisk} Points`} c="text-bear-bright" sub={`(-$${Math.round(maxRisk * 2)})`} subBad />
                   </div>
@@ -263,7 +265,7 @@ export default function MyStackIqPage() {
                   <ExecRow k="Direction" v="LONG" c="text-bull-bright" extra={`${setup.entryLo}`} />
                   <ExecRow k="Stop Loss" v={`${setup.sl}`} extra={`(${setup.slPts} Points)`} extraBad />
                   <ExecRow k="Take Profit 1" v={`${setup.tp1}`} extra={`(+${setup.tp1Pts} Points)`} extraGood />
-                  <ExecRow k="Risk-Reward" v={`1 : ${(points / Math.max(1, maxRisk)).toFixed(1)}`} extra={style.objective.positionSize} />
+                  <ExecRow k="Risk-Reward" v={setup.rr} extra={style.objective.positionSize} />
                   <ExecRow k="Confidence" v="" stars extra={`${confidence}%`} />
                 </ul>
                 <button className="focus-ring mt-2 w-full rounded-lg bg-gradient-to-r from-bull to-[#2dd4bf] py-2 text-xs font-bold text-white shadow-lg shadow-bull/30 transition hover:shadow-bull/50">Execute Trade</button>
@@ -316,22 +318,7 @@ export default function MyStackIqPage() {
 }
 
 // ---- panels / atoms ----
-function Panel({ n, title, subtitle, badge, action, footer, children }: { n?: number; title: string; subtitle?: string; badge?: string; action?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col rounded-xl border border-line bg-gradient-to-b from-surface-1 to-surface-1/60 p-3 transition-colors duration-300 hover:border-line/80">
-      <div className="mb-2 flex items-center gap-1.5">
-        {n != null && <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[10px] font-bold text-accent ring-1 ring-accent/25">{n}</span>}
-        <h3 className="text-[12px] font-bold tracking-wide text-ink">{title}</h3>
-        {badge && <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold text-accent">{badge}</span>}
-        {subtitle && <span className="text-[9px] text-ink-faint">{subtitle}</span>}
-        {action && <span className="ml-auto">{action}</span>}
-      </div>
-      <div className="flex-1">{children}</div>
-      {footer && <div className="mt-3 border-t border-line/60 pt-2 text-center">{footer}</div>}
-    </section>
-  );
-}
-function FootLink({ children }: { children: React.ReactNode }) { return <button className="inline-flex items-center gap-1 text-[11px] font-medium text-accent transition hover:opacity-80">{children}<ArrowRight className="h-3 w-3" /></button>; }
+// Panel, FootLink now imported from @/components/ui (MDS Phase C migration).
 function ScoreCard({ label, value, sub, spark, hero, tint }: { label: string; value: string; sub: string; spark?: boolean; hero?: boolean; tint?: string }) {
   const accent = tint ?? '#26A69A';
   return (

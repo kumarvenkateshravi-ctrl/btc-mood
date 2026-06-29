@@ -15,8 +15,8 @@ class FillRenderer implements IPrimitivePaneRenderer {
     private _prim: IndicatorFillPrimitive,
   ) {}
 
-  draw(target: any) {
-    target.useBitmapCoordinateSpace((scope: any) => {
+  draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]) {
+    target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
       const series = this._api.series;
       const ts = this._api.chart.timeScale();

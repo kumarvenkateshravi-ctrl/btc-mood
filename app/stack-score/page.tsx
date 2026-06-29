@@ -15,10 +15,14 @@ import { computeConsensus, computeWeightedScore, detectStructure, computeTimefra
 import { computeAtr } from '@/lib/indicators/atr';
 import { computeStackScoreFactors, type Factor, type FactorKey, type Impact } from '@/lib/stackScoreFactors';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import { Panel } from '@/components/ui';
+import { formatNumber, formatPercent } from '@/lib/format';
 
 const FOCUS_TF: Timeframe = '1h';
-const fmtN = (n: number | null | undefined) => (n != null && Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—');
+const fmtN = (n: number | null | undefined) => formatNumber(n ?? NaN, { precision: 1 });
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+/** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
+const r1 = (n: number) => Math.round(n * 10) / 10;
 function lastFinite(data: readonly unknown[] | null | undefined): number | null {
   if (!Array.isArray(data)) return null;
   for (let i = data.length - 1; i >= 0; i--) {
@@ -34,7 +38,6 @@ const FACTOR_ICON: Record<FactorKey, LucideIcon> = {
   trend: TrendingUp, momentum: Zap, volume: BarChart3, structure: Share2, volatility: Activity, consensus: Layers, sentiment: Newspaper,
 };
 const impactColor = (i: Impact) => (i === 'High' ? 'text-bear-bright' : i === 'Medium' ? 'text-regime-hot' : 'text-bull-bright');
-const scoreColor = (s: number) => (s >= 60 ? 'text-bull-bright' : s >= 40 ? 'text-regime-hot' : 'text-bear-bright');
 const ratingColor = (v: string) => (v === 'bullish' ? 'text-bull-bright' : v === 'bearish' ? 'text-bear-bright' : 'text-neutral');
 const DIST = [
   { range: '0 - 20', label: 'Avoid', pct: 30, color: '#f23645' },
@@ -105,7 +108,7 @@ export default function StackScorePage() {
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-1.5"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span></div>
           <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
-          <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{change >= 0 ? '+' : ''}{fmtN(priceAbs)} ({change >= 0 ? '+' : ''}{change.toFixed(2)}%)</span>
+          <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{change >= 0 ? '+' : ''}{fmtN(priceAbs)} ({formatPercent(change)})</span>
           <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
             <span className="inline-flex items-center gap-1.5"><span className={['h-2 w-2 rounded-full', status === 'live' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />{status === 'live' ? 'Live' : status}</span>
             <Link href="/app" className="rounded-md border border-line px-2 py-1 transition hover:text-ink">Chart →</Link>
@@ -123,7 +126,7 @@ export default function StackScorePage() {
 
             {/* Row 1 */}
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_1.3fr_1.3fr_0.9fr]">
-              <Panel title="Overall Stack Score">
+              <Panel eyebrow title="Overall Stack Score">
                 <div className="flex flex-col items-center">
                   <ScoreGauge value={result.score} />
                   <div className="-mt-2 text-base tracking-[0.25em] text-accent">{'★'.repeat(result.stars)}<span className="text-line-strong">{'★'.repeat(5 - result.stars)}</span></div>
@@ -132,7 +135,7 @@ export default function StackScorePage() {
                 </div>
               </Panel>
 
-              <Panel title="Score Breakdown">
+              <Panel eyebrow title="Score Breakdown">
                 <div className="space-y-1.5">
                   {result.factors.map((f) => <BreakdownBar key={f.key} f={f} />)}
                 </div>
@@ -142,7 +145,7 @@ export default function StackScorePage() {
                 </div>
               </Panel>
 
-              <Panel title="Score History" hint="session">
+              <Panel eyebrow title="Score History" badge="session">
                 <Sparkline points={history.map((p) => p.score)} current={result.score} />
                 <div className="mt-2 grid grid-cols-4 gap-2 border-t border-line pt-2 text-center text-xs">
                   <Stat k="Average" v={String(histStats.avg)} />
@@ -152,7 +155,7 @@ export default function StackScorePage() {
                 </div>
               </Panel>
 
-              <Panel title="Recommendation">
+              <Panel eyebrow title="Recommendation">
                 <div className={['text-center text-4xl font-extrabold tracking-tight', dirColor].join(' ')}>{result.recommendation}</div>
                 <div className="mt-3 space-y-2 text-xs">
                   <div>
@@ -168,7 +171,7 @@ export default function StackScorePage() {
 
             {/* Row 2 */}
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1fr]">
-              <Panel title="Detailed Factor Analysis">
+              <Panel eyebrow title="Detailed Factor Analysis">
                 <div className="divide-y divide-line/60">
                   {result.factors.map((f) => {
                     const Icon = FACTOR_ICON[f.key];
@@ -188,7 +191,7 @@ export default function StackScorePage() {
               </Panel>
 
               <div className="space-y-3">
-                <Panel title="Stack Score Distribution">
+                <Panel eyebrow title="Stack Score Distribution">
                   <div className="flex items-center gap-4">
                     <ScoreRing value={result.score} />
                     <ul className="flex-1 space-y-1 text-[11px]">
@@ -205,7 +208,7 @@ export default function StackScorePage() {
                   </div>
                 </Panel>
 
-                <Panel title="Probability Model">
+                <Panel eyebrow title="Probability Model">
                   <div className="space-y-1.5 text-xs">
                     <KV k="Historical Win Rate (Similar)" v={`${result.probability}%`} />
                     <KV k="Risk / Reward Quality" v={result.riskReward} tone={result.direction === 'buy' ? 'bull' : 'bear'} />
@@ -215,7 +218,7 @@ export default function StackScorePage() {
                   </div>
                 </Panel>
 
-                <Panel title="Score Insights">
+                <Panel eyebrow title="Score Insights">
                   <ul className="space-y-1.5 text-xs">
                     {result.insights.map((ins, i) => {
                       const Icon = ins.tone === 'bull' || ins.tone === 'ok' ? CheckCircle2 : ins.tone === 'warn' ? AlertTriangle : XCircle;
@@ -229,7 +232,7 @@ export default function StackScorePage() {
 
             {/* Row 3 */}
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1fr]">
-              <Panel title="How To Improve This Score">
+              <Panel eyebrow title="How To Improve This Score">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                   {result.improvements.map((imp) => (
                     <div key={imp.key} className="rounded-lg border border-line bg-base/40 p-2.5">
@@ -241,7 +244,7 @@ export default function StackScorePage() {
                 </div>
               </Panel>
 
-              <Panel title="Score Alerts">
+              <Panel eyebrow title="Score Alerts">
                 <ul className="space-y-2 text-xs">
                   {[['Alert when score > 60', 'bull'], ['Alert when score < 20', 'bear'], ['Alert on score change > 15', 'info']].map(([label]) => (
                     <li key={label} className="flex items-center justify-between rounded-md border border-line bg-base/40 px-3 py-2">
@@ -265,14 +268,7 @@ export default function StackScorePage() {
 }
 
 // ---- helpers ----
-function Panel({ title, hint, children }: { title?: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-xl border border-line bg-surface-1 p-3">
-      {title && <div className="mb-2 flex items-center gap-2"><h3 className="text-[11px] font-semibold uppercase tracking-wider text-accent">{title}</h3>{hint && <span className="rounded border border-line px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-ink-faint">{hint}</span>}</div>}
-      {children}
-    </section>
-  );
-}
+// Panel now imported from @/components/ui (MDS Phase C migration); eyebrow style.
 function Stat({ k, v, tone }: { k: string; v: string; tone?: 'bull' | 'bear' }) {
   const c = tone === 'bull' ? 'text-bull-bright' : tone === 'bear' ? 'text-bear-bright' : 'text-ink';
   return <div><div className="text-[10px] uppercase tracking-wider text-ink-faint">{k}</div><div className={['font-mono text-base font-bold', c].join(' ')}>{v}</div></div>;
@@ -338,7 +334,7 @@ function Sparkline({ points, current }: { points: number[]; current: number }) {
   const max = 100, min = 0;
   const x = (i: number) => pad + (data.length <= 1 ? W - 2 * pad : (i / (data.length - 1)) * (W - 2 * pad));
   const y = (v: number) => pad + (1 - (v - min) / (max - min)) * (H - 2 * pad);
-  const path = data.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const path = data.map((v, i) => `${i === 0 ? 'M' : 'L'} ${r1(x(i))} ${r1(y(v))}`).join(' ');
   const lastX = x(data.length - 1), lastY = y(data[data.length - 1]);
   const col = current >= 60 ? '#26A69A' : current >= 40 ? '#f0a020' : '#f23645';
   return (

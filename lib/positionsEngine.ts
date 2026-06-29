@@ -54,8 +54,6 @@ export function recommendationFor(h: number): Recommendation {
   return 'Exit';
 }
 
-const U = (n: number): Arrow[] => Array.from({ length: 6 }, (_, i) => (i < n ? 'up' : 'down')) as Arrow[];
-
 // Representative open portfolio (matches the design's six positions).
 const SEEDS: PositionSeed[] = [
   { symbol: 'BTCUSDT', asset: 'BTC', direction: 'Long', entry: 62350.0, current: 63120.5, leverage: 10, marginUsed: 6235, units: 1, rr: 2.6, openedMinAgo: 272, health: 92, sl: 61200, tp1: 63000, tp2: 64200, tp3: 65800, mtf: ['up', 'up', 'up', 'up', 'up', 'down'], alignment: 5 },

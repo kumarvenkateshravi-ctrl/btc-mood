@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bitcoin, ChevronDown, Bell, Info, Plus, Filter, Calendar as CalIcon, Maximize2,
-  ChevronLeft, ChevronRight, Sparkles, Play, ArrowRight, Check, AlertTriangle,
+  ChevronLeft, ChevronRight, Sparkles, Play, Check, AlertTriangle,
   Flame, Eye, Move, Clock, Zap, type LucideIcon,
 } from 'lucide-react';
 import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
@@ -13,16 +13,22 @@ import { useMoodEngine } from '@/lib/hooks/useMoodEngine';
 import { usePaperStore } from '@/lib/paperStore';
 import {
   generateSampleEntries, mapPaperTrades, analyzeJournal,
-  type JournalEntry, type JournalAnalysis, type Setup,
+  type JournalEntry, type JournalAnalysis, type Setup, type Bucket,
 } from '@/lib/journalEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
+import { Panel, Pill, FootLink, Num, Cell, DataTable, ChartPanel, LineChart, timestampColumn, textColumn, statusColumn, numColumn, pnlColumn, percentColumn, type Column } from '@/components/ui';
+import { formatNumber } from '@/lib/format';
+
+const equityLabels = (eq: { time: number }[]): string[] =>
+  eq.length ? [0, 0.33, 0.66, 1].map((f) => new Date(eq[Math.round(f * (eq.length - 1))].time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : [];
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D' };
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmtN = (n: number, d = 1) => (Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
+const fmtN = (n: number, d = 1) => formatNumber(n, { precision: d });
 const sgn = (n: number) => (n >= 0 ? '+' : '');
-const usd = (n: number) => `${sgn(n)}${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const compact = (n: number) => (Math.abs(n) >= 1000 ? `${Math.round(n / 1000)}K` : `${Math.round(n)}`);
+const usd = (n: number) => formatNumber(n, { signed: true, precision: 2 });
+/** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
+const r1 = (n: number) => Math.round(n * 10) / 10;
 const dDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 const hold = (m: number) => (m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.round((m % 1440) / 60)}h` : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
 const tone = (n: number) => (n >= 0 ? 'text-bull-bright' : 'text-bear-bright');
@@ -30,6 +36,25 @@ const tone = (n: number) => (n >= 0 ? 'text-bull-bright' : 'text-bear-bright');
 const MISTAKE_ICON: Record<string, LucideIcon> = { 'Exited Early': Zap, 'Ignored Volume': Eye, 'Moved Stop Loss': Move, 'Entered Late': Clock, 'FOMO Trading': Flame };
 const EMO_COLOR: Record<string, string> = { Calm: '#26A69A', Confident: '#6aa6ff', Excited: '#f0a020', Fearful: '#f23645', FOMO: '#a855f7' };
 const SETUP_COLOR: Record<Setup, string> = { 'Trend Continuation': '#26A69A', Breakout: '#6aa6ff', Pullback: '#f0a020', Reversal: '#f23645', Scalping: '#a855f7', Swing: '#2dd4bf' };
+
+// Recent Trades (Historical archetype): DataTable + Column Presets + Financial Cells.
+const RECENT_COLS: Column<JournalEntry>[] = [
+  timestampColumn({ key: 'date', header: 'Date', value: (e) => e.date, format: 'date' }),
+  textColumn({ key: 'asset', header: 'Asset', value: (e) => e.asset, className: 'font-medium' }),
+  statusColumn({ key: 'direction', header: 'Direction', value: (e) => e.direction }),
+  { key: 'setup', header: 'Setup', align: 'left', cell: (e) => <Cell align="left"><SetupBadge setup={e.setup} /></Cell> },
+  { key: 'entryexit', header: 'Entry / Exit', align: 'left', cell: (e) => <Cell align="left" className="whitespace-nowrap text-ink-muted"><Num.Price value={e.entry} currency="none" precision={0} /> / <Num.Price value={e.exit} currency="none" precision={0} /></Cell> },
+  numColumn({ key: 'rr', header: 'R:R', value: (e) => e.rr, precision: 2, suffix: 'R' }),
+  pnlColumn({ key: 'pnl', header: 'P&L', value: (e) => e.pnl }),
+  statusColumn({ key: 'outcome', header: 'Outcome', value: (e) => e.outcome }),
+];
+const SETUP_TF_COLS: Column<Bucket>[] = [
+  textColumn({ key: 'label', header: 'Timeframe', value: (b) => b.label, className: 'font-medium' }),
+  numColumn({ key: 'trades', header: 'Trades', value: (b) => b.trades }),
+  percentColumn({ key: 'winRate', header: 'Win Rate', value: (b) => b.winRate, plain: true, precision: 1 }),
+  pnlColumn({ key: 'netProfit', header: 'Net Profit', value: (b) => b.netProfit }),
+  textColumn({ key: 'hold', header: 'Avg. Hold', value: (b) => hold(b.avgHoldMin), align: 'right', className: 'text-ink-faint' }),
+];
 
 export default function JournalPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
@@ -56,8 +81,8 @@ export default function JournalPage() {
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Journal Overview</div>
       <SRow k="Total Trades" v={String(p.total)} />
       <SRow k="Winning Trades" v={`${p.winning} (${p.winRate}%)`} c="text-bull-bright" />
-      <SRow k="Losing Trades" v={`${p.losing} (${((p.losing / Math.max(1, p.total)) * 100).toFixed(1)}%)`} c="text-bear-bright" />
-      <SRow k="Breakeven Trades" v={`${p.breakeven} (${((p.breakeven / Math.max(1, p.total)) * 100).toFixed(1)}%)`} />
+      <SRow k="Losing Trades" v={`${p.losing} (${formatNumber((p.losing / Math.max(1, p.total)) * 100, { precision: 1 })}%)`} c="text-bear-bright" />
+      <SRow k="Breakeven Trades" v={`${p.breakeven} (${formatNumber((p.breakeven / Math.max(1, p.total)) * 100, { precision: 1 })}%)`} />
       <div className="my-1.5 h-px bg-line" />
       <SRow k="Total P&L" v={`${usd(p.netProfit)} USDT`} c="text-bull-bright" />
       <SRow k="Average Win" v={`+${p.avgWin}R`} c="text-bull-bright" />
@@ -99,7 +124,7 @@ export default function JournalPage() {
             {usingSample && <span className="rounded border border-regime-hot/40 bg-regime-hot/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-regime-hot" title="Your real trades populate this as you close paper trades in MyStack.">Sample data</span>}
             <div className="ml-auto flex items-center gap-2">
               <button className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90"><Plus className="h-3.5 w-3.5" /> Add Trade</button>
-              <button className="focus-ring inline-flex items-center justify-center rounded-lg border border-line p-2 text-ink-muted transition hover:bg-surface-2 hover:text-ink"><Maximize2 className="h-3.5 w-3.5" /></button>
+              <button aria-label="Toggle fullscreen" className="focus-ring inline-flex items-center justify-center rounded-lg border border-line p-2 text-ink-muted transition hover:bg-surface-2 hover:text-ink"><Maximize2 aria-hidden className="h-3.5 w-3.5" /></button>
               <button className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-2 hover:text-ink"><CalIcon className="h-3.5 w-3.5" /> May 20 – Jun 18, 2025 <ChevronDown className="h-3 w-3" /></button>
               <button className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-2 hover:text-ink"><Filter className="h-3.5 w-3.5" /> Filters</button>
             </div>
@@ -124,32 +149,23 @@ export default function JournalPage() {
           {/* Recent trades | Equity | Calendar */}
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1.3fr_1fr]">
             <Panel title="Recent Trades" action={<><Pill>View All Trades <ChevronDown className="h-3 w-3" /></Pill><span className="px-1 text-ink-faint">···</span></>}>
-              <table className="w-full text-left text-[11px]">
-                <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">Date</th><th className="py-1 font-medium">Asset</th><th className="py-1 font-medium">Direction</th><th className="py-1 font-medium">Setup</th><th className="py-1 font-medium">Entry / Exit</th><th className="py-1 text-right font-medium">R:R</th><th className="py-1 text-right font-medium">P&amp;L</th><th className="py-1 text-right font-medium">Outcome</th></tr></thead>
-                <tbody>
-                  {recent.map((e) => (
-                    <tr key={e.id} className="border-t border-line/50 hover:bg-surface-2/30">
-                      <td className="py-1.5 whitespace-nowrap text-ink-faint">{dDate(e.date)}</td>
-                      <td className="py-1.5 font-medium">{e.asset}</td>
-                      <td className="py-1.5"><span className={['font-medium', e.direction === 'Long' ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{e.direction}</span></td>
-                      <td className="py-1.5"><SetupBadge setup={e.setup} /></td>
-                      <td className="py-1.5 whitespace-nowrap font-mono text-ink-muted">{Math.round(e.entry).toLocaleString()} / {Math.round(e.exit).toLocaleString()}</td>
-                      <td className="py-1.5 text-right font-mono">{e.rr}R</td>
-                      <td className={['py-1.5 text-right font-mono', tone(e.pnl)].join(' ')}>{usd(e.pnl)}</td>
-                      <td className="py-1.5 text-right"><span className={['rounded px-1.5 py-0.5 text-[10px] font-semibold', e.outcome === 'Win' ? 'bg-bull/15 text-bull-bright' : e.outcome === 'Loss' ? 'bg-bear/15 text-bear-bright' : 'bg-surface-3 text-ink-faint'].join(' ')}>{e.outcome}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <DataTable columns={RECENT_COLS} rows={recent} rowKey={(e) => e.id} />
             </Panel>
 
-            <Panel title="Equity Curve" info action={<Pill>Compare <ChevronDown className="h-3 w-3" /></Pill>}>
-              <div className="mb-2 flex flex-wrap gap-4 text-[11px]">
-                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-bull" /> My Equity <span className="font-mono font-semibold text-ink">{a.equity.length ? fmtN(a.equity[a.equity.length - 1].equity, 2) : 0} USDT</span></span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: '#6aa6ff' }} /> Buy &amp; Hold (BTC) <span className="font-mono font-semibold text-ink">{a.equity.length ? fmtN(a.equity[a.equity.length - 1].benchmark, 2) : 0} USDT</span></span>
-              </div>
-              <EquityChart points={a.equity} />
-            </Panel>
+            <ChartPanel title="Equity Curve" info action={<Pill>Compare <ChevronDown className="h-3 w-3" /></Pill>}
+              legend={[
+                { label: 'My Equity', color: 'var(--bull-bright)', value: a.equity.length ? `${fmtN(a.equity[a.equity.length - 1].equity, 2)} USDT` : '0' },
+                { label: 'Buy & Hold (BTC)', color: 'var(--info)', value: a.equity.length ? `${fmtN(a.equity[a.equity.length - 1].benchmark, 2)} USDT` : '0' },
+              ]}>
+              <LineChart
+                series={[
+                  { data: a.equity.map((p) => p.equity), color: 'var(--bull-bright)', area: true },
+                  { data: a.equity.map((p) => p.benchmark), color: 'var(--info)' },
+                ]}
+                xLabels={equityLabels(a.equity)}
+                yFormat={(v) => `$${fmtN(v / 1000, 0)}K`}
+              />
+            </ChartPanel>
 
             <Panel title="Trading Calendar"><CalendarView analysis={a} /></Panel>
           </div>
@@ -192,14 +208,14 @@ export default function JournalPage() {
                 <>
                   <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]"><span className="font-semibold">{recent[0].asset}</span><span className={recent[0].direction === 'Long' ? 'text-bull-bright' : 'text-bear-bright'}>{recent[0].direction}</span><span className="text-ink-faint">{dDate(recent[0].date)}</span><SetupBadge setup={recent[0].setup} /></div>
                   <div className="mb-2 grid grid-cols-4 gap-2">
-                    <KV k="Entry" v={Math.round(recent[0].entry).toLocaleString()} />
-                    <KV k="Exit" v={Math.round(recent[0].exit).toLocaleString()} />
+                    <KV k="Entry" v={fmtN(recent[0].entry, 0)} />
+                    <KV k="Exit" v={fmtN(recent[0].exit, 0)} />
                     <KV k="R:R" v={`${recent[0].rr}R`} />
                     <KV k="P&L" v={usd(recent[0].pnl)} c={tone(recent[0].pnl)} />
                   </div>
                   <ReplayChart candles={replayCandles} entry={recent[0].entry} exit={recent[0].exit} dir={recent[0].direction} />
                   <div className="mt-2 flex items-center gap-2">
-                    <button className="focus-ring flex h-8 w-8 items-center justify-center rounded-full bg-regime-hot text-white"><Play className="h-4 w-4 fill-white" /></button>
+                    <button aria-label="Play replay" className="focus-ring flex h-8 w-8 items-center justify-center rounded-full bg-regime-hot text-white"><Play aria-hidden className="h-4 w-4 fill-white" /></button>
                     {['0.5x', '1x', '2x', '4x'].map((s) => <span key={s} className={['rounded px-2 py-1 text-[10px] font-medium', s === '1x' ? 'bg-accent/20 text-accent' : 'border border-line text-ink-faint'].join(' ')}>{s}</span>)}
                   </div>
                 </>
@@ -207,10 +223,7 @@ export default function JournalPage() {
             </Panel>
 
             <Panel title="Setup & Timeframe Performance" action={<Pill>This Month <ChevronDown className="h-3 w-3" /></Pill>} footer={<FootLink>View Full Analysis</FootLink>}>
-              <table className="w-full text-left text-[11px]">
-                <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">Timeframe</th><th className="py-1 text-right font-medium">Trades</th><th className="py-1 text-right font-medium">Win Rate</th><th className="py-1 text-right font-medium">Net Profit</th><th className="py-1 text-right font-medium">Avg. Hold</th></tr></thead>
-                <tbody>{a.byTimeframe.map((b) => <tr key={b.label} className="border-t border-line/50"><td className="py-1.5 font-medium">{b.label}</td><td className="py-1.5 text-right">{b.trades}</td><td className="py-1.5 text-right">{b.winRate}%</td><td className={['py-1.5 text-right font-mono', tone(b.netProfit)].join(' ')}>{usd(b.netProfit)}</td><td className="py-1.5 text-right text-ink-faint">{hold(b.avgHoldMin)}</td></tr>)}</tbody>
-              </table>
+              <DataTable columns={SETUP_TF_COLS} rows={a.byTimeframe} rowKey={(b) => b.label} />
             </Panel>
 
             <Panel title="Discipline Breakdown" action={<Pill>This Month <ChevronDown className="h-3 w-3" /></Pill>} footer={<FootLink>View Discipline Analytics</FootLink>}>
@@ -253,23 +266,7 @@ export default function JournalPage() {
 }
 
 // ---- shared bits ----
-function Panel({ title, info, badge, action, footer, children }: { title?: string; info?: boolean; badge?: string; action?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col rounded-xl border border-line bg-gradient-to-b from-surface-1 to-surface-1/60 p-3 transition-colors duration-300 hover:border-line/80">
-      {title && (
-        <div className="mb-2.5 flex items-center gap-2">
-          <h3 className="inline-flex items-center gap-1 text-[12px] font-semibold text-ink">{title}{info && <Info className="h-3 w-3 text-ink-faint" />}</h3>
-          {badge && <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent">{badge}</span>}
-          {action && <span className="ml-auto flex items-center gap-1 text-[11px] text-ink-faint">{action}</span>}
-        </div>
-      )}
-      <div className="flex-1">{children}</div>
-      {footer && <div className="mt-3 border-t border-line/60 pt-2 text-center">{footer}</div>}
-    </section>
-  );
-}
-function Pill({ children }: { children: React.ReactNode }) { return <span className="inline-flex items-center gap-1 rounded-md border border-line bg-base px-2 py-1 text-[10px] text-ink-muted">{children}</span>; }
-function FootLink({ children }: { children: React.ReactNode }) { return <button className="inline-flex items-center gap-1 text-[11px] font-medium text-regime-hot transition hover:opacity-80">{children}<ArrowRight className="h-3 w-3" /></button>; }
+// Panel, Pill, FootLink now imported from @/components/ui (MDS Phase C migration).
 function SRow({ k, v, c }: { k: string; v: string; c?: string }) { return <div className="flex items-center justify-between py-0.5 text-xs"><span className="text-ink-faint">{k}</span><span className={['font-mono font-semibold tabular-nums', c ?? 'text-ink'].join(' ')}>{v}</span></div>; }
 function KV({ k, v, c }: { k: string; v: string; c?: string }) { return <div className="rounded-md bg-base px-2 py-1"><div className="text-[9px] uppercase tracking-wider text-ink-faint">{k}</div><div className={['font-mono text-xs font-semibold', c ?? 'text-ink'].join(' ')}>{v}</div></div>; }
 function SetupBadge({ setup }: { setup: Setup }) { const col = SETUP_COLOR[setup]; return <span className="inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium" style={{ color: col, borderColor: `${col}66`, background: `${col}14` }}>{setup}</span>; }
@@ -299,7 +296,7 @@ function MiniSpark({ color }: { color: string }) {
   const pts = [10, 12, 9, 13, 11, 15, 14, 16, 15, 20];
   const W = 56, H = 26, max = Math.max(...pts), min = Math.min(...pts), range = max - min || 1;
   const X = (i: number) => (i / (pts.length - 1)) * W, Y = (pt: number) => H - 2 - ((pt - min) / range) * (H - 4);
-  const line = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${X(i).toFixed(1)} ${Y(pt).toFixed(1)}`).join(' ');
+  const line = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${r1(X(i))} ${r1(Y(pt))}`).join(' ');
   const id = `sp${color.replace('#', '')}`;
   const lx = X(pts.length - 1), ly = Y(pts[pts.length - 1]);
   return (
@@ -327,34 +324,7 @@ function DisciplineGauge({ value, rating }: { value: number; rating: string }) {
     </div>
   );
 }
-function EquityChart({ points }: { points: JournalAnalysis['equity'] }) {
-  if (points.length < 2) return <div className="flex h-[170px] items-center justify-center text-xs text-ink-faint">No data</div>;
-  const W = 340, H = 150, pad = 4;
-  const all = [...points.map((pt) => pt.equity), ...points.map((pt) => pt.benchmark), 0];
-  const hi = Math.max(...all), lo = Math.min(...all), range = hi - lo || 1;
-  const x = (i: number) => pad + (i / (points.length - 1)) * (W - 2 * pad), y = (val: number) => pad + (1 - (val - lo) / range) * (H - 2 * pad);
-  const path = (key: 'equity' | 'benchmark') => points.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(pt[key]).toFixed(1)}`).join(' ');
-  const yTicks = [0, 1, 2, 3].map((i) => lo + (range * i) / 3);
-  const xIdx = [0, Math.floor(points.length / 3), Math.floor((2 * points.length) / 3), points.length - 1];
-  return (
-    <div className="flex gap-1.5">
-      <div className="flex flex-col justify-between py-0.5 text-right font-mono text-[9px] text-ink-faint" style={{ height: 150 }}>{[...yTicks].reverse().map((t, i) => <span key={i}>{compact(t)}</span>)}</div>
-      <div className="min-w-0 flex-1">
-        <svg viewBox={`0 0 ${W} ${H}`} className="h-[150px] w-full" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="eqfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#26A69A" stopOpacity="0.24" /><stop offset="100%" stopColor="#26A69A" stopOpacity="0" /></linearGradient>
-            <filter id="eqglow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.1" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-          </defs>
-          {yTicks.map((t, i) => <line key={i} x1={pad} y1={y(t)} x2={W - pad} y2={y(t)} stroke="#2a3247" strokeWidth="0.4" strokeDasharray="2 3" />)}
-          <path d={`${path('equity')} L ${x(points.length - 1)} ${H - pad} L ${pad} ${H - pad} Z`} fill="url(#eqfill)" />
-          <path d={path('benchmark')} fill="none" stroke="#6aa6ff" strokeWidth="1.3" strokeOpacity="0.85" />
-          <path d={path('equity')} fill="none" stroke="#26A69A" strokeWidth="1.7" style={{ filter: 'url(#eqglow)' }} />
-        </svg>
-        <div className="mt-1 flex justify-between font-mono text-[9px] text-ink-faint">{xIdx.map((i) => <span key={i}>{new Date(points[i].time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>)}</div>
-      </div>
-    </div>
-  );
-}
+// EquityChart removed — Equity Curve now uses the shared ChartPanel + LineChart.
 function CalendarView({ analysis }: { analysis: JournalAnalysis }) {
   const map = new Map(analysis.calendar.map((d) => [Math.floor(d.date / 86_400_000), d]));
   const last = analysis.calendar.length ? analysis.calendar[analysis.calendar.length - 1].date : Date.now();
@@ -391,26 +361,33 @@ function Breakdown({ a }: { a: JournalAnalysis }) {
   type Row = { label: string; trades: number; winRate: number; netProfit: number; avgRR: number; profitFactor: number };
   const rows: Row[] = tab === 'setup' ? a.bySetup : tab === 'regime' ? a.byRegime : a.byTimeframe.map((b) => ({ label: b.label, trades: b.trades, winRate: b.winRate, netProfit: b.netProfit, avgRR: 0, profitFactor: 0 }));
   const head = tab === 'setup' ? 'Setup' : tab === 'regime' ? 'Regime' : 'Timeframe';
+  const cols: Column<Row>[] = [
+    textColumn({ key: 'label', header: head, value: (b) => b.label, className: 'font-medium' }),
+    numColumn({ key: 'trades', header: 'Trades', value: (b) => b.trades }),
+    percentColumn({ key: 'winRate', header: 'Win Rate', value: (b) => b.winRate, plain: true, precision: 1 }),
+    pnlColumn({ key: 'netProfit', header: 'Net Profit', value: (b) => b.netProfit }),
+    { key: 'avgRR', header: 'Avg R:R', align: 'right', cell: (b) => <Cell align="right" className="text-ink-muted">{tab === 'tf' ? '—' : `${b.avgRR}R`}</Cell> },
+    { key: 'pf', header: 'PF', align: 'right', cell: (b) => <Cell align="right" className={tab === 'tf' ? 'text-ink-faint' : b.profitFactor >= 1.5 ? 'text-bull-bright' : 'text-bear-bright'}>{tab === 'tf' ? '—' : b.profitFactor}</Cell> },
+  ];
   return (
     <Panel title="Performance Breakdown" info footer={<FootLink>View Full Breakdown</FootLink>}>
       <div className="mb-3 flex items-center gap-1 rounded-lg border border-line bg-base p-0.5 text-[11px]">
         {([['setup', 'By Setup'], ['tf', 'By Timeframe'], ['regime', 'By Regime']] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={['flex-1 rounded px-1 py-1 font-medium transition', tab === k ? 'bg-accent/20 text-accent' : 'text-ink-faint hover:text-ink'].join(' ')}>{l}</button>)}
       </div>
-      <table className="w-full text-left text-[11px]">
-        <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">{head}</th><th className="py-1 text-right font-medium">Trades</th><th className="py-1 text-right font-medium">Win Rate</th><th className="py-1 text-right font-medium">Net Profit</th><th className="py-1 text-right font-medium">Avg R:R</th><th className="py-1 text-right font-medium">PF</th></tr></thead>
-        <tbody>{rows.map((b) => <tr key={b.label} className="border-t border-line/50"><td className="py-1.5 font-medium">{b.label}</td><td className="py-1.5 text-right">{b.trades}</td><td className="py-1.5 text-right">{b.winRate}%</td><td className={['py-1.5 text-right font-mono', tone(b.netProfit)].join(' ')}>{usd(b.netProfit)}</td><td className="py-1.5 text-right font-mono text-ink-muted">{tab === 'tf' ? '—' : `${b.avgRR}R`}</td><td className={['py-1.5 text-right font-mono', tab === 'tf' ? 'text-ink-faint' : b.profitFactor >= 1.5 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{tab === 'tf' ? '—' : b.profitFactor}</td></tr>)}</tbody>
-      </table>
+      <DataTable columns={cols} rows={rows} rowKey={(b) => b.label} />
     </Panel>
   );
 }
 function EmotionDonut({ a }: { a: JournalAnalysis }) {
-  const r = 34, c = 2 * Math.PI * r; let off = 0;
+  const r = 34, c = 2 * Math.PI * r;
   const top = [...a.emotions].sort((x, y) => y.pct - x.pct)[0];
   const gap = 1.5; // small separator between segments
+  const angles = a.emotions.map((e) => (e.pct / 100) * c);
+  const offsets = angles.map((_, i) => angles.slice(0, i).reduce((s, x) => s + x, 0));
   return (
     <div className="flex items-center gap-4">
       <div className="relative h-[116px] w-[116px] shrink-0">
-        <svg viewBox="0 0 116 116" className="h-full w-full -rotate-90"><circle cx="58" cy="58" r={r} fill="none" stroke="#2a3247" strokeWidth="13" />{a.emotions.map((e) => { const dash = Math.max(0, (e.pct / 100) * c - gap); const el = <circle key={e.emotion} cx="58" cy="58" r={r} fill="none" stroke={EMO_COLOR[e.emotion]} strokeWidth="13" strokeLinecap="round" strokeDasharray={`${dash} ${c - dash}`} strokeDashoffset={-off} />; off += (e.pct / 100) * c; return el; })}</svg>
+        <svg viewBox="0 0 116 116" className="h-full w-full -rotate-90"><circle cx="58" cy="58" r={r} fill="none" stroke="#2a3247" strokeWidth="13" />{a.emotions.map((e, i) => { const dash = Math.max(0, angles[i] - gap); return <circle key={e.emotion} cx="58" cy="58" r={r} fill="none" stroke={EMO_COLOR[e.emotion]} strokeWidth="13" strokeLinecap="round" strokeDasharray={`${dash} ${c - dash}`} strokeDashoffset={-offsets[i]} />; })}</svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="font-mono text-lg font-bold leading-none" style={{ color: EMO_COLOR[top.emotion] }}>{top.pct}%</span>
           <span className="mt-0.5 text-[9px] text-ink-faint">{top.emotion}</span>

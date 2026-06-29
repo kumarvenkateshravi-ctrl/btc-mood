@@ -23,5 +23,5 @@ export class ChartFxPrimitive implements ISeriesPrimitive {
   updateAllViews() {}
   paneViews(): IPrimitivePaneView[] { return []; }
 
-  setOptions(opts: any) {}
+  setOptions(_opts: unknown) {}
 }

@@ -13,6 +13,8 @@ export interface IndicatorInputDef {
   options?: { value: string | number; label: string }[];
   group?: string; // e.g. "SMOOTHING"
   tooltip?: string;
+  // `any`: input values are a heterogeneous user-config bag (number | string |
+  // boolean per input type). Kept loose intentionally — see IndicatorSettings.inputs.
   disabledIf?: (inputs: Record<string, any>) => boolean;
 }
 
@@ -29,6 +31,9 @@ export interface IndicatorStyleDef {
 }
 
 export interface IndicatorSettings {
+  // Heterogeneous per-indicator config (number | string | boolean by input type).
+  // Intentionally `any`: the settings modal binds these directly to number/select/
+  // checkbox controls, so tightening here just forces casts at every input site.
   inputs: Record<string, any>;
   styles: Record<string, { color: string; thickness: number; lineStyle: string; display: boolean; value?: number }>;
   visibility: Record<string, boolean>; // e.g., 'minutes': true, 'hours': true

@@ -2,10 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
+// Charts are lazy-loaded (DESIGN.md §L budget). lightweight-charts (~3MB) is
+// only imported through ChartPanel + MultiChartGrid; making BOTH dynamic keeps
+// it out of /app's initial bundle until a chart actually renders. BottomDock is
+// below the fold, so it's deferred too.
 const ChartPanel = dynamic(() => import('@/components/ChartPanel'), { ssr: false });
+const MultiChartGrid = dynamic(() => import('@/components/MultiChartGrid'), {
+  ssr: false,
+  loading: () => <div className="flex h-full items-center justify-center text-xs text-ink-faint">Loading charts…</div>,
+});
+const BottomDock = dynamic(() => import('@/components/BottomDock'), {
+  ssr: false,
+  loading: () => <div className="h-full bg-surface-1" />,
+});
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, type PanelImperativeHandle } from 'react-resizable-panels';
-import BottomDock from '@/components/BottomDock';
-import MultiChartGrid from '@/components/MultiChartGrid';
 import SymbolSearch from '@/components/SymbolSearch';
 import DashboardAside from '@/components/DashboardAside';
 import MoodStrip from '@/components/MoodStrip';
@@ -57,7 +67,7 @@ export default function DashboardPage() {
   }, []);
   const clearIndicators = useCallback(() => setActiveIndicatorIds([]), []);
 
-  const { gridCount, gridTfs, setGridCount, handleGridCountChange } = useGridState(selected);
+  const { gridCount, gridTfs, handleGridCountChange } = useGridState(selected);
 
   const applyWorkspace = useCallback((cfg: WorkspaceConfig) => {
     if (cfg.chartType === 'candlestick' || cfg.chartType === 'heikinAshi' || cfg.chartType === 'renko') {
@@ -68,7 +78,7 @@ export default function DashboardPage() {
     setActiveIndicatorIds(cfg.indicatorIds.filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id)));
   }, []);
 
-  const { activeIndicators, showVolume, toggleVolume, handleAdd: handleAddIndicator, handleRemove: handleRemoveIndicator, handleToggle: handleToggleIndicator, handleParam: handleParamChange } = useSharedIndicators();
+  const { activeIndicators, showVolume, toggleVolume, handleAdd: handleAddIndicator, handleRemove: handleRemoveIndicator, handleToggle: handleToggleIndicator } = useSharedIndicators();
 
   // ---- Hydrate from URL + localStorage ----
   useEffect(() => {
@@ -129,7 +139,7 @@ export default function DashboardPage() {
   });
 
   // ---- Market data pipeline ----
-  const { candlesByTf, errorsByTf, status, wsStatus, bookTicker, wsBarCount, loadOlder } =
+  const { candlesByTf, status, bookTicker, loadOlder } =
     useMarketData(symbol);
 
   // ---- Mood engine ----

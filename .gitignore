@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# storybook build output
+/storybook-static
+
 # next.js
 /.next/
 /out/

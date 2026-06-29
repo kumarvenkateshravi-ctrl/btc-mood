@@ -18,16 +18,20 @@ import { computeStackScoreFactors } from '@/lib/stackScoreFactors';
 import { generateTradeSetup, type Side } from '@/lib/tradeSetup';
 import {
   alertQualityScore, qualityLabel, evaluateAlert, ALERT_TYPES, CONDITIONS, SEVERITIES,
-  type AlertType, type Condition, type Severity, type MarketSnapshot, type TriggeredAlert, type Alert,
+  type AlertType, type Condition, type Severity, type MarketSnapshot, type TriggeredAlert,
 } from '@/lib/alertsEngine';
 import { useAlertRules, useDelivery, addAlert, removeAlert, toggleAlertStatus, markAlertTriggered, toggleDelivery, type DeliveryMethod } from '@/lib/alertsStore';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import { Panel } from '@/components/ui';
+import { formatNumber } from '@/lib/format';
 
 const FOCUS_TF: Timeframe = '1h';
 const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LINKUSDT'];
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-const fmtN = (n: number, d = 1) => (Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
+const fmtN = (n: number, d = 1) => formatNumber(n, { precision: d });
 const fmtTime = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+/** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
+const r1 = (n: number) => Math.round(n * 10) / 10;
 function lastFinite(d: readonly unknown[] | null | undefined): number | null {
   if (!Array.isArray(d)) return null;
   for (let i = d.length - 1; i >= 0; i--) { const x = d[i]; if (x == null) continue; if (typeof x === 'number') { if (Number.isFinite(x)) return x; continue; } if (typeof x === 'object' && 'value' in x) { const v = (x as { value?: number }).value; if (v != null && Number.isFinite(v)) return v; } }
@@ -148,7 +152,7 @@ export default function AlertsPage() {
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-[2fr_1fr]">
               {/* LEFT */}
               <div className="space-y-3">
-                <Panel title="Active Alerts">
+                <Panel eyebrow title="Active Alerts">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="text-[10px] uppercase tracking-wider text-ink-faint">
@@ -182,7 +186,7 @@ export default function AlertsPage() {
                 <AlertBuilder symbol={symbol} delivery={delivery} />
 
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr]">
-                  <Panel title="Alert Analytics" hint="representative">
+                  <Panel eyebrow title="Alert Analytics" badge="representative">
                     <div className="grid grid-cols-4 gap-2 text-center text-xs">
                       <Mini k="Total" v="240" />
                       <Mini k="Triggered" v="178" />
@@ -209,7 +213,7 @@ export default function AlertsPage() {
                     </div>
                   </Panel>
 
-                  <Panel title="Smart Alert Quality Score">
+                  <Panel eyebrow title="Smart Alert Quality Score">
                     <div className="flex flex-col items-center">
                       <QualityGauge value={quality} />
                       <div className={['text-sm font-bold', quality >= 70 ? 'text-bull-bright' : 'text-regime-hot'].join(' ')}>{qualityLabel(quality)}</div>
@@ -223,7 +227,7 @@ export default function AlertsPage() {
 
               {/* RIGHT */}
               <div className="space-y-3">
-                <Panel title="Triggered Alerts Feed">
+                <Panel eyebrow title="Triggered Alerts Feed">
                   {feed.length === 0 ? <p className="py-4 text-center text-xs text-ink-faint">Monitoring… fired alerts appear here.</p> : (
                     <ul className="divide-y divide-line/50">
                       {feed.map((t) => (
@@ -241,7 +245,7 @@ export default function AlertsPage() {
                   )}
                 </Panel>
 
-                <Panel title="Alert Categories">
+                <Panel eyebrow title="Alert Categories">
                   <ul className="space-y-1.5">
                     {ALERT_TYPES.map((type) => {
                       const Icon = TYPE_ICON[type];
@@ -251,7 +255,7 @@ export default function AlertsPage() {
                   </ul>
                 </Panel>
 
-                <Panel title="Delivery Methods">
+                <Panel eyebrow title="Delivery Methods">
                   <ul className="space-y-1.5">
                     {([['browser', 'Browser', Monitor], ['telegram', 'Telegram', Send], ['email', 'Email', Mail], ['discord', 'Discord', MessageSquare], ['push', 'Push', Smartphone]] as [DeliveryMethod, string, LucideIcon][]).map(([key, label, Icon]) => (
                       <li key={key} className="flex items-center gap-2 text-xs"><Icon className="h-4 w-4 text-ink-muted" /><span className="flex-1">{label}</span>
@@ -305,7 +309,7 @@ function AlertBuilder({ symbol, delivery }: { symbol: string; delivery: Record<D
     setTimeout(() => setDone(false), 2000);
   };
   return (
-    <Panel title="Alert Builder">
+    <Panel eyebrow title="Alert Builder">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Field label="Asset"><Select value={asset} onChange={setAsset} options={SYMBOLS} /></Field>
         <Field label="Alert Type"><Select value={type} onChange={(v) => setType(v as AlertType)} options={ALERT_TYPES} /></Field>
@@ -336,9 +340,7 @@ function AlertBuilder({ symbol, delivery }: { symbol: string; delivery: Record<D
 }
 
 // ---- small components ----
-function Panel({ title, hint, children }: { title?: string; hint?: string; children: React.ReactNode }) {
-  return <section className="rounded-xl border border-line bg-surface-1 p-3">{title && <div className="mb-2 flex items-center gap-2"><h3 className="text-[11px] font-semibold uppercase tracking-wider text-accent">{title}</h3>{hint && <span className="rounded border border-line px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-ink-faint">{hint}</span>}</div>}{children}</section>;
-}
+// Panel now imported from @/components/ui (MDS Phase C migration); eyebrow style.
 function StatCard({ icon: Icon, label, value, sub, tone, ring }: { icon: LucideIcon; label: string; value: string; sub: string; tone: 'accent' | 'bull' | 'hot' | 'bear'; ring?: number }) {
   const c = tone === 'bull' ? 'text-bull-bright' : tone === 'hot' ? 'text-regime-hot' : tone === 'bear' ? 'text-bear-bright' : 'text-accent';
   const chip = tone === 'bull' ? 'bg-bull/12' : tone === 'hot' ? 'bg-regime-hot/12' : tone === 'bear' ? 'bg-bear/12' : 'bg-accent/12';
@@ -373,7 +375,7 @@ function PerfChart() {
   const triggered = [40, 55, 48, 60, 52, 65, 58];
   const x = (i: number) => pad + (i / (success.length - 1)) * (W - 2 * pad);
   const y = (v: number) => pad + (1 - v / 100) * (H - 2 * pad);
-  const path = (arr: number[]) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const path = (arr: number[]) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${r1(x(i))} ${r1(y(v))}`).join(' ');
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-[72px] w-full" preserveAspectRatio="none">
       <line x1={pad} y1={y(50)} x2={W - pad} y2={y(50)} stroke="#2a3247" strokeWidth="0.5" strokeDasharray="3 3" />
