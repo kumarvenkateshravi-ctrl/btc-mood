@@ -2,6 +2,7 @@ import type { LogicalRange, Time } from 'lightweight-charts';
 import type { RenkoOptions } from '@/lib/renko';
 import type { IndicatorResult, IndicatorSettings } from '@/lib/indicatorFramework';
 import type { Candle } from '@/lib/types';
+import type { OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
 
 export type ChartType = 'candlestick' | 'heikinAshi' | 'renko';
 
@@ -72,6 +73,15 @@ export interface ChartProps {
   overlaySlPrice?: number | null;
   overlayEntryPrice?: number | null;
   overlayLeverage?: number;
+  /** `qty | ±USD | ✕` pills drawn on each overlay line (Task 5). */
+  overlayBadges?: OverlayLineBadge[];
+  /** Staged-order (pre-Confirm) control row docked to the entry line. */
+  stagedOrder?: { entry: number; hasTp: boolean; hasSl: boolean } | null;
+  onStageReverse?: () => void;
+  onStageDiscard?: () => void;
+  onStageConfirm?: () => void;
+  onStageToggleTp?: () => void;
+  onStageToggleSl?: () => void;
   onReady?: (api: ChartApi) => void;
   onLoadOlder?: () => void;
   regime?: number;

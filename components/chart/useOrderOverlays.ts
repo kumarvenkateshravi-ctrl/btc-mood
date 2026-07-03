@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
-import type { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
+import type { OrderOverlayPrimitive, OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
 import type { ChartOverlay } from './types';
 
 /**
@@ -19,6 +19,7 @@ export function useOrderOverlays(
   overlaySlPrice: number | null,
   overlayEntryPrice: number | null,
   overlayPnL: number | null,
+  overlayBadges: OverlayLineBadge[] = [],
 ) {
   useEffect(() => {
     const prim = overlayPrimitiveRef.current;
@@ -32,6 +33,7 @@ export function useOrderOverlays(
     prim.options.slPrice = overlaySlPrice;
     prim.options.entryPrice = overlayEntryPrice;
     prim.options.pnl = overlayPnL;
+    prim.options.badges = overlayBadges;
     prim.setOverlays(
       overlays
         .filter((o) => Number.isFinite(o.price) && o.price > 0)
@@ -53,6 +55,7 @@ export function useOrderOverlays(
     overlaySlPrice,
     overlayEntryPrice,
     overlayPnL,
+    overlayBadges,
     overlayPrimitiveRef,
   ]);
 }

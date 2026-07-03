@@ -18,6 +18,14 @@ export interface OrderOverlayOptions {
   slPrice?: number | null;
   entryPrice?: number | null;
   pnl?: number | null;
+  badges?: OverlayLineBadge[];
+}
+
+/** Right-side `qty | ±USD | ✕` pill drawn on one overlay line. */
+export interface OverlayLineBadge {
+  kind: OverlayKind;
+  qty: string; // '10'
+  pnl: number | null; // projected (tp/sl) or live (entry); null = hide
 }
 
 class OrderRenderer implements IPrimitivePaneRenderer {
@@ -32,6 +40,7 @@ class OrderRenderer implements IPrimitivePaneRenderer {
       const vpr = scope.verticalPixelRatio;
       const w = Math.round(ts.width() * hpr);
       const opts = this._prim.options || {};
+      this._prim.badgeRects.clear();
 
       for (const o of this._prim.overlays) {
         const y = series.priceToCoordinate(o.price);
@@ -75,6 +84,23 @@ class OrderRenderer implements IPrimitivePaneRenderer {
         ctx.fillRect(boxX, boxY, boxW, boxH);
         ctx.fillStyle = '#0a0e16';
         ctx.fillText(text, boxX + padX, cy);
+
+        // Right-aligned `qty | ±USD | ✕` pill (TV-style).
+        const badge = (opts.badges ?? []).find((b) => b.kind === o.kind);
+        if (badge) {
+          const pnlTxt = badge.pnl == null ? '' :
+            ` | ${badge.pnl >= 0 ? '+' : '−'}${Math.abs(badge.pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+          const btxt = `${badge.qty}${pnlTxt} | ✕`;
+          const bW = ctx.measureText(btxt).width + padX * 2;
+          const bX = w - bW - 8 * hpr;
+          ctx.fillStyle = 'rgba(10, 14, 22, 0.9)';
+          ctx.fillRect(bX, boxY, bW, boxH);
+          ctx.strokeStyle = lineColor;
+          ctx.strokeRect(bX, boxY, bW, boxH);
+          ctx.fillStyle = lineColor;
+          ctx.fillText(btxt, bX + padX, cy);
+          this._prim.badgeRects.set(o.kind, { x: bX / hpr, y: boxY / vpr, w: bW / hpr, h: boxH / vpr });
+        }
       }
     });
   }
@@ -89,6 +115,10 @@ class OrderPaneView implements IPrimitivePaneView {
 export class OrderOverlayPrimitive implements ISeriesPrimitive {
   public options: OrderOverlayOptions = {};
   public overlays: ChartOverlay[] = [];
+  /** CSS-pixel rects of the last-drawn `qty | ±USD | ✕` badges, keyed by line
+   *  kind. Populated at the start of each draw pass; used by customHitTest to
+   *  route ✕ clicks (see useChartEvents.ts). */
+  public badgeRects: Map<OverlayKind, { x: number; y: number; w: number; h: number }> = new Map();
   private _api: SeriesAttachedParameter<Time, 'Candlestick'> | null = null;
   private _dragging: OverlayKind | null = null;
 
@@ -118,8 +148,28 @@ export class OrderOverlayPrimitive implements ISeriesPrimitive {
     this._dragging = kind;
   }
 
-  customHitTest(x: number, y: number): { kind: OverlayKind; draggable: boolean; price: number } | null {
+  customHitTest(
+    x: number,
+    y: number,
+  ):
+    | { kind: OverlayKind; draggable: boolean; price: number; action?: undefined }
+    | { kind: OverlayKind; action: 'cancel'; draggable?: undefined; price?: undefined }
+    | null {
     if (!this._api) return null;
+
+    // Badge ✕ hotspot: the last ~18px of the badge box. Checked first since
+    // badges float above (and to the right of) their line's drag hotspot.
+    for (const [kind, rect] of this.badgeRects) {
+      if (
+        x >= rect.x + rect.w - 18 &&
+        x <= rect.x + rect.w &&
+        y >= rect.y &&
+        y <= rect.y + rect.h
+      ) {
+        return { kind, action: 'cancel' };
+      }
+    }
+
     const series = this._api.series;
     for (const o of this.overlays) {
       if (!o.draggable) continue;

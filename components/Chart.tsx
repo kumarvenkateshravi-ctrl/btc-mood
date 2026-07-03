@@ -26,6 +26,7 @@ import {
 } from 'lightweight-charts';
 import { setHover, type HoverPayload } from '@/lib/chartHoverStore';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
+import { OrderControlsRow } from './chart/OrderControlsRow';
 import { getChartPalette, useThemeName, type ChartPalette } from '@/lib/chartTheme';
 
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
@@ -97,6 +98,13 @@ export default function Chart({
   overlaySlPrice = null,
   overlayEntryPrice = null,
   overlayLeverage = 10,
+  overlayBadges,
+  stagedOrder = null,
+  onStageReverse,
+  onStageDiscard,
+  onStageConfirm,
+  onStageToggleTp,
+  onStageToggleSl,
   onReady,
   onLoadOlder,
   overlayPnL = null,
@@ -352,6 +360,7 @@ export default function Chart({
     overlaySlPrice,
     overlayEntryPrice,
     overlayPnL,
+    overlayBadges,
   );
 
   // ---- Reset Chart View ----
@@ -403,6 +412,21 @@ export default function Chart({
           background: `radial-gradient(120% 90% at 50% 50%, transparent 55%, ${palette.vignette} 100%)`,
         }}
       />
+      {stagedOrder && (
+        <OrderControlsRow
+          chart={chartRef.current}
+          series={candleSeriesRef.current}
+          entryPrice={stagedOrder.entry}
+          hasTp={stagedOrder.hasTp}
+          hasSl={stagedOrder.hasSl}
+          onReverse={onStageReverse!}
+          onDiscard={onStageDiscard!}
+          onConfirm={onStageConfirm!}
+          onToggleTp={onStageToggleTp!}
+          onToggleSl={onStageToggleSl!}
+        />
+      )}
+
       {hover && (
         <OverlayTooltip
           kind={hover.kind}

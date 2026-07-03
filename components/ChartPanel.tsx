@@ -4,7 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Chart, { type ChartType, type PriceScaleModeOption, type ChartOverlay, type OverlayKind, type ChartApi } from './Chart';
 import { type RenkoConfig, DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import ChartContextMenu from './trade/ChartContextMenu';
-import { usePaperStore, setPositionOverlay, updateActiveOverlay } from '@/lib/paperStore';
+import {
+  usePaperStore,
+  setPositionOverlay,
+  updateActiveOverlay,
+  confirmActiveOrder,
+  clearActiveOrder,
+  setActiveOrder,
+  toggleActiveOverlay,
+} from '@/lib/paperStore';
+import { projectedPnl, unrealizedPnl, BTC_TICK_SIZE } from '@/lib/paper';
+import type { OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
 import { setMarkPrice } from '@/lib/markPriceStore';
 import {
   useReplaySession,
@@ -315,6 +325,27 @@ export default function ChartPanel({
     updatePriceAlertPrice(id, newPrice);
   }, []);
 
+  // ---- Staged-order control row (Discard/Confirm/⇅/TP/SL) ----
+  // Live-account only: replay keeps its isolated session + current UX.
+  const stageConfirm = useCallback(() => {
+    const res = confirmActiveOrder({ leverage: LEVERAGE, midPrice: mid });
+    if (!res.ok && res.error) console.warn(res.error); // store also sets lastError → toast
+  }, [mid]);
+  const stageReverse = useCallback(() => {
+    if (!activeOrder) return;
+    setActiveOrder({ ...activeOrder, side: activeOrder.side === 'buy' ? 'sell' : 'buy' });
+  }, [activeOrder]);
+  const stageToggleTp = useCallback(() => {
+    if (!activeOrder) return;
+    const on = activeOrder.tp == null;
+    toggleActiveOverlay('tp', on, activeOrder.entry + (activeOrder.side === 'buy' ? 1 : -1) * 75 * BTC_TICK_SIZE * 10);
+  }, [activeOrder]);
+  const stageToggleSl = useCallback(() => {
+    if (!activeOrder) return;
+    const on = activeOrder.sl == null;
+    toggleActiveOverlay('sl', on, activeOrder.entry - (activeOrder.side === 'buy' ? 1 : -1) * 25 * BTC_TICK_SIZE * 10);
+  }, [activeOrder]);
+
   const isStaged = !!(activeOrder && !replayTrading);
   const overlaySide = isStaged ? activeOrder!.side : (hasPosition && pos ? (pos.side === 'long' ? 'buy' : 'sell') : null);
   const overlayEntryPrice = isStaged ? activeOrder!.entry : (hasPosition && pos ? pos.entryPrice : null);
@@ -325,6 +356,32 @@ export default function ChartPanel({
   const overlayUnitsLabel = isStaged ? String(activeOrder!.units) : (hasPosition && pos ? String(pos.units) : '—');
   const overlayTypeLabel = isStaged ? activeOrder!.type.toUpperCase() : 'Market';
   const overlayLeverage = (hasPosition && pos ? pos.leverage : LEVERAGE);
+
+  // `qty | ±USD | ✕` pills per line: projected P&L for a staged order's
+  // entry/TP/SL, or live P&L on the entry + projected P&L on TP/SL for an
+  // open position.
+  const overlayBadges = useMemo<OverlayLineBadge[]>(() => {
+    if (activeOrder && !replayTrading) {
+      const b: OverlayLineBadge[] = [{ kind: 'entry', qty: String(activeOrder.units), pnl: projectedPnl(activeOrder.side, activeOrder.units, mid, activeOrder.entry) }];
+      if (activeOrder.tp != null) b.push({ kind: 'tp', qty: String(activeOrder.units), pnl: projectedPnl(activeOrder.side, activeOrder.units, activeOrder.entry, activeOrder.tp) });
+      if (activeOrder.sl != null) b.push({ kind: 'sl', qty: String(activeOrder.units), pnl: projectedPnl(activeOrder.side, activeOrder.units, activeOrder.entry, activeOrder.sl) });
+      return b;
+    }
+    if (!hasPosition || !pos) return [];
+    const side = pos.side === 'long' ? 'buy' as const : 'sell' as const;
+    const b: OverlayLineBadge[] = [{ kind: 'entry', qty: String(pos.units), pnl: unrealizedPnl(pos, mid) }];
+    if (pos.tp != null) b.push({ kind: 'tp', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, pos.tp) });
+    if (pos.sl != null) b.push({ kind: 'sl', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, pos.sl) });
+    return b;
+  }, [activeOrder, replayTrading, hasPosition, pos, mid]);
+
+  const stagedOrder = useMemo(
+    () =>
+      activeOrder && !replayTrading
+        ? { entry: activeOrder.entry, hasTp: activeOrder.tp != null, hasSl: activeOrder.sl != null }
+        : null,
+    [activeOrder, replayTrading],
+  );
 
   // Price alerts for this symbol → dashed lines on the chart + management pills.
   const allPriceAlerts = usePriceAlerts();
@@ -608,6 +665,13 @@ export default function ChartPanel({
             overlayHasSl={overlayHasSl}
             overlayUnitsLabel={overlayUnitsLabel}
             overlayLeverage={overlayLeverage}
+            overlayBadges={overlayBadges}
+            stagedOrder={stagedOrder}
+            onStageReverse={stageReverse}
+            onStageDiscard={clearActiveOrder}
+            onStageConfirm={stageConfirm}
+            onStageToggleTp={stageToggleTp}
+            onStageToggleSl={stageToggleSl}
             priceLines={priceLines}
             onPriceLineDrag={handlePriceAlertDrag}
             onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}
