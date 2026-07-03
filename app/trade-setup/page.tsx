@@ -42,7 +42,10 @@ export default function TradeSetupPage() {
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
   const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
   const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
-  const priceAbs = ticker24h ? ticker24h.priceChange : (change != null ? (price * change) / (100 + change) : 0);
+  // Absolute 24h move derived from the % change (works for both the
+  // ticker and the candle fallback, since price/change already prefer
+  // the ticker when present).
+  const priceAbs = change != null && change !== -100 ? (price * change) / (100 + change) : 0;
 
   const { setup, factorsResult, regimeState } = useMemo(() => {
     const focus = candlesByTf[FOCUS_TF] ?? [];
@@ -58,11 +61,17 @@ export default function TradeSetupPage() {
     return { setup: s, factorsResult: fr, regimeState: rs };
   }, [candlesByTf, matrix, consensus, weighted, price]);
 
-  const marketState: MarketState = useMemo(() => ({
-    state: regimeState, volatility: setup.execution.score < 50 ? 'High' : 'Medium',
-    volume: setup.quality.bars.find((b) => b.key === 'volume')!.points >= 8 ? 'High' : 'Low',
-    energy: setup.execution.score > 70 ? 'High' : setup.execution.score < 45 ? 'Low' : 'Medium',
-  }), [regimeState, setup]);
+  const marketState: MarketState = useMemo(() => {
+    const volatility: MarketState['volatility'] =
+      setup.execution.score < 50 ? 'High' : 'Moderate';
+    return {
+      regime:
+        regimeState === 'Trending' ? 'Trending' : volatility === 'High' ? 'Volatile' : 'Ranging',
+      volatility,
+      liquidity:
+        setup.quality.bars.find((b) => b.key === 'volume')!.points >= 8 ? 'Deep' : 'Thin',
+    };
+  }, [regimeState, setup]);
 
   const long = setup.side === 'long';
   const dirColor = long ? 'text-bull-bright' : 'text-bear-bright';

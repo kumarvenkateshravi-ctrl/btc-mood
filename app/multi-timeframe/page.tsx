@@ -50,7 +50,9 @@ export default function MultiTimeframePage() {
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
   const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
   const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
-  const priceAbs = ticker24h ? ticker24h.priceChange : (changes['1d'] != null ? (price * (changes['1d'] / 100)) / (1 + changes['1d'] / 100) : 0);
+  // Absolute 24h move derived from the % change (price/change already
+  // prefer the live ticker when present).
+  const priceAbs = change != null && change !== -100 ? (price * change) / (100 + change) : 0;
 
   // ---- Alignment persistence (session-tracked) ----
   const sinceRef = useRef<Partial<Record<Timeframe, { verdict: Verdict; since: number }>>>({});

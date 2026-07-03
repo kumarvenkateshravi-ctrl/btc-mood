@@ -91,12 +91,15 @@ export default function MyCryptoStackPage() {
   // ---- Market regime (Phase 9, lightweight) ----
   const regime: MarketState = useMemo(() => {
     const adxDir = Math.abs(stack.components.adx - 50) * 2; // 0–100 trend strength
-    const state = adxDir > 50 ? 'Trending' : adxDir > 25 ? 'Transitional' : 'Ranging';
     const hot = TIMEFRAMES.map((tf) => snapshots[tf]?.regime?.label).filter(Boolean);
-    const volatility = hot.includes('hot') ? 'High' : hot.includes('calm') ? 'Low' : 'Medium';
-    const volume = stack.components.volume > 60 ? 'High' : stack.components.volume > 45 ? 'Medium' : 'Low';
-    const energy = volatility === 'High' && volume === 'High' ? 'High' : stack.score < 35 || stack.score > 65 ? 'Medium' : 'Low';
-    return { state, volatility, volume, energy };
+    const volatility: MarketState['volatility'] =
+      hot.includes('hot') ? 'High' : hot.includes('calm') ? 'Low' : 'Moderate';
+    return {
+      regime: adxDir > 50 ? 'Trending' : volatility === 'High' ? 'Volatile' : 'Ranging',
+      volatility,
+      liquidity:
+        stack.components.volume > 60 ? 'Deep' : stack.components.volume > 45 ? 'Normal' : 'Thin',
+    };
   }, [stack, snapshots]);
 
   // ---- Performance (live paper account) ----
@@ -253,7 +256,7 @@ export default function MyCryptoStackPage() {
                   <Stat k="Momentum" v={String(Math.round(stack.components.momentum))} />
                   <Stat k="Volume" v={String(Math.round(stack.components.volume))} />
                   <Stat k="ADX" v={String(Math.round(stack.components.adx))} />
-                  <Stat k="Regime" v={regime.state} />
+                  <Stat k="Regime" v={regime.regime} />
                 </div>
               </Panel>
 

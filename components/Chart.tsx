@@ -642,6 +642,9 @@ export default function Chart({
       const rect = container.getBoundingClientRect();
       const localY = e.clientY - rect.top;
       const localX = e.clientX - rect.left;
+      // Precise hit first (same test pointerdown uses); the proximity
+      // scan below is the fallback for near-misses.
+      const hit = prim.customHitTest(localX, localY);
       let nextState: { kind: OverlayKind; price: number; y: number } | null = null;
       if (hit) {
         const price = series.coordinateToPrice(localY);

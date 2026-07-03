@@ -20,7 +20,7 @@ import { Panel, AICard, type AIEvidence } from '@/components/ui';
 import { formatNumber, formatPercent } from '@/lib/format';
 
 const FOCUS_TF: Timeframe = '1h';
-const fmtN = (n: number | null | undefined) => formatNumber(n ?? NaN, { precision: 1 });
+const fmtN = (n: number | null | undefined, precision = 1) => formatNumber(n ?? NaN, { precision });
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 /** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
 const r1 = (n: number) => Math.round(n * 10) / 10;

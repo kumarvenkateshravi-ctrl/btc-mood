@@ -120,7 +120,11 @@ export default function AlertsPage() {
     successRate: 74,
   }), [alerts, feed]);
 
-  const marketState: MarketState = useMemo(() => ({ state: weighted.outlook === 'neutral' ? 'Transitional' : 'Trending', volatility: 'Medium', volume: snap.volumeScore > 55 ? 'High' : 'Low', energy: quality > 70 ? 'High' : 'Medium' }), [weighted, snap, quality]);
+  const marketState: MarketState = useMemo(() => ({
+    regime: weighted.outlook === 'neutral' ? 'Ranging' : 'Trending',
+    volatility: quality > 70 ? 'High' : 'Moderate',
+    liquidity: snap.volumeScore > 55 ? 'Deep' : 'Thin',
+  }), [weighted, snap, quality]);
 
   return (
     <div className="flex min-h-[100dvh] w-full bg-base text-ink">
