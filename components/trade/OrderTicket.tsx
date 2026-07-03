@@ -28,7 +28,11 @@ interface OrderTicketProps {
 
 /** Tick-offset choices for the Exits (TP/SL) dropdowns, matching the
  *  TV ticket's "75 ticks" / "25 ticks" style selectors. */
-const TICK_OPTIONS = [25, 50, 75, 100, 150] as const;
+// TP/SL default offsets are a PERCENTAGE of entry, not a fixed tick count.
+// A fixed tick offset ($0.10/tick) is far too granular for a $60k asset — even
+// the largest old option (150 ticks = $15) stacked TP/SL on top of the entry
+// line, so they couldn't be told apart or dragged. Percent scales with price.
+const PCT_OPTIONS = [0.25, 0.5, 1, 2, 3] as const;
 
 type Tab = 'market' | 'limit' | 'stop';
 
@@ -63,8 +67,8 @@ export default function OrderTicket(p: OrderTicketProps) {
   const [sl, setSl] = useState<string>('');
   // Tick-offset dropdowns (TV: "75 ticks" / "25 ticks") — drive the
   // seeded TP/SL price when the toggle turns on or the offset changes.
-  const [tpTicks, setTpTicks] = useState<number>(75);
-  const [slTicks, setSlTicks] = useState<number>(25);
+  const [tpPct, setTpPct] = useState<number>(1);   // +1% default TP
+  const [slPct, setSlPct] = useState<number>(0.5); // -0.5% default SL
   const [reduceOnly, setReduceOnly] = useState(false);
   const [postOnly, setPostOnly] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -113,18 +117,20 @@ export default function OrderTicket(p: OrderTicketProps) {
   // add the ±1 slippage tick and drift the seed off the locked formula.
   const entryBase = tab === 'market' ? p.midPrice : priceN;
 
-  // Seed rule (TV parity): TP = entry ± ticks × BTC_TICK_SIZE, + for buy,
-  // mirrored (−) for sell; SL is the opposite sign.
+  // Seed rule: TP = entry ± pct%, + for buy, mirrored (−) for sell; SL is the
+  // opposite sign. Percentage keeps the two exit lines visibly separated from
+  // the entry line (and each other) at any price, so they can be grabbed and
+  // dragged independently.
   const suggestTp = useMemo(() => {
     if (unitsN <= 0 || !Number.isFinite(entryBase) || entryBase <= 0) return null;
     const dir = side === 'buy' ? 1 : -1;
-    return Number((entryBase + dir * tpTicks * BTC_TICK_SIZE).toFixed(1));
-  }, [side, entryBase, unitsN, tpTicks]);
+    return Number((entryBase * (1 + dir * tpPct / 100)).toFixed(1));
+  }, [side, entryBase, unitsN, tpPct]);
   const suggestSl = useMemo(() => {
     if (unitsN <= 0 || !Number.isFinite(entryBase) || entryBase <= 0) return null;
     const dir = side === 'buy' ? -1 : 1;
-    return Number((entryBase + dir * slTicks * BTC_TICK_SIZE).toFixed(1));
-  }, [side, entryBase, unitsN, slTicks]);
+    return Number((entryBase * (1 + dir * slPct / 100)).toFixed(1));
+  }, [side, entryBase, unitsN, slPct]);
 
   // Resolve TP/SL: explicit user value > suggested default.
   const resolveLevel = (
@@ -244,19 +250,18 @@ export default function OrderTicket(p: OrderTicketProps) {
     const n = Number(v);
     updateActiveOverlay('sl', n > 0 ? n : null);
   };
-  // Changing the tick-offset dropdown re-seeds the price (it's the
-  // active driver of the exit price, same as picking a new % would be).
-  const handleTpTicksChange = (n: number) => {
-    setTpTicks(n);
-    if (!tpEnabled || !Number.isFinite(fillPrice) || fillPrice <= 0) return;
+  // Changing the percent-offset dropdown re-seeds the exit price off the entry.
+  const handleTpPctChange = (pct: number) => {
+    setTpPct(pct);
+    if (!tpEnabled || !Number.isFinite(entryBase) || entryBase <= 0) return;
     const dir = side === 'buy' ? 1 : -1;
-    handleTpChange(Number((fillPrice + dir * n * BTC_TICK_SIZE).toFixed(1)).toFixed(1));
+    handleTpChange((entryBase * (1 + dir * pct / 100)).toFixed(1));
   };
-  const handleSlTicksChange = (n: number) => {
-    setSlTicks(n);
-    if (!slEnabled || !Number.isFinite(fillPrice) || fillPrice <= 0) return;
+  const handleSlPctChange = (pct: number) => {
+    setSlPct(pct);
+    if (!slEnabled || !Number.isFinite(entryBase) || entryBase <= 0) return;
     const dir = side === 'buy' ? -1 : 1;
-    handleSlChange(Number((fillPrice + dir * n * BTC_TICK_SIZE).toFixed(1)).toFixed(1));
+    handleSlChange((entryBase * (1 + dir * pct / 100)).toFixed(1));
   };
   const handleReduceOnlyChange = (v: boolean) => {
     setReduceOnly(v);
@@ -514,7 +519,7 @@ export default function OrderTicket(p: OrderTicketProps) {
           {effectiveTpEnabled && (
             <NumberField
               label="Take profit, price"
-              labelRight={<TickSelect value={tpTicks} onChange={handleTpTicksChange} />}
+              labelRight={<PctSelect value={tpPct} onChange={handleTpPctChange} />}
               value={activeMatches && displayedTp != null ? displayedTp.toFixed(1) : tp}
               onChange={handleTpChange}
               step={0.1}
@@ -525,7 +530,7 @@ export default function OrderTicket(p: OrderTicketProps) {
           {effectiveSlEnabled && (
             <NumberField
               label="Stop loss, price"
-              labelRight={<TickSelect value={slTicks} onChange={handleSlTicksChange} />}
+              labelRight={<PctSelect value={slPct} onChange={handleSlPctChange} />}
               value={activeMatches && displayedSl != null ? displayedSl.toFixed(1) : sl}
               onChange={handleSlChange}
               step={0.1}
@@ -894,7 +899,7 @@ function RiskField({
   );
 }
 
-function TickSelect({
+function PctSelect({
   value,
   onChange,
 }: {
@@ -905,12 +910,12 @@ function TickSelect({
     <select
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      aria-label="Tick offset"
+      aria-label="Offset percent"
       className="focus-ring rounded border border-line bg-surface-2/50 px-1 py-0.5 text-[10px] font-mono normal-case tracking-normal text-ink-muted"
     >
-      {TICK_OPTIONS.map((t) => (
+      {PCT_OPTIONS.map((t) => (
         <option key={t} value={t}>
-          {t} ticks
+          {t}%
         </option>
       ))}
     </select>
