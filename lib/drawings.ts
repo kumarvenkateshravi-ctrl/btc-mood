@@ -206,8 +206,10 @@ export function redo(symbol: string) {
   saveAll({ ...all, [symbol]: next });
 }
 
+const EMPTY_STORE: Store = {};
+
 export function useDrawings(symbol: string): Drawing[] {
-  const all = useSyncExternalStore(subscribe, () => cache ?? loadAll(), () => ({}) as Store);
+  const all = useSyncExternalStore(subscribe, () => cache ?? loadAll(), () => EMPTY_STORE);
   return all[symbol] ?? EMPTY;
 }
 
