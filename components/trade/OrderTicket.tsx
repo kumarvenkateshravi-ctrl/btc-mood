@@ -66,8 +66,25 @@ export default function OrderTicket(p: OrderTicketProps) {
 
   // Re-sync the side toggle when the modal reopens with a different
   // clicked side (e.g. SELL pill after a prior BUY-prefilled ticket).
+  // A previously staged order carries its own side; if it no longer
+  // matches, drop it — otherwise confirmActiveOrder would submit the
+  // stale side while the UI shows the new one. The next input change
+  // re-stages with the correct side.
   useEffect(() => {
-    if (p.initialSide) setSide(p.initialSide);
+    if (!p.initialSide) return;
+    setSide(p.initialSide);
+    if (
+      activeOrder &&
+      activeOrder.symbol === p.symbol &&
+      activeOrder.side !== p.initialSide
+    ) {
+      clearActiveOrder();
+      stagedIdRef.current = null;
+    }
+    // Intentionally keyed on initialSide only: this must fire when the
+    // ticket reopens with a different pill, not on every staged-order
+    // change (e.g. the in-ticket side toggle, which re-stages itself).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.initialSide]);
 
   const autoPrice = priceTouched ? null : p.midPrice.toFixed(1);
