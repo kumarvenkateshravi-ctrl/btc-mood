@@ -9,7 +9,7 @@ import {
 const stage = (over: Partial<ActiveOrder> = {}) =>
   setActiveOrder({
     id: newOrderId(), symbol: 'BTCUSDT', side: 'buy', type: 'limit',
-    units: 10, entry: 61_937.85, tp: null, sl: null,
+    units: 0.1, entry: 61_937.85, tp: null, sl: null,
     reduceOnly: false, postOnly: false, ocoGroup: null,
     ...over,
   });
