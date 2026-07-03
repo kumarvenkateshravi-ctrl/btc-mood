@@ -396,6 +396,21 @@ export function unrealizedPnl(pos: PaperPosition | null, mark: number): number {
 }
 
 /**
+ * P&L a position of `units` opened at `entry` would realize at `exit`.
+ * Used for the projected-P&L pills on TP/SL lines (fees excluded — the
+ * pills match TradingView, which shows gross projections).
+ */
+export function projectedPnl(
+  side: Side,
+  units: number,
+  entry: number,
+  exit: number,
+): number {
+  const dir = side === 'buy' ? 1 : -1;
+  return (exit - entry) * units * dir;
+}
+
+/**
  * Validate a candidate order against an open position. Returns a
  * human-readable reason if the order must be rejected, otherwise null.
  */
