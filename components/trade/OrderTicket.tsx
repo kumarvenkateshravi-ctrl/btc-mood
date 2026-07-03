@@ -20,7 +20,15 @@ interface OrderTicketProps {
   reduceAvailable: number;
   initialSide?: 'buy' | 'sell';
   active?: boolean;
+  /** Called after a submit stages/confirms an order — the modal host
+   *  (OrderModal) wires this to its own onClose so the chart can take
+   *  over (staged lines + Task 5's on-chart Confirm/Discard). */
+  onStaged?: () => void;
 }
+
+/** Tick-offset choices for the Exits (TP/SL) dropdowns, matching the
+ *  TV ticket's "75 ticks" / "25 ticks" style selectors. */
+const TICK_OPTIONS = [25, 50, 75, 100, 150] as const;
 
 type Tab = 'market' | 'limit' | 'stop';
 
@@ -32,7 +40,6 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function OrderTicket(p: OrderTicketProps) {
   const {
-    placeOrder,
     lastError,
     activeOrder,
     setActiveOrder,
@@ -54,6 +61,10 @@ export default function OrderTicket(p: OrderTicketProps) {
   const [slEnabled, setSlEnabled] = useState(true);
   const [tp, setTp] = useState<string>('');
   const [sl, setSl] = useState<string>('');
+  // Tick-offset dropdowns (TV: "75 ticks" / "25 ticks") — drive the
+  // seeded TP/SL price when the toggle turns on or the offset changes.
+  const [tpTicks, setTpTicks] = useState<number>(75);
+  const [slTicks, setSlTicks] = useState<number>(25);
   const [reduceOnly, setReduceOnly] = useState(false);
   const [postOnly, setPostOnly] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -96,16 +107,18 @@ export default function OrderTicket(p: OrderTicketProps) {
   const fillPrice =
     tab === 'market' ? p.midPrice + (side === 'buy' ? BTC_TICK_SIZE : -BTC_TICK_SIZE) : priceN;
 
+  // Seed rule (TV parity): TP = mid ± ticks × BTC_TICK_SIZE, + for buy,
+  // mirrored (−) for sell; SL is the opposite sign.
   const suggestTp = useMemo(() => {
     if (unitsN <= 0 || !Number.isFinite(fillPrice) || fillPrice <= 0) return null;
-    const pct = side === 'buy' ? 0.01 : -0.01;
-    return Number((fillPrice * (1 + pct)).toFixed(1));
-  }, [side, fillPrice, unitsN]);
+    const dir = side === 'buy' ? 1 : -1;
+    return Number((fillPrice + dir * tpTicks * BTC_TICK_SIZE).toFixed(1));
+  }, [side, fillPrice, unitsN, tpTicks]);
   const suggestSl = useMemo(() => {
     if (unitsN <= 0 || !Number.isFinite(fillPrice) || fillPrice <= 0) return null;
-    const pct = side === 'buy' ? -0.01 : 0.01;
-    return Number((fillPrice * (1 + pct)).toFixed(1));
-  }, [side, fillPrice, unitsN]);
+    const dir = side === 'buy' ? -1 : 1;
+    return Number((fillPrice + dir * slTicks * BTC_TICK_SIZE).toFixed(1));
+  }, [side, fillPrice, unitsN, slTicks]);
 
   // Resolve TP/SL: explicit user value > suggested default.
   const resolveLevel = (
@@ -225,6 +238,20 @@ export default function OrderTicket(p: OrderTicketProps) {
     const n = Number(v);
     updateActiveOverlay('sl', n > 0 ? n : null);
   };
+  // Changing the tick-offset dropdown re-seeds the price (it's the
+  // active driver of the exit price, same as picking a new % would be).
+  const handleTpTicksChange = (n: number) => {
+    setTpTicks(n);
+    if (!tpEnabled || !Number.isFinite(fillPrice) || fillPrice <= 0) return;
+    const dir = side === 'buy' ? 1 : -1;
+    handleTpChange(Number((fillPrice + dir * n * BTC_TICK_SIZE).toFixed(1)).toFixed(1));
+  };
+  const handleSlTicksChange = (n: number) => {
+    setSlTicks(n);
+    if (!slEnabled || !Number.isFinite(fillPrice) || fillPrice <= 0) return;
+    const dir = side === 'buy' ? -1 : 1;
+    handleSlChange(Number((fillPrice + dir * n * BTC_TICK_SIZE).toFixed(1)).toFixed(1));
+  };
   const handleReduceOnlyChange = (v: boolean) => {
     setReduceOnly(v);
     stageFromInputs();
@@ -250,25 +277,35 @@ export default function OrderTicket(p: OrderTicketProps) {
     }
     if (tab === 'market') {
       setConfirming(false);
-      placeOrder({
+      // Market orders stage too (TV parity): entry pins to mid and the
+      // chart takes over for Confirm/Discard (Task 5) instead of filling
+      // immediately here.
+      if (!stagedIdRef.current) {
+        stagedIdRef.current = `stg_${crypto.randomUUID().slice(0, 12)}`;
+      }
+      setActiveOrder({
+        id: stagedIdRef.current,
         symbol: p.symbol,
         side,
         type: 'market',
         units: effectiveUnits,
-        price: null,
+        entry: p.midPrice,
         tp: resolveLevel(tpEnabled, tp, suggestTp),
         sl: resolveLevel(slEnabled, sl, suggestSl),
         reduceOnly,
         postOnly,
-        leverage: p.leverage,
-        midPrice: p.midPrice,
+        ocoGroup: ocoEnabled
+          ? (ocoGroupRef.current ?? (ocoGroupRef.current = `oco_${crypto.randomUUID().slice(0, 10)}`))
+          : null,
       });
+      p.onStaged?.();
       return;
     }
-    confirmActiveOrder({
+    const res = confirmActiveOrder({
       leverage: p.leverage,
       midPrice: p.midPrice,
     });
+    if (res.ok) p.onStaged?.();
   };
 
   const handleDiscard = () => {
@@ -470,7 +507,8 @@ export default function OrderTicket(p: OrderTicketProps) {
           </div>
           {effectiveTpEnabled && (
             <NumberField
-              label="Take profit"
+              label="Take profit, price"
+              labelRight={<TickSelect value={tpTicks} onChange={handleTpTicksChange} />}
               value={activeMatches && displayedTp != null ? displayedTp.toFixed(1) : tp}
               onChange={handleTpChange}
               step={0.1}
@@ -480,7 +518,8 @@ export default function OrderTicket(p: OrderTicketProps) {
           )}
           {effectiveSlEnabled && (
             <NumberField
-              label="Stop loss"
+              label="Stop loss, price"
+              labelRight={<TickSelect value={slTicks} onChange={handleSlTicksChange} />}
               value={activeMatches && displayedSl != null ? displayedSl.toFixed(1) : sl}
               onChange={handleSlChange}
               step={0.1}
@@ -538,8 +577,8 @@ export default function OrderTicket(p: OrderTicketProps) {
         </details>
 
         <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-          <Row label="Margin" value={fmt(margin, 2)} unit="USD" />
-          <Row label="Leverage" value={`${p.leverage}×`} />
+          <MarginRow margin={margin} balance={balance} />
+          <Row label="Leverage" value={`${p.leverage}:1`} />
           <Row label="Tick value" value={BTC_TICK_VALUE_USD.toFixed(2)} unit="USD" />
           <Row label="Trade value" value={fmt(notional, 2)} unit="USD" />
           <Row
@@ -573,15 +612,15 @@ export default function OrderTicket(p: OrderTicketProps) {
               ].join(' ')}
               aria-label={
                 confirming
-                  ? `Confirm ${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} BTC @ ${fillPrice.toFixed(1)}`
-                  : `${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} BTC at market`
+                  ? `Confirm ${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} @ ${fillPrice.toFixed(1)}`
+                  : `${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} at market`
               }
             >
               {confirming ? (
                 <>
                   <span className="text-xs font-normal text-ink">Confirm</span>
                   <span className="font-semibold">
-                    {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} @ {fillPrice.toFixed(1)}
+                    {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol} @ {fillPrice.toFixed(1)}
                   </span>
                   <span className="text-[10px] font-medium opacity-70">
                     ≈${notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -595,9 +634,9 @@ export default function OrderTicket(p: OrderTicketProps) {
                     <TrendingDown className="h-4 w-4" />
                   )}
                   <span>
-                    {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} BTC
+                    {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol}
                   </span>
-                  <span className="text-xs font-normal opacity-80">@ market</span>
+                  <span className="text-xs font-normal uppercase tracking-wide opacity-80">market</span>
                   <kbd className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-current/30 px-1 text-[10px] font-medium opacity-70">
                     ⏎
                   </kbd>
@@ -627,12 +666,12 @@ export default function OrderTicket(p: OrderTicketProps) {
                   : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
                 !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
               ].join(' ')}
-              aria-label={`Confirm ${side === 'buy' ? 'buy' : 'sell'} ${effectiveUnits} BTC at ${priceN}`}
+              aria-label={`Confirm ${side === 'buy' ? 'buy' : 'sell'} ${effectiveUnits} ${p.symbol} at ${priceN}`}
             >
               <span>
-                {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} @ {priceN > 0 ? priceN : '—'}
+                {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol} @ {priceN > 0 ? priceN : '—'}
               </span>
-
+              <span className="text-xs font-normal uppercase tracking-wide opacity-80">{tab}</span>
             </button>
             <button
               onClick={handleDiscard}
@@ -689,6 +728,14 @@ function SideToggle({
         ].join(' ')}
         style={{ transform: `translateX(${idx * 100}%)` }}
       />
+      {/* Spread badge — bridges the Sell/Buy split, TV-style
+          "Sell 61,965.99 | 0.01 | Buy 61,966.00". */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-line bg-surface-1 px-1.5 py-0.5 font-mono text-[9px] text-ink-faint"
+      >
+        {fmt(ask - bid, 2)}
+      </span>
       <button
         type="button"
         onClick={() => onChange('buy')}
@@ -729,6 +776,7 @@ function SideToggle({
 
 function NumberField({
   label,
+  labelRight,
   value,
   onChange,
   step,
@@ -740,6 +788,7 @@ function NumberField({
   readOnly = false,
 }: {
   label: string;
+  labelRight?: React.ReactNode;
   value: string;
   onChange: (v: string) => void;
   step: number;
@@ -752,8 +801,9 @@ function NumberField({
 }) {
   return (
     <label className={['block', className].join(' ')}>
-      <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-ink-faint">
-        {label}
+      <span className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-ink-faint">
+        <span>{label}</span>
+        {labelRight}
       </span>
       <div className={[
         'relative flex items-center rounded-md border border-line bg-surface-1/60 transition focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/40',
@@ -838,6 +888,29 @@ function RiskField({
   );
 }
 
+function TickSelect({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      aria-label="Tick offset"
+      className="focus-ring rounded border border-line bg-surface-2/50 px-1 py-0.5 text-[10px] font-mono normal-case tracking-normal text-ink-muted"
+    >
+      {TICK_OPTIONS.map((t) => (
+        <option key={t} value={t}>
+          {t} ticks
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function ToggleChip({
   label,
   enabled,
@@ -873,6 +946,30 @@ function ToggleChip({
         />
       </span>
     </button>
+  );
+}
+
+/** Margin `X / Y` (used / available balance) + a usage progress bar —
+ *  TV shows this as the first line of the order-info block. */
+function MarginRow({ margin, balance }: { margin: number; balance: number }) {
+  const pct = balance > 0 && Number.isFinite(margin) ? Math.min(100, (margin / balance) * 100) : 0;
+  const danger = pct >= 90;
+  return (
+    <div className="col-span-2 space-y-1">
+      <div className="flex items-baseline justify-between gap-2">
+        <dt className="text-ink-faint">Margin</dt>
+        <dd className="font-mono tabular-nums text-ink">
+          {fmt(margin, 2)}
+          <span className="text-[10px] text-ink-faint"> / {fmt(balance, 2)} USD</span>
+        </dd>
+      </div>
+      <div className="h-1 w-full overflow-hidden rounded-full bg-surface-3/60">
+        <div
+          className={['h-full rounded-full transition-all', danger ? 'bg-bear' : 'bg-accent'].join(' ')}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
