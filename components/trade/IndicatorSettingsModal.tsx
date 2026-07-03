@@ -348,15 +348,15 @@ export default function IndicatorSettingsModal({
             onChange={(e) => updateInputs(showInp.id, e.target.checked)}
             className="peer sr-only"
           />
-          <div className="flex h-[16px] w-[16px] items-center justify-center rounded-[3px] border border-[#50535e] bg-[#1e222d] transition-colors peer-checked:border-white peer-checked:bg-white">
-            <svg width="9" height="7" viewBox="0 0 10 8" fill="none" className="opacity-0 peer-checked:opacity-100">
-              <path d="M1 4L3.5 6.5L9 1" stroke="#1e222d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <div className="flex h-[16px] w-[16px] items-center justify-center rounded-[3px] border border-[#50535e] bg-[#1e222d] transition-colors peer-checked:border-[#2962FF] peer-checked:bg-[#2962FF] peer-checked:[&>svg]:opacity-100">
+            <svg width="9" height="7" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
+              <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
         </label>
 
         {/* MA label */}
-        <span className={`w-[36px] shrink-0 text-[13px] font-medium ${rowDisabled ? 'text-[#4c505e]' : 'text-[#d1d4dc]'}`}>
+        <span className={`w-[44px] whitespace-nowrap shrink-0 text-[13px] font-medium ${rowDisabled ? 'text-[#4c505e]' : 'text-[#d1d4dc]'}`}>
           {groupName}
         </span>
 
@@ -526,9 +526,9 @@ export default function IndicatorSettingsModal({
                                   className="peer sr-only"
                                   disabled={isDisabled}
                                 />
-                                <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-white peer-checked:border-white peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                                <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                                   <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
-                                    <path d="M1 4L3.5 6.5L9 1" stroke="#1e222d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                   </svg>
                                 </div>
                                 <span className="text-[13px] text-[#d1d4dc]">{inp.name}</span>
@@ -621,17 +621,21 @@ export default function IndicatorSettingsModal({
                   <div key={st.id} className="flex items-center justify-between">
                     <label className="flex items-center gap-3 cursor-pointer">
                       <div className="relative flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={currentStyle.display !== false}
-                          onChange={(e) => updateStyles(st.id, { ...currentStyle, display: e.target.checked })}
-                          className="peer sr-only"
-                        />
-                        <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-white peer-checked:border-white peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
-                          <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
-                            <path d="M1 4L3.5 6.5L9 1" stroke="#1e222d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </div>
+                        {!st.hideCheckbox && (
+                          <>
+                            <input
+                              type="checkbox"
+                              checked={currentStyle.display !== false}
+                              onChange={(e) => updateStyles(st.id, { ...currentStyle, display: e.target.checked })}
+                              className="peer sr-only"
+                            />
+                            <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                              <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
+                                <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </div>
+                          </>
+                        )}
                       </div>
                       <span className="text-[#d1d4dc]">{st.name}</span>
                     </label>
@@ -698,9 +702,9 @@ export default function IndicatorSettingsModal({
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className="relative flex items-center">
                     <input type="checkbox" checked={labelsOnPriceScale} onChange={(e) => updateLabelsOnPriceScale(e.target.checked)} className="peer sr-only" />
-                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-white peer-checked:border-white peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
-                        <path d="M1 4L3.5 6.5L9 1" stroke="#1e222d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                     </div>
                   </div>
@@ -709,9 +713,9 @@ export default function IndicatorSettingsModal({
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className="relative flex items-center">
                     <input type="checkbox" checked={valuesInStatusLine} onChange={(e) => updateValuesInStatusLine(e.target.checked)} className="peer sr-only" />
-                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-white peer-checked:border-white peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
-                        <path d="M1 4L3.5 6.5L9 1" stroke="#1e222d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                     </div>
                   </div>
@@ -741,9 +745,9 @@ export default function IndicatorSettingsModal({
                       onChange={(e) => updateVisibility(tf.id, e.target.checked)}
                       className="peer sr-only"
                     />
-                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-white peer-checked:border-white peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
-                        <path d="M1 4L3.5 6.5L9 1" stroke="#1e222d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                     </div>
                   </div>

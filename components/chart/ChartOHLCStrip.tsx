@@ -107,7 +107,7 @@ export function OHLCCell({
           : 'text-ink';
   return (
     <span className="inline-flex shrink-0 items-baseline gap-1">
-      <span className="text-[12px] text-ink-faint">{label}</span>
+      <span className="text-ink-faint">{label}</span>
       <span className={`tabular-nums ${toneClass}`}>{value}</span>
     </span>
   );

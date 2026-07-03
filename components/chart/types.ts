@@ -48,6 +48,7 @@ export interface ChartOverlay {
 
 export interface ChartProps {
   candles: Candle[];
+  candlesByTf?: Record<string, Candle[]>;
   type: ChartType;
   tf?: string;
   height: number;

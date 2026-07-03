@@ -11,8 +11,9 @@ import {
 import type { ChartRefs } from './refs';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive } from '@/lib/chartFxPrimitive';
+import { chartApiStore } from '@/lib/chartApiStore';
 
-export function useChartInit(refs: ChartRefs, height: number | string | undefined) {
+export function useChartInit(refs: ChartRefs, height: number | string | undefined, tf?: string) {
   useEffect(() => {
     const { containerRef, paletteRef, chartRef, candleSeriesRef, dummySeriesRef, markersRef, overlayPrimitiveRef, fxPrimitiveRef } = refs;
     const container = containerRef.current;
@@ -136,4 +137,16 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refs]);
+
+  // Register this chart in the keyed registry. Separate effect so a tf
+  // change re-keys the entry without recreating the chart. Runs after the
+  // init effect (chartRef is set); cleans up before it (reverse order), so
+  // unregister always precedes chart.remove().
+  useEffect(() => {
+    const chart = refs.chartRef.current;
+    if (!chart) return;
+    const key = tf ?? 'default';
+    chartApiStore.register(key, chart);
+    return () => chartApiStore.unregister(key, chart);
+  }, [refs, tf]);
 }

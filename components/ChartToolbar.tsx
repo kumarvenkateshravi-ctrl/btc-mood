@@ -466,7 +466,7 @@ function TimeframeChip({
         <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
           Timeframe
         </div>
-        {['5m', '15m', '1h', '4h', '1d'].map((tf) => (
+        {['5m', '15m', '30m', '1h', '4h', '1d'].map((tf) => (
           <MenuItem
             key={tf}
             active={value === tf}

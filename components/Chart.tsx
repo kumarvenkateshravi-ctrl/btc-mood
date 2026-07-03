@@ -27,11 +27,12 @@ import {
 import { setHover, type HoverPayload } from '@/lib/chartHoverStore';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { getChartPalette, useThemeName, type ChartPalette } from '@/lib/chartTheme';
+
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
 import { PriceLinesPrimitive } from '@/lib/priceLinesPrimitive';
-import type { Candle } from '@/lib/types';
+import type { Candle, Timeframe } from '@/lib/types';
 import {
   type ChartType,
   type PriceScaleModeOption,
@@ -45,6 +46,10 @@ import {
 } from './chart/types';
 import { OverlayTooltip } from './chart/OverlayTooltip';
 import { FloatingChartTooltip } from './chart/FloatingChartTooltip';
+import { SignalExplainer } from '@/components/SignalExplainer';
+import { DivergenceExplainer } from '@/components/DivergenceExplainer';
+import { buildSignalFlips } from '@/lib/signalMarkers';
+import { buildDivergenceMarkers } from '@/lib/divergenceMarkers';
 import { ChartFloatingControls } from './chart/ChartFloatingControls';
 import { ChartLegend } from './chart/ChartLegend';
 import { useChartTheme } from './chart/useChartTheme';
@@ -62,8 +67,13 @@ import { useChartApi } from './chart/useChartApi';
 
 export type { ChartType, PriceScaleModeOption, ChartApi, ChartOverlay, OverlayKind, IndicatorRender } from './chart/types';
 
+// Stable empty result so effects depending on divergence markers don't
+// retrigger when there's no multi-TF data.
+const EMPTY_DIV_MARKERS: ReturnType<typeof buildDivergenceMarkers> = { markers: [], payloads: [] };
+
 export default function Chart({
   candles,
+  candlesByTf,
   type,
   tf,
   height,
@@ -274,7 +284,7 @@ export default function Chart({
   const refs = refsBagRef.current!;
 
   // ---- Chart Creation & Events (Extracted hooks) ----
-  useChartInit(refs, height);
+  useChartInit(refs, height, tf);
   useChartEvents(refs);
   useCountdownTimer(refs, tf, palette);
   useChartApi(refs, onReady);
@@ -282,6 +292,38 @@ export default function Chart({
   // ---- Theme re-skin (extracted) ----
   useChartTheme(chartRef, candleSeriesRef, paletteRef, palette);
 
+  // Memoize signal flips for the "Why this signal?" explainer
+  const flips = useMemo(() => buildSignalFlips(candles), [candles]);
+
+  const hasSignalsIndicator = useMemo(() => {
+    // In multi-chart, visibleResults keys might be prefixed with tf, e.g. "5m:sma", so we check includes
+    return visibleResults.some(r => r.key.includes('ma_ribbon_tv') || r.key.includes('crossover') || r.key.includes('sma') || r.key.includes('ema'));
+  }, [visibleResults]);
+
+  const hasDivergenceIndicator = useMemo(() => {
+    return visibleResults.some(r => r.key.includes('rsi') || r.key.includes('macd'));
+  }, [visibleResults]);
+
+  const activeFlips = hasSignalsIndicator ? flips : [];
+
+  // Divergence markers sweep every base bar across all timeframes — too heavy
+  // to rerun on every in-bar tick. Cache keyed on bar identity (tf + count +
+  // last bar's open time), so it only recomputes when a bar closes / history
+  // lazy-loads, not when the live bar's close wiggles.
+  const divCacheRef = useRef<{ key: string; data: ReturnType<typeof buildDivergenceMarkers> } | null>(null);
+  const baseTfCandles = candlesByTf && tf ? candlesByTf[tf as Timeframe] : undefined;
+  const divKey = baseTfCandles?.length
+    ? `${tf}:${baseTfCandles.length}:${baseTfCandles[baseTfCandles.length - 1].time}`
+    : '';
+  if (!divKey) {
+    divCacheRef.current = null;
+  } else if (divCacheRef.current?.key !== divKey) {
+    divCacheRef.current = {
+      key: divKey,
+      data: buildDivergenceMarkers(candlesByTf as Record<Timeframe, Candle[]>, tf as Timeframe),
+    };
+  }
+  const divMarkersData = divCacheRef.current?.data ?? EMPTY_DIV_MARKERS;
   const isRenko = type === 'renko';
 
   // ---- Price-scale mode + alert price lines + renko time-scale (extracted) ----
@@ -294,7 +336,8 @@ export default function Chart({
   useChartFx(fxPrimitiveRef, candleSeriesRef, chartRef, prevCloseRef, candles, type, renko);
 
   // ---- Signal markers (extracted) ----
-  useSignalMarkers(markersRef, candles, showSignals, isRenko, visibleResults, palette);
+  const activeDivMarkers = hasDivergenceIndicator ? divMarkersData.markers : [];
+  useSignalMarkers(markersRef, candles, showSignals, isRenko, visibleResults, palette, activeFlips, activeDivMarkers);
 
   // ---- Order overlays sync (extracted) ----
   useOrderOverlays(
@@ -375,6 +418,8 @@ export default function Chart({
       {/* Crosshair OHLC tooltip — follows the cursor; reads the hover
           store internally, so it renders nothing between candles. */}
       {tooltipPos && <FloatingChartTooltip pos={tooltipPos} mode={type} />}
+      {tooltipPos && <SignalExplainer pos={tooltipPos} flips={activeFlips} />}
+      {tooltipPos && <DivergenceExplainer pos={tooltipPos} payloads={hasDivergenceIndicator ? divMarkersData.payloads : []} />}
 
       <ChartFloatingControls
         type={type}

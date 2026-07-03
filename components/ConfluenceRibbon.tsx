@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import type { Candle, Timeframe } from '@/lib/types';
 import { buildRibbonSegments, type Side } from '@/lib/confluence';
 import { aggregateMood, type TFSnapshot } from '@/lib/signals';
 import { buildNarration } from '@/lib/narrate';
 import { detectDivergence } from '@/lib/divergence';
 import { TriangleAlert, Info } from 'lucide-react';
+import { useRegisteredChart } from '@/lib/chartApiStore';
 
 interface ConfluenceRibbonProps {
   candlesByTf: Record<Timeframe, Candle[]>;
@@ -40,13 +41,62 @@ export default function ConfluenceRibbon({
 }: ConfluenceRibbonProps) {
   // Shared time domain = the selected timeframe's recent window. Capped so deep
   // lazy-loaded history keeps the ribbon (compute + DOM) bounded.
+  // Follow the chart registered under the selected timeframe (multi-chart safe).
+  const api = useRegisteredChart(selected);
+  const [, bump] = useReducer((x: number) => x + 1, 0);
+
+  // Event-driven re-render: visible-range changes cover pan/zoom (and the
+  // axis-label width shifts they cause); a ResizeObserver on the chart's DOM
+  // element covers container resizes. Range/axis values are read from the
+  // chart during render, so no state mirrors and no polling.
+  useEffect(() => {
+    if (!api) return;
+    const ts = api.timeScale();
+    const onRange = () => bump();
+    ts.subscribeVisibleLogicalRangeChange(onRange);
+    const ro = new ResizeObserver(() => bump());
+    ro.observe(api.chartElement());
+    return () => {
+      ts.unsubscribeVisibleLogicalRangeChange(onRange);
+      ro.disconnect();
+    };
+  }, [api]);
+
+  const range = api?.timeScale().getVisibleLogicalRange() ?? null;
+  let axisWidth = 0;
+  try { axisWidth = api?.priceScale('right').width() ?? 0; } catch { /* scale not ready */ }
+
+  // Map logical range [from, to] into time [t0, t1] using the currently selected timeframe's candles.
   const domain = useMemo(() => {
-    const sel = (candlesByTf[selected] ?? []).slice(-MAX_RIBBON_BARS);
+    const sel = candlesByTf[selected] ?? [];
     if (sel.length < 2) return null;
-    const t0 = sel[0].time;
-    const t1 = sel[sel.length - 1].time;
-    return t1 > t0 ? { t0, t1 } : null;
-  }, [candlesByTf, selected]);
+    
+    if (!range) {
+      // Fallback: show the last few bars
+      const t1 = sel[sel.length - 1].time;
+      const t0 = sel[Math.max(0, sel.length - MAX_RIBBON_BARS)].time;
+      return t1 > t0 ? { t0, t1 } : null;
+    }
+
+    const fromIdx = Math.max(0, Math.floor(range.from));
+    const toIdx = Math.min(sel.length - 1, Math.ceil(range.to));
+    const t0 = sel[fromIdx]?.time;
+    const t1 = sel[toIdx]?.time;
+
+    // Extrapolate if scrolled past live edge
+    const tfSec = sel[1].time - sel[0].time;
+    const rightExtrapolate = range.to > sel.length - 1 ? (range.to - (sel.length - 1)) * tfSec : 0;
+    const leftExtrapolate = range.from < 0 ? range.from * tfSec : 0;
+
+    const finalT0 = t0 ? t0 + leftExtrapolate : null;
+    const finalT1 = t1 ? t1 + rightExtrapolate : null;
+
+    if (!finalT0 || !finalT1 || finalT1 <= finalT0) return null;
+    return { t0: finalT0, t1: finalT1 };
+    // range is re-read from the chart each render; memo on its primitive
+    // bounds so identical ranges don't recompute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candlesByTf, selected, range?.from, range?.to]);
 
   const divergence = useMemo(() => detectDivergence(snapshots), [snapshots]);
 
@@ -136,7 +186,7 @@ export default function ConfluenceRibbon({
                   {style.label}
                 </span>
 
-                <div className="relative h-3 flex-1 overflow-hidden rounded bg-base/80 ring-1 ring-line/60">
+                <div className="relative h-3 flex-1 overflow-hidden rounded bg-base/80 ring-1 ring-line/60" style={{ marginRight: axisWidth }}>
                   {segments.map((seg, i) => (
                     <div
                       key={i}

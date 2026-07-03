@@ -36,6 +36,10 @@ export interface MaRibbonTVInputs {
   showMa4: boolean;
   ma4Type: MAType;
   ma4Length: number;
+  ma1Source: 'close' | 'open' | 'high' | 'low';
+  ma2Source: 'close' | 'open' | 'high' | 'low';
+  ma3Source: 'close' | 'open' | 'high' | 'low';
+  ma4Source: 'close' | 'open' | 'high' | 'low';
   /** Calculate the ribbon on a higher timeframe, then project onto chart bars. */
   timeframe: RibbonTimeframe;
   /** Non-repainting: only reveal a HTF value once that HTF bar has closed. */
@@ -47,8 +51,8 @@ const DEFAULTS: MaRibbonTVInputs = {
   showMa2: true,  ma2Type: 'SMA', ma2Length: 50,
   showMa3: true,  ma3Type: 'SMA', ma3Length: 100,
   showMa4: true,  ma4Type: 'SMA', ma4Length: 200,
+  ma1Source: 'close', ma2Source: 'close', ma3Source: 'close', ma4Source: 'close',
   timeframe: 'chart',
-  waitForTimeframeCloses: true,
 };
 
 /**
@@ -121,13 +125,16 @@ export function computeMaRibbonTV(
   const useMTF = targetSeconds > chartSpacing && targetSeconds > 0;
 
   // Source series the MAs are computed on, and a projector back to chart bars.
-  let srcCloses: number[];
+  let srcO: number[], srcH: number[], srcL: number[], srcC: number[];
   let srcVolumes: number[];
   let project: (htfMA: (number | null)[]) => (number | null)[];
 
   if (useMTF) {
     const { htf, bucketOf } = resample(candles, targetSeconds);
-    srcCloses = htf.map((c) => c.close);
+    srcO = htf.map((c) => c.open);
+    srcH = htf.map((c) => c.high);
+    srcL = htf.map((c) => c.low);
+    srcC = htf.map((c) => c.close);
     srcVolumes = htf.map((c) => c.volume);
     // Each chart bar shows its HTF bucket's value; with "wait for closes" we lag
     // by one bucket so a value only appears after its HTF bar has closed.
@@ -137,16 +144,28 @@ export function computeMaRibbonTV(
         return idx >= 0 ? (htfMA[idx] ?? null) : null;
       });
   } else {
-    srcCloses = candles.map((c) => c.close);
+    srcO = candles.map((c) => c.open);
+    srcH = candles.map((c) => c.high);
+    srcL = candles.map((c) => c.low);
+    srcC = candles.map((c) => c.close);
     srcVolumes = candles.map((c) => c.volume);
     project = (ma) => ma; // already aligned to chart bars
   }
 
-  const mas: { show: boolean; type: MAType; length: number; label: string; color: string }[] = [
-    { show: Boolean(inputs.showMa1), type: inputs.ma1Type, length: Number(inputs.ma1Length), label: 'MA #1', color: COLORS[0] },
-    { show: Boolean(inputs.showMa2), type: inputs.ma2Type, length: Number(inputs.ma2Length), label: 'MA #2', color: COLORS[1] },
-    { show: Boolean(inputs.showMa3), type: inputs.ma3Type, length: Number(inputs.ma3Length), label: 'MA #3', color: COLORS[2] },
-    { show: Boolean(inputs.showMa4), type: inputs.ma4Type, length: Number(inputs.ma4Length), label: 'MA #4', color: COLORS[3] },
+  const getSourceSeries = (src: 'close' | 'open' | 'high' | 'low') => {
+    switch (src) {
+      case 'open': return srcO;
+      case 'high': return srcH;
+      case 'low': return srcL;
+      default: return srcC;
+    }
+  };
+
+  const mas: { show: boolean; type: MAType; length: number; source: 'close' | 'open' | 'high' | 'low'; label: string; color: string }[] = [
+    { show: Boolean(inputs.showMa1), type: inputs.ma1Type, length: Number(inputs.ma1Length), source: inputs.ma1Source, label: 'MA #1', color: COLORS[0] },
+    { show: Boolean(inputs.showMa2), type: inputs.ma2Type, length: Number(inputs.ma2Length), source: inputs.ma2Source, label: 'MA #2', color: COLORS[1] },
+    { show: Boolean(inputs.showMa3), type: inputs.ma3Type, length: Number(inputs.ma3Length), source: inputs.ma3Source, label: 'MA #3', color: COLORS[2] },
+    { show: Boolean(inputs.showMa4), type: inputs.ma4Type, length: Number(inputs.ma4Length), source: inputs.ma4Source, label: 'MA #4', color: COLORS[3] },
   ];
 
   const plots = mas.map((m, idx) => ({
@@ -157,7 +176,7 @@ export function computeMaRibbonTV(
     pane:      'overlay' as const,
     lineWidth: 2 as const,
     data:      m.show && m.length >= 1
-      ? project(computeMA(srcCloses, srcVolumes, m.length, m.type))
+      ? project(computeMA(getSourceSeries(m.source), srcVolumes, m.length, m.type))
       : new Array<null>(n).fill(null),
   }));
 

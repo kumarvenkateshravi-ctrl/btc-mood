@@ -28,6 +28,7 @@ export interface IndicatorStyleDef {
   hasValue?: boolean;
   value?: number;
   isFill?: boolean;
+  hideCheckbox?: boolean;
 }
 
 export interface IndicatorSettings {

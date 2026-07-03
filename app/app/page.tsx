@@ -18,6 +18,7 @@ const BottomDock = dynamic(() => import('@/components/BottomDock'), {
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, type PanelImperativeHandle } from 'react-resizable-panels';
 import SymbolSearch from '@/components/SymbolSearch';
 import DashboardAside from '@/components/DashboardAside';
+import StrategyBuilderPanel from '@/components/StrategyBuilderPanel';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
@@ -214,6 +215,7 @@ export default function DashboardPage() {
                 ) : (
                   <ChartPanel
                     candles={historyCandles ?? currentCandles}
+                    candlesByTf={candlesByTf}
                     type={chartType}
                     onTypeChange={setChartType}
                     selected={selected}
@@ -304,6 +306,7 @@ export default function DashboardPage() {
               />
             )}
             {rightPanel === 'orderflow' && <OrderFlowPanel symbol={symbol} tf={selected} />}
+            {rightPanel === 'strategy' && <StrategyBuilderPanel activeIndicators={activeIndicators} />}
           </aside>
         )}
 

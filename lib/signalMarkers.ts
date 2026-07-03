@@ -12,6 +12,10 @@ import type { Candle } from './types';
 export interface SignalFlip {
   time: number;
   side: 'buy' | 'sell';
+  ema9: number;
+  ema21: number;
+  rsi14: number;
+  atrPct: number;
 }
 
 // Match computeSignal's warm-up: it returns neutral until a timeframe
@@ -25,6 +29,17 @@ export function buildSignalFlips(candles: Candle[]): SignalFlip[] {
   const e9 = pad(its.ema(closes, { period: 9 }), closes.length);
   const e21 = pad(its.ema(closes, { period: 21 }), closes.length);
   const r14 = pad(its.rsi(closes, { period: 14 }), closes.length);
+  
+  const tr = closes.map((c, i) => {
+    if (i === 0) return candles[i].high - candles[i].low;
+    const prevC = closes[i - 1];
+    return Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - prevC),
+      Math.abs(candles[i].low - prevC)
+    );
+  });
+  const atr = pad(its.rma(tr, { period: 14 }), closes.length);
 
   const flips: SignalFlip[] = [];
   let lastEmitted: 'buy' | 'sell' | null = null;
@@ -33,7 +48,14 @@ export function buildSignalFlips(candles: Candle[]): SignalFlip[] {
     const { side } = scoreSignal(e9[i], e21[i], r14[i]);
     if (side === 'neutral') continue;
     if (side !== lastEmitted) {
-      flips.push({ time: candles[i].time, side });
+      flips.push({ 
+        time: candles[i].time, 
+        side, 
+        ema9: e9[i] ?? 0, 
+        ema21: e21[i] ?? 0, 
+        rsi14: r14[i] ?? 0, 
+        atrPct: atr[i] != null && closes[i] > 0 ? (atr[i]! / closes[i]) * 100 : 0
+      });
       lastEmitted = side;
     }
   }

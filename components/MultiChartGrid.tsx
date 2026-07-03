@@ -87,6 +87,7 @@ export default function MultiChartGrid({
           key={tf}
           tf={tf}
           candles={candlesByTf[tf] ?? []}
+          candlesByTf={candlesByTf}
           type={chartType}
           activeIndicatorIds={activeIndicatorIds}
           active={tf === selected}
@@ -102,6 +103,7 @@ export default function MultiChartGrid({
 function GridCell({
   tf,
   candles,
+  candlesByTf,
   type,
   activeIndicatorIds,
   active,
@@ -111,6 +113,7 @@ function GridCell({
 }: {
   tf: Timeframe;
   candles: Candle[];
+  candlesByTf: Record<Timeframe, Candle[]>;
   type: ChartType;
   activeIndicatorIds: string[];
   active: boolean;
@@ -184,6 +187,7 @@ function GridCell({
       ) : (
         <Chart
           candles={baseCandlesForIndicators}
+          candlesByTf={candlesByTf}
           type={type}
           height={height}
           tf={tf}

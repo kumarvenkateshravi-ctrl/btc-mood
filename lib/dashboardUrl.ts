@@ -84,14 +84,24 @@ export function readInitialState(): InitialDashboardState {
     return { tf: '15m', type: 'candlestick', symbol: DEFAULT_COMPARE_SYMBOL, indicators: null, drawings: null };
   }
   const sp = new URLSearchParams(window.location.search);
-  const tfParam = sp.get('tf');
-  const symbolParam = sp.get('symbol') ?? DEFAULT_COMPARE_SYMBOL;
+  let tfParam = sp.get('tf');
+  let typeParam = sp.get('type');
+  let symbolParam = sp.get('symbol');
+  let indParam = sp.get('ind');
+
+  // Fallback to localStorage if not in URL
+  if (!tfParam && typeof localStorage !== 'undefined') tfParam = localStorage.getItem('btc-mood:tf');
+  if (!typeParam && typeof localStorage !== 'undefined') typeParam = localStorage.getItem('btc-mood:type');
+  if (!symbolParam && typeof localStorage !== 'undefined') symbolParam = localStorage.getItem('btc-mood:symbol');
+  
+  symbolParam = symbolParam ?? DEFAULT_COMPARE_SYMBOL;
+
   const tf: Timeframe = (TIMEFRAMES as string[]).includes(tfParam ?? '')
     ? (tfParam as Timeframe)
     : '15m';
-  const type: ChartType = parseChartType(sp.get('type')) ?? 'candlestick';
+  const type: ChartType = parseChartType(typeParam) ?? 'candlestick';
   const symbol: CompareSymbol = isCompareSymbol(symbolParam) ? symbolParam : DEFAULT_COMPARE_SYMBOL;
-  const indParam = sp.get('ind');
+  
   const indicators = indParam
     ? indParam.split(',').filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id))
     : null;
@@ -109,12 +119,30 @@ export function writeUrlState(
 ): void {
   if (typeof window === 'undefined') return;
   const sp = new URLSearchParams(window.location.search);
-  if (tf === '15m') sp.delete('tf');
-  else sp.set('tf', tf);
-  if (type === 'candlestick') sp.delete('type');
-  else sp.set('type', type === 'heikinAshi' ? 'ha' : type === 'renko' ? 'renko' : 'candle');
-  if (symbol === DEFAULT_COMPARE_SYMBOL) sp.delete('symbol');
-  else sp.set('symbol', symbol);
+  if (tf === '15m') {
+    sp.delete('tf');
+    localStorage.removeItem('btc-mood:tf');
+  } else {
+    sp.set('tf', tf);
+    localStorage.setItem('btc-mood:tf', tf);
+  }
+
+  if (type === 'candlestick') {
+    sp.delete('type');
+    localStorage.removeItem('btc-mood:type');
+  } else {
+    const t = type === 'heikinAshi' ? 'ha' : type === 'renko' ? 'renko' : 'candle';
+    sp.set('type', t);
+    localStorage.setItem('btc-mood:type', t);
+  }
+
+  if (symbol === DEFAULT_COMPARE_SYMBOL) {
+    sp.delete('symbol');
+    localStorage.removeItem('btc-mood:symbol');
+  } else {
+    sp.set('symbol', symbol);
+    localStorage.setItem('btc-mood:symbol', symbol);
+  }
   if (indicators.length === 0) sp.delete('ind');
   else sp.set('ind', indicators.join(','));
   

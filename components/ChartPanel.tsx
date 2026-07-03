@@ -61,12 +61,14 @@ interface ChartPanelProps {
   onWorkspaceApply: (cfg: import('@/lib/workspaces').WorkspaceConfig) => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  candlesByTf?: Record<string, import('@/lib/types').Candle[]>;
 }
 
 
 
 export default function ChartPanel({
   candles,
+  candlesByTf,
   type,
   onTypeChange,
   selected,
@@ -523,6 +525,7 @@ export default function ChartPanel({
         {!loading && (
           <Chart
             candles={baseCandlesForIndicators}
+            candlesByTf={candlesByTf}
             type={type}
             height={chartHeight}
             indicatorResult={indicatorResult}
