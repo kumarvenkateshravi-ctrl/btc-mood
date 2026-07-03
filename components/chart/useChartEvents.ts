@@ -84,12 +84,12 @@ export function useChartEvents(refs: ChartRefs) {
       if (lastCrosshairRef.current?.payload.base !== base || lastCrosshairRef.current?.time !== timeSec) {
         setHover(payload);
         lastCrosshairRef.current = { point: param.point, time: timeSec, payload };
-        if (isPointerDownRef.current) {
+        if (isCandlePointerDown) {
           setTooltipPos({ x: param.point.x, y: param.point.y, time: timeSec, hover: payload });
         }
       } else {
         lastCrosshairRef.current.point = param.point;
-        if (isPointerDownRef.current) {
+        if (isCandlePointerDown) {
           setTooltipPos({ x: param.point.x, y: param.point.y, time: timeSec, hover: payload });
         }
       }
@@ -185,18 +185,30 @@ export function useChartEvents(refs: ChartRefs) {
     let bodyPanPointerId: number | null = null;
     let bodyPanStartY: number = 0;
     let bodyPanStartRange: { from: number; to: number } | null = null;
+    let isCandlePointerDown = false;
     const isDragKind = (k: string): k is 'entry' | 'tp' | 'sl' =>
       k === 'entry' || k === 'tp' || k === 'sl';
 
     const onPointerDown = (e: PointerEvent) => {
       isPointerDownRef.current = true;
-      if (lastCrosshairRef.current) {
-        setTooltipPos({
-          x: lastCrosshairRef.current.point.x,
-          y: lastCrosshairRef.current.point.y,
-          time: lastCrosshairRef.current.time,
-          hover: lastCrosshairRef.current.payload
-        });
+      isCandlePointerDown = false;
+      if (lastCrosshairRef.current && candleSeriesRef.current) {
+        const { point, payload, time } = lastCrosshairRef.current;
+        const cs = candleSeriesRef.current;
+        const yHigh = cs.priceToCoordinate(payload.src.high);
+        const yLow = cs.priceToCoordinate(payload.src.low);
+        if (yHigh !== null && yLow !== null) {
+          const pad = 15;
+          if (point.y >= yHigh - pad && point.y <= yLow + pad) {
+            isCandlePointerDown = true;
+            setTooltipPos({
+              x: point.x,
+              y: point.y,
+              time: time,
+              hover: payload
+            });
+          }
+        }
       }
       const prim = overlayPrimitiveRef.current;
       const c = chartRef.current;
@@ -342,6 +354,7 @@ export function useChartEvents(refs: ChartRefs) {
     
     const onBodyPanUp = (e: PointerEvent) => {
       isPointerDownRef.current = false;
+      isCandlePointerDown = false;
       setTooltipPos(null);
       if (bodyPanPointerId !== e.pointerId) return;
       bodyPanPointerId = null;

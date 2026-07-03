@@ -134,5 +134,6 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
       refs.setHover(null);
       refs.setHoverLine(null);
     };
-  }, [refs, height]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refs]);
 }
