@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Chart, { type ChartType, type PriceScaleModeOption, type ChartOverlay, type OverlayKind, type ChartApi } from './Chart';
 import { type RenkoConfig, DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import ChartContextMenu from './trade/ChartContextMenu';
-import { usePaperStore, setPositionOverlay } from '@/lib/paperStore';
+import { usePaperStore, setPositionOverlay, updateActiveOverlay } from '@/lib/paperStore';
 import { setMarkPrice } from '@/lib/markPriceStore';
 import {
   useReplaySession,
@@ -246,27 +246,59 @@ export default function ChartPanel({
     [replayTrading, onQuickTrade],
   );
 
-  // Draw the open position as entry / TP / SL lines; TP & SL are draggable.
+  const activeOrder = paper.activeOrder; // already in usePaperStore() state
+
+  // Draw the open position or staged order as entry / TP / SL lines; TP & SL
+  // are always draggable, entry is draggable unless the order is a market
+  // order (which pins to mid — see the effect below).
   const overlays = useMemo<ChartOverlay[]>(() => {
+    // A staged order takes over the overlay layer (TV behavior: you adjust
+    // the pending ticket on the chart before Confirm).
+    if (activeOrder && !replayTrading) {
+      const o: ChartOverlay[] = [{
+        kind: 'entry',
+        price: activeOrder.entry,
+        draggable: activeOrder.type !== 'market', // market entry pins to mid
+      }];
+      if (activeOrder.tp != null) o.push({ kind: 'tp', price: activeOrder.tp, draggable: true });
+      if (activeOrder.sl != null) o.push({ kind: 'sl', price: activeOrder.sl, draggable: true });
+      return o;
+    }
     if (!hasPosition || !pos) return [];
     const o: ChartOverlay[] = [{ kind: 'entry', price: pos.entryPrice, draggable: false }];
     if (pos.tp != null) o.push({ kind: 'tp', price: pos.tp, draggable: true });
     if (pos.sl != null) o.push({ kind: 'sl', price: pos.sl, draggable: true });
     return o;
-  }, [hasPosition, pos]);
+  }, [activeOrder, replayTrading, hasPosition, pos]);
 
-  // Dragging a TP/SL line *is* the order — routed to the session during replay.
+  // Dragging a line on a staged order updates the stage; dragging a TP/SL
+  // line on an open position *is* the order — routed to the session during
+  // replay.
   const handleOverlayDrag = useCallback(
     (kind: OverlayKind, p: number) => {
+      if (activeOrder && !replayTrading) {
+        if (kind === 'entry' || kind === 'tp' || kind === 'sl') updateActiveOverlay(kind, p);
+        return;
+      }
       if (kind !== 'tp' && kind !== 'sl') return;
       if (replayTrading) replaySetOverlay(kind, p);
       else setPositionOverlay(kind, p, symbol);
     },
-    [replayTrading, symbol],
+    [activeOrder, replayTrading, symbol],
   );
+
+  // Market-stage entry always tracks mid (you can't "drag" a market fill).
+  useEffect(() => {
+    if (activeOrder?.type === 'market') updateActiveOverlay('entry', mid);
+  }, [activeOrder?.type, mid]);
 
   const handleOverlayChipClick = useCallback(
     (key: 'tp' | 'sl' | 'close') => {
+      if (activeOrder && !replayTrading) {
+        if (key === 'close') paper.clearActiveOrder();
+        else updateActiveOverlay(key, null);
+        return;
+      }
       if (key === 'close') {
         if (replayTrading) replayClose(replayLast?.close ?? mid, replayLast?.time ?? Math.floor(Date.now() / 1000));
         else paper.closePosition(mid, symbol);
@@ -276,14 +308,23 @@ export default function ChartPanel({
         setPositionOverlay(key, null, symbol);
       }
     },
-    [replayTrading, replayLast, paper, mid, symbol],
+    [activeOrder, replayTrading, replayLast, paper, mid, symbol],
   );
 
   const handlePriceAlertDrag = useCallback((id: string, newPrice: number) => {
     updatePriceAlertPrice(id, newPrice);
   }, []);
 
-  const overlaySide = hasPosition && pos ? (pos.side === 'long' ? 'buy' : 'sell') : null;
+  const isStaged = !!(activeOrder && !replayTrading);
+  const overlaySide = isStaged ? activeOrder!.side : (hasPosition && pos ? (pos.side === 'long' ? 'buy' : 'sell') : null);
+  const overlayEntryPrice = isStaged ? activeOrder!.entry : (hasPosition && pos ? pos.entryPrice : null);
+  const overlayTpPrice = isStaged ? activeOrder!.tp : (hasPosition && pos ? pos.tp : null);
+  const overlaySlPrice = isStaged ? activeOrder!.sl : (hasPosition && pos ? pos.sl : null);
+  const overlayHasTp = isStaged ? activeOrder!.tp != null : !!(hasPosition && pos && pos.tp != null);
+  const overlayHasSl = isStaged ? activeOrder!.sl != null : !!(hasPosition && pos && pos.sl != null);
+  const overlayUnitsLabel = isStaged ? String(activeOrder!.units) : (hasPosition && pos ? String(pos.units) : '—');
+  const overlayTypeLabel = isStaged ? activeOrder!.type.toUpperCase() : 'Market';
+  const overlayLeverage = (hasPosition && pos ? pos.leverage : LEVERAGE);
 
   // Price alerts for this symbol → dashed lines on the chart + management pills.
   const allPriceAlerts = usePriceAlerts();
@@ -559,13 +600,14 @@ export default function ChartPanel({
             onOverlayDrag={handleOverlayDrag}
             onOverlayChipClick={handleOverlayChipClick}
             overlaySide={overlaySide}
-            overlayEntryPrice={hasPosition && pos ? pos.entryPrice : null}
-            overlayTpPrice={hasPosition && pos ? pos.tp : null}
-            overlaySlPrice={hasPosition && pos ? pos.sl : null}
-            overlayHasTp={!!(hasPosition && pos && pos.tp != null)}
-            overlayHasSl={!!(hasPosition && pos && pos.sl != null)}
-            overlayUnitsLabel={hasPosition && pos ? String(pos.units) : '—'}
-            overlayLeverage={hasPosition && pos ? pos.leverage : LEVERAGE}
+            overlayTypeLabel={overlayTypeLabel}
+            overlayEntryPrice={overlayEntryPrice}
+            overlayTpPrice={overlayTpPrice}
+            overlaySlPrice={overlaySlPrice}
+            overlayHasTp={overlayHasTp}
+            overlayHasSl={overlayHasSl}
+            overlayUnitsLabel={overlayUnitsLabel}
+            overlayLeverage={overlayLeverage}
             priceLines={priceLines}
             onPriceLineDrag={handlePriceAlertDrag}
             onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}
