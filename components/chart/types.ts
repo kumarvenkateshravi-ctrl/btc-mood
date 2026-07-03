@@ -58,6 +58,7 @@ export interface ChartProps {
   showSignals?: boolean;
   renko?: RenkoOptions;
   priceLines?: { id: string; price: number; color: string; title: string }[];
+  onPriceLineDrag?: (id: string, newPrice: number) => void;
   overlays?: ChartOverlay[];
   onOverlayDrag?: (kind: OverlayKind, price: number) => void;
   onOverlayChipClick?: (key: 'tp' | 'sl' | 'close') => void;
@@ -110,5 +111,3 @@ export function getTfMinutes(tfStr: string): number {
     default: return 15;
   }
 }
-
-

@@ -7,6 +7,8 @@ import {
   addDrawing,
   updateDrawing,
   removeDrawing,
+  undo,
+  redo,
   newDrawingId,
   fibLevelPrices,
   TOOL_POINTS,
@@ -155,6 +157,13 @@ export default function DrawingLayer({
       } else if (e.key === 'Escape') {
         setDraft(null);
         setSelectedId(null);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) {
+          redo(sym);
+        } else {
+          undo(sym);
+        }
+        e.preventDefault();
       }
     };
 

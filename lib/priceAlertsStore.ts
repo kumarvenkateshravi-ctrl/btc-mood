@@ -69,6 +69,10 @@ export function togglePriceAlert(id: string) {
   save(load().map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a)));
 }
 
+export function updatePriceAlertPrice(id: string, price: number) {
+  save(load().map((a) => (a.id === id ? { ...a, price } : a)));
+}
+
 export function markPriceAlertsFired(ids: string[], ts = Date.now()) {
   if (ids.length === 0) return;
   const set = new Set(ids);

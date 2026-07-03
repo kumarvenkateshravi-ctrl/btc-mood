@@ -14,7 +14,7 @@ import {
   replaySetOverlay,
   replayClose,
 } from '@/lib/replaySession';
-import { usePriceAlerts, removePriceAlert } from '@/lib/priceAlertsStore';
+import { usePriceAlerts, removePriceAlert, updatePriceAlertPrice } from '@/lib/priceAlertsStore';
 import DrawingLayer from './DrawingLayer';
 import DrawingToolbar from './DrawingToolbar';
 import { useDrawings, clearDrawings, DRAWING_COLORS, type Tool } from '@/lib/drawings';
@@ -263,6 +263,10 @@ export default function ChartPanel({
     },
     [replayTrading, replayLast, paper, mid, symbol],
   );
+
+  const handlePriceAlertDrag = useCallback((id: string, newPrice: number) => {
+    updatePriceAlertPrice(id, newPrice);
+  }, []);
 
   const overlaySide = hasPosition && pos ? (pos.side === 'long' ? 'buy' : 'sell') : null;
 
@@ -547,6 +551,7 @@ export default function ChartPanel({
             overlayUnitsLabel={hasPosition && pos ? String(pos.units) : '—'}
             overlayLeverage={hasPosition && pos ? pos.leverage : LEVERAGE}
             priceLines={priceLines}
+            onPriceLineDrag={handlePriceAlertDrag}
             onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}
             activeIndicatorId={primaryId}
             onIndicatorChange={handleChartIndicatorChange}

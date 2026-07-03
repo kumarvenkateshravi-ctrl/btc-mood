@@ -87,6 +87,9 @@ type Store = Record<string, Drawing[]>;
 const KEY = 'btc-mood:drawings:v1';
 
 let cache: Store | null = null;
+const undoStack: Record<string, Drawing[][]> = {};
+const redoStack: Record<string, Drawing[][]> = {};
+
 const listeners = new Set<() => void>();
 const EMPTY: Drawing[] = [];
 
@@ -124,34 +127,87 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 
+function pushUndo(symbol: string, current: Drawing[]) {
+  if (!undoStack[symbol]) undoStack[symbol] = [];
+  undoStack[symbol].push([...current]);
+  // Limit stack size to 50
+  if (undoStack[symbol].length > 50) undoStack[symbol].shift();
+  // Clear redo stack on new action
+  redoStack[symbol] = [];
+}
+
 export function getDrawings(symbol: string): Drawing[] {
   return loadAll()[symbol] ?? EMPTY;
 }
 
 export function addDrawing(symbol: string, drawing: Drawing) {
   const all = loadAll();
-  saveAll({ ...all, [symbol]: [...(all[symbol] ?? []), drawing] });
+  const current = all[symbol] ?? [];
+  pushUndo(symbol, current);
+  saveAll({ ...all, [symbol]: [...current, drawing] });
+}
+
+export function setDrawings(symbol: string, drawings: Drawing[]) {
+  const all = loadAll();
+  const current = all[symbol] ?? [];
+  pushUndo(symbol, current);
+  saveAll({ ...all, [symbol]: drawings });
 }
 
 export function updateDrawing(symbol: string, id: string, patch: Partial<Drawing>) {
   const all = loadAll();
-  const list = all[symbol] ?? [];
-  saveAll({ ...all, [symbol]: list.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
+  const current = all[symbol] ?? [];
+  pushUndo(symbol, current);
+  saveAll({ ...all, [symbol]: current.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
 }
 
 export function removeDrawing(symbol: string, id: string) {
   const all = loadAll();
-  const list = all[symbol] ?? [];
-  saveAll({ ...all, [symbol]: list.filter((d) => d.id !== id) });
+  const current = all[symbol] ?? [];
+  pushUndo(symbol, current);
+  saveAll({ ...all, [symbol]: current.filter((d) => d.id !== id) });
 }
 
 export function clearDrawings(symbol: string) {
   const all = loadAll();
-  if (!all[symbol] || all[symbol].length === 0) return;
+  const current = all[symbol] ?? [];
+  if (current.length === 0) return;
+  pushUndo(symbol, current);
   saveAll({ ...all, [symbol]: [] });
+}
+
+export function undo(symbol: string) {
+  const all = loadAll();
+  const current = all[symbol] ?? [];
+  const symbolUndo = undoStack[symbol] ?? [];
+  
+  if (symbolUndo.length === 0) return;
+  
+  const prev = symbolUndo.pop()!;
+  
+  if (!redoStack[symbol]) redoStack[symbol] = [];
+  redoStack[symbol].push([...current]);
+  
+  saveAll({ ...all, [symbol]: prev });
+}
+
+export function redo(symbol: string) {
+  const all = loadAll();
+  const current = all[symbol] ?? [];
+  const symbolRedo = redoStack[symbol] ?? [];
+  
+  if (symbolRedo.length === 0) return;
+  
+  const next = symbolRedo.pop()!;
+  
+  if (!undoStack[symbol]) undoStack[symbol] = [];
+  undoStack[symbol].push([...current]);
+  
+  saveAll({ ...all, [symbol]: next });
 }
 
 export function useDrawings(symbol: string): Drawing[] {
   const all = useSyncExternalStore(subscribe, () => cache ?? loadAll(), () => ({}) as Store);
   return all[symbol] ?? EMPTY;
 }
+

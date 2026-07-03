@@ -82,6 +82,14 @@ export function useChartData(
 
     if (baseCandles.length === 0) return;
 
+    // Initialize the hover store with the latest candle if it hasn't been set yet.
+    // This ensures the OHLC strip at the top displays the latest values immediately.
+    const lastBase = baseCandles[baseCandles.length - 1];
+    const prevBase = baseCandles.length > 1 ? baseCandles[baseCandles.length - 2] : null;
+    const lastSrc = isRenko ? lastBase : candles[candles.length - 1];
+    refs.setHover({ src: lastSrc, base: lastBase, prevBase });
+    refs.setHover(null); // Clears 'hover' but persists it in 'last'
+
     // Detect lazy-loaded older history (time-based modes only) so we can keep
     // the user's view anchored on the same bars after setData shifts indices.
     const canPreserveView = type !== 'renko';

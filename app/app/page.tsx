@@ -21,6 +21,7 @@ import DashboardAside from '@/components/DashboardAside';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
+import { useDrawings, getDrawings, setDrawings } from '@/lib/drawings';
 import { useSharedIndicators } from '@/lib/useSharedIndicators';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import {
@@ -81,6 +82,8 @@ export default function DashboardPage() {
 
   const { activeIndicators, showVolume, toggleVolume, handleAdd: handleAddIndicator, handleRemove: handleRemoveIndicator, handleToggle: handleToggleIndicator } = useSharedIndicators();
 
+  const currentDrawings = useDrawings(symbol);
+
   // ---- Hydrate from URL + localStorage ----
   useEffect(() => {
     const init = readInitialState();
@@ -108,6 +111,14 @@ export default function DashboardPage() {
       if (rp === 'mood' || rp === 'signals' || rp === 'orderflow') setRightPanel(rp);
       else if (rp === 'none') setRightPanel(null);
     } catch {}
+
+    if (init.drawings && init.drawings.length > 0) {
+      const existing = getDrawings(init.symbol);
+      if (existing.length === 0) {
+        setDrawings(init.symbol, init.drawings);
+      }
+    }
+
     setHydrated(true);
   }, []);
 
@@ -127,8 +138,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!hydrated) return;
-    writeUrlState(selected, chartType, symbol, activeIndicatorIds);
-  }, [hydrated, selected, chartType, symbol, activeIndicatorIds]);
+    writeUrlState(selected, chartType, symbol, activeIndicatorIds, currentDrawings);
+  }, [hydrated, selected, chartType, symbol, activeIndicatorIds, currentDrawings]);
 
   // ---- Keyboard shortcuts ----
   useKeyboardShortcuts({

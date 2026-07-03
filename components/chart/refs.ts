@@ -7,9 +7,10 @@ import type {
   ISeriesMarkersPluginApi,
   Time,
 } from 'lightweight-charts';
-import type { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
-import type { ChartFxPrimitive } from '@/lib/chartFxPrimitive';
-import type { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
+import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
+import { ChartFxPrimitive } from '@/lib/chartFxPrimitive';
+import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
+import { PriceLinesPrimitive } from '@/lib/priceLinesPrimitive';
 import type { ChartPalette } from '@/lib/chartTheme';
 import type { HoverPayload } from '@/lib/chartHoverStore';
 import type { Candle } from '@/lib/types';
@@ -44,7 +45,7 @@ export interface ChartRefs {
   indicatorSigRef: MutableRefObject<string>;
   indicatorGradientRef: MutableRefObject<Map<string, GradientZonePrimitive>>;
   indicatorMarkersRef: MutableRefObject<Map<string, ISeriesMarkersPluginApi<Time>>>;
-  priceLinesRef: MutableRefObject<Map<string, PriceLineEntry>>;
+  priceLinesPrimitiveRef: MutableRefObject<PriceLinesPrimitive | null>;
 
   // Theme + palette
   paletteRef: MutableRefObject<ChartPalette>;
@@ -59,12 +60,15 @@ export interface ChartRefs {
   prevCloseRef: MutableRefObject<number | null>;
   lastCandleTimeRef: MutableRefObject<number | null>;
   initialZoomDoneRef: MutableRefObject<boolean>;
+  isPointerDownRef: MutableRefObject<boolean>;
+  lastCrosshairRef: MutableRefObject<{ point: { x: number; y: number }; time: number; payload: HoverPayload } | null>;
 
   // Callback refs (kept current without re-binding event listeners)
   onOverlayDragRef: MutableRefObject<((kind: OverlayKind, price: number) => void) | undefined>;
   onOverlayChipClickRef: MutableRefObject<((key: 'tp' | 'sl' | 'close') => void) | undefined>;
   onChartContextMenuRef: MutableRefObject<((price: number, x: number, y: number) => void) | undefined>;
   onLoadOlderRef: MutableRefObject<(() => void) | undefined>;
+  onPriceLineDragRef: MutableRefObject<((id: string, newPrice: number) => void) | undefined>;
 
   // State setters / store setters (for effects that drive React state)
   setHover: (h: HoverPayload | null) => void;

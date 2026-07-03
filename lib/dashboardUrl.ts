@@ -11,6 +11,7 @@ import {
   isCompareSymbol,
   type CompareSymbol,
 } from './compare';
+import type { Drawing } from './drawings';
 
 export const POLL_MS = 30_000;
 export const INDICATORS_KEY = 'btc-mood:chart-indicators:v1';
@@ -36,6 +37,46 @@ export interface InitialDashboardState {
   type: ChartType;
   symbol: CompareSymbol;
   indicators: string[] | null;
+  drawings: Drawing[] | null;
+}
+
+// Compact serialization for drawings
+// Format: [id, type, color, text, time1, price1, time2, price2, ...]
+function compressDrawings(drawings: Drawing[]): string {
+  const compact = drawings.map(d => {
+    const base: any[] = [d.id, d.type, d.color, d.text || ''];
+    d.points.forEach(p => {
+      base.push(p.time, p.price);
+    });
+    return base;
+  });
+  return btoa(JSON.stringify(compact));
+}
+
+function decompressDrawings(data: string): Drawing[] | null {
+  if (data.startsWith('id:')) {
+    console.warn('Backend fetch for drawing ID not implemented:', data);
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(atob(data));
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((arr: any[]) => {
+      const id = arr[0];
+      const type = arr[1];
+      const color = arr[2];
+      const text = arr[3];
+      const points = [];
+      for (let i = 4; i < arr.length; i += 2) {
+        points.push({ time: arr[i], price: arr[i + 1] });
+      }
+      const d: Drawing = { id, type, color, points };
+      if (text) d.text = text;
+      return d;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export function readInitialState(): InitialDashboardState {
@@ -54,7 +95,9 @@ export function readInitialState(): InitialDashboardState {
   const indicators = indParam
     ? indParam.split(',').filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id))
     : null;
-  return { tf, type, symbol, indicators };
+  const drawParam = sp.get('draw');
+  const drawings = drawParam ? decompressDrawings(drawParam) : null;
+  return { tf, type, symbol, indicators, drawings };
 }
 
 export function writeUrlState(
@@ -62,6 +105,7 @@ export function writeUrlState(
   type: ChartType,
   symbol: CompareSymbol,
   indicators: string[],
+  drawings: Drawing[] = [],
 ): void {
   if (typeof window === 'undefined') return;
   const sp = new URLSearchParams(window.location.search);
@@ -73,6 +117,18 @@ export function writeUrlState(
   else sp.set('symbol', symbol);
   if (indicators.length === 0) sp.delete('ind');
   else sp.set('ind', indicators.join(','));
+  
+  if (drawings.length === 0) {
+    sp.delete('draw');
+  } else if (drawings.length <= 50) {
+    sp.set('draw', compressDrawings(drawings));
+  } else {
+    // Stub for backend upload
+    const fakeId = 'id:xyz' + Date.now();
+    console.warn(`> 50 drawings (${drawings.length}), stubbing backend upload with ${fakeId}`);
+    sp.set('draw', fakeId);
+  }
+
   const qs = sp.toString();
   const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
   window.history.replaceState(null, '', url);
