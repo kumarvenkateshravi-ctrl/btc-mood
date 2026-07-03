@@ -18,6 +18,7 @@ interface OrderTicketProps {
   leverage: number;
   onLeverageChange: (n: number) => void;
   reduceAvailable: number;
+  initialSide?: 'buy' | 'sell';
 }
 
 type Tab = 'market' | 'limit' | 'stop';
@@ -41,7 +42,7 @@ export default function OrderTicket(p: OrderTicketProps) {
     balance,
   } = usePaperStore();
   const [tab, setTab] = useState<Tab>('market');
-  const [side, setSide] = useState<Side>('buy');
+  const [side, setSide] = useState<Side>(p.initialSide ?? 'buy');
   const [units, setUnits] = useState<string>('0.10');
   const [price, setPrice] = useState<string>(p.midPrice.toFixed(1));
   // TP/SL on by default so a freshly-staged order shows all three
@@ -62,6 +63,12 @@ export default function OrderTicket(p: OrderTicketProps) {
   const ocoGroupRef = useRef<string | null>(null);
   const stagedIdRef = useRef<string | null>(null);
   const ctaRef = useRef<HTMLButtonElement | null>(null);
+
+  // Re-sync the side toggle when the modal reopens with a different
+  // clicked side (e.g. SELL pill after a prior BUY-prefilled ticket).
+  useEffect(() => {
+    if (p.initialSide) setSide(p.initialSide);
+  }, [p.initialSide]);
 
   const autoPrice = priceTouched ? null : p.midPrice.toFixed(1);
   const effectivePrice = priceTouched ? price : (autoPrice ?? price);

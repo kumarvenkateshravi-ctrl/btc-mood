@@ -12,6 +12,7 @@ interface OrderModalProps {
   leverage: number;
   onLeverageChange: (n: number) => void;
   reduceAvailable: number;
+  initialSide?: 'buy' | 'sell';
 }
 
 /**
@@ -39,6 +40,7 @@ export default function OrderModal(p: OrderModalProps) {
         leverage={p.leverage}
         onLeverageChange={p.onLeverageChange}
         reduceAvailable={p.reduceAvailable}
+        initialSide={p.initialSide}
       />
     </Modal>
   );

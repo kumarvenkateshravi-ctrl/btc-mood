@@ -22,6 +22,7 @@ import ReplayBar from './ReplayBar';
 import ReplaySelector from './ReplaySelector';
 import ChartToolbar from './ChartToolbar';
 import RenkoSettingsModal from './trade/RenkoSettingsModal';
+import OrderModal from '@/components/trade/OrderModal';
 import { FALLBACK_HEIGHT } from '@/lib/chartHeight';
 import type { Candle, Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -232,6 +233,18 @@ export default function ChartPanel({
 
   const [ctxMenu, setCtxMenu] = useState<{ price: number; x: number; y: number } | null>(null);
   const [resetTick, setResetTick] = useState(0);
+  const [ticketSide, setTicketSide] = useState<'buy' | 'sell' | null>(null);
+
+  // Live-trading quick-trade pills open the order ticket prefilled with the
+  // clicked side; during replay they keep routing to the old behavior
+  // (right-dock trade tab), since the ticket doesn't stage replay orders.
+  const handleQuickTrade = useCallback(
+    (side: 'buy' | 'sell') => {
+      if (replayTrading) { onQuickTrade?.(side); return; }
+      setTicketSide(side);
+    },
+    [replayTrading, onQuickTrade],
+  );
 
   // Draw the open position as entry / TP / SL lines; TP & SL are draggable.
   const overlays = useMemo<ChartOverlay[]>(() => {
@@ -538,7 +551,7 @@ export default function ChartPanel({
             onLoadOlder={replayMode === 'off' ? onLoadOlder : undefined}
             tf={selected}
             showVolume={parentShowVolume}
-            onQuickTrade={onQuickTrade}
+            onQuickTrade={handleQuickTrade}
             onOpenRenkoSettings={() => setShowRenkoSettings(true)}
             bid={bid}
             ask={ask}
@@ -668,6 +681,17 @@ export default function ChartPanel({
           onResetChart={() => setResetTick(t => t + 1)}
         />
       )}
+
+      <OrderModal
+        open={ticketSide !== null}
+        onClose={() => setTicketSide(null)}
+        symbol={symbol}
+        midPrice={mid}
+        leverage={LEVERAGE}
+        onLeverageChange={() => {}}
+        reduceAvailable={hasPosition && pos ? pos.units : 0}
+        initialSide={ticketSide ?? 'buy'}
+      />
     </section>
   );
 }
