@@ -107,18 +107,24 @@ export default function OrderTicket(p: OrderTicketProps) {
   const fillPrice =
     tab === 'market' ? p.midPrice + (side === 'buy' ? BTC_TICK_SIZE : -BTC_TICK_SIZE) : priceN;
 
-  // Seed rule (TV parity): TP = mid ± ticks × BTC_TICK_SIZE, + for buy,
+  // Seed rule (TV parity): TP/SL offset from the ENTRY line, not the
+  // synthetic bid/ask fill. For market the entry pins to mid; for
+  // limit/stop the entry is the working price. Using fillPrice here would
+  // add the ±1 slippage tick and drift the seed off the locked formula.
+  const entryBase = tab === 'market' ? p.midPrice : priceN;
+
+  // Seed rule (TV parity): TP = entry ± ticks × BTC_TICK_SIZE, + for buy,
   // mirrored (−) for sell; SL is the opposite sign.
   const suggestTp = useMemo(() => {
-    if (unitsN <= 0 || !Number.isFinite(fillPrice) || fillPrice <= 0) return null;
+    if (unitsN <= 0 || !Number.isFinite(entryBase) || entryBase <= 0) return null;
     const dir = side === 'buy' ? 1 : -1;
-    return Number((fillPrice + dir * tpTicks * BTC_TICK_SIZE).toFixed(1));
-  }, [side, fillPrice, unitsN, tpTicks]);
+    return Number((entryBase + dir * tpTicks * BTC_TICK_SIZE).toFixed(1));
+  }, [side, entryBase, unitsN, tpTicks]);
   const suggestSl = useMemo(() => {
-    if (unitsN <= 0 || !Number.isFinite(fillPrice) || fillPrice <= 0) return null;
+    if (unitsN <= 0 || !Number.isFinite(entryBase) || entryBase <= 0) return null;
     const dir = side === 'buy' ? -1 : 1;
-    return Number((fillPrice + dir * slTicks * BTC_TICK_SIZE).toFixed(1));
-  }, [side, fillPrice, unitsN, slTicks]);
+    return Number((entryBase + dir * slTicks * BTC_TICK_SIZE).toFixed(1));
+  }, [side, entryBase, unitsN, slTicks]);
 
   // Resolve TP/SL: explicit user value > suggested default.
   const resolveLevel = (
