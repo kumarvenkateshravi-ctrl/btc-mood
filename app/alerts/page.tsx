@@ -22,6 +22,7 @@ import {
 } from '@/lib/alertsEngine';
 import { useAlertRules, useDelivery, addAlert, removeAlert, toggleAlertStatus, markAlertTriggered, toggleDelivery, type DeliveryMethod } from '@/lib/alertsStore';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Panel } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 
@@ -48,8 +49,8 @@ const SUCCESS_BY_TYPE: [string, number][] = [['Stack Score', 78], ['MTF Alignmen
 
 export default function AlertsPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
-  const { prices } = useMoodEngine(candlesByTf, []);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
+  const { prices, changes } = useMoodEngine(candlesByTf, []);
   const alerts = useAlertRules();
   const delivery = useDelivery();
 
@@ -57,7 +58,8 @@ export default function AlertsPage() {
   const consensus = useMemo(() => computeConsensus(matrix, [...TIMEFRAMES]), [matrix]);
   const weighted = useMemo(() => computeWeightedScore(matrix, [...TIMEFRAMES]), [matrix]);
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
 
   const { snap, quality, criteria } = useMemo(() => {
     const focus = candlesByTf[FOCUS_TF] ?? [];
@@ -127,8 +129,8 @@ export default function AlertsPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-1.5"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span></div>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
-          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price, 2)}</span>
+          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint"><ThemeToggle />
             <span className="inline-flex items-center gap-1.5"><span className={['h-2 w-2 rounded-full', status === 'live' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />{status === 'live' ? 'Live' : status}</span>
             <Link href="/app" className="rounded-md border border-line px-2 py-1 transition hover:text-ink">Chart →</Link>
           </div>

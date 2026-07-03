@@ -29,11 +29,28 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* FOUC guard: apply the persisted MDS theme before first paint on
+            EVERY route (pages without a ThemeToggle included). Mirrors
+            public/mcs-theme-init.js; inlined so it can't be delayed. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('mcs:theme');if(t&&t!=='obsidian'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}",
+          }}
+        />
+      </head>
       <body className="min-h-screen w-screen font-sans bg-base text-ink">
+        {/* Skip-to-content: first focusable element. Visually hidden until
+            focused via keyboard — lets AT users bypass nav on every page. */}
+        <a href="#main-content" className="skip-to-content">
+          Skip to main content
+        </a>
         <div className="app-aurora" aria-hidden />
-        <div className="relative z-[1] h-full w-full">
+        <div id="main-content" className="relative z-[1] h-full w-full">
           <Providers>{children}</Providers>
         </div>
       </body>

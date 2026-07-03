@@ -48,3 +48,10 @@ next-env.d.ts
 
 # local tooling settings
 .claude/settings.local.json
+
+# test/verification artifacts (machine-generated)
+/test-results/
+/.playwright-mcp/
+/tsc_out.txt
+/*.jpeg
+/playwright/.cache/

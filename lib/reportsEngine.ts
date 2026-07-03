@@ -182,7 +182,8 @@ export const EXEC_SUMMARY = {
 
 export const SAVED_REPORTS = ['My Monthly Review', 'My Funded Account Report', 'Weekly Scalping Report', 'Strategy Comparison Report'];
 
-export const ACCOUNT_OVERVIEW = [
+export interface AccountOverviewRow { k: string; v: string; pos?: boolean; }
+export const ACCOUNT_OVERVIEW: AccountOverviewRow[] = [
   { k: 'Account Value', v: '$28,430.75' }, { k: 'Net Profit', v: '$18,420.35', pos: true },
   { k: 'Total Return', v: '+184.20%', pos: true }, { k: 'Available Balance', v: '$8,156.20' }, { k: 'Margin Used', v: '28.6%' },
 ];

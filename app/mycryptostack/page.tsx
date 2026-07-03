@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Layers, Bitcoin, Info, TrendingUp, TrendingDown, Minus, Quote } from 'lucide-react';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import { TIMEFRAMES, type Timeframe } from '@/lib/types';
 import { DEFAULT_COMPARE_SYMBOL } from '@/lib/compare';
 import { useMarketData } from '@/lib/hooks/useMarketData';
@@ -15,6 +16,8 @@ import { computeAtr } from '@/lib/indicators/atr';
 import { analyzeTrade } from '@/lib/tradeAnalysis';
 import { usd, formatNumber, formatPercent } from '@/lib/format';
 import { Panel } from '@/components/ui';
+import { useMarketState } from '@/lib/hooks/useMarketState';
+import { DataStateIndicator } from '@/components/ui/DataStateIndicator';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D' };
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
@@ -53,7 +56,9 @@ export default function MyCryptoStackPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
   const [setupTf, setSetupTf] = useState<Timeframe>('5m');
 
-  const { candlesByTf, status, wsStatus } = useMarketData(symbol);
+  const { candlesByTf, wsStatus, ticker24h, lastUpdateMs } = useMarketData(symbol);
+  const dataState = useMarketState({ wsStatus, lastUpdateMs, hasData: true }); // ready is computed later, so we just use hasData: true and rely on ready for the whole page
+
   const { prices, changes, snapshots } = useMoodEngine(candlesByTf, []);
   const paper = usePaperStore();
 
@@ -61,8 +66,9 @@ export default function MyCryptoStackPage() {
   const stack = useMemo(() => computeStackScore(matrix, [...TIMEFRAMES]), [matrix]);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
+
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
 
   // ---- Trade setup (derived from the selected TF's ATR + the stack direction) ----
   const setup = useMemo(() => {
@@ -141,7 +147,7 @@ export default function MyCryptoStackPage() {
             <Bitcoin className="h-4 w-4 text-regime-hot" />
             <span className="font-semibold">{symbol}</span>
           </div>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmt(price)}</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmt(price, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>
             {formatPercent(change)}
           </span>
@@ -153,11 +159,8 @@ export default function MyCryptoStackPage() {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
-            <span className="inline-flex items-center gap-1.5">
-              <span className={['h-2 w-2 rounded-full', wsStatus === 'open' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />
-              {status === 'live' ? 'Live' : status}
-            </span>
+          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint"><ThemeToggle />
+            <DataStateIndicator state={!ready ? 'loading' : dataState} showLabel />
             <Link href="/app" className="rounded-md border border-line px-2 py-1 transition hover:text-ink">Chart →</Link>
           </div>
         </header>
@@ -319,7 +322,7 @@ export default function MyCryptoStackPage() {
                   <Row k="Win Probability" v={`${setup.winProb}%`} />
                   <Row k="Position Size (1% risk)" v={`${setup.a.positionSize > 0 ? fmt(setup.a.positionSize, 3) : '—'} BTC`} />
                 </div>
-                <Link href="/mystack" className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-accent/15 py-2 text-sm font-medium text-accent transition hover:bg-accent/25">
+                <Link href="/mystack" className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-gradient-to-r from-[oklch(59.1%_0.293_322.896)] via-purple-500 to-sky-400 py-2 text-sm font-bold text-white shadow-lg shadow-purple-500/25 transition hover:opacity-90 hover:shadow-purple-500/40">
                   Open in MyStack calculator →
                 </Link>
               </Panel>

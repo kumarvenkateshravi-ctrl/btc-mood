@@ -18,6 +18,7 @@ import {
   healthLabel, type Strategy, type Category, type CompareRow,
 } from '@/lib/strategiesEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Panel, Pill, FootLink, Cell, DataTable, textColumn, numColumn, percentColumn, AICard, type AICardData, type Column } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 
@@ -70,10 +71,10 @@ const MY_STRATEGIES = [['Favorite Strategies', '12'], ['My Custom Strategies', '
 
 export default function StrategiesPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
 
   const [cat, setCat] = useState<Category | 'All'>('All');
   const [selId, setSelId] = useState('trend-continuation');
@@ -131,12 +132,13 @@ export default function StrategiesPage() {
         {/* Header */}
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
           <button className="flex items-center gap-1.5 rounded-lg border border-line bg-base px-2.5 py-1.5 text-sm"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></button>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', tone(change)].join(' ')}>{sgn(change)}{fmtN((price * change) / 100, 2)} ({sgn(change)}{fmtN(change, 2)}%)</span>
           <div className="ml-4 hidden items-center gap-0.5 rounded-lg border border-line bg-base p-0.5 md:flex">
             {TIMEFRAMES.map((tf) => <span key={tf} className={['rounded-md px-2.5 py-1 text-xs font-medium', tf === '1h' ? 'bg-accent/20 text-accent' : 'text-ink-faint'].join(' ')}>{TF_LABEL[tf]}</span>)}
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             <button className="focus-ring hidden items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-2 hover:text-ink lg:inline-flex"><Wrench className="h-3.5 w-3.5" /> Strategy Builder</button>
             <button className="focus-ring hidden items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-2 hover:text-ink lg:inline-flex"><FlaskConical className="h-3.5 w-3.5" /> Backtester</button>
             <div className="relative"><Bell className="h-4 w-4 text-ink-muted" /><span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-bear text-[8px] font-bold text-white">3</span></div>

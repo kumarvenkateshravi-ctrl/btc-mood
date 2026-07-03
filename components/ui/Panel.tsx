@@ -47,7 +47,7 @@ export interface PanelProps {
 export function Panel({ title, eyebrow, subtitle, n, sym, count, icon: Icon, badge, badgeTone = 'accent', info, action, footer, interactive, className, children }: PanelProps) {
   const hasHeader = title != null || action != null || Icon != null || n != null;
   return (
-    <section className={cx('elev-1 flex flex-col rounded-xl p-3', interactive && 'interactive', className)}>
+    <section className={cx('elev-1 flex flex-col rounded-xl p-5', interactive && 'interactive', className)}>
       {hasHeader && (
         <div className="mb-2.5 flex items-center gap-1.5">
           {n != null && <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[10px] font-bold text-accent ring-1 ring-accent/25">{n}</span>}

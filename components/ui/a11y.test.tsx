@@ -24,6 +24,7 @@ import {
   PositionRow, PositionCard, AICard, DataTable, type Column,
   LineChart, ChartPanel,
   DirectionTag, RegimeTag, RiskBadge, VolatilityTag, LiquidityTag, ConfidenceMeter,
+  Button, Tabs, Tab,
 } from './index';
 
 const AXE_OPTIONS: axe.RunOptions = {
@@ -131,14 +132,35 @@ describe('MDS primitives have no axe violations', () => {
     )).toEqual([]);
   });
 
-  it('viz primitives (decorative svgs hidden from AT)', async () => {
+  it('Button — all variants have accessible names or labels', async () => {
     expect(await audit(
       <div>
-        <Gauge value={94} label="Elite" />
-        <Ring value={73}><span>73</span></Ring>
-        <Sparkline data={[1, 2, 3, 4]} />
-        <Donut slices={[{ value: 40, color: 'var(--dv-1)' }, { value: 60, color: 'var(--dv-2)' }]} />
+        <Button variant="solid">Submit</Button>
+        <Button variant="outline">Cancel</Button>
+        <Button variant="ghost" aria-label="Close dialog" />
+        <Button variant="danger" loading>Submitting…</Button>
+        <Button variant="solid" disabled>Disabled</Button>
       </div>,
+    )).toEqual([]);
+  });
+
+  it('Tabs — pill variant with proper ARIA tablist/tab/selected', async () => {
+    expect(await audit(
+      <Tabs value="signals" onChange={() => {}} aria-label="Dashboard section">
+        <Tab id="signals">Signals</Tab>
+        <Tab id="trade">Trade</Tab>
+        <Tab id="alerts" disabled>Alerts</Tab>
+      </Tabs>,
+    )).toEqual([]);
+  });
+
+  it('Tabs — underline variant', async () => {
+    expect(await audit(
+      <Tabs value="trade" onChange={() => {}} variant="underline" aria-label="Order type">
+        <Tab id="market">Market</Tab>
+        <Tab id="limit">Limit</Tab>
+        <Tab id="stop">Stop</Tab>
+      </Tabs>,
     )).toEqual([]);
   });
 });

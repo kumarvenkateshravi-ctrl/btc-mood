@@ -15,7 +15,8 @@ import { computeConsensus, computeWeightedScore, detectStructure, computeTimefra
 import { computeAtr } from '@/lib/indicators/atr';
 import { computeStackScoreFactors, type Factor, type FactorKey, type Impact } from '@/lib/stackScoreFactors';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
-import { Panel } from '@/components/ui';
+import ThemeToggle from '@/components/ThemeToggle';
+import { Panel, AICard, type AIEvidence } from '@/components/ui';
 import { formatNumber, formatPercent } from '@/lib/format';
 
 const FOCUS_TF: Timeframe = '1h';
@@ -49,7 +50,7 @@ const DIST = [
 
 export default function StackScorePage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
 
   const matrix = useMemo(() => computeAlignmentMatrix(candlesByTf, [...TIMEFRAMES]), [candlesByTf]);
@@ -57,8 +58,8 @@ export default function StackScorePage() {
   const weighted = useMemo(() => computeWeightedScore(matrix, [...TIMEFRAMES]), [matrix]);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
   const priceAbs = change != null ? (price * change) / (100 + change) : 0;
 
   const result = useMemo(() => {
@@ -92,13 +93,26 @@ export default function StackScorePage() {
   }, [history, result.score]);
 
   const marketState: MarketState = useMemo(() => ({
-    state: weighted.outlook === 'neutral' ? 'Transitional' : Math.abs(weighted.overall - 50) > 25 ? 'Trending' : 'Transitional',
-    volatility: riskLevel,
-    volume: result.factors.find((f) => f.key === 'volume')!.score > 55 ? 'High' : result.factors.find((f) => f.key === 'volume')!.score < 45 ? 'Low' : 'Medium',
-    energy: result.confidence < 45 ? 'Low' : result.confidence > 70 ? 'High' : 'Medium',
+    regime: weighted.outlook === 'neutral' ? 'Ranging' : Math.abs(weighted.overall - 50) > 25 ? 'Trending' : 'Ranging',
+    volatility: riskLevel === 'High' ? 'High' : riskLevel === 'Medium' ? 'Moderate' : 'Low',
+    liquidity: result.factors.find((f) => f.key === 'volume')!.score > 55 ? 'Deep' : result.factors.find((f) => f.key === 'volume')!.score < 45 ? 'Thin' : 'Normal',
   }), [weighted, riskLevel, result]);
 
   const dirColor = result.direction === 'buy' ? 'text-bull-bright' : result.direction === 'sell' ? 'text-bear-bright' : 'text-ink';
+  const evidence = useMemo<AIEvidence[]>(() => {
+    return result.factors.map(f => {
+      let isSupport = true;
+      if (result.direction === 'buy') isSupport = f.verdict !== 'bearish';
+      else if (result.direction === 'sell') isSupport = f.verdict !== 'bullish';
+      else isSupport = f.verdict === 'neutral'; // If neutral, strong directional signals oppose neutrality
+
+      return {
+        factor: f.label,
+        weight: f.score,
+        direction: isSupport ? 'support' : 'oppose'
+      };
+    });
+  }, [result.factors, result.direction]);
 
   return (
     <div className="flex min-h-[100dvh] w-full bg-base text-ink">
@@ -107,9 +121,9 @@ export default function StackScorePage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-1.5"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span></div>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{change >= 0 ? '+' : ''}{fmtN(priceAbs)} ({formatPercent(change)})</span>
-          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
+          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint"><ThemeToggle />
             <span className="inline-flex items-center gap-1.5"><span className={['h-2 w-2 rounded-full', status === 'live' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />{status === 'live' ? 'Live' : status}</span>
             <Link href="/app" className="rounded-md border border-line px-2 py-1 transition hover:text-ink">Chart →</Link>
           </div>
@@ -124,26 +138,18 @@ export default function StackScorePage() {
               <span className="text-xs text-ink-faint">Probability &amp; quality score for smarter trading decisions</span>
             </div>
 
-            {/* Row 1 */}
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_1.3fr_1.3fr_0.9fr]">
-              <Panel eyebrow title="Overall Stack Score">
-                <div className="flex flex-col items-center">
-                  <ScoreGauge value={result.score} />
-                  <div className="-mt-2 text-base tracking-[0.25em] text-accent">{'★'.repeat(result.stars)}<span className="text-line-strong">{'★'.repeat(5 - result.stars)}</span></div>
-                  <div className={['mt-1 text-2xl font-extrabold', dirColor].join(' ')}>{result.recommendation}</div>
-                  <div className="text-[11px] text-ink-faint">{result.score >= 60 || result.score <= 40 ? `${result.direction === 'buy' ? 'High' : 'Low'} Probability Setup` : 'Mixed Setup'}</div>
-                </div>
-              </Panel>
-
-              <Panel eyebrow title="Score Breakdown">
-                <div className="space-y-1.5">
-                  {result.factors.map((f) => <BreakdownBar key={f.key} f={f} />)}
-                </div>
-                <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-xs">
-                  <span className="text-ink-faint">Score Confidence</span>
-                  <span className={['font-semibold', result.confidence >= 75 ? 'text-bull-bright' : result.confidence >= 50 ? 'text-regime-hot' : 'text-bear-bright'].join(' ')}>{result.confidenceLabel}</span>
-                </div>
-              </Panel>
+            {/* Row 1 - Phase E Explainable AI Grammar */}
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[2fr_1fr]">
+              <AICard
+                title="Overall Stack Score"
+                verdict={`${result.recommendation} (${result.score}/100)`}
+                confidence={result.confidence}
+                direction={result.direction === 'buy' ? 'Bullish' : result.direction === 'sell' ? 'Bearish' : 'Neutral'}
+                evidence={evidence}
+                risk={`Volatility Risk: ${riskLevel}`}
+                historical={`Probability of Success: ${result.probability}%`}
+                action={{ label: result.bestAction, tone: result.direction === 'buy' ? 'bull' : result.direction === 'sell' ? 'bear' : 'neutral' }}
+              />
 
               <Panel eyebrow title="Score History" badge="session">
                 <Sparkline points={history.map((p) => p.score)} current={result.score} />
@@ -152,19 +158,6 @@ export default function StackScorePage() {
                   <Stat k="Highest" v={String(histStats.hi)} tone="bull" />
                   <Stat k="Lowest" v={String(histStats.lo)} tone="bear" />
                   <Stat k="Trend" v={history.length > 1 && result.score >= history[0].score ? '↑' : '↓'} />
-                </div>
-              </Panel>
-
-              <Panel eyebrow title="Recommendation">
-                <div className={['text-center text-4xl font-extrabold tracking-tight', dirColor].join(' ')}>{result.recommendation}</div>
-                <div className="mt-3 space-y-2 text-xs">
-                  <div>
-                    <div className="mb-1 flex justify-between"><span className="text-ink-faint">Probability of Success</span><span className="font-semibold">{result.probability}%</span></div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full" style={{ width: `${result.probability}%`, background: 'linear-gradient(90deg,#f23645,#f0a020,#26A69A)' }} /></div>
-                  </div>
-                  <KV k="Risk Level" v={riskLevel} tone={riskLevel === 'High' ? 'bear' : riskLevel === 'Low' ? 'bull' : undefined} />
-                  <KV k="Best Action" v={result.bestAction} />
-                  <KV k="Invalidation" v={result.invalidation} />
                 </div>
               </Panel>
             </div>
@@ -277,47 +270,7 @@ function KV({ k, v, tone }: { k: string; v: string; tone?: 'bull' | 'bear' }) {
   const c = tone === 'bull' ? 'text-bull-bright' : tone === 'bear' ? 'text-bear-bright' : 'text-ink';
   return <div className="flex items-center justify-between gap-2"><span className="text-ink-faint">{k}</span><span className={['text-right font-medium', c].join(' ')}>{v}</span></div>;
 }
-function BreakdownBar({ f }: { f: Factor }) {
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="w-36 shrink-0 text-ink-muted">{f.label}</span>
-      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full" style={{ width: `${f.score}%`, background: 'linear-gradient(90deg,#f23645,#f0a020,#26A69A)' }} /></div>
-      <span className="w-12 shrink-0 text-right font-mono"><span className="font-semibold">{f.score}</span><span className="text-ink-faint">/100</span></span>
-    </div>
-  );
-}
 
-function ScoreGauge({ value }: { value: number }) {
-  const v = clamp(value, 0, 100);
-  // 270° arc from 135° to 405°.
-  const a0 = 135, sweep = 270;
-  const ang = (deg: number) => (deg * Math.PI) / 180;
-  const pt = (deg: number, r: number) => [100 + r * Math.cos(ang(deg)), 100 + r * Math.sin(ang(deg))];
-  const R = 80;
-  const arc = (from: number, to: number) => {
-    const [x1, y1] = pt(from, R), [x2, y2] = pt(to, R);
-    return `M ${x1} ${y1} A ${R} ${R} 0 ${to - from > 180 ? 1 : 0} 1 ${x2} ${y2}`;
-  };
-  const needle = a0 + (v / 100) * sweep;
-  const [nx, ny] = pt(needle, R - 6);
-  const color = v >= 60 ? '#26A69A' : v >= 40 ? '#f0a020' : '#f23645';
-  return (
-    <div className="relative">
-      <svg viewBox="0 0 200 200" className="w-44">
-        <path d={arc(a0, a0 + sweep)} fill="none" stroke="#2a3247" strokeWidth="13" strokeLinecap="round" />
-        <path d={arc(a0, a0 + 0.4 * sweep)} fill="none" stroke="#f23645" strokeWidth="13" strokeLinecap="round" />
-        <path d={arc(a0 + 0.4 * sweep, a0 + 0.6 * sweep)} fill="none" stroke="#f0a020" strokeWidth="13" />
-        <path d={arc(a0 + 0.6 * sweep, a0 + sweep)} fill="none" stroke="#26A69A" strokeWidth="13" strokeLinecap="round" />
-        <line x1="100" y1="100" x2={nx} y2={ny} stroke="#e9eef7" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="100" cy="100" r="5" fill="#e9eef7" />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-4xl font-bold leading-none" style={{ color }}>{v}</span>
-        <span className="text-xs text-ink-faint">/100</span>
-      </div>
-    </div>
-  );
-}
 function ScoreRing({ value }: { value: number }) {
   const r = 34, c = 2 * Math.PI * r, dash = (clamp(value, 0, 100) / 100) * c;
   const color = value >= 60 ? '#26A69A' : value >= 40 ? '#f0a020' : '#f23645';

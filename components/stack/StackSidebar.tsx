@@ -7,11 +7,12 @@ import {
   Briefcase, Boxes, FileBarChart, BrainCircuit, HelpCircle, Settings, TrendingUp, type LucideIcon,
 } from 'lucide-react';
 
+import { RegimeTag, VolatilityTag, LiquidityTag, type Regime, type VolLevel, type LiqLevel } from '@/components/ui/marketState';
+
 export interface MarketState {
-  state: string;
-  volatility: string;
-  volume: string;
-  energy: string;
+  regime: Regime;
+  volatility: VolLevel;
+  liquidity: LiqLevel;
 }
 
 const ITEMS: { label: string; icon: LucideIcon; href?: string; badge?: string }[] = [
@@ -44,7 +45,7 @@ export default function StackSidebar({ marketState, fearGreed, extra }: { market
   return (
     <aside className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface-1 lg:flex">
       <div className="flex items-center gap-2 border-b border-line px-4 py-4">
-        <Layers className="h-5 w-5 text-accent" />
+        <Layers className="h-5 w-5 shrink-0 text-accent" />
         <span className="font-bold tracking-tight">MyCryptoStack</span>
       </div>
 
@@ -68,12 +69,13 @@ export default function StackSidebar({ marketState, fearGreed, extra }: { market
         {extra ? extra : marketState ? (
           <>
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Market State</div>
-            <div className="mb-2 flex items-center gap-1.5 text-base font-bold text-bull-bright">
-              <TrendingUp className="h-4 w-4" /> {marketState.state}
+            <div className="flex flex-col gap-2">
+              <RegimeTag regime={marketState.regime} />
+              <div className="flex flex-wrap gap-1.5">
+                <VolatilityTag level={marketState.volatility} />
+                <LiquidityTag level={marketState.liquidity} />
+              </div>
             </div>
-            <KV k="Volatility" v={marketState.volatility} />
-            <KV k="Volume" v={marketState.volume} />
-            <KV k="Market Energy" v={marketState.energy} />
             <div className="mt-4">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Fear &amp; Greed Index</div>
               <FearGreed value={fearGreed ?? 50} />

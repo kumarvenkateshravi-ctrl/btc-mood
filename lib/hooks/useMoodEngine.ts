@@ -44,9 +44,9 @@ export function useMoodEngine(
       const arr = candlesByTf[tf];
       if (arr.length >= 2) {
         const last = arr[arr.length - 1].close;
-        const first = arr[0].close;
+        const prev = arr[arr.length - 2].close;
         prices[tf] = last;
-        changes[tf] = first === 0 ? 0 : ((last - first) / first) * 100;
+        changes[tf] = prev === 0 ? 0 : ((last - prev) / prev) * 100;
       }
       snapshots[tf] = computeSignal(tf, arr, now);
     }

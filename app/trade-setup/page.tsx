@@ -16,6 +16,7 @@ import { computeAtr } from '@/lib/indicators/atr';
 import { computeStackScoreFactors } from '@/lib/stackScoreFactors';
 import { generateTradeSetup, type Side } from '@/lib/tradeSetup';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Panel } from '@/components/ui';
 import { formatNumber, formatPercent } from '@/lib/format';
 
@@ -31,7 +32,7 @@ function lastFinite(data: readonly unknown[] | null | undefined): number | null 
 
 export default function TradeSetupPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
 
   const matrix = useMemo(() => computeAlignmentMatrix(candlesByTf, [...TIMEFRAMES]), [candlesByTf]);
@@ -39,9 +40,9 @@ export default function TradeSetupPage() {
   const weighted = useMemo(() => computeWeightedScore(matrix, [...TIMEFRAMES]), [matrix]);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
-  const priceAbs = change != null ? (price * change) / (100 + change) : 0;
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
+  const priceAbs = ticker24h ? ticker24h.priceChange : (change != null ? (price * change) / (100 + change) : 0);
 
   const { setup, factorsResult, regimeState } = useMemo(() => {
     const focus = candlesByTf[FOCUS_TF] ?? [];
@@ -76,9 +77,9 @@ export default function TradeSetupPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-1.5"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span></div>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{change >= 0 ? '+' : ''}{fmtN(priceAbs)} ({formatPercent(change)})</span>
-          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
+          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint"><ThemeToggle />
             <span className="inline-flex items-center gap-1.5"><span className={['h-2 w-2 rounded-full', status === 'live' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />{status === 'live' ? 'Live' : status}</span>
             <Link href="/app" className="rounded-md border border-line px-2 py-1 transition hover:text-ink">Chart →</Link>
           </div>
@@ -111,7 +112,7 @@ export default function TradeSetupPage() {
 
             {/* Entry / Stop / TP */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <Panel eyebrow title="1. Entry Zone">
+              <Panel n={1} eyebrow title="Entry Zone">
                 <div className="grid grid-cols-[1fr_1fr] gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-ink-faint">Ideal Entry Zone</div>
@@ -127,7 +128,7 @@ export default function TradeSetupPage() {
                   lines={[{ price: setup.stopLoss.price, color: '#f23645', label: `${fmtP(setup.stopLoss.price)} SL`, dashed: true }]} />
               </Panel>
 
-              <Panel eyebrow title="2. Stop Loss">
+              <Panel n={2} eyebrow title="Stop Loss">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-ink-faint">Recommended Stop</div>
@@ -142,7 +143,7 @@ export default function TradeSetupPage() {
                 <SetupChart candles={focusCandles} lines={[{ price: setup.stopLoss.price, color: '#f23645', label: fmtP(setup.stopLoss.price), dashed: true }]} />
               </Panel>
 
-              <Panel eyebrow title="3. Take Profit Targets">
+              <Panel n={3} eyebrow title="Take Profit Targets">
                 <table className="w-full text-left text-xs">
                   <thead className="text-[10px] uppercase tracking-wider text-ink-faint"><tr><th className="pb-1">Target</th><th className="pb-1 text-right">Price</th><th className="pb-1 text-right">Dist</th><th className="pb-1 text-right">R:R</th><th className="pb-1 text-right">Action</th></tr></thead>
                   <tbody>
@@ -166,7 +167,7 @@ export default function TradeSetupPage() {
 
             {/* Risk-Reward / Position / Quality */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <Panel eyebrow title="4. Risk / Reward Overview">
+              <Panel n={4} eyebrow title="Risk / Reward Overview">
                 <div className="flex items-center gap-4">
                   <div className="text-center"><div className="font-mono text-3xl font-bold">1 : {setup.rr}</div><div className="text-[10px] uppercase tracking-wider text-ink-faint">Risk : Reward</div></div>
                   <div className="flex-1 space-y-1 text-xs">
@@ -183,7 +184,7 @@ export default function TradeSetupPage() {
                 </div>
               </Panel>
 
-              <Panel eyebrow title="5. Position Sizing">
+              <Panel n={5} eyebrow title="Position Sizing">
                 <div className="flex items-center gap-3">
                   <div className="flex-1 space-y-1 text-xs">
                     <KV k="Account Balance" v={`${formatNumber(setup.sizing.balance, { precision: 0 })} USDT`} />
@@ -198,7 +199,7 @@ export default function TradeSetupPage() {
                 </div>
               </Panel>
 
-              <Panel eyebrow title="6. Setup Quality Score">
+              <Panel n={6} eyebrow title="Setup Quality Score">
                 <div className="flex items-center gap-3">
                   <div className="text-center">
                     <div className="font-mono text-4xl font-bold text-bull-bright">{setup.quality.score}<span className="text-base text-ink-faint">/100</span></div>
@@ -220,7 +221,7 @@ export default function TradeSetupPage() {
 
             {/* Plan / Checklist / Probability / Insights */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
-              <Panel eyebrow title="7. Trade Plan">
+              <Panel n={7} eyebrow title="Trade Plan">
                 <div className="space-y-1 text-xs">
                   <KV k="Direction" v={setup.plan.direction} tone={long ? 'bull' : 'bear'} />
                   <KV k="Entry Zone" v={setup.plan.entryZone} />
@@ -236,7 +237,7 @@ export default function TradeSetupPage() {
                 </div>
               </Panel>
 
-              <Panel eyebrow title="8. Trade Checklist">
+              <Panel n={8} eyebrow title="Trade Checklist">
                 <ul className="space-y-1.5 text-xs">
                   {setup.checklist.map((c) => {
                     const Icon: LucideIcon = c.status === 'pass' ? CheckCircle2 : c.status === 'warn' ? AlertTriangle : XCircle;
@@ -246,7 +247,7 @@ export default function TradeSetupPage() {
                 </ul>
               </Panel>
 
-              <Panel eyebrow title="9. Probability Model">
+              <Panel n={9} eyebrow title="Probability Model">
                 <div className="space-y-1 text-xs">
                   <KV k="Historical Win Rate" v={`${factorsResult.probability}%`} />
                   <KV k="Risk / Reward Quality" v={factorsResult.riskReward.includes('1.0') ? 'Low' : 'High'} tone="bull" />

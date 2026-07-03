@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ShieldCheck, TrendingDown, TrendingUp, X } from 'lucide-react';
-import styles from './OrderTicket.module.css';
 import { usePaperStore } from '@/lib/paperStore';
+import { Tabs, Tab } from '@/components/ui';
 import {
   BTC_TICK_SIZE,
   BTC_TICK_VALUE_USD,
@@ -55,7 +55,6 @@ export default function OrderTicket(p: OrderTicketProps) {
   const [reduceOnly, setReduceOnly] = useState(false);
   const [postOnly, setPostOnly] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [pulseToken, setPulseToken] = useState(0);
   const [priceTouched, setPriceTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [riskPct, setRiskPct] = useState('');
@@ -224,7 +223,6 @@ export default function OrderTicket(p: OrderTicketProps) {
       setConfirming(true);
       return;
     }
-    setPulseToken((tok) => tok + 1);
     if (tab === 'market') {
       setConfirming(false);
       placeOrder({
@@ -344,7 +342,7 @@ export default function OrderTicket(p: OrderTicketProps) {
   }, []);
 
   return (
-    <section className={['panel overflow-hidden rounded-2xl', styles.ticket].join(' ')}>
+    <section className="elev-1 overflow-hidden rounded-2xl">
       <header className="flex items-center justify-between border-b border-line bg-surface-2/40 px-3.5 py-2.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
           Order ticket
@@ -355,27 +353,14 @@ export default function OrderTicket(p: OrderTicketProps) {
       </header>
 
       <div className="space-y-3 px-[80px] py-3.5">
-        <div role="tablist" className="grid grid-cols-3 gap-1 rounded-lg border border-line bg-surface-2/40 p-1 text-xs">
-          {TABS.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={active}
-                onClick={() => handleTabChange(t.id)}
-                className={[
-                  'focus-ring rounded-md py-1.5 font-medium transition',
-                  active
-                    ? 'bg-accent/20 text-ink ring-1 ring-accent/40'
-                    : 'text-ink-muted hover:bg-surface-3/40 hover:text-ink',
-                ].join(' ')}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+        <Tabs
+          value={tab}
+          onChange={(v) => handleTabChange(v as Tab)}
+          className="w-full"
+          aria-label="Order type"
+        >
+          {TABS.map((t) => <Tab key={t.id} id={t.id}>{t.label}</Tab>)}
+        </Tabs>
 
         <SideToggle
           value={side}
@@ -403,7 +388,7 @@ export default function OrderTicket(p: OrderTicketProps) {
 
         <div
           key={tab}
-          className={styles.fadeIn}
+          className="animate-[fade-in_180ms_ease-out]"
           aria-hidden={tab === 'market'}
           style={tab === 'market' ? { display: 'none' } : undefined}
         >
@@ -550,11 +535,12 @@ export default function OrderTicket(p: OrderTicketProps) {
               onClick={handleSubmit}
               disabled={!canSubmit}
               className={[
-                styles.cta,
-                side === 'buy' ? styles.ctaBuy : styles.ctaSell,
-                !canSubmit ? styles.ctaDisabled : '',
-                confirming ? styles.ctaConfirm : '',
-                'focus-ring relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 py-3 text-sm font-semibold transition-all',
+                'focus-ring relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200',
+                side === 'buy'
+                  ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
+                  : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
+                !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
+                confirming ? 'animate-pulse' : '',
               ].join(' ')}
               aria-label={
                 confirming
@@ -588,18 +574,12 @@ export default function OrderTicket(p: OrderTicketProps) {
                   </kbd>
                 </>
               )}
-              {pulseToken > 0 && (
-                <span
-                  key={pulseToken}
-                  aria-hidden
-                  className={[styles.ctaPulse, side === 'buy' ? styles.pulseBuy : styles.pulseSell].join(' ')}
-                />
-              )}
+
             </button>
             {confirming && (
               <button
                 onClick={() => setConfirming(false)}
-                className="w-full rounded-md border border-line bg-surface-2/40 px-2 py-1 text-[10px] font-medium text-ink-muted transition hover:text-ink"
+                className="focus-ring w-full rounded-md border border-line bg-surface-2/40 px-2 py-1 text-[10px] font-medium text-ink-muted transition hover:text-ink"
               >
                 Cancel
               </button>
@@ -612,23 +592,18 @@ export default function OrderTicket(p: OrderTicketProps) {
               onClick={handleSubmit}
               disabled={!canSubmit}
               className={[
-                styles.cta,
-                side === 'buy' ? styles.ctaBuy : styles.ctaSell,
-                !canSubmit ? styles.ctaDisabled : '',
-                'focus-ring relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-lg px-3 py-3 text-sm font-semibold',
+                'focus-ring relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-lg px-3 py-3 text-sm font-semibold transition-all duration-200',
+                side === 'buy'
+                  ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
+                  : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
+                !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
               ].join(' ')}
               aria-label={`Confirm ${side === 'buy' ? 'buy' : 'sell'} ${effectiveUnits} BTC at ${priceN}`}
             >
               <span>
                 {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} @ {priceN > 0 ? priceN : '—'}
               </span>
-              {pulseToken > 0 && (
-                <span
-                  key={pulseToken}
-                  aria-hidden
-                  className={[styles.ctaPulse, side === 'buy' ? styles.pulseBuy : styles.pulseSell].join(' ')}
-                />
-              )}
+
             </button>
             <button
               onClick={handleDiscard}
@@ -679,7 +654,9 @@ function SideToggle({
         aria-hidden
         className={[
           'absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-md transition-transform',
-          value === 'buy' ? styles.toggleBuy : styles.toggleSell,
+          value === 'buy'
+            ? 'bg-gradient-to-b from-bull-bright to-bull-dim shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_var(--bull)]'
+            : 'bg-gradient-to-b from-bear-bright to-bear-dim shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_var(--bear)]',
         ].join(' ')}
         style={{ transform: `translateX(${idx * 100}%)` }}
       />
@@ -776,7 +753,7 @@ function NumberField({
               key={q.label}
               type="button"
               onClick={() => onPick?.(Number(q.value))}
-              className="rounded border border-line bg-surface-2/40 px-1.5 py-0.5 font-mono text-ink-muted transition hover:border-accent/40 hover:text-ink"
+              className="focus-ring rounded border border-line bg-surface-2/40 px-1.5 py-0.5 font-mono text-ink-muted transition hover:border-accent/40 hover:text-ink"
             >
               {q.label}
             </button>

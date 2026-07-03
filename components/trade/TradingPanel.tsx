@@ -114,7 +114,7 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
 
       {/* Position size calculator */}
       <details className="rounded-xl border border-line bg-base/40 px-3 py-3" open>
-        <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-ink-faint outline-none">
+        <summary className="cursor-pointer rounded text-xs font-bold uppercase tracking-wider text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
           ▼ Position size calculator
         </summary>
         <div className="mt-3 space-y-3">

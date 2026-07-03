@@ -123,8 +123,8 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         {price != null && (
           <span className="font-mono text-[14px] tabular-nums text-ink">
             {price.toLocaleString('en-US', {
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1,
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
             })}
           </span>
         )}

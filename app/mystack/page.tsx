@@ -234,7 +234,7 @@ export default function MyStackPage() {
           <div className="space-y-4">
             {/* Trade risk summary */}
             <Card>
-              <h3 className="mb-3 text-sm font-semibold tracking-wide text-accent">TRADE RISK SUMMARY</h3>
+              <SectionTitle n={5}>TRADE RISK SUMMARY</SectionTitle>
               <div className="space-y-2 text-sm">
                 <Row label="Account Balance" value={usd(input.balance)} />
                 <Row label="Risk Amount" value={usd(a.riskAmount)} tone="bear" />
@@ -253,7 +253,7 @@ export default function MyStackPage() {
 
             {/* Risk meter */}
             <Card>
-              <h3 className="mb-2 text-sm font-semibold tracking-wide text-accent">RISK METER</h3>
+              <SectionTitle n={6}>RISK METER</SectionTitle>
               <Gauge zone={a.riskZone} />
               <p className="mt-2 text-center text-xs text-ink-muted">
                 You&apos;re risking {pct(input.riskPct)} of your account.
@@ -262,7 +262,7 @@ export default function MyStackPage() {
 
             {/* What if SL hits */}
             <Card>
-              <h3 className="mb-3 text-sm font-semibold tracking-wide text-accent">IF STOP LOSS HITS</h3>
+              <SectionTitle n={7}>IF STOP LOSS HITS</SectionTitle>
               <div className="space-y-2 text-sm">
                 <Row label="Account Before" value={usd(a.whatIfStopLoss.before)} />
                 <Row label="Loss" value={`-${usd(a.whatIfStopLoss.loss)}`} tone="bear" />
@@ -278,7 +278,7 @@ export default function MyStackPage() {
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* Health score */}
           <Card>
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-accent"><BarChart3 className="h-4 w-4" /> TRADE HEALTH SCORE</h3>
+            <SectionTitle n={8}>TRADE HEALTH SCORE</SectionTitle>
             <div className="flex items-center gap-4">
               <ScoreRing score={a.health.score} />
               <div>
@@ -290,7 +290,7 @@ export default function MyStackPage() {
 
           {/* Checklist */}
           <Card>
-            <h3 className="mb-3 text-sm font-semibold tracking-wide text-accent">TRADE CHECKLIST</h3>
+            <SectionTitle n={9}>TRADE CHECKLIST</SectionTitle>
             <ul className="space-y-1.5">
               {a.health.checklist.map((c) => (
                 <li key={c.label} className="flex items-center gap-2 text-sm">
@@ -305,7 +305,7 @@ export default function MyStackPage() {
 
           {/* Tips */}
           <Card>
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-accent"><Lightbulb className="h-4 w-4" /> EDUCATIONAL TIPS</h3>
+            <SectionTitle n={10}>EDUCATIONAL TIPS</SectionTitle>
             <ul className="space-y-2">
               {a.health.tips.map((t, i) => (
                 <li key={i} className="flex gap-2 text-xs leading-relaxed text-ink-muted">

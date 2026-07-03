@@ -32,6 +32,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Surfacing the custom MDS rule violations (burn down list)
+      - name: Token Pipeline Report
+        run: npm run lint:tokens
+
       - name: Typecheck
         run: npm run typecheck
 

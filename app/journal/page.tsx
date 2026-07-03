@@ -16,6 +16,7 @@ import {
   type JournalEntry, type JournalAnalysis, type Setup, type Bucket,
 } from '@/lib/journalEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Panel, Pill, FootLink, Num, Cell, DataTable, ChartPanel, LineChart, timestampColumn, textColumn, statusColumn, numColumn, pnlColumn, percentColumn, type Column } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 
@@ -58,11 +59,11 @@ const SETUP_TF_COLS: Column<Bucket>[] = [
 
 export default function JournalPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
   const paper = usePaperStore();
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
   const [clock, setClock] = useState('--:--:--');
   useEffect(() => { const t = () => setClock(new Date().toLocaleTimeString('en-GB')); t(); const id = setInterval(t, 1000); return () => clearInterval(id); }, []);
 
@@ -104,12 +105,13 @@ export default function JournalPage() {
         {/* Header */}
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
           <button className="flex items-center gap-1.5 rounded-lg border border-line bg-base px-2.5 py-1.5 text-sm"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></button>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', tone(change)].join(' ')}>{sgn(change)}{fmtN((price * change) / 100, 2)} ({sgn(change)}{fmtN(change, 2)}%)</span>
           <div className="ml-4 hidden items-center gap-0.5 rounded-lg border border-line bg-base p-0.5 md:flex">
             {TIMEFRAMES.map((tf) => <span key={tf} className={['rounded-md px-2.5 py-1 text-xs font-medium', tf === '1h' ? 'bg-accent/20 text-accent' : 'text-ink-faint'].join(' ')}>{TF_LABEL[tf]}</span>)}
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             <span className={['inline-flex items-center gap-1.5 text-xs', status === 'live' ? 'text-bull-bright' : 'text-regime-hot'].join(' ')}><span className={['h-2 w-2 rounded-full', status === 'live' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />{status === 'live' ? 'Live' : status}</span>
             <div className="relative"><Bell className="h-4 w-4 text-ink-muted" /><span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-bear text-[8px] font-bold text-white">3</span></div>
             <div className="h-7 w-7 rounded-full bg-gradient-to-br from-accent to-regime-hot" />
@@ -149,7 +151,7 @@ export default function JournalPage() {
           {/* Recent trades | Equity | Calendar */}
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1.3fr_1fr]">
             <Panel title="Recent Trades" action={<><Pill>View All Trades <ChevronDown className="h-3 w-3" /></Pill><span className="px-1 text-ink-faint">···</span></>}>
-              <DataTable columns={RECENT_COLS} rows={recent} rowKey={(e) => e.id} />
+              <DataTable columns={RECENT_COLS} rows={recent} rowKey={(e) => e.id} density="compact" virtualize={true} stickyFirstColumn={true} />
             </Panel>
 
             <ChartPanel title="Equity Curve" info action={<Pill>Compare <ChevronDown className="h-3 w-3" /></Pill>}

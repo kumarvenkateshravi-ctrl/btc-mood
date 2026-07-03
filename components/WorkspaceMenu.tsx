@@ -90,7 +90,7 @@ export default function WorkspaceMenu({ current, onApply }: WorkspaceMenuProps) 
                       });
                       setOpen(false);
                     }}
-                    className="min-w-0 flex-1 px-3 py-2 text-left transition-colors hover:bg-surface-2"
+                    className="focus-ring min-w-0 flex-1 px-3 py-2 text-left transition-colors hover:bg-surface-2"
                   >
                     <div className="truncate text-[13px] font-medium text-ink">{w.name}</div>
                     <div className="mt-0.5 truncate font-mono text-[10px] text-ink-faint">
@@ -100,7 +100,7 @@ export default function WorkspaceMenu({ current, onApply }: WorkspaceMenuProps) 
                   <button
                     onClick={() => deleteWorkspace(w.id)}
                     aria-label={`Delete ${w.name}`}
-                    className="mr-1 shrink-0 rounded p-1 text-ink-faint opacity-0 transition hover:bg-surface-2 hover:text-bear-bright group-hover:opacity-100"
+                    className="focus-ring mr-1 shrink-0 rounded p-1 text-ink-faint opacity-0 transition hover:bg-surface-2 hover:text-bear-bright group-hover:opacity-100 focus-visible:opacity-100"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

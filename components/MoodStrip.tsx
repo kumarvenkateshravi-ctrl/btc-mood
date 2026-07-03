@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { COMPARE_SYMBOLS, type CompareSymbol } from '@/lib/compare';
 import type { MoodVerdict, TFSnapshot } from '@/lib/signals';
 import type { Timeframe } from '@/lib/types';
+import { DataStateIndicator } from '@/components/ui/DataStateIndicator';
+import type { MarketLifecycleState } from '@/lib/hooks/useMarketState';
 
 type Status = 'live' | 'demo' | 'loading';
 type Side = 'bullish' | 'bearish' | 'neutral';
@@ -12,6 +14,7 @@ interface MoodStripProps {
   symbol: CompareSymbol;
   onSymbolChange: (s: CompareSymbol) => void;
   status: Status;
+  dataState?: MarketLifecycleState;
   price: number | null;
   change: number | null;
   mood: MoodVerdict;
@@ -62,6 +65,7 @@ export default function MoodStrip({
   symbol,
   onSymbolChange,
   status,
+  dataState,
   price,
   change,
   mood,
@@ -105,7 +109,7 @@ export default function MoodStrip({
         <div className="flex min-w-0 flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <SymbolSwitch value={symbol} onChange={onSymbolChange} />
-            <StatusPill status={status} />
+            {dataState ? <DataStateIndicator state={status === 'demo' ? 'loading' : dataState} showLabel /> : <StatusPill status={status} />}
           </div>
           <div className="flex items-end gap-3">
             <span className="font-mono text-2xl leading-none tracking-tight text-ink tabular-nums sm:text-3xl">

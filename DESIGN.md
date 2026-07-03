@@ -206,8 +206,8 @@ Panel migration is **complete**: every screen uses `@/components/ui` `Panel`/`Pi
 what tsc/tests cannot): identical panel padding, identical header heights, identical
 title spacing, consistent elevation, consistent hover behavior, consistent badge
 alignment, no new custom panel variant, mobile layout intact, dark/light themes correct.
-Enforcement TODO (Phase L): an ESLint rule forbidding a local `function Panel`/`Widget`
-in `app/**`.
+Enforced (§L, 2026-06): `eslint.config.mjs` `no-restricted-syntax` (error, in CI) bans a
+local `function Panel`/`Widget`/`KpiCard`/`DataTable`/… re-declaration in `app/**`.
 
 ### B5-FREEZE — Financial Information Language (frozen 2026-06-27)
 
@@ -223,8 +223,8 @@ choose a SEMANTIC variant, never raw formatting:
 
 **Frozen rules:** no `toLocaleString` / `toFixed` / manual sign+symbol concatenation for a
 financial value in a page. New value type → add a variant in `Num.tsx`, never format inline.
-`Stat` stays light; do not grow it toward `KpiCard`. Enforcement TODO (Phase L): an ESLint
-rule flagging numeric `toLocaleString`/`toFixed` in `app/**`.
+`Stat` stays light; do not grow it toward `KpiCard`. Enforced (§L): `no-restricted-properties`
+(warn, in CI) flags `toLocaleString`/`toFixed` in `app/**`.
 
 ### H-FREEZE — DataTable v1.0 (frozen 2026-06-27)
 
@@ -563,18 +563,31 @@ policy; a breaking change to a contract is a major bump with a migration note.
 
 ---
 
-# L. Engineering Platform  [CONTRACT]
+# L. Engineering Platform  [CONTRACT — partially built]
 
 Transforms the system from a document into an enforceable standard.
 
-- **Token pipeline:** author in **W3C Design Tokens** format → **Style Dictionary**
-  builds CSS variables + **Tailwind (v4)** theme from one source. No parallel hand-maintained values.
-- **Components:** typed React APIs; documented in **Storybook** with the C contract.
-- **Quality gates in CI:** **token-only lint** (Stylelint/ESLint: no raw hex/spacing),
-  **axe** a11y, **visual regression** (Chromatic), and enforced **performance budgets**
-  (LCP < 2.0s, INP < 150ms, initial bundle < 250KB, charts lazy-loaded, WebP, SVG icons,
-  variable fonts).
-- A PR that violates a budget or introduces a raw color fails the build.
+**Shipped** (all in CI via `.github/workflows/ci.yml`: lint · typecheck · test · build · budget):
+- **Frozen-contract lint** — `no-restricted-syntax` (error) bans local re-declaration of
+  Panel/KpiCard/DataTable/… in `app/**`; the freezes are enforced, not code-reviewed.
+- **Token-only lint (colors)** — custom `mds/no-raw-hex-class` (warn) flags raw hex in
+  Tailwind arbitrary utilities; `no-restricted-properties` (warn) flags inline
+  `toFixed`/`toLocaleString`.
+- **Performance budget** — `scripts/check-bundle-budget.mjs` fails CI if the shared
+  first-load JS exceeds 250KB gzip; charts are lazy-loaded (`next/dynamic`); all
+  icons/graphics are SVG.
+- **Storybook** — component catalog with the docs + a11y addons.
+- **axe a11y** — automated axe run over every primitive (`components/ui/a11y.test.tsx`).
+- **Single-source theming** — every token lives in `app/globals.css`; a theme is one
+  `[data-theme]` block (Obsidian / CryptoVision / Cobalt ship from that one file).
+
+**Pending:**
+- **Token pipeline:** author in **W3C Design Tokens** → **Style Dictionary** to generate the
+  CSS vars + Tailwind theme (today they're hand-maintained in `globals.css` — already
+  single-source, so this is authoring ergonomics, not correctness).
+- **Visual regression** (Chromatic); **runtime perf budgets** (LCP < 2.0s, INP < 150ms — need
+  a real browser/Lighthouse); promote `no-raw-hex-class` to **error** after the ~24 existing
+  raw-hex classes are tokenized; token-only **spacing** lint.
 
 ---
 

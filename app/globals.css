@@ -98,6 +98,11 @@
   /* ---------- SEMANTIC: focus ring ---------- */
   --ring: oklch(0.64 0.175 266 / 0.55);
 
+  /* ---------- SEMANTIC: chrome (scrollbar, text selection) ---------- */
+  --scroll-thumb: #2d3550;
+  --scroll-thumb-hover: #3d4a6b;
+  --selection-bg: oklch(0.64 0.175 266 / 0.40);
+
   /* ---------- COMPONENT tier (referenced by ui primitives) ---------- */
   --card-bg:           var(--surface-1);
   --card-border:       var(--line);
@@ -119,6 +124,323 @@
   /* ---------- ELEVATION shadows (B3; depth is mostly light) ---------- */
   --shadow-1: 0 1px 0 var(--specular), 0 6px 18px oklch(0 0 0 / 0.32);
   --shadow-2: 0 1px 0 var(--specular), 0 18px 48px oklch(0 0 0 / 0.46);
+}
+
+/* ============================================================
+   THEME: CryptoVision  (switchable via data-theme on <html>)
+   A neutral near-black charcoal canvas + borderless graphite
+   cards + a soft periwinkle/lavender accent with DARK ink on
+   filled buttons. Only the SEMANTIC layer is swapped — every
+   token-driven utility re-skins automatically. Obsidian Indigo
+   stays the :root default.
+   ============================================================ */
+:root[data-theme="cryptovision"] {
+  /* surfaces & elevation — neutral charcoal -> graphite (chroma ~0) */
+  --base:          oklch(0.150 0.004 285);
+  --surface-1:     oklch(0.205 0.005 285);
+  --surface-2:     oklch(0.245 0.006 285);
+  --surface-3:     oklch(0.290 0.006 285);
+  --surface-hover: oklch(0.225 0.005 285);
+  --chart-bg:      oklch(0.170 0.004 285);
+  --specular:      oklch(1 0 0 / 0.035);   /* softer, near-borderless lift */
+
+  /* borders — subtle neutral hairlines */
+  --line:         oklch(0.320 0.005 285);
+  --line-strong:  oklch(0.420 0.006 285);
+  --border-focus: oklch(0.745 0.095 292);
+
+  /* ink — neutral, not slate-tinted */
+  --ink:        oklch(0.970 0.002 285);
+  --ink-muted:  oklch(0.720 0.004 285);
+  --ink-faint:  oklch(0.550 0.005 285);
+
+  /* accent — soft periwinkle/lavender (the signature) */
+  --accent:        oklch(0.745 0.095 292);
+  --accent-bright: oklch(0.800 0.085 292);
+  --accent-dim:    oklch(0.630 0.110 292);
+  --accent-2:      oklch(0.700 0.120 305);
+  --button-primary-bg: oklch(0.760 0.090 292);
+  --button-primary-fg: oklch(0.220 0.012 285);   /* dark ink on the pastel */
+  --ring: oklch(0.745 0.095 292 / 0.5);
+
+  --neutral:     oklch(0.720 0.004 285);
+  --neutral-dim: oklch(0.550 0.004 285);
+
+  /* data-viz: lead with lavender/violet; greens/ambers/sky inherit */
+  --dv-1: oklch(0.745 0.095 292);
+  --dv-2: oklch(0.700 0.120 305);
+}
+
+/* Filled accent buttons/badges read with dark ink on the pastel lavender.
+   Specificity (0,2,0) beats the `.text-white` utility (0,1,0). */
+:root[data-theme="cryptovision"] .bg-accent {
+  color: var(--button-primary-fg);
+}
+
+/* CryptoVision is flat charcoal — drop the indigo/emerald aurora glow. */
+:root[data-theme="cryptovision"] .app-aurora {
+  background: none;
+}
+
+/* ============================================================
+   THEME: Cobalt  (switchable via data-theme on <html>)
+   A dark navy / blue-slate canvas + blue-tinted graphite cards
+   + a vivid royal-blue accent (white ink on filled buttons).
+   The classic premium-SaaS look. Semantic layer only.
+   ============================================================ */
+:root[data-theme="cobalt"] {
+  /* surfaces — flipped: lighter blue-graphite background, darker navy cards */
+  --base:          oklch(0.265 0.030 256);
+  --surface-1:     oklch(0.210 0.028 256);
+  --surface-2:     oklch(0.240 0.029 256);
+  --surface-3:     oklch(0.290 0.031 256);
+  --surface-hover: oklch(0.230 0.029 256);
+  --chart-bg:      oklch(0.265 0.030 256);
+  --specular:      oklch(1 0 0 / 0.05);
+
+  /* borders */
+  --line:         oklch(0.360 0.030 256);
+  --line-strong:  oklch(0.460 0.032 256);
+  --border-focus: oklch(0.600 0.190 258);
+
+  /* ink — blue-tinted neutrals */
+  --ink:        oklch(0.980 0.005 256);
+  --ink-muted:  oklch(0.760 0.015 256);
+  --ink-faint:  oklch(0.590 0.020 256);
+
+  /* accent — vivid royal blue (white ink works on filled buttons) */
+  --accent:        oklch(0.600 0.190 258);
+  --accent-bright: oklch(0.680 0.165 258);
+  --accent-dim:    oklch(0.500 0.160 258);
+  --accent-2:      oklch(0.700 0.140 230);   /* sky/cyan secondary */
+  --button-primary-bg: oklch(0.600 0.190 258);
+  --button-primary-fg: oklch(0.985 0.004 256);
+  --ring: oklch(0.600 0.190 258 / 0.5);
+
+  --neutral:     oklch(0.720 0.020 256);
+  --neutral-dim: oklch(0.560 0.018 256);
+
+  /* data-viz: lead with blue + sky; greens/ambers/rose inherit */
+  --dv-1: oklch(0.600 0.190 258);
+  --dv-2: oklch(0.700 0.140 230);
+}
+
+/* Cobalt keeps a faint blue top-glow for depth (vs. the indigo/emerald one). */
+:root[data-theme="cobalt"] .app-aurora {
+  background: radial-gradient(58% 48% at 50% -10%, oklch(0.60 0.19 258 / 0.12), transparent 70%);
+}
+
+/* ============================================================
+   THEME: Bitcoin  (switchable via data-theme on <html>)
+   A deep, warm charcoal canvas with BORDERLESS cards and a
+   gold primary accent (the Bitcoin brand color). Inspired by
+   premium crypto-dashboard references: depth comes from the
+   surface step alone, no hairline borders. Signal greens are
+   pushed vibrant to match the energetic palette. Only the
+   SEMANTIC layer is swapped.
+   ============================================================ */
+:root[data-theme="bitcoin"] {
+  /* surfaces — deep warm charcoal, small but visible step */
+  --base:          oklch(0.115 0.008 80);    /* near-black, warm tint */
+  --surface-1:     oklch(0.165 0.010 80);    /* cards (borderless) */
+  --surface-2:     oklch(0.205 0.012 80);    /* toolbars, raised */
+  --surface-3:     oklch(0.245 0.014 80);    /* popovers */
+  --surface-hover: oklch(0.185 0.011 80);
+  --chart-bg:      oklch(0.135 0.009 80);
+  --specular:      oklch(1 0 0 / 0.04);      /* subtle top edge */
+
+  /* borders — BORDERLESS theme: collapse to bg so cards float */
+  --line:         oklch(0.115 0.008 80);     /* matches base */
+  --line-strong:  oklch(0.205 0.012 80);     /* matches surface-2 */
+  --border-focus: oklch(0.80 0.155 85);
+
+  /* ink — warm-tinted neutrals */
+  --ink:        oklch(0.985 0.004 80);
+  --ink-muted:  oklch(0.745 0.010 80);
+  --ink-faint:  oklch(0.560 0.012 80);
+
+  /* accent — Bitcoin gold (the signature) */
+  --accent:        oklch(0.82 0.155 85);     /* gold */
+  --accent-bright: oklch(0.88 0.140 85);
+  --accent-dim:    oklch(0.68 0.140 85);
+  --accent-2:      oklch(0.78 0.180 70);     /* electric yellow-amber */
+  --button-primary-bg: oklch(0.82 0.155 85);
+  --button-primary-fg: oklch(0.18 0.020 80); /* dark ink on gold */
+  --ring: oklch(0.82 0.155 85 / 0.55);
+
+  --neutral:     oklch(0.745 0.010 80);
+  --neutral-dim: oklch(0.560 0.012 80);
+
+  /* signal greens — vibrant, energetic (vs. Obsidian's TV-calibrated) */
+  --bull:        #00b882;
+  --bull-bright: #00d68f;
+  --bull-dim:    #008f63;
+  /* bear stays the family red (a single red hue across all themes) */
+  --bear:        #ff3b5c;
+  --bear-bright: #ff5570;
+  --bear-dim:    #d62a48;
+
+  --gold:        oklch(0.85 0.140 88);
+
+  /* data-viz: lead with gold + electric yellow; greens/ambers inherit */
+  --dv-1: oklch(0.82 0.155 85);
+  --dv-2: oklch(0.78 0.180 70);
+}
+
+/* Bitcoin theme: filled accent buttons/badges read with dark ink on gold. */
+:root[data-theme="bitcoin"] .bg-accent {
+  color: var(--button-primary-fg);
+}
+
+/* Bitcoin theme: a soft gold aurora replaces the indigo/emerald glow. */
+:root[data-theme="bitcoin"] .app-aurora {
+  background: radial-gradient(60% 50% at 50% -10%, oklch(0.82 0.155 85 / 0.10), transparent 70%);
+}
+
+/* ============================================================
+   THEME: Material Dark  (switchable via data-theme on <html>)
+   Android pure dark theme based on the user's reference image.
+   Background is #121212, surfaces are #1E1E1E.
+   Accents are #BB86FC (Purple) and #80CBC4 (Teal).
+   Borders are transparent so cards float.
+   ============================================================ */
+:root[data-theme="material"] {
+  /* surfaces — flipped: lighter background, darker cards */
+  --base:          #11212D;
+  --surface-1:     #06141B;
+  --surface-2:     #0A1A24;
+  --surface-3:     #162836;
+  --surface-hover: #081720;
+  --chart-bg:      #11212D;
+  --specular:      oklch(1 0 0 / 0.035);   /* Keep existing structural lift */
+
+  /* borders — keep the existing structural shape by providing visible borders */
+  --line:         #1C303E;
+  --line-strong:  #243A4A;
+  --border-focus: #BB86FC;
+
+  /* ink */
+  --ink:        #FFFFFF;
+  --ink-muted:  #B0B0B0;
+  --ink-faint:  #808080;
+
+  /* accents */
+  --accent:        #BB86FC;
+  --accent-bright: #D0BCFF;
+  --accent-dim:    #9A63E0;
+  --accent-2:      #80CBC4;
+  
+  --button-primary-bg: #BB86FC;
+  --button-primary-fg: #121212;
+  --ring: rgba(187, 134, 252, 0.5);
+}
+
+/* Material theme: dark text on light accent background */
+:root[data-theme="material"] .bg-accent {
+  color: var(--button-primary-fg);
+}
+
+/* ============================================================
+   THEME: Lorento  (switchable via data-theme on <html>)
+   Soft rounded cards, deep slate background, vibrant violet accents.
+   ============================================================ */
+:root[data-theme="lorento"] {
+  --base:          #111317;
+  --surface-1:     #1A1C20;
+  --surface-2:     #212328;
+  --surface-3:     #282A31;
+  --surface-hover: #212328;
+  --chart-bg:      #1A1C20;
+  --specular:      oklch(1 0 0 / 0.02);
+
+  --line:         #26272F;
+  --line-strong:  #33353E;
+  --border-focus: #675AFF;
+
+  --ink:        #FFFFFF;
+  --ink-muted:  #8F939E;
+  --ink-faint:  #5C5F6A;
+
+  --accent:        #675AFF;
+  --accent-bright: #8378FF;
+  --accent-dim:    #5547E5;
+  --accent-2:      #28b9a1;
+
+  --button-primary-bg: #675AFF;
+  --button-primary-fg: #FFFFFF;
+  --ring: rgba(103, 90, 255, 0.4);
+
+  /* Override structural radii to be larger and softer */
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+}
+
+/* Lorento gradient override for CTA buttons using bg-accent */
+:root[data-theme="lorento"] .bg-accent {
+  background: linear-gradient(135deg, #675AFF 0%, #8578FF 100%);
+  color: var(--button-primary-fg);
+}
+
+/* Lorento shadow override: premium soft shadows instead of hard borders */
+:root[data-theme="lorento"] .elev-1 {
+  box-shadow: inset 0 1px 0 0 var(--specular), 0 12px 32px -8px rgba(0, 0, 0, 0.4);
+  border-color: transparent;
+}
+
+/* ============================================================
+   THEME CHROME & PERSONALITY — per-theme scrollbar, selection,
+   radii and shadows. Radii ride Tailwind v4's --radius-* variables
+   (utilities compile to var() references), so the Bitcoin theme's
+   rounder, softer geometry applies app-wide with zero markup churn.
+   ============================================================ */
+:root[data-theme="cryptovision"] {
+  --scroll-thumb: #3a3a41;
+  --scroll-thumb-hover: #4b4b54;
+  --selection-bg: oklch(0.745 0.095 292 / 0.35);
+}
+:root[data-theme="cobalt"] {
+  --scroll-thumb: #34415d;
+  --scroll-thumb-hover: #435377;
+  --selection-bg: oklch(0.600 0.190 258 / 0.40);
+}
+:root[data-theme="bitcoin"] {
+  --scroll-thumb: #3a332a;
+  --scroll-thumb-hover: #4c4334;
+  --selection-bg: oklch(0.82 0.155 85 / 0.30);
+  /* Rounder geometry — the reference design's soft, pill-leaning cards */
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.75rem;
+  /* Warm-black elevation; cool shadows read dirty on warm charcoal */
+  --shadow-1: 0 1px 0 var(--specular), 0 6px 18px oklch(0.02 0.01 80 / 0.50);
+  --shadow-2: 0 1px 0 var(--specular), 0 18px 48px oklch(0.02 0.01 80 / 0.60);
+}
+
+/* Bitcoin theme: warm the trade-workspace backdrop (its default radials
+   are sky/emerald tinted for Obsidian). */
+:root[data-theme="bitcoin"] .paper-bg {
+  background:
+    radial-gradient(55% 50% at 88% -10%, oklch(0.82 0.155 85 / 0.08), transparent 70%),
+    radial-gradient(45% 35% at 0% 110%, rgba(0, 184, 130, 0.06), transparent 72%);
+}
+
+/* One-shot crossfade while switching themes. ThemeToggle adds the class
+   for ~320ms around the swap, so the recolor sweeps instead of snapping.
+   !important lets it win over per-component transition declarations for
+   that brief window; reduced-motion kills it globally below. */
+html.theme-fade,
+html.theme-fade *,
+html.theme-fade *::before,
+html.theme-fade *::after {
+  transition:
+    background-color 260ms var(--ease-quart),
+    border-color 260ms var(--ease-quart),
+    color 260ms var(--ease-quart),
+    fill 260ms var(--ease-quart),
+    box-shadow 260ms var(--ease-quart) !important;
 }
 
 @theme inline {
@@ -194,6 +516,12 @@ a { color: inherit; text-decoration: none; }
     radial-gradient(55% 45% at 6% 4%, oklch(0.72 0.135 232 / 0.08), transparent 72%);
 }
 
+/* ---- Tick Flash Animation (MDS B5) ---- */
+@keyframes tick-flash {
+  0% { background-color: var(--accent); color: white; }
+  100% { background-color: transparent; }
+}
+
 /* ---- Focus ring (keyboard nav) ---- */
 .focus-ring:focus-visible {
   outline: none;
@@ -201,14 +529,43 @@ a { color: inherit; text-decoration: none; }
   border-radius: 8px;
 }
 
-/* ---- Panel material: layered surface with a lit top edge ---- */
-.panel {
-  background:
-    linear-gradient(180deg, oklch(1 0 0 / 0.025), transparent 8%),
-    linear-gradient(180deg, var(--surface-1), var(--chart-bg));
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-1);
+/* ---- Input field focus (form inputs, selects, textareas) ----
+   Standardized visible focus indicator for all form controls.
+   Uses the accent border + a soft glow instead of the offset ring,
+   so the indicator sits flush with the field chrome. ---- */
+.input-field:focus-visible {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px oklch(from var(--accent) l c h / 0.18);
 }
+
+/* ---- Skip to main content (keyboard nav / screen readers) ----
+   Visually hidden until focused — appears at the top of the page
+   so keyboard users can bypass nav on every page load. ---- */
+.skip-to-content {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 9999;
+  transform: translateY(-150%);
+  opacity: 0;
+  transition: transform 120ms var(--ease-quart), opacity 120ms var(--ease-quart);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+}
+.skip-to-content:focus-visible {
+  transform: translateY(0);
+  opacity: 1;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--base), 0 0 0 4px var(--ring);
+}
+
+
+
 
 /* ---- Elevation recipe (MDS B3). Depth = surface step + a 1px specular
    top edge + a soft tinted shadow, never heavy black shadows. The inset
@@ -272,10 +629,32 @@ button.elev-1:hover {
   to   { opacity: 1; }
 }
 
+/* ---- Modal entry: scale up from 96% + fade in ---- */
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+/* ---- Native <dialog> resets so MDS styling takes full control ---- */
+dialog {
+  color: inherit;
+  /* The dialog element has user-agent background/border by default */
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+dialog::backdrop {
+  /* backdrop styles are applied via Tailwind's backdrop: variant in Modal.tsx */
+  background: oklch(0.10 0.010 265 / 0.65);
+  backdrop-filter: blur(4px);
+}
+
+
 /* ---- Price tick flashes: a calm tinted wash on the chip, not a
-   strobe. The color of the wash encodes direction. ---- */
-.price-flash-up   { background-color: rgba(8, 153, 129, 0.18); }
-.price-flash-down { background-color: rgba(242, 54, 69, 0.18); }
+   strobe. The color of the wash encodes direction. Mixed from the
+   semantic tokens so each theme's signal hues carry through. ---- */
+.price-flash-up   { background-color: color-mix(in oklab, var(--bull) 18%, transparent); }
+.price-flash-down { background-color: color-mix(in oklab, var(--bear) 18%, transparent); }
 
 /* ---- Toast: drop in from below the fold ---- */
 @keyframes toast-in {
@@ -336,10 +715,11 @@ button.elev-1:hover {
 .scroll-x { scrollbar-width: none; }
 .scroll-x::-webkit-scrollbar { display: none; }
 
-/* Dark scrollbar for the whole app — matches the dark theme. */
+/* Dark scrollbar for the whole app — token-driven so every theme's
+   chrome matches its canvas (warm on Bitcoin, neutral on CryptoVision). */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2d3550 transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 *::-webkit-scrollbar {
   width: 6px;
@@ -349,14 +729,19 @@ button.elev-1:hover {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background-color: #2d3550;
+  background-color: var(--scroll-thumb);
   border-radius: 99px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background-color: #3d4a6b;
+  background-color: var(--scroll-thumb-hover);
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Text selection carries the theme accent. */
+::selection {
+  background: var(--selection-bg);
 }
 
 /* Honor reduced motion everywhere: snap to end state, no spatial

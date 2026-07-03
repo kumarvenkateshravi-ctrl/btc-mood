@@ -78,7 +78,7 @@ function ColorPickerPopover({
         {TV_COLORS.map(hex => (
           <button
             key={hex}
-            className="w-5 h-5 rounded-[3px] border border-[#363a45] hover:border-white focus:outline-none transition-colors"
+            className="w-5 h-5 rounded-[3px] border border-[#363a45] hover:border-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 transition-colors"
             style={{ backgroundColor: hex }}
             onClick={() => {
               const c = hexToRgba(hex);
@@ -418,11 +418,11 @@ export default function IndicatorSettingsModal({
             />
             {!rowDisabled && (
               <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center pr-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
-                <button type="button" className="text-[#787b86] hover:text-[#d1d4dc] p-px"
+                <button type="button" className="focus-ring text-[#787b86] hover:text-[#d1d4dc] p-px"
                   onClick={() => updateInputs(lenInp.id, (Number(inputsState[lenInp.id]) || 0) + 1)}>
                   <svg width="7" height="5" viewBox="0 0 10 6" fill="none"><path d="M1 5L5 1L9 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
-                <button type="button" className="text-[#787b86] hover:text-[#d1d4dc] p-px"
+                <button type="button" className="focus-ring text-[#787b86] hover:text-[#d1d4dc] p-px"
                   onClick={() => updateInputs(lenInp.id, Math.max(1, (Number(inputsState[lenInp.id]) || 0) - 1))}>
                   <svg width="7" height="5" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
@@ -457,7 +457,7 @@ export default function IndicatorSettingsModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <h2 className="text-xl font-bold text-white tracking-wide">{indicatorDef.name}</h2>
-          <button onClick={onClose} className="rounded text-[#787b86] hover:text-[#d1d4dc] transition-colors">
+          <button onClick={onClose} aria-label="Close" className="focus-ring rounded p-1 text-[#787b86] hover:text-[#d1d4dc] transition-colors">
             <X size={24} strokeWidth={1.2} />
           </button>
         </div>
@@ -468,8 +468,10 @@ export default function IndicatorSettingsModal({
           {tabs.map((tab) => (
             <button
               key={tab}
+              role="tab"
+              aria-selected={activeTab === tab}
               onClick={() => setActiveTab(tab)}
-              className={`relative pb-3 text-[14px] font-semibold transition-colors z-10 ${
+              className={`relative pb-3 text-[14px] font-semibold transition-colors z-10 focus-visible:outline-none focus-visible:underline ${
                 activeTab === tab
                   ? 'text-white border-b-2 border-[#2962FF]'
                   : 'text-[#787b86] hover:text-[#d1d4dc] border-b-2 border-transparent'
@@ -553,16 +555,16 @@ export default function IndicatorSettingsModal({
                                     step={inp.step}
                                     value={inputsState[inp.id]}
                                     onChange={(e) => updateInputs(inp.id, parseFloat(e.target.value))}
-                                    className="w-full h-[34px] rounded-[6px] border border-[#434651] bg-[#131722] hover:border-[#787b86] pl-3 pr-6 outline-none focus:border-[#2962FF] text-[#d1d4dc] text-[14px] transition-colors appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    className="w-full h-[34px] rounded-[6px] border border-[#434651] bg-[#131722] hover:border-[#787b86] pl-3 pr-6 outline-none focus-visible:border-[#2962FF] text-[#d1d4dc] text-[14px] transition-colors appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                     style={{ MozAppearance: 'textfield' }}
                                     disabled={isDisabled}
                                   />
                                   <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center pr-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button type="button" className="text-[#787b86] hover:text-[#d1d4dc] focus:outline-none p-0.5"
+                                    <button type="button" className="focus-ring text-[#787b86] hover:text-[#d1d4dc] p-0.5"
                                       onClick={() => updateInputs(inp.id, (inputsState[inp.id] || 0) + (inp.step || 1))} disabled={isDisabled}>
                                       <svg width="8" height="5" viewBox="0 0 10 6" fill="none"><path d="M1 5L5 1L9 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                                     </button>
-                                    <button type="button" className="text-[#787b86] hover:text-[#d1d4dc] focus:outline-none p-0.5 mt-[1px]"
+                                    <button type="button" className="focus-ring text-[#787b86] hover:text-[#d1d4dc] p-0.5 mt-[1px]"
                                       onClick={() => updateInputs(inp.id, (inputsState[inp.id] || 0) - (inp.step || 1))} disabled={isDisabled}>
                                       <svg width="8" height="5" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                                     </button>
@@ -779,13 +781,13 @@ export default function IndicatorSettingsModal({
           <div className="flex gap-2">
             <button
               onClick={handleCancel}
-              className="rounded-[4px] border border-[#363a45] bg-transparent px-5 py-1.5 text-[13px] font-semibold text-[#d1d4dc] transition-colors hover:border-[#787b86] hover:text-white"
+              className="rounded-[4px] border border-[#363a45] bg-transparent px-5 py-1.5 text-[13px] font-semibold text-[#d1d4dc] transition-colors hover:border-[#787b86] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             >
               Cancel
             </button>
             <button
               onClick={handleSaveBtn}
-              className="rounded-[4px] bg-white px-6 py-1.5 text-[13px] font-semibold text-black transition-colors hover:bg-[#d1d4dc]"
+              className="rounded-[4px] bg-white px-6 py-1.5 text-[13px] font-semibold text-black transition-colors hover:bg-[#d1d4dc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             >
               Ok
             </button>

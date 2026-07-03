@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import Chart, { type ChartType } from './Chart';
+import type { ChartApi } from './chart/types';
 import { useBaseCandles } from '@/lib/chartHelpers';
 import { DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -44,6 +45,35 @@ export default function MultiChartGrid({
   cellHeight = 240,
 }: MultiChartGridProps) {
   const colsClass = GRID_COLS_CLASS[count];
+  const chartApis = useRef(new Map<Timeframe, ChartApi>());
+  const syncingRange = useRef(false);
+  const syncingCrosshair = useRef(false);
+
+  const handleReady = (tf: Timeframe, api: ChartApi) => {
+    chartApis.current.set(tf, api);
+
+    api.subscribeLogicalRange((range) => {
+      if (syncingRange.current || !range) return;
+      syncingRange.current = true;
+      chartApis.current.forEach((otherApi, otherTf) => {
+        if (otherTf !== tf) {
+          try { otherApi.setVisibleLogicalRange(range); } catch {}
+        }
+      });
+      syncingRange.current = false;
+    });
+
+    api.subscribeCrosshairTime((time) => {
+      if (syncingCrosshair.current) return;
+      syncingCrosshair.current = true;
+      chartApis.current.forEach((otherApi, otherTf) => {
+        if (otherTf !== tf) {
+          try { otherApi.setCrosshairTime(time); } catch {}
+        }
+      });
+      syncingCrosshair.current = false;
+    });
+  };
 
   return (
     <div
@@ -62,6 +92,7 @@ export default function MultiChartGrid({
           active={tf === selected}
           onSelect={() => onSelectTf(tf)}
           height={cellHeight}
+          onReady={(api) => handleReady(tf, api)}
         />
       ))}
     </div>
@@ -76,6 +107,7 @@ function GridCell({
   active,
   onSelect,
   height,
+  onReady,
 }: {
   tf: Timeframe;
   candles: Candle[];
@@ -84,6 +116,7 @@ function GridCell({
   active: boolean;
   onSelect: () => void;
   height: number;
+  onReady: (api: ChartApi) => void;
 }) {
   const renkoOptions = useMemo(() => renkoConfigToOptions(DEFAULT_RENKO), []);
   const baseCandlesForIndicators = useBaseCandles(candles, type, renkoOptions);
@@ -159,6 +192,7 @@ function GridCell({
           showSignals={false}
           activeIndicatorId=""
           onIndicatorChange={() => {}}
+          onReady={onReady}
         />
       )}
     </div>

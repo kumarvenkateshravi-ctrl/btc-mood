@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Bitcoin, ChevronDown, Bell, RefreshCw, GitCompare, Download, Sparkles,
-  Check, Shield, Star, TrendingUp, MoreHorizontal, FileText, FileSpreadsheet, Plus,
+  Check, Star, TrendingUp, MoreHorizontal, FileText, FileSpreadsheet, Plus,
 } from 'lucide-react';
 import { DEFAULT_COMPARE_SYMBOL } from '@/lib/compare';
 import { useMarketData } from '@/lib/hooks/useMarketData';
@@ -13,6 +13,8 @@ import {
   RISK, EMOTIONS, DISCIPLINE, MISTAKES, AI_COACH, MISSED, GOALS, CALENDAR, EXPORTS,
   EXEC_SUMMARY, SAVED_REPORTS, ACCOUNT_OVERVIEW, TABS, type Kpi, type StrategyRow, type BandRow, type MtfRow, type RegimeRow, type TfRow, type MistakeRow, type MissedRow, type AssetRow,
 } from '@/lib/reportsEngine';
+import { useDensity } from '@/lib/hooks/useDensity';
+import { useToast, cx } from '@/components/ui';
 
 // DataTable column sets (DataTable -> Column Presets -> Financial Cells -> Num).
 // A colored band/alignment dot is the one custom cell; everything else is a preset.
@@ -78,7 +80,8 @@ const MISSED_COLS: Column<MissedRow>[] = [
   textColumn({ key: 'potential', header: 'Potential', value: (r) => r.profit, align: 'right', className: 'text-bull-bright' }),
 ];
 import StackSidebar from '@/components/stack/StackSidebar';
-import { Panel, FootLink, KpiCard, Num, DataTable, Cell, type Column, numColumn, percentColumn, pnlColumn, textColumn, AICard, type AICardData, type AIEvidence } from '@/components/ui';
+import ThemeToggle from '@/components/ThemeToggle';
+import { Panel, FootLink, Num, DataTable, Cell, type Column, numColumn, percentColumn, pnlColumn, textColumn, AICard, type AICardData, type AIEvidence } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 
 const TRADING_COACH: AICardData = {
@@ -108,12 +111,17 @@ const toneCls = (t: 'bull' | 'warn' | 'bear') => (t === 'bull' ? '#26A69A' : t =
 
 export default function ReportsPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
+
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
+  const absChange = price - (price / (1 + change / 100));
   const [tab, setTab] = useState('Executive');
   const [perfTab, setPerfTab] = useState('Equity Curve');
+
+  const { mode, setMode, p, gap } = useDensity();
+  const { addToast } = useToast();
 
   const sidebarExtra = (
     <>
@@ -130,55 +138,55 @@ export default function ReportsPage() {
   );
 
   return (
-    <div className="flex min-h-[100dvh] w-full bg-base text-ink">
+    <div className="flex min-h-[100dvh] w-full bg-surface-3 text-ink">
       <StackSidebar extra={sidebarExtra} />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
           <button className="flex items-center gap-1.5 rounded-lg border border-line bg-base px-2.5 py-1.5 text-sm"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></button>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price)}</span>
-          <span className={['font-mono text-sm tabular-nums', tone(change)].join(' ')}>{sgn(change)}{fmtN((price * change) / 100, 2)} ({sgn(change)}{fmtN(change, 2)}%)</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price, 2)}</span>
+          <span className={['font-mono text-sm tabular-nums', tone(change)].join(' ')}>{sgn(change)}{fmtN(absChange, 2)} ({sgn(change)}{fmtN(change, 2)}%)</span>
           <div className="ml-auto flex items-center gap-2">
-            <button className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-line bg-base px-3 py-1.5 text-xs text-ink-muted transition hover:text-ink">Jun 1 – Jun 30, 2025 <RefreshCw className="h-3.5 w-3.5" /></button>
-            <button className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-2 hover:text-ink"><GitCompare className="h-3.5 w-3.5" /> Compare</button>
+            <ThemeToggle />
+            <select 
+              value={mode} 
+              onChange={e => setMode(e.target.value as any)} 
+              className="focus-ring rounded-lg border border-line bg-base px-2 py-1.5 text-xs text-ink-muted transition hover:text-ink outline-none"
+            >
+              <option value="comfortable">Comfortable</option>
+              <option value="standard">Standard</option>
+              <option value="compact">Compact</option>
+            </select>
+            <button onClick={() => addToast({ source: 'sys', type: 'info', title: 'Test Alert', message: 'Testing coalescing logic' })} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-line bg-base px-3 py-1.5 text-xs text-ink-muted transition hover:text-ink">Test Alert</button>
             <button className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-2 hover:text-ink"><Download className="h-3.5 w-3.5" /> Export</button>
             <div className="relative"><Bell className="h-4 w-4 text-ink-muted" /><span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-bear text-[8px] font-bold text-white">3</span></div>
             <div className="flex items-center gap-2"><div className="h-7 w-7 rounded-full bg-gradient-to-br from-accent to-regime-hot" /><div className="hidden leading-tight sm:block"><div className="text-xs font-semibold">John Doe</div><div className="text-[10px] text-ink-faint">Pro Trader</div></div></div>
           </div>
         </header>
 
-        <div className="flex-1 space-y-3 overflow-auto p-3">
-          {/* Title + tabs + AI exec */}
-          <div className="flex flex-wrap items-start gap-3">
-            <div>
-              <div className="flex items-center gap-2"><h1 className="text-xl font-bold tracking-tight text-ink">Reports</h1><span className="text-xs text-ink-faint">Trading Intelligence &amp; Performance Analytics</span><span className="rounded border border-regime-hot/40 bg-regime-hot/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-regime-hot" title="Representative monthly review. Live aggregation arrives once trade history is persisted.">Representative</span></div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {TABS.map((t) => <button key={t} onClick={() => setTab(t)} className={['rounded-lg px-2.5 py-1 text-[11px] font-medium transition', tab === t ? 'bg-accent/20 text-accent' : 'text-ink-faint hover:text-ink'].join(' ')}>{t}</button>)}
+        <div className={cx("flex-1 overflow-auto", p)}>
+          <div className={cx("flex flex-col", gap)}>
+            {/* Title + tabs + AI exec */}
+            <div className="flex flex-wrap items-start gap-3">
+              <div>
+                <div className="flex items-center gap-2"><h1 className="text-xl font-bold tracking-tight text-ink">Reports</h1><span className="text-xs text-ink-faint">Trading Intelligence &amp; Performance Analytics</span></div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {TABS.map((t) => <button key={t} onClick={() => setTab(t)} className={['rounded-lg px-2.5 py-1 text-[11px] font-medium transition', tab === t ? 'bg-accent/20 text-accent' : 'text-ink-faint hover:text-ink'].join(' ')}>{t}</button>)}
+                </div>
+              </div>
+              <div className="ml-auto flex items-center gap-3 rounded-xl border border-accent/30 bg-gradient-to-r from-accent/10 to-transparent px-3 py-2">
+                <Sparkles className="h-4 w-4 text-accent" /><span className="text-xs font-semibold text-ink">AI Executive Summary</span>
+                <button className="focus-ring rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90">Generate</button>
               </div>
             </div>
-            <div className="ml-auto flex items-center gap-3 rounded-xl border border-accent/30 bg-gradient-to-r from-accent/10 to-transparent px-3 py-2">
-              <Sparkles className="h-4 w-4 text-accent" /><span className="text-xs font-semibold text-ink">AI Executive Summary</span>
-              <button className="focus-ring rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90">Generate</button>
-            </div>
-          </div>
 
-          {/* KPI cards */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-            {KPIS.map((k) => (
-              <KpiCard
-                key={k.key}
-                label={k.label}
-                value={k.text ?? <KpiValue k={k} />}
-                valueTone={k.key === 'dd' ? 'bear' : k.key === 'risk' ? 'bull' : 'neutral'}
-                sub={k.sub}
-                delta={k.delta}
-                deltaPercent={k.deltaPercent}
-                ring={k.kind === 'ring' ? k.ringValue : undefined}
-                spark={k.kind === 'spark' ? (k.down ? SPARK_DOWN : SPARK_UP) : undefined}
-                sparkColor={k.down ? 'var(--bear-bright)' : 'var(--bull-bright)'}
-                accessory={k.kind === 'shield' ? <span className="relative flex h-9 w-9 items-center justify-center"><Shield className="h-9 w-9 text-bull/20" /><Check className="absolute h-3.5 w-3.5 text-bull-bright" /></span> : undefined}
-              />
-            ))}
+          {/* KPI cards — craft style (MDS tokens, theme-aware), 4-up, framed group.
+              The frame uses a LIGHTER surface (≈ craft's #31353f) so the darker
+              surface-1 cards (≈ #1b2028) read as recessed — the craft relationship. */}
+          <div className="rounded-2xl border border-line bg-surface-3 p-4">
+            <div className="grid grid-cols-2 justify-start gap-3 lg:grid-cols-[repeat(4,minmax(0,165px))]">
+              {KPIS.map((k) => <MetricCard key={k.key} k={k} />)}
+            </div>
           </div>
 
           {/* Row: Performance | Portfolio | Strategy */}
@@ -250,7 +258,7 @@ export default function ReportsPage() {
               <DataTable columns={MISTAKE_COLS} rows={MISTAKES} rowKey={(m) => m.mistake} />
             </Panel>
 
-            <AICard {...TRADING_COACH} onWhy={() => {}} onWhatChanged={() => {}} />
+            <AICard {...TRADING_COACH} onWhy={() => { }} onWhatChanged={() => { }} />
           </div>
 
           {/* Row: Missed | Goals | Calendar */}
@@ -279,13 +287,15 @@ export default function ReportsPage() {
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
             <Panel n={16} title="Export Center" footer={<FootLink>View All Exports</FootLink>}>
               <ul className="space-y-1.5">
-                {EXPORTS.map((e) => { const Icon = e.format === 'Excel' ? FileSpreadsheet : FileText; return (
-                  <li key={e.name} className="flex items-center gap-2 rounded-lg bg-base/50 px-2 py-1.5 text-[11px]">
-                    <Icon className={['h-3.5 w-3.5', e.format === 'PDF' ? 'text-bear-bright' : e.format === 'Excel' ? 'text-bull-bright' : 'text-accent'].join(' ')} />
-                    <span className="flex-1 text-ink-muted">{e.name}</span><span className="text-[9px] text-ink-faint">({e.format})</span>
-                    <button className="focus-ring inline-flex items-center gap-1 text-[10px] font-medium text-accent transition hover:opacity-80"><Download className="h-3 w-3" /> Download</button>
-                  </li>
-                ); })}
+                {EXPORTS.map((e) => {
+                  const Icon = e.format === 'Excel' ? FileSpreadsheet : FileText; return (
+                    <li key={e.name} className="flex items-center gap-2 rounded-lg bg-base/50 px-2 py-1.5 text-[11px]">
+                      <Icon className={['h-3.5 w-3.5', e.format === 'PDF' ? 'text-bear-bright' : e.format === 'Excel' ? 'text-bull-bright' : 'text-accent'].join(' ')} />
+                      <span className="flex-1 text-ink-muted">{e.name}</span><span className="text-[9px] text-ink-faint">({e.format})</span>
+                      <button className="focus-ring inline-flex items-center gap-1 text-[10px] font-medium text-accent transition hover:opacity-80"><Download className="h-3 w-3" /> Download</button>
+                    </li>
+                  );
+                })}
               </ul>
             </Panel>
 
@@ -308,6 +318,7 @@ export default function ReportsPage() {
             </Panel>
           </div>
         </div>
+        </div>
 
         <footer className="flex items-center gap-4 border-t border-line bg-surface-1 px-4 py-2 text-xs text-ink-faint">
           <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-bull" /> {status === 'live' ? 'Live market data' : status}</span>
@@ -326,13 +337,30 @@ function Legend({ c, l }: { c: string; l: string }) { return <span className="in
 function Stars({ value }: { value: number }) { return <div className="mt-1 inline-flex items-center gap-0.5">{[0, 1, 2, 3, 4].map((i) => <Star key={i} className={['h-3 w-3', i < value ? 'fill-regime-hot text-regime-hot' : 'text-line'].join(' ')} />)}</div>; }
 
 // KPI cards now use the shared @/components/ui KpiCard driven by Num.* (MDS Pass-2).
-const SPARK_UP = [9, 11, 10, 13, 12, 15, 14, 17, 16, 20];
-const SPARK_DOWN = [18, 16, 17, 14, 15, 12, 13, 11, 12, 8];
 function KpiValue({ k }: { k: Kpi }) {
   if (k.variant === 'money') return <Num.Money value={k.value} />;
   if (k.variant === 'pct') return <Num.Pct value={k.value} signed={false} />;
   if (k.variant === 'score') return <Num.Score value={k.value} />;
   return <Num value={k.value} />;
+}
+
+// ── Craft-style KPI card (the /craft pattern, on MDS tokens so it re-themes).
+//    Direction-coloured value · delta · border · glow. No supporting viz.
+function MetricCard({ k }: { k: Kpi }) {
+  const positive = !k.down;
+  const tone = positive ? 'text-bull-bright' : 'text-bear-bright';
+  const borderTone = positive ? 'border-bull-bright/45 hover:border-bull-bright/70' : 'border-bear-bright/45 hover:border-bear-bright/70';
+  const deltaStr = k.delta != null ? `${k.delta >= 0 ? '+' : ''}${k.delta}${k.deltaPercent ? '%' : ''}` : null;
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border ${borderTone} bg-[#1B2028] p-4 shadow-[0_1px_2px_rgba(0,0,0,0.25),0_12px_30px_-16px_rgba(0,0,0,0.6)] transition duration-200 hover:-translate-y-0.5`}>
+      <span className="relative block truncate text-sm font-medium text-ink-muted">{k.label}</span>
+      <div className={`num relative mt-3.5 text-[22px] font-bold leading-none tracking-tight ${tone}`}>{k.text ?? <KpiValue k={k} />}</div>
+      <div className="mt-2 flex min-h-[15px] items-center gap-1.5 text-[11px]">
+        {deltaStr && <span className={`font-semibold ${tone}`}>{deltaStr}</span>}
+        {k.sub && <span className="truncate text-ink-faint">{k.sub}</span>}
+      </div>
+    </div>
+  );
 }
 // (local MiniSpark removed — KPI sparks now use the shared Sparkline via KpiCard)
 function Gauge({ value, color, small, big }: { value: number; color: string; small?: boolean; big?: boolean }) {

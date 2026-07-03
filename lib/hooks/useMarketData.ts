@@ -36,7 +36,9 @@ export interface MarketData {
   status: 'live' | 'demo' | 'loading';
   wsStatus: WSStatus;
   bookTicker: BookTicker | null;
+  ticker24h: { price: number; change: number } | null;
   wsBarCount: number;
+  lastUpdateMs: number;
   /** Lazy-load older history for a TF (scroll-to-left-edge). */
   loadOlder: (tf: Timeframe) => Promise<void>;
 }
@@ -47,6 +49,7 @@ export interface MarketData {
  *   - Query → candlesByTf reconciliation (preserves lazy-loaded bars)
  *   - Binance WS kline subscription (live bar merge)
  *   - Binance WS bookTicker subscription (bid/ask)
+ *   - Binance WS ticker subscription (24hr price/change)
  *   - Lazy-load older history on scroll-left
  *
  * Returns the candle state + setters so the history-window hook can
@@ -58,6 +61,8 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
   const [status, setStatus] = useState<'live' | 'demo' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<WSStatus>('closed');
   const [bookTicker, setBookTicker] = useState<BookTicker | null>(null);
+  const [ticker24h, setTicker24h] = useState<{ price: number; change: number } | null>(null);
+  const [lastUpdateMs, setLastUpdateMs] = useState<number>(0);
   const wsBarCountRef = useRef(0);
 
   // ---- Historical fetch via TanStack Query ----
@@ -168,6 +173,7 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
           }
           return next;
         });
+        setLastUpdateMs(Date.now());
         setStatus((s) => (s === 'demo' ? 'live' : s));
       },
       setWsStatus,
@@ -179,6 +185,7 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
   useEffect(() => {
     const dispose = subscribeBookTicker(symbol, (ticker) => {
       setBookTicker(ticker);
+      setLastUpdateMs(Date.now());
     });
     return dispose;
   }, [symbol]);
@@ -219,6 +226,43 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     }
   };
 
+  // ---- WebSocket: ticker for 24hr live price/change ----
+  useEffect(() => {
+    let active = true;
+
+    fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (active && data && data.lastPrice) {
+          setTicker24h({
+            price: Number(data.lastPrice),
+            change: Number(data.priceChangePercent),
+          });
+        }
+      })
+      .catch(console.error);
+
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
+    ws.onmessage = (event) => {
+      if (!active) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.c && data.P) {
+          setTicker24h({
+            price: Number(data.c),
+            change: Number(data.P),
+          });
+          setLastUpdateMs(Date.now());
+        }
+      } catch (e) {}
+    };
+
+    return () => {
+      active = false;
+      ws.close();
+    };
+  }, [symbol]);
+
   return {
     candlesByTf,
     setCandlesByTf,
@@ -226,7 +270,9 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     status,
     wsStatus,
     bookTicker,
+    ticker24h,
     wsBarCount: wsBarCountRef.current,
+    lastUpdateMs,
     loadOlder,
   };
 }

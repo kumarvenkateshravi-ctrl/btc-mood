@@ -14,7 +14,8 @@ import {
   type TradingStyle, type Qualification,
 } from '@/lib/myStackIqEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
-import { Panel, FootLink } from '@/components/ui';
+import ThemeToggle from '@/components/ThemeToggle';
+import { Panel, FootLink, AICard, type AIEvidence } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
@@ -25,10 +26,10 @@ const INDICATOR_TABS = ['Trend', 'Momentum', 'Volume', 'Volatility', 'Levels', '
 
 export default function MyStackIqPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
-  const livePrice = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
+  const livePrice = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
   const [clock, setClock] = useState('--:-- --');
   useEffect(() => { const t = () => setClock(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })); t(); const id = setInterval(t, 1000); return () => clearInterval(id); }, []);
 
@@ -44,6 +45,14 @@ export default function MyStackIqPage() {
   const score = qual.readiness;
   const scoreLabel = score >= 90 ? 'Elite' : score >= 75 ? 'Strong' : score >= 60 ? 'Stable' : 'Weak';
   const confidence = clamp(score - 1, 0, 99);
+
+  const evidence = useMemo<AIEvidence[]>(() => [
+    { factor: 'Primary Trend (200 EMA)', weight: 35, direction: qual.trendOk ? 'support' : 'oppose' },
+    { factor: 'Momentum (MACD)', weight: 20, direction: qual.macdOk ? 'support' : 'oppose' },
+    { factor: 'Trend Strength (ADX)', weight: 15, direction: qual.adxOk ? 'support' : 'oppose' },
+    { factor: 'Volume Confirmation', weight: 15, direction: qual.volumeOk ? 'support' : 'oppose' },
+    { factor: 'RSI Health', weight: 15, direction: qual.rsiOk ? 'support' : 'oppose' },
+  ], [qual]);
 
   // Interactive setup preview
   const setup = useMemo(() => {
@@ -79,9 +88,9 @@ export default function MyStackIqPage() {
         {/* Global header */}
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
           <button className="flex items-center gap-1.5 rounded-lg border border-line bg-base px-2.5 py-1.5 text-sm"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></button>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(livePrice)}</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(livePrice, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', tone(change)].join(' ')}>{sgn(change)}{fmtN((livePrice * change) / 100, 2)} ({sgn(change)}{fmtN(change, 2)}%)</span>
-          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
+          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint"><ThemeToggle />
             <span className="inline-flex items-center gap-1.5"><Circle className="h-2 w-2 fill-bull text-bull" /> Market: <span className="font-semibold text-bull-bright">OPEN</span></span>
             <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {clock} (UTC)</span>
             <div className="relative"><Bell className="h-4 w-4 text-ink-muted" /><span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-bear text-[8px] font-bold text-white">3</span></div>
@@ -90,20 +99,19 @@ export default function MyStackIqPage() {
         </header>
 
         <div className="flex-1 space-y-3 overflow-auto p-3">
-          {/* Title + score cards */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[#a855f7] text-white shadow-lg shadow-accent/25"><BrainCircuit className="h-5 w-5" /></span>
-              <div><h1 className="text-xl font-bold leading-none tracking-tight text-ink">MyStack IQ™</h1><span className="text-xs text-ink-faint">Your Personal Trading Intelligence &amp; Decision Engine</span></div>
-            </div>
-            <div className="ml-auto flex flex-wrap items-stretch gap-2">
-              <ScoreCard label="MyStack IQ Score" value={String(score)} sub={scoreLabel} spark hero />
-              <ScoreCard label="Confidence" value={`${confidence}%`} sub="Very High" spark />
-              <ScoreCard label="Risk Level" value="Low" sub="Optimal" tint="#26A69A" />
-              <ScoreCard label="Discipline Score" value="91/100" sub="Excellent" tint="#6aa6ff" />
-              <button className="focus-ring self-center rounded-lg bg-gradient-to-r from-accent to-[#a855f7] px-3.5 py-2 text-xs font-semibold text-white shadow-lg shadow-accent/20 transition hover:shadow-accent/40">Customize MyStack IQ</button>
-            </div>
-          </div>
+          {/* AI Card — Explainable AI Grammar */}
+          <AICard
+            title="MyStack IQ™"
+            verdict={scoreLabel}
+            confidence={confidence}
+            direction={qual.trendOk ? 'Bullish' : 'Bearish'}
+            evidence={evidence}
+            risk={`Style Risk: ${style.risk}`}
+            historical={`Historical Win Rate: ${style.performance.winRate}%`}
+            timestamp={`${clock} UTC`}
+            sources={['Trend', 'Momentum', 'Volume', 'Volatility']}
+            action={{ label: 'Review Trading Style', tone: 'accent' }}
+          />
 
           {/* Step wizard — Trade Readiness Pipeline */}
           <div className="flex items-center gap-1 rounded-xl border border-line bg-gradient-to-b from-surface-1 to-surface-1/60 p-2.5">
@@ -285,7 +293,7 @@ export default function MyStackIqPage() {
               </ul>
             </Panel>
 
-            <Panel n={10} title="PERFORMANCE WITH THIS STYLE" subtitle={`Your Stats (${style.name} - ${style.recommendedTf})`} footer={<FootLink>View Full Report</FootLink>}>
+            <Panel n={9} title="PERFORMANCE WITH THIS STYLE" subtitle={`Your Stats (${style.name} - ${style.recommendedTf})`} footer={<FootLink>View Full Report</FootLink>}>
               <div className="flex items-center gap-3">
                 <ul className="flex-1 space-y-1 text-[11px]">
                   <PerfRow k="Win Rate" v={`${style.performance.winRate}%`} bar={style.performance.winRate} />
@@ -298,7 +306,7 @@ export default function MyStackIqPage() {
               </div>
             </Panel>
 
-            <Panel n={11} title="RECENT TRADES" subtitle="(This Style)" footer={<FootLink>View All Trades</FootLink>}>
+            <Panel n={10} title="RECENT TRADES" subtitle="(This Style)" footer={<FootLink>View All Trades</FootLink>}>
               <table className="w-full text-left text-[10px]">
                 <thead className="text-[8px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">Date</th><th className="py-1 font-medium">Pair</th><th className="py-1 font-medium">Result</th><th className="py-1 text-right font-medium">Points</th><th className="py-1 text-right font-medium">R:R</th></tr></thead>
                 <tbody>{style.recent.map((t, i) => <tr key={i} className="border-t border-line/40"><td className="py-1 text-ink-faint">{t.date}</td><td className="py-1 font-medium">{t.pair}</td><td className={['py-1 font-semibold', t.result === 'Win' ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{t.result}</td><td className={['py-1 text-right font-mono', tone(t.points)].join(' ')}>{sgn(t.points)}{t.points}</td><td className="py-1 text-right font-mono text-ink-muted">{t.rr}</td></tr>)}</tbody>
@@ -319,27 +327,7 @@ export default function MyStackIqPage() {
 
 // ---- panels / atoms ----
 // Panel, FootLink now imported from @/components/ui (MDS Phase C migration).
-function ScoreCard({ label, value, sub, spark, hero, tint }: { label: string; value: string; sub: string; spark?: boolean; hero?: boolean; tint?: string }) {
-  const accent = tint ?? '#26A69A';
-  return (
-    <div className={['relative min-w-[110px] overflow-hidden rounded-xl border px-3 py-2 transition-colors duration-300', hero ? 'border-accent/40 bg-gradient-to-br from-accent/15 via-surface-1 to-surface-1' : 'border-line bg-gradient-to-b from-surface-1 to-surface-1/50 hover:border-accent/30'].join(' ')}>
-      {hero && <div className="pointer-events-none absolute -right-5 -top-5 h-16 w-16 rounded-full bg-accent/20 blur-2xl" />}
-      <div className="text-[9px] uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xl font-bold" style={{ color: accent, textShadow: `0 0 14px ${accent}40` }}>{value}</span>
-        {spark && <MiniSpark color={accent} />}
-      </div>
-      <div className="text-[9px] font-semibold" style={{ color: accent }}>{sub}</div>
-    </div>
-  );
-}
-function MiniSpark({ color = '#26A69A' }: { color?: string }) {
-  const pts = [9, 11, 10, 13, 12, 15, 14, 18];
-  const W = 40, H = 16, max = Math.max(...pts), min = Math.min(...pts), range = max - min || 1;
-  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${(i / (pts.length - 1)) * W} ${H - ((p - min) / range) * H}`).join(' ');
-  const id = `iqs${color.replace('#', '')}`;
-  return <svg viewBox={`0 0 ${W} ${H}`} className="h-4 w-10 shrink-0"><defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.4" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs><path d={`${line} L ${W} ${H} L 0 ${H} Z`} fill={`url(#${id})`} /><path d={line} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-}
+
 function StyleCard({ s, active, onClick }: { s: TradingStyle; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className={['relative overflow-hidden rounded-lg border p-2 text-left transition-colors duration-300', active ? 'border-bull bg-gradient-to-br from-bull/[0.12] to-bull/[0.02]' : 'border-line bg-base/40 hover:border-accent/40 hover:bg-surface-2/40'].join(' ')} style={active ? { boxShadow: '0 0 0 1px rgba(38,166,154,0.35), 0 0 16px rgba(38,166,154,0.12)' } : undefined}>

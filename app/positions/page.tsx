@@ -15,7 +15,10 @@ import {
   type Position, type Arrow,
 } from '@/lib/positionsEngine';
 import StackSidebar from '@/components/stack/StackSidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Panel, Pill, FootLink, Num, PositionRow, Cell, DataTable, textColumn, AICard, type AICardData, type Column } from '@/components/ui';
+import { useDensity } from '@/lib/hooks/useDensity';
+import { cx } from '@/components/ui/util';
 import { formatNumber } from '@/lib/format';
 /** Round an SVG path coordinate to 1dp — geometry, not a financial value. */
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -42,10 +45,11 @@ const MTF_MONITOR_COLS: Column<Position>[] = [
 
 export default function PositionsPage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
-  const { candlesByTf } = useMarketData(symbol);
+  const { candlesByTf, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const change = changes['1d'] ?? 0;
+  const { gap, p } = useDensity();
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
   const [clock, setClock] = useState('--:--:--');
   useEffect(() => { const t = () => setClock(new Date().toLocaleTimeString('en-US')); t(); const id = setInterval(t, 1000); return () => clearInterval(id); }, []);
 
@@ -104,12 +108,13 @@ export default function PositionsPage() {
         {/* Header */}
         <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
           <button className="flex items-center gap-1.5 rounded-lg border border-line bg-base px-2.5 py-1.5 text-sm"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></button>
-          <Num value={price} precision={1} className="text-lg font-semibold" />
+          <Num value={price} precision={2} className="text-lg font-semibold" />
           <span className="text-sm"><Num value={(price * change) / 100} precision={2} signed tone /> (<Num.Pct value={change} tone />)</span>
           <div className="ml-4 hidden items-center gap-0.5 rounded-lg border border-line bg-base p-0.5 md:flex">
             {TIMEFRAMES.map((tf) => <span key={tf} className={['rounded-md px-2.5 py-1 text-xs font-medium', tf === '1h' ? 'bg-accent/20 text-accent' : 'text-ink-faint'].join(' ')}>{TF_LABEL[tf]}</span>)}
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             <button className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition hover:bg-accent/20"><RefreshCw className="h-3.5 w-3.5" /> Sync All</button>
             <div className="relative"><Bell className="h-4 w-4 text-ink-muted" /><span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-bear text-[8px] font-bold text-white">3</span></div>
             <div className="flex items-center gap-2"><div className="h-7 w-7 rounded-full bg-gradient-to-br from-accent to-regime-hot" /><div className="hidden leading-tight sm:block"><div className="text-xs font-semibold">John Doe</div><div className="text-[10px] text-ink-faint">Pro Trader</div></div><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></div>
@@ -123,9 +128,9 @@ export default function PositionsPage() {
           <span className="rounded border border-regime-hot/40 bg-regime-hot/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-regime-hot" title="Representative portfolio. Live multi-symbol position feeds arrive with broker integration.">Representative</span>
         </div>
 
-        <div className="flex min-w-0 flex-1 gap-3 overflow-auto p-3">
+        <div className={cx("flex min-w-0 flex-1", gap, p, "overflow-auto")}>
           {/* LEFT MAIN */}
-          <div className="min-w-0 flex-1 space-y-3">
+          <div className={cx("min-w-0 flex-1 flex flex-col", gap)}>
             {/* Summary cards */}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
               <SumCard k="Portfolio Value" v={<Num.Money value={SNAP.portfolioValue} />} sub={<Num.Pct value={SNAP.todayPnlPct} />} subPos spark="#6aa6ff" />
@@ -140,7 +145,7 @@ export default function PositionsPage() {
 
             {/* Open positions | MTF monitor */}
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.7fr_1fr]">
-              <Panel title="Open Positions" count={positions.length} action={<><Pill><Search className="h-3 w-3" /> Search</Pill><Pill><SlidersHorizontal className="h-3 w-3" /> Filters</Pill><MoreHorizontal className="h-4 w-4 text-ink-faint" /></>}>
+              <Panel n={1} title="Open Positions" count={positions.length} action={<><Pill><Search className="h-3 w-3" /> Search</Pill><Pill><SlidersHorizontal className="h-3 w-3" /> Filters</Pill><MoreHorizontal className="h-4 w-4 text-ink-faint" /></>}>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[640px] text-left text-[11px]">
                     <thead className="text-[9px] uppercase tracking-wider text-ink-faint"><tr><th className="py-1 font-medium">Symbol</th><th className="py-1 font-medium">Direction</th><th className="py-1 text-right font-medium">Entry Price</th><th className="py-1 text-right font-medium">Current Price</th><th className="py-1 text-right font-medium">Unrealized P&amp;L</th><th className="py-1 text-right font-medium">P&amp;L %</th><th className="py-1 text-right font-medium">R:R</th><th className="py-1 text-right font-medium">Leverage</th><th className="py-1 text-right font-medium">Holding</th><th className="py-1 text-center font-medium">Health</th><th className="py-1 text-center font-medium">Action</th></tr></thead>
@@ -153,14 +158,14 @@ export default function PositionsPage() {
                 </div>
               </Panel>
 
-              <Panel title="Live Multi-Timeframe Monitor" info footer={<FootLink>View Full MTF Analysis</FootLink>}>
+              <Panel n={2} title="Live Multi-Timeframe Monitor" info footer={<FootLink>View Full MTF Analysis</FootLink>}>
                 <DataTable columns={MTF_MONITOR_COLS} rows={positions} rowKey={(p) => p.symbol} />
               </Panel>
             </div>
 
             {/* Lifecycle | Stop | TP | Timeline */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
-              <Panel title="Trade Lifecycle" sym="BTCUSDT" footer={<FootLink>Manage Exits</FootLink>}>
+              <Panel n={3} title="Trade Lifecycle" sym="BTCUSDT" footer={<FootLink>Manage Exits</FootLink>}>
                 <Lifecycle />
                 <div className="mt-3 rounded-lg border border-bull/30 bg-bull/[0.06] p-2">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-bull-bright"><CheckCircle2 className="h-3.5 w-3.5" /> TP1 Reached</div>
@@ -172,7 +177,7 @@ export default function PositionsPage() {
                 </div>
               </Panel>
 
-              <Panel title="Stop Loss Manager" sym="BTCUSDT" info footer={<FootLink>Stop Loss Settings</FootLink>}>
+              <Panel n={4} title="Stop Loss Manager" sym="BTCUSDT" info footer={<FootLink>Stop Loss Settings</FootLink>}>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <Mini k="Current SL" v="61,200.0" />
                   <Mini k="Distance" v="1.92%" />
@@ -187,7 +192,7 @@ export default function PositionsPage() {
                 <div className="mt-1 grid grid-cols-4 gap-1">{['ATR (14)', 'EMA 20', 'Swing Low', 'Custom'].map((o) => <span key={o} className="rounded border border-line bg-base px-1 py-1 text-center text-[9px] text-ink-muted">{o}</span>)}</div>
               </Panel>
 
-              <Panel title="Take Profit Manager" sym="BTCUSDT" info footer={<FootLink>Edit Targets</FootLink>}>
+              <Panel n={5} title="Take Profit Manager" sym="BTCUSDT" info footer={<FootLink>Edit Targets</FootLink>}>
                 <ul className="space-y-2">
                   <TpRow tp="TP1" price="63,000.0" status="Reached · 30% Closed" badge={<Check className="h-3.5 w-3.5 text-bull-bright" />} reached />
                   <TpRow tp="TP2" price="64,200.0" status="62% Prob." badge={<span className="rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold text-accent">Next</span>} />
@@ -196,7 +201,7 @@ export default function PositionsPage() {
                 <button className="focus-ring mt-3 w-full rounded-lg bg-accent py-2 text-xs font-semibold text-white transition hover:opacity-90">Close Partial (30%)</button>
               </Panel>
 
-              <Panel title="Position Timeline" sym="BTCUSDT" info footer={<FootLink>View Full Timeline</FootLink>}>
+              <Panel n={6} title="Position Timeline" sym="BTCUSDT" info footer={<FootLink>View Full Timeline</FootLink>}>
                 <ul className="space-y-2.5">
                   {[['08:15 AM', 'Position Planned', false], ['08:47 AM', 'Position Entered @ 62,350.0', false], ['10:32 AM', 'Price moved to 63,000.0 (TP1 Hit)', true], ['10:33 AM', '30% position closed (+$231.15)', true], ['10:45 AM', 'SL moved to Break Even', false], ['12:20 PM', 'High volume breakout', false], ['12:48 PM', 'Currently Holding', false]].map(([t, e, hot], i) => (
                     <li key={i} className="flex gap-2.5 text-[11px]">
@@ -210,7 +215,7 @@ export default function PositionsPage() {
 
             {/* Correlation | Analytics | Margin */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
-              <Panel title="Correlation Analysis" footer={<FootLink>View Full Analysis</FootLink>}>
+              <Panel n={7} title="Correlation Analysis" footer={<FootLink>View Full Analysis</FootLink>}>
                 <table className="w-full text-center text-[10px]">
                   <thead className="text-[9px] text-ink-faint"><tr><th className="py-1" />{CORR_ASSETS.map((a) => <th key={a} className="py-1 font-medium">{a}</th>)}</tr></thead>
                   <tbody>
@@ -222,7 +227,7 @@ export default function PositionsPage() {
                 <div className="mt-2 flex items-center gap-1.5 text-[10px] text-regime-hot"><AlertTriangle className="h-3 w-3" /> High Correlation Detected: BTC, ETH, SOL</div>
               </Panel>
 
-              <Panel title="Position Analytics" action={<Pill>This Month <ChevronDown className="h-3 w-3" /></Pill>} footer={<FootLink>View Full Analytics</FootLink>}>
+              <Panel n={8} title="Position Analytics" action={<Pill>This Month <ChevronDown className="h-3 w-3" /></Pill>} footer={<FootLink>View Full Analytics</FootLink>}>
                 <div className="grid grid-cols-3 gap-2">
                   <Mini k="Avg. Hold Time" v="7h 32m" />
                   <Mini k="Avg. Profit" v="+2.38%" c="text-bull-bright" />
@@ -238,7 +243,7 @@ export default function PositionsPage() {
                 </div>
               </Panel>
 
-              <Panel title="Margin & Exposure" footer={<FootLink>View Margin Details</FootLink>}>
+              <Panel n={9} title="Margin & Exposure" footer={<FootLink>View Margin Details</FootLink>}>
                 <div className="flex items-center gap-4">
                   <HalfGauge value={SNAP.marginUsedPct} label="Margin Used" />
                   <ul className="flex-1 space-y-1.5 text-[11px]">
@@ -257,7 +262,7 @@ export default function PositionsPage() {
           <aside className="hidden w-[300px] shrink-0 space-y-3 xl:block">
             <AICard {...positionCoach} onWhy={() => {}} onWhatChanged={() => {}} />
 
-            <Panel title="Portfolio Risk Dashboard" info footer={<FootLink>View Full Risk Report</FootLink>}>
+            <Panel n={10} title="Portfolio Risk Dashboard" info footer={<FootLink>View Full Risk Report</FootLink>}>
               <KVRow k="Portfolio Risk" v={risk.level} c="text-regime-hot" />
               <KVRow k="Open Risk" v={<><Num.Money value={risk.openRisk} /> (<Num.Pct value={risk.openRiskPct} signed={false} />)</>} />
               <KVRow k="Risk Concentration" v={risk.concentration} c="text-bear-bright" />
@@ -265,7 +270,7 @@ export default function PositionsPage() {
               <KVRow k="Margin Level" v={<Num.Pct value={SNAP.marginLevel} signed={false} />} c="text-bull-bright" />
             </Panel>
 
-            <Panel title="Live Alerts" count={4} footer={<FootLink>View All Alerts</FootLink>}>
+            <Panel n={11} title="Live Alerts" count={4} footer={<FootLink>View All Alerts</FootLink>}>
               <ul className="space-y-2 text-[11px]">
                 {[['BTCUSDT', 'Volume spike detected', '12:47 PM', '#26A69A'], ['ETHUSDT', 'Approaching resistance zone', '12:46 PM', '#f0a020'], ['SOLUSDT', '1H momentum weakening', '12:45 PM', '#f0a020'], ['XRPUSDT', 'Trend alignment strong', '12:44 PM', '#26A69A']].map(([s, t, time, c]) => (
                   <li key={s} className="flex items-start gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c }} /><div className="min-w-0 flex-1"><div className="flex items-center justify-between"><span className="font-semibold text-ink">{s}</span><span className="font-mono text-[9px] text-ink-faint">{time}</span></div><div className="text-[10px] text-ink-muted">{t}</div></div></li>
@@ -273,7 +278,7 @@ export default function PositionsPage() {
               </ul>
             </Panel>
 
-            <Panel title="Scenario Simulator" info footer={<FootLink>Open Simulator</FootLink>}>
+            <Panel n={12} title="Scenario Simulator" info footer={<FootLink>Open Simulator</FootLink>}>
               <button className="focus-ring mb-2 flex w-full items-center justify-between rounded-lg border border-line bg-base px-2.5 py-1.5 text-[11px] text-ink-faint">Select Scenario <ChevronDown className="h-3.5 w-3.5" /></button>
               <ul className="space-y-1.5 text-[11px]">
                 {scen.map((s) => <li key={s.label} className="flex items-center justify-between rounded-md bg-base/60 px-2 py-1.5"><span className="text-ink-muted">{s.label}</span><Num.Pnl value={s.value} /></li>)}

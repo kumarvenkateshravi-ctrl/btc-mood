@@ -13,6 +13,7 @@ import {
   detectStructure, buildSummary, type HeatmapRow,
 } from '@/lib/multiTimeframe';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Panel } from '@/components/ui';
 import { formatNumber, formatPercent } from '@/lib/format';
 
@@ -35,7 +36,7 @@ export default function MultiTimeframePage() {
   const symbol = DEFAULT_COMPARE_SYMBOL;
   const [structTf, setStructTf] = useState<Timeframe>('1h');
 
-  const { candlesByTf, status } = useMarketData(symbol);
+  const { candlesByTf, status, ticker24h } = useMarketData(symbol);
   const { prices, changes } = useMoodEngine(candlesByTf, []);
 
   const matrix = useMemo(() => computeAlignmentMatrix(candlesByTf, [...TIMEFRAMES]), [candlesByTf]);
@@ -47,9 +48,9 @@ export default function MultiTimeframePage() {
   const structure = useMemo(() => detectStructure(candlesByTf[structTf] ?? []), [candlesByTf, structTf]);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
-  const price = prices['5m'] ?? prices['1d'] ?? 0;
-  const priceAbs = changes['1d'] != null ? (price * (changes['1d'] / 100)) / (1 + changes['1d'] / 100) : 0;
-  const change = changes['1d'] ?? 0;
+  const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
+  const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
+  const priceAbs = ticker24h ? ticker24h.priceChange : (changes['1d'] != null ? (price * (changes['1d'] / 100)) / (1 + changes['1d'] / 100) : 0);
 
   // ---- Alignment persistence (session-tracked) ----
   const sinceRef = useRef<Partial<Record<Timeframe, { verdict: Verdict; since: number }>>>({});
@@ -69,12 +70,11 @@ export default function MultiTimeframePage() {
   const marketState: MarketState = useMemo(() => {
     const adxDir = Math.abs((matrix.sub['1h']?.adx ?? 50) - 50) * 2;
     const agree = Math.abs(consensus.bull - consensus.bear) / Math.max(1, consensus.total);
-    const state = adxDir > 50 && agree > 0.6 ? 'Trending' : adxDir > 25 ? 'Transitional' : 'Ranging';
+    const regime = adxDir > 50 && agree > 0.6 ? 'Trending' : adxDir > 25 ? 'Volatile' : 'Ranging';
     const volSub = TIMEFRAMES.reduce((s, tf) => s + (matrix.sub[tf]?.volume ?? 50), 0) / TIMEFRAMES.length;
-    const volatility = heatmap[4].cells['1h'] === 'bearish' ? 'High' : heatmap[4].cells['1h'] === 'bullish' ? 'Low' : 'Medium';
-    const volume = volSub > 60 ? 'High' : volSub > 45 ? 'Medium' : 'Low';
-    const energy = volatility === 'High' && volume === 'High' ? 'High' : agree < 0.4 ? 'Low' : 'Medium';
-    return { state, volatility, volume, energy };
+    const volatility = heatmap[4].cells['1h'] === 'bearish' ? 'High' : heatmap[4].cells['1h'] === 'bullish' ? 'Low' : 'Moderate';
+    const liquidity = volSub > 60 ? 'Deep' : volSub > 45 ? 'Normal' : 'Thin';
+    return { regime, volatility, liquidity };
   }, [matrix, consensus, heatmap]);
 
   const overallVerdictLabel = consensus.overall === 'bullish' ? 'Bullish' : consensus.overall === 'bearish' ? 'Bearish' : 'Neutral';
@@ -89,7 +89,7 @@ export default function MultiTimeframePage() {
           <div className="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-1.5">
             <Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span>
           </div>
-          <span className="font-mono text-lg font-semibold tabular-nums">{fmt(price)}</span>
+          <span className="font-mono text-lg font-semibold tabular-nums">{fmt(price, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>
             {change >= 0 ? '+' : ''}{fmt(priceAbs, 2)} ({formatPercent(change)})
           </span>
@@ -101,7 +101,7 @@ export default function MultiTimeframePage() {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint">
+          <div className="ml-auto flex items-center gap-3 text-xs text-ink-faint"><ThemeToggle />
             <span className="inline-flex items-center gap-1.5"><span className={['h-2 w-2 rounded-full', status === 'live' ? 'bg-bull' : 'bg-regime-hot'].join(' ')} />{status === 'live' ? 'Live' : status}</span>
             <Link href="/app" className="rounded-md border border-line px-2 py-1 transition hover:text-ink">Chart →</Link>
           </div>

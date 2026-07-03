@@ -18,6 +18,6 @@ export const toneVar: Record<Tone, string> = {
 
 /** Value -> color ramp for gauges and scores (token-driven). */
 export const scoreColor = (v: number) =>
-  v >= 75 ? 'var(--bull-bright)' : v >= 50 ? 'var(--regime-hot)' : 'var(--bear-bright)';
+  v >= 75 ? 'var(--accent)' : v >= 50 ? 'var(--ink-muted)' : 'var(--ink-faint)';
 
 export const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(' ');

@@ -42,6 +42,7 @@ import { useHistoryWindow } from '@/lib/hooks/useHistoryWindow';
 import { useAlerts } from '@/lib/hooks/useAlerts';
 import { useGridState } from '@/lib/hooks/useGridState';
 import { useKeyboardShortcuts } from '@/lib/hooks/useKeyboardShortcuts';
+import { useMarketState } from '@/lib/hooks/useMarketState';
 
 export default function DashboardPage() {
   // ---- Core view state ----
@@ -139,8 +140,10 @@ export default function DashboardPage() {
   });
 
   // ---- Market data pipeline ----
-  const { candlesByTf, status, bookTicker, loadOlder } =
+  const { candlesByTf, status, bookTicker, ticker24h, loadOlder, wsStatus, lastUpdateMs } =
     useMarketData(symbol);
+  
+  const dataState = useMarketState({ wsStatus, lastUpdateMs, hasData: true });
 
   // ---- Mood engine ----
   const { prices, changes, snapshots, mood, indicatorRows } = useMoodEngine(
@@ -159,8 +162,9 @@ export default function DashboardPage() {
 
   // ---- Derived display values ----
   const currentCandles = candlesByTf[selected];
-  const currentPrice = prices[selected];
-  const currentChange = changes[selected];
+
+  const currentPrice = ticker24h ? ticker24h.price : prices[selected];
+  const currentChange = ticker24h ? ticker24h.change : changes[selected];
   const mid = useMemo(
     () => (currentCandles.length > 0 ? currentCandles[currentCandles.length - 1].close : 0),
     [currentCandles],
@@ -267,6 +271,7 @@ export default function DashboardPage() {
                 symbol={symbol}
                 onSymbolChange={setSymbol}
                 status={status}
+                dataState={dataState}
                 price={currentPrice}
                 change={currentChange}
                 mood={mood}

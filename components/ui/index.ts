@@ -1,6 +1,9 @@
 // MDS Phase C — primitive barrel. Import from '@/components/ui'.
 export { Panel, Pill, FootLink, type PanelProps } from './Panel';
 export { Badge } from './Badge';
+export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button';
+export { Modal, type ModalProps, type ModalSize } from './Modal';
+export { Tabs, Tab, type TabsProps, type TabProps, type TabsVariant } from './Tabs';
 export { default as Num } from './Num';
 export { Stat, Bar, KpiCard } from './Stat';
 export { Gauge, Ring, Sparkline, Donut } from './viz';
@@ -12,4 +15,6 @@ export { LineChart, ChartPanel, type ChartSeries, type LegendItem } from './char
 export { DirectionTag, RegimeTag, RiskBadge, VolatilityTag, LiquidityTag, ConfidenceMeter, type Direction, type Regime, type RiskLevel, type VolLevel, type LiqLevel } from './marketState';
 export { DataTable, type Column } from './DataTable';
 export { textColumn, numColumn, priceColumn, pnlColumn, percentColumn, qtyColumn, scoreColumn, statusColumn, timestampColumn, assetColumn } from './columns';
+export { DashboardGrid, DashboardRow } from './DashboardGrid';
 export { clamp, cx, scoreColor, toneText, toneVar, type Tone } from './util';
+export { ToastProvider, useToast, type ToastMessage, type ToastType } from './Toast';
