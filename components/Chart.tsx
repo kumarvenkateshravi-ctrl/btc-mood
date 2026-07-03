@@ -105,6 +105,9 @@ export default function Chart({
   onStageConfirm,
   onStageToggleTp,
   onStageToggleSl,
+  positionControls = null,
+  onPositionToggleTp,
+  onPositionToggleSl,
   onReady,
   onLoadOlder,
   overlayPnL = null,
@@ -414,6 +417,7 @@ export default function Chart({
       />
       {stagedOrder && (
         <OrderControlsRow
+          mode="staged"
           chart={chartRef.current}
           series={candleSeriesRef.current}
           entryPrice={stagedOrder.entry}
@@ -424,6 +428,18 @@ export default function Chart({
           onConfirm={onStageConfirm!}
           onToggleTp={onStageToggleTp!}
           onToggleSl={onStageToggleSl!}
+        />
+      )}
+      {!stagedOrder && positionControls && (!positionControls.hasTp || !positionControls.hasSl) && (
+        <OrderControlsRow
+          mode="position"
+          chart={chartRef.current}
+          series={candleSeriesRef.current}
+          entryPrice={positionControls.entry}
+          hasTp={positionControls.hasTp}
+          hasSl={positionControls.hasSl}
+          onToggleTp={onPositionToggleTp!}
+          onToggleSl={onPositionToggleSl!}
         />
       )}
 

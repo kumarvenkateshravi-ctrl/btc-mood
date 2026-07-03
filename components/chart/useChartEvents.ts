@@ -18,6 +18,7 @@ export function useChartEvents(refs: ChartRefs) {
       setTooltipPos,
       setHoverLine,
       onOverlayDragRef,
+      onOverlayChipClickRef,
       onPriceLineDragRef,
       onChartContextMenuRef,
       onLoadOlderRef,
@@ -180,6 +181,12 @@ export function useChartEvents(refs: ChartRefs) {
     // ---- Overlay drag + body pan ----
     let dragKind: 'entry' | 'tp' | 'sl' | null = null;
     let dragPointerId: number | null = null;
+    // Badge ✕ click: captured on pointer-down over the ✕ hotspot, fired on
+    // pointer-up if the pointer hasn't wandered far enough to be a drag/pan.
+    let cancelKind: OverlayKind | null = null;
+    let cancelPointerId: number | null = null;
+    let cancelStartX = 0;
+    let cancelStartY = 0;
     let priceLineDragId: string | null = null;
     let priceLineDragPointerId: number | null = null;
     let bodyPanPointerId: number | null = null;
@@ -221,6 +228,16 @@ export function useChartEvents(refs: ChartRefs) {
 
       if (prim && c) {
         const hit = prim.customHitTest(localX, localY);
+        if (hit && hit.action === 'cancel') {
+          cancelKind = hit.kind;
+          cancelPointerId = e.pointerId;
+          cancelStartX = e.clientX;
+          cancelStartY = e.clientY;
+          try { container.setPointerCapture(e.pointerId); } catch {}
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         if (hit && hit.draggable) {
           const k = hit.kind;
           if (!isDragKind(k)) return;
@@ -275,6 +292,17 @@ export function useChartEvents(refs: ChartRefs) {
     };
 
     const onOverlayMove = (e: PointerEvent) => {
+      if (cancelPointerId !== null && cancelPointerId === e.pointerId) {
+        // Moved beyond a small threshold — this is a drag/pan gesture, not a
+        // click, so don't fire the ✕ action on pointer-up.
+        const dx = e.clientX - cancelStartX;
+        const dy = e.clientY - cancelStartY;
+        if (Math.hypot(dx, dy) > 6) cancelKind = null;
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       if (priceLineDragId !== null && priceLineDragPointerId === e.pointerId) {
         const pricePrim = priceLinesPrimitiveRef.current;
         const series = candleSeriesRef.current;
@@ -325,6 +353,18 @@ export function useChartEvents(refs: ChartRefs) {
         overlayPrimitiveRef.current?.setDragging(null);
         container.style.cursor = '';
         try { container.releasePointerCapture(e.pointerId); } catch {}
+      }
+      if (cancelPointerId !== null && cancelPointerId === e.pointerId) {
+        const kind = cancelKind;
+        cancelPointerId = null;
+        cancelKind = null;
+        try { container.releasePointerCapture(e.pointerId); } catch {}
+        // Only fire on a genuine pointer-up (not pointer-cancel), and only if
+        // no drag/pan happened in between (onOverlayMove clears `kind` above
+        // the threshold).
+        if (kind && e.type === 'pointerup') {
+          onOverlayChipClickRef.current?.(kind === 'entry' ? 'close' : kind);
+        }
       }
     };
 

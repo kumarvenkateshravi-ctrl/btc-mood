@@ -304,14 +304,15 @@ export default function ChartPanel({
 
   const handleOverlayChipClick = useCallback(
     (key: 'tp' | 'sl' | 'close') => {
+      // Staged order: ✕ on a line edits the stage, never the live account.
       if (activeOrder && !replayTrading) {
-        if (key === 'close') paper.clearActiveOrder();
-        else updateActiveOverlay(key, null);
+        if (key === 'close') clearActiveOrder();          // entry ✕ = discard
+        else toggleActiveOverlay(key, false, 0);          // tp/sl ✕ = remove exit
         return;
       }
       if (key === 'close') {
         if (replayTrading) replayClose(replayLast?.close ?? mid, replayLast?.time ?? Math.floor(Date.now() / 1000));
-        else paper.closePosition(mid, symbol);
+        else paper.closePosition(mid, symbol);            // books profit/loss at market
       } else if (replayTrading) {
         replaySetOverlay(key, null);
       } else {
@@ -382,6 +383,27 @@ export default function ChartPanel({
         : null,
     [activeOrder, replayTrading],
   );
+
+  // Reduced-mode controls row for an open live position: TV shows dotted
+  // "TP SL" add-chips when the position has no tp/sl yet. Live-account only
+  // (replay keeps its isolated session + current UX).
+  const positionControls = useMemo(
+    () =>
+      !replayTrading && !activeOrder && hasPosition && pos
+        ? { entry: pos.entryPrice, hasTp: pos.tp != null, hasSl: pos.sl != null }
+        : null,
+    [replayTrading, activeOrder, hasPosition, pos],
+  );
+  const positionToggleTp = useCallback(() => {
+    if (!hasPosition || !pos) return;
+    const sign = pos.side === 'long' ? 1 : -1;
+    setPositionOverlay('tp', pos.entryPrice + sign * 75 * BTC_TICK_SIZE, symbol);
+  }, [hasPosition, pos, symbol]);
+  const positionToggleSl = useCallback(() => {
+    if (!hasPosition || !pos) return;
+    const sign = pos.side === 'long' ? 1 : -1;
+    setPositionOverlay('sl', pos.entryPrice - sign * 25 * BTC_TICK_SIZE, symbol);
+  }, [hasPosition, pos, symbol]);
 
   // Price alerts for this symbol → dashed lines on the chart + management pills.
   const allPriceAlerts = usePriceAlerts();
@@ -672,6 +694,9 @@ export default function ChartPanel({
             onStageConfirm={stageConfirm}
             onStageToggleTp={stageToggleTp}
             onStageToggleSl={stageToggleSl}
+            positionControls={positionControls}
+            onPositionToggleTp={positionToggleTp}
+            onPositionToggleSl={positionToggleSl}
             priceLines={priceLines}
             onPriceLineDrag={handlePriceAlertDrag}
             onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}

@@ -82,6 +82,11 @@ export interface ChartProps {
   onStageConfirm?: () => void;
   onStageToggleTp?: () => void;
   onStageToggleSl?: () => void;
+  /** Reduced-mode controls row for an open position with no tp/sl yet
+   *  (TV-style dotted "TP SL" add-chips). Null hides the row. */
+  positionControls?: { entry: number; hasTp: boolean; hasSl: boolean } | null;
+  onPositionToggleTp?: () => void;
+  onPositionToggleSl?: () => void;
   onReady?: (api: ChartApi) => void;
   onLoadOlder?: () => void;
   regime?: number;
