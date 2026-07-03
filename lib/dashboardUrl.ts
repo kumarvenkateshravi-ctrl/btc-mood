@@ -81,7 +81,7 @@ function decompressDrawings(data: string): Drawing[] | null {
 
 export function readInitialState(): InitialDashboardState {
   if (typeof window === 'undefined') {
-    return { tf: '15m', type: 'candlestick', symbol: DEFAULT_COMPARE_SYMBOL, indicators: null };
+    return { tf: '15m', type: 'candlestick', symbol: DEFAULT_COMPARE_SYMBOL, indicators: null, drawings: null };
   }
   const sp = new URLSearchParams(window.location.search);
   const tfParam = sp.get('tf');
