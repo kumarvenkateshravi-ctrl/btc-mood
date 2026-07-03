@@ -690,7 +690,7 @@ export default function ChartPanel({
         leverage={LEVERAGE}
         onLeverageChange={() => {}}
         reduceAvailable={hasPosition && pos ? pos.units : 0}
-        initialSide={ticketSide ?? 'buy'}
+        initialSide={ticketSide ?? undefined}
       />
     </section>
   );

@@ -19,6 +19,7 @@ interface OrderTicketProps {
   onLeverageChange: (n: number) => void;
   reduceAvailable: number;
   initialSide?: 'buy' | 'sell';
+  active?: boolean;
 }
 
 type Tab = 'market' | 'limit' | 'stop';
@@ -286,6 +287,7 @@ export default function OrderTicket(p: OrderTicketProps) {
   // typing. We only intercept B/S outside of inputs; for arrow keys
   // we DO handle them inside number inputs as a step shortcut.
   useEffect(() => {
+    if (p.active === false) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
@@ -329,9 +331,12 @@ export default function OrderTicket(p: OrderTicketProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // We intentionally re-bind on canSubmit/activeOrder so the closure
-  // sees the latest values. The handlers are stable enough.
+  // sees the latest values. The handlers are stable enough. Gated on
+  // p.active so the listener is only attached while the modal is open —
+  // otherwise these hotkeys (incl. Enter-to-market-order) would be live
+  // app-wide even with the ticket hidden behind a permanently-mounted modal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSubmit, activeOrder, p.symbol]);
+  }, [p.active, canSubmit, activeOrder, p.symbol]);
 
   // Arrow-key nudges inside the price + units fields. We use a
   // capture-phase listener on the inputs themselves so the default

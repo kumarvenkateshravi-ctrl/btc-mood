@@ -41,6 +41,7 @@ export default function OrderModal(p: OrderModalProps) {
         onLeverageChange={p.onLeverageChange}
         reduceAvailable={p.reduceAvailable}
         initialSide={p.initialSide}
+        active={p.open}
       />
     </Modal>
   );
