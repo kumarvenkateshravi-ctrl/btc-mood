@@ -1,19 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { usePaperStore, executeOrder, setPositionOverlay, closePosition } from '@/lib/paperStore';
+import { usePaperStore, setPositionOverlay, closePosition } from '@/lib/paperStore';
 import { unrealizedPnl } from '@/lib/paper';
 import { useMarkPrice } from '@/lib/markPriceStore';
 import {
   useReplaySession,
   sessionBalance,
-  replayMarketOrder,
   replaySetOverlay,
   replayClose,
 } from '@/lib/replaySession';
 import { positionSize, riskReward, formatRR } from '@/lib/trading';
-
-const LEVERAGE = 10;
 
 export default function TradingPanel({ symbol, midPrice }: { symbol: string; midPrice: number }) {
   const paper = usePaperStore();
@@ -41,14 +38,6 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
 
   const accountBalance = balanceInput.trim() !== '' ? Number(balanceInput) : balance;
   const recommendedQty = positionSize(accountBalance, Number(riskPct), Number(slDist));
-
-  const place = (side: 'BUY' | 'SELL') => {
-    const size = Number(qty);
-    if (!(size > 0) || !(markPrice > 0)) return;
-    const ts = markTime ?? Math.floor(Date.now() / 1000);
-    if (replay) replayMarketOrder(side === 'BUY' ? 'buy' : 'sell', size, markPrice, ts, LEVERAGE);
-    else executeOrder({ type: side, size, orderType: 'MARKET', symbol, midPrice: markPrice, leverage: LEVERAGE, ts: markTime });
-  };
 
   const rr = hasPos && pos ? riskReward(pos.side === 'long' ? 'long' : 'short', pos.entryPrice, pos.tp, pos.sl) : null;
 
@@ -93,24 +82,12 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
         <span className="px-1 text-sm text-ink-faint">units</span>
       </Field>
 
-      {/* Buy / Sell */}
-      <div className="grid grid-cols-2 gap-3">
-        <button
-          onClick={() => place('BUY')}
-          className="focus-ring rounded-lg bg-[#089981] py-3 text-base font-bold text-white shadow-sm transition hover:bg-[#0aa888]"
-        >
-          Buy / Long
-        </button>
-        <button
-          onClick={() => place('SELL')}
-          className="focus-ring rounded-lg bg-[#f23645] py-3 text-base font-bold text-white shadow-sm transition hover:bg-[#ff4757]"
-        >
-          Sell / Short
-        </button>
-      </div>
-      {markPrice > 0 && (
-        <p className="text-center font-mono text-xs text-ink-faint">≈ market {markPrice.toFixed(1)}</p>
-      )}
+      {/* Order entry lives on the chart (Buy / Sell pills → order ticket).
+          This panel is for planning + managing an open position only. */}
+      <p className="rounded-lg border border-line bg-base/40 px-3 py-2.5 text-center text-xs text-ink-faint">
+        Place orders from the chart — use the <span className="text-ink-muted">Buy</span> /{' '}
+        <span className="text-ink-muted">Sell</span> pills to open the order ticket.
+      </p>
 
       {/* Position size calculator */}
       <details className="rounded-xl border border-line bg-base/40 px-3 py-3" open>
