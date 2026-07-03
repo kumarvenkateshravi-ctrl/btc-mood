@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { PriceScaleMode, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import type { RefObject } from 'react';
+import type { RefObject, MutableRefObject } from 'react';
 import type { PriceScaleModeOption } from './types';
 import { PriceLinesPrimitive, type PriceLineItem } from '@/lib/priceLinesPrimitive';
 
@@ -13,7 +13,7 @@ import { PriceLinesPrimitive, type PriceLineItem } from '@/lib/priceLinesPrimiti
 export function usePriceScaleLines(
   chartRef: RefObject<IChartApi | null>,
   candleSeriesRef: RefObject<ISeriesApi<'Candlestick'> | null>,
-  priceLinesPrimitiveRef: RefObject<PriceLinesPrimitive | null>,
+  priceLinesPrimitiveRef: MutableRefObject<PriceLinesPrimitive | null>,
   isRenko: boolean,
   priceScaleMode: PriceScaleModeOption,
   priceLines?: PriceLineItem[],
