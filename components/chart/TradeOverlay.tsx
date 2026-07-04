@@ -6,7 +6,6 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 interface TradeOverlayProps {
   chart: IChartApi | null;
   series: ISeriesApi<'Candlestick'> | null;
-  symbol: string;
   entryPrice: number;
   /** A staged, unconfirmed TP/SL change is pending → show Discard / Confirm. */
   isDirty: boolean;
@@ -72,8 +71,6 @@ export function TradeOverlay(p: TradeOverlayProps) {
       >
         SL
       </button>
-
-      <span className="ml-0.5 font-mono text-[10px] text-ink-faint">{p.symbol}</span>
     </div>
   );
 }

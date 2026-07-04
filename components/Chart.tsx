@@ -416,7 +416,6 @@ export default function Chart({
         <TradeOverlay
           chart={chartRef.current}
           series={candleSeriesRef.current}
-          symbol={tradeOverlay.symbol}
           entryPrice={tradeOverlay.entryPrice}
           isDirty={tradeOverlay.isDirty}
           hasTp={tradeOverlay.hasTp}

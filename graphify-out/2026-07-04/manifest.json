@@ -150,13 +150,13 @@
     "semantic_hash": "6d583ac418e1682fa193b1b5ccceece6"
   },
   "components/Chart.tsx": {
-    "mtime": 1783147891.6651528,
-    "ast_hash": "b2251eff0702a802d0a38f6a73876ab2",
+    "mtime": 1783150521.60031,
+    "ast_hash": "f0d7164f4e41fbf5485752e38ace0620",
     "semantic_hash": ""
   },
   "components/ChartPanel.tsx": {
-    "mtime": 1783147891.667697,
-    "ast_hash": "08a7f34827e595b3948ff69f0631b730",
+    "mtime": 1783150356.6733544,
+    "ast_hash": "396d89639ea3e431265c40622ae2c4d1",
     "semantic_hash": ""
   },
   "components/ChartToolbar.tsx": {
@@ -335,8 +335,8 @@
     "semantic_hash": ""
   },
   "components/chart/types.ts": {
-    "mtime": 1783147891.7118554,
-    "ast_hash": "209d4c41f87a262514789fed78bf2246",
+    "mtime": 1783150425.944522,
+    "ast_hash": "42d8b6285d52db9d2dfd4faf33841b98",
     "semantic_hash": ""
   },
   "components/chart/useChartApi.ts": {
@@ -405,9 +405,9 @@
     "semantic_hash": "e88f56ade33bf37aa960dd53c0390879"
   },
   "components/trade/ChartContextMenu.tsx": {
-    "mtime": 1782195543.1778088,
-    "ast_hash": "a1d0b05891b386e5e38ea4c2e3e0b59b",
-    "semantic_hash": "a1d0b05891b386e5e38ea4c2e3e0b59b"
+    "mtime": 1783150776.2028806,
+    "ast_hash": "e989d2c45418d886be7f3b335393bfcf",
+    "semantic_hash": ""
   },
   "components/trade/EquitySparkline.tsx": {
     "mtime": 1782693683.931664,
@@ -440,13 +440,13 @@
     "semantic_hash": "cf7b530f50cd287fd3b780743ec1daca"
   },
   "components/trade/OrderModal.tsx": {
-    "mtime": 1783147891.7218654,
-    "ast_hash": "7d989bc610a3d7ca450d4b0b69a6ccbe",
+    "mtime": 1783149676.2317252,
+    "ast_hash": "ae6ea3e0f482ddf4f93086439158917b",
     "semantic_hash": ""
   },
   "components/trade/OrderTicket.tsx": {
-    "mtime": 1783147891.7259321,
-    "ast_hash": "15f24bec060135505b0d48226772cc55",
+    "mtime": 1783149838.759882,
+    "ast_hash": "af250cf6503c7265bc35014de81f8936",
     "semantic_hash": ""
   },
   "components/trade/PositionsPanel.tsx": {
@@ -485,8 +485,8 @@
     "semantic_hash": "5ae113d8d0d345b1bf60ecc3fa1c99e6"
   },
   "components/trade/TradingPanel.tsx": {
-    "mtime": 1783147891.7279463,
-    "ast_hash": "b8aa912474551c01dbe176a3557c0492",
+    "mtime": 1783151392.2694154,
+    "ast_hash": "c94b017435eb5b9a17f8eae85e8f4ad3",
     "semantic_hash": ""
   },
   "components/ui/AICard.stories.tsx": {
@@ -1195,14 +1195,14 @@
     "semantic_hash": ""
   },
   "lib/paperStore.test.ts": {
-    "mtime": 1781503329.338101,
-    "ast_hash": "35859f22f75c3c91a64e81a4b6802e93",
-    "semantic_hash": "35859f22f75c3c91a64e81a4b6802e93"
+    "mtime": 1783150898.150525,
+    "ast_hash": "e3cb3c227da24de55b53daf8da7b38ba",
+    "semantic_hash": ""
   },
   "lib/paperStore.ts": {
-    "mtime": 1782690693.6342854,
-    "ast_hash": "aeace2684e22ebdbc821e6f404dd034a",
-    "semantic_hash": "aeace2684e22ebdbc821e6f404dd034a"
+    "mtime": 1783148936.8103707,
+    "ast_hash": "206cf54db91e55cfd8b31d1ced477de3",
+    "semantic_hash": ""
   },
   "lib/performance.test.ts": {
     "mtime": 1782039402.7681236,
@@ -1804,24 +1804,29 @@
     "ast_hash": "493f6894917c77524672e40b8dbd0c3e",
     "semantic_hash": ""
   },
-  "components/chart/OrderControlsRow.tsx": {
-    "mtime": 1783147891.6697254,
-    "ast_hash": "05ae7f8c4eabb263c45729340d907b4e",
-    "semantic_hash": ""
-  },
   "lib/paper.projectedPnl.test.ts": {
     "mtime": 1783147891.737448,
     "ast_hash": "b0c21c357cd9127d9c8d4fd8cd65775d",
     "semantic_hash": ""
   },
-  "lib/paperStore.staged.test.ts": {
-    "mtime": 1783147891.7462778,
-    "ast_hash": "d336893f4df840fe79399c66533d329d",
-    "semantic_hash": ""
-  },
   "docs/superpowers/specs/2026-07-04-immediate-place-trade-overlay-design.md": {
     "mtime": 1783148681.3451366,
     "ast_hash": "875886a86626dee22193e27ced1770a0",
+    "semantic_hash": ""
+  },
+  "components/chart/TradeOverlay.tsx": {
+    "mtime": 1783149130.680992,
+    "ast_hash": "a132431e5961f942c043c39f8c0b4ca4",
+    "semantic_hash": ""
+  },
+  "components/trade/CloseConfirmDialog.tsx": {
+    "mtime": 1783149145.8118696,
+    "ast_hash": "935754ea24f52a6e403824cfbf9c10d6",
+    "semantic_hash": ""
+  },
+  "components/trade/ReverseConfirmDialog.tsx": {
+    "mtime": 1783149142.9800837,
+    "ast_hash": "cdb0b7574cff603fbfe82ccaa7db0bb8",
     "semantic_hash": ""
   }
 }
