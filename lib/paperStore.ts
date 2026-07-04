@@ -16,7 +16,7 @@ import {
   type Side,
 } from './paper';
 
-// ----- Store state (in-memory; resets on reload, by design) -----------
+// ----- Store state (persisted to localStorage; survives reload) -------
 
 interface State {
   /** Positions keyed by symbol (e.g. "BTCUSDT" → PaperPosition). */
@@ -41,7 +41,60 @@ const initialState: State = {
   initialBalance: INITIAL_PAPER_BALANCE,
 };
 
-let state: State = initialState;
+// ----- Persistence (localStorage) -------------------------------------
+// The paper account is a real balance the trader builds over sessions, so
+// it must survive a page refresh. Only the durable slice is serialized;
+// transient UI (toast/lastError/lastFill) is intentionally left out.
+
+export const PAPER_STORAGE_KEY = 'mcs.paper.v1';
+
+interface PersistedState {
+  positions: Record<string, PaperPosition | null>;
+  pending: PaperOrder[];
+  trades: PaperTrade[];
+  balance: number;
+  initialBalance: number;
+}
+
+function loadPersisted(): State {
+  if (typeof window === 'undefined') return initialState;
+  try {
+    const raw = window.localStorage.getItem(PAPER_STORAGE_KEY);
+    if (!raw) return initialState;
+    const p = JSON.parse(raw) as Partial<PersistedState>;
+    return {
+      ...initialState,
+      positions: p.positions ?? {},
+      pending: p.pending ?? [],
+      trades: p.trades ?? [],
+      balance: typeof p.balance === 'number' ? p.balance : INITIAL_PAPER_BALANCE,
+      initialBalance:
+        typeof p.initialBalance === 'number' ? p.initialBalance : INITIAL_PAPER_BALANCE,
+    };
+  } catch {
+    return initialState; // corrupt/unavailable storage → fresh account
+  }
+}
+
+function persist(s: State) {
+  if (typeof window === 'undefined') return;
+  try {
+    const data: PersistedState = {
+      positions: s.positions,
+      pending: s.pending,
+      trades: s.trades,
+      balance: s.balance,
+      initialBalance: s.initialBalance,
+    };
+    window.localStorage.setItem(PAPER_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    /* quota exceeded / private mode — non-fatal, skip the write */
+  }
+}
+
+// On the client the module reads persisted state at load; on the server it
+// stays `initialState` (see getServerSnapshot below), so SSR/hydration match.
+let state: State = loadPersisted();
 const listeners = new Set<() => void>();
 let toastSeq = 0;
 let emitting = false;
@@ -52,6 +105,10 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 const getSnapshot = (): State => state;
+// Server render (and the hydration pass) must see the empty initial account so
+// the client HTML matches; useSyncExternalStore then re-renders with the
+// persisted client snapshot on the next tick.
+const getServerSnapshot = (): State => initialState;
 
 const scheduleEmit = () => {
   if (emitting) {
@@ -72,6 +129,7 @@ const scheduleEmit = () => {
 
 const setState = (next: State) => {
   state = next;
+  persist(next);
   scheduleEmit();
 };
 
@@ -143,6 +201,12 @@ export function __resetForTest() {
 /** Test-only: read the current state. */
 export function __getStateForTest(): State {
   return state;
+}
+
+/** Test-only: reload the module state from localStorage (simulates a page
+ *  refresh — the module re-reads persisted state at load in the browser). */
+export function __rehydrateForTest() {
+  setState(loadPersisted());
 }
 
 export interface PlaceOrderInput {
@@ -499,7 +563,7 @@ export function reconcileBar(bar: import('./types').Candle) {
 // ----- React hook surface ---------------------------------------------
 
 export function usePaperStore() {
-  const s = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const s = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   return useMemo(
     () => ({
       positions: s.positions,

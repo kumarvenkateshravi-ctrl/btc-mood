@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   __getStateForTest,
   __resetForTest,
+  __rehydrateForTest,
+  PAPER_STORAGE_KEY,
   placeOrder,
   setPositionOverlay,
 } from './paperStore';
@@ -99,6 +101,49 @@ describe('paperStore: position TP/SL overlay', () => {
       midPrice: 2700,
     });
     expect(__getStateForTest().positions.ETHUSDT?.side).toBe('long');
+    expect(__getStateForTest().positions.BTCUSDT).toBeFalsy();
+  });
+});
+
+describe('paperStore: persistence across reload', () => {
+  it('writes the open position to localStorage on placement', () => {
+    placeOrder({
+      symbol: 'BTCUSDT', side: 'buy', type: 'market', units: 0.1, price: null,
+      tp: 66000, sl: 64000, reduceOnly: false, postOnly: false, leverage: 10, midPrice: 65000,
+    });
+    const raw = window.localStorage.getItem(PAPER_STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const saved = JSON.parse(raw as string);
+    expect(saved.positions.BTCUSDT?.side).toBe('long');
+    expect(saved.positions.BTCUSDT?.tp).toBe(66000);
+  });
+
+  it('restores the position from localStorage on reload (rehydrate)', () => {
+    placeOrder({
+      symbol: 'BTCUSDT', side: 'buy', type: 'market', units: 0.1, price: null,
+      tp: 66000, sl: 64000, reduceOnly: false, postOnly: false, leverage: 10, midPrice: 65000,
+    });
+    const balanceAfterOpen = __getStateForTest().balance;
+
+    // Simulate a page refresh: the in-memory singleton is gone, but the
+    // module re-reads persisted state at load.
+    __rehydrateForTest();
+
+    const pos = __getStateForTest().positions.BTCUSDT;
+    expect(pos?.side).toBe('long');
+    expect(pos?.units).toBe(0.1);
+    expect(pos?.tp).toBe(66000);
+    expect(pos?.sl).toBe(64000);
+    expect(__getStateForTest().balance).toBe(balanceAfterOpen);
+  });
+
+  it('a reset clears persisted state so reload starts flat', () => {
+    placeOrder({
+      symbol: 'BTCUSDT', side: 'buy', type: 'market', units: 0.1, price: null,
+      tp: null, sl: null, reduceOnly: false, postOnly: false, leverage: 10, midPrice: 65000,
+    });
+    __resetForTest();
+    __rehydrateForTest();
     expect(__getStateForTest().positions.BTCUSDT).toBeFalsy();
   });
 });
