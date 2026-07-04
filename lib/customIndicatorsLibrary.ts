@@ -19,6 +19,7 @@ import { computeSma } from './indicators/sma';
 import { computeSdZones } from './indicators/sdZones';
 import { computeVolSpike } from './indicators/volSpike';
 import { computeMagicSr } from './indicators/magicSr';
+import { computeFibPivot } from './indicators/fibPivot';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -459,5 +460,18 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     ],
     styles: [],
     compute: computeMagicSr,
+  },
+  {
+    id: 'fib_pivot',
+    name: 'Fibonacci Pivots',
+    description: 'Fibonacci pivot P / R1-3 / S1-3 from the prior Day/Week/Month range.',
+    inputs: [
+      { id: 'period', name: 'Period', type: 'select', default: 'D', options: [{ value: 'D', label: 'Day' }, { value: 'W', label: 'Week' }, { value: 'M', label: 'Month' }] },
+      { id: 'f1', name: 'Fib 1', type: 'number', default: 0.382, min: 0, max: 4, step: 0.001 },
+      { id: 'f2', name: 'Fib 2', type: 'number', default: 0.618, min: 0, max: 4, step: 0.001 },
+      { id: 'f3', name: 'Fib 3', type: 'number', default: 1.0, min: 0, max: 4, step: 0.001 },
+    ],
+    styles: [],
+    compute: computeFibPivot,
   },
 ];
