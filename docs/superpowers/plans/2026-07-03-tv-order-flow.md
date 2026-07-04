@@ -61,10 +61,12 @@ import {
   confirmActiveOrder, clearActiveOrder, newOrderId,
 } from './paperStore';
 
-const stage = (over: Partial<Parameters<typeof setActiveOrder>[0] & object> = {}) =>
+// 0.1 units ≈ $620 margin at 10x — fits the $10,000 paper balance
+// (10 units would need ~$62k margin and be correctly rejected).
+const stage = (over: Partial<import('./paperStore').ActiveOrder> = {}) =>
   setActiveOrder({
     id: newOrderId(), symbol: 'BTCUSDT', side: 'buy', type: 'limit',
-    units: 10, entry: 61_937.85, tp: null, sl: null,
+    units: 0.1, entry: 61_937.85, tp: null, sl: null,
     reduceOnly: false, postOnly: false, ocoGroup: null,
     ...over,
   });
