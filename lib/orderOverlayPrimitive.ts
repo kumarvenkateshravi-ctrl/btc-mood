@@ -52,7 +52,8 @@ class OrderRenderer implements IPrimitivePaneRenderer {
 
         ctx.strokeStyle = lineColor;
         ctx.lineWidth = Math.max(1, vpr);
-        ctx.setLineDash([5 * hpr, 5 * hpr]);
+        // Entry (the live position) is a solid line; TP/SL stay dashed.
+        if (o.kind !== 'entry') ctx.setLineDash([5 * hpr, 5 * hpr]);
         ctx.beginPath();
         ctx.moveTo(0, cy);
         ctx.lineTo(w, cy);
@@ -82,7 +83,7 @@ class OrderRenderer implements IPrimitivePaneRenderer {
 
         ctx.fillStyle = lineColor;
         ctx.fillRect(boxX, boxY, boxW, boxH);
-        ctx.fillStyle = '#0a0e16';
+        ctx.fillStyle = '#ffffff';
         ctx.fillText(text, boxX + padX, cy);
 
         // Right-aligned `[qty][±USD][✕]` pill (TV-style), left of the price axis
