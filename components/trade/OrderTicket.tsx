@@ -294,17 +294,7 @@ export default function OrderTicket(p: OrderTicketProps) {
   }, []);
 
   return (
-    <section className="elev-1 overflow-hidden rounded-2xl">
-      <header className="flex items-center justify-between border-b border-line bg-surface-2/40 px-3.5 py-2.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
-          Order ticket
-        </h2>
-        <span className="rounded-md bg-bull/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-bull-bright ring-1 ring-bull/30">
-          Paper
-        </span>
-      </header>
-
-      <div className="space-y-3 px-[80px] py-3.5">
+    <div className="space-y-2.5">
         <Tabs
           value={tab}
           onChange={(v) => handleTabChange(v as Tab)}
@@ -321,22 +311,23 @@ export default function OrderTicket(p: OrderTicketProps) {
           ask={p.midPrice + BTC_TICK_SIZE}
         />
 
-        <NumberField
-          label="Units (BTC)"
-          value={displayUnits}
-          onChange={handleUnitsChange}
-          step={0.01}
-          suffix="BTC"
-          inputRef={unitsInputRef}
-          readOnly={riskUnits != null}
-        />
-
-        <RiskField
-          value={riskPct}
-          onChange={handleRiskPctChange}
-          balance={balance}
-          computedUnits={riskUnits}
-        />
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField
+            label="Units (BTC)"
+            value={displayUnits}
+            onChange={handleUnitsChange}
+            step={0.01}
+            suffix="BTC"
+            inputRef={unitsInputRef}
+            readOnly={riskUnits != null}
+          />
+          <RiskField
+            value={riskPct}
+            onChange={handleRiskPctChange}
+            balance={balance}
+            computedUnits={riskUnits}
+          />
+        </div>
 
         <div
           key={tab}
@@ -360,7 +351,7 @@ export default function OrderTicket(p: OrderTicketProps) {
           />
         </div>
 
-        <div className="rounded-lg border border-line bg-surface-2/30">
+        <div className="overflow-hidden rounded-lg border border-line bg-surface-2">
           <div className="flex divide-x divide-line text-xs">
             <ToggleChip
               label="TP"
@@ -383,32 +374,39 @@ export default function OrderTicket(p: OrderTicketProps) {
               }}
             />
           </div>
-          {effectiveTpEnabled && (
-            <NumberField
-              label="Take profit, price"
-              labelRight={<PctSelect value={tpPct} onChange={handleTpPctChange} />}
-              value={tp}
-              onChange={handleTpChange}
-              step={0.1}
-              suffix="USD"
-              className="border-t border-line"
-            />
-          )}
-          {effectiveSlEnabled && (
-            <NumberField
-              label="Stop loss, price"
-              labelRight={<PctSelect value={slPct} onChange={handleSlPctChange} />}
-              value={sl}
-              onChange={handleSlChange}
-              step={0.1}
-              suffix="USD"
-              className="border-t border-line"
-            />
+          {(effectiveTpEnabled || effectiveSlEnabled) && (
+            <div
+              className={[
+                'grid gap-2 border-t border-line p-2',
+                effectiveTpEnabled && effectiveSlEnabled ? 'grid-cols-2' : 'grid-cols-1',
+              ].join(' ')}
+            >
+              {effectiveTpEnabled && (
+                <NumberField
+                  label="Take profit"
+                  labelRight={<PctSelect value={tpPct} onChange={handleTpPctChange} />}
+                  value={tp}
+                  onChange={handleTpChange}
+                  step={0.1}
+                  suffix="USD"
+                />
+              )}
+              {effectiveSlEnabled && (
+                <NumberField
+                  label="Stop loss"
+                  labelRight={<PctSelect value={slPct} onChange={handleSlPctChange} />}
+                  value={sl}
+                  onChange={handleSlChange}
+                  step={0.1}
+                  suffix="USD"
+                />
+              )}
+            </div>
           )}
         </div>
 
         {tab !== 'market' && (
-          <label className="flex items-center justify-between gap-2 rounded-lg border border-line bg-surface-2/30 px-3 py-1.5 text-xs">
+          <label className="flex items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-xs">
             <span className="text-ink-muted">OCO group (cancel other on fill)</span>
             <input
               type="checkbox"
@@ -425,7 +423,7 @@ export default function OrderTicket(p: OrderTicketProps) {
         <details
           open={advancedOpen}
           onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
-          className="rounded-lg border border-line bg-surface-2/30 text-xs"
+          className="rounded-lg border border-line bg-surface-2 text-xs"
         >
           <summary className="cursor-pointer select-none px-3 py-1.5 text-ink-muted">
             <span className="font-medium text-ink-muted">More</span>
@@ -453,7 +451,7 @@ export default function OrderTicket(p: OrderTicketProps) {
           </div>
         </details>
 
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[11px]">
           <MarginRow margin={margin} balance={balance} />
           <Row label="Leverage" value={`${p.leverage}:1`} />
           <Row label="Tick value" value={BTC_TICK_VALUE_USD.toFixed(2)} unit="USD" />
@@ -523,10 +521,9 @@ export default function OrderTicket(p: OrderTicketProps) {
 
         <p className="flex items-center gap-1.5 text-[10px] text-ink-faint">
           <ShieldCheck className="h-3 w-3" />
-          Paper only — fills are simulated against live bars; nothing is sent to any exchange.
+          Paper — fills simulated against live bars; nothing is sent to any exchange.
         </p>
-      </div>
-    </section>
+    </div>
   );
 }
 
@@ -548,7 +545,7 @@ function SideToggle({
 }) {
   const idx = value === 'buy' ? 0 : 1;
   return (
-    <div className="relative grid grid-cols-2 rounded-lg border border-line bg-surface-2/40 p-1 text-xs">
+    <div className="relative grid grid-cols-2 rounded-lg border border-line bg-surface-2 p-1 text-xs">
       <span
         aria-hidden
         className={[
@@ -637,7 +634,7 @@ function NumberField({
         {labelRight}
       </span>
       <div className={[
-        'relative flex items-center rounded-md border border-line bg-surface-1/60 transition focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/40',
+        'relative flex items-center rounded-md border border-line bg-base transition focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/40',
         readOnly ? 'opacity-75' : '',
       ].join(' ')}>
         <input
@@ -663,7 +660,7 @@ function NumberField({
               key={q.label}
               type="button"
               onClick={() => onPick?.(Number(q.value))}
-              className="focus-ring rounded border border-line bg-surface-2/40 px-1.5 py-0.5 font-mono text-ink-muted transition hover:border-accent/40 hover:text-ink"
+              className="focus-ring rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-ink-muted transition hover:border-accent/40 hover:text-ink"
             >
               {q.label}
             </button>
@@ -697,7 +694,7 @@ function RiskField({
         )}
       </span>
       <div className="flex items-center gap-1.5">
-        <div className="relative flex flex-1 items-center rounded-md border border-line bg-surface-1/60 transition focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/40">
+        <div className="relative flex flex-1 items-center rounded-md border border-line bg-base transition focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/40">
           <input
             type="number"
             inputMode="decimal"
@@ -731,7 +728,7 @@ function PctSelect({
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
       aria-label="Offset percent"
-      className="focus-ring rounded border border-line bg-surface-2/50 px-1 py-0.5 text-[10px] font-mono normal-case tracking-normal text-ink-muted"
+      className="focus-ring rounded border border-line bg-base px-1 py-0.5 text-[10px] font-mono normal-case tracking-normal text-ink-muted"
     >
       {PCT_OPTIONS.map((t) => (
         <option key={t} value={t}>
@@ -766,7 +763,7 @@ function ToggleChip({
         aria-hidden
         className={[
           'inline-flex h-3.5 w-7 items-center rounded-full p-0.5 transition',
-          enabled ? 'bg-accent/40' : 'bg-surface-3/60',
+          enabled ? 'bg-accent/40' : 'bg-surface-3',
         ].join(' ')}
       >
         <span
@@ -794,7 +791,7 @@ function MarginRow({ margin, balance }: { margin: number; balance: number }) {
           <span className="text-[10px] text-ink-faint"> / {fmt(balance, 2)} USD</span>
         </dd>
       </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-surface-3/60">
+      <div className="h-1 w-full overflow-hidden rounded-full bg-surface-3">
         <div
           className={['h-full rounded-full transition-all', danger ? 'bg-bear' : 'bg-accent'].join(' ')}
           style={{ width: `${pct}%` }}

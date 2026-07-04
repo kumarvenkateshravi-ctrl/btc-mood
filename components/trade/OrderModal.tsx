@@ -24,8 +24,13 @@ export default function OrderModal(p: OrderModalProps) {
   return (
     <Modal open={p.open} onClose={p.onClose} size="sm">
       {/* Custom header with close button — no title prop so we control the layout */}
-      <div className="-mt-4 -mx-5 flex items-center justify-between border-b border-line px-5 py-3 mb-4">
-        <span className="text-sm font-semibold text-ink">Order Ticket</span>
+      <div className="-mt-4 -mx-5 mb-3.5 flex items-center justify-between border-b border-line px-5 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-ink">Order Ticket</span>
+          <span className="rounded-md bg-bull/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-bull-bright ring-1 ring-bull/30">
+            Paper
+          </span>
+        </div>
         <Button
           variant="ghost"
           size="sm"
