@@ -100,7 +100,7 @@ class OrderRenderer implements IPrimitivePaneRenderer {
           const pnlW = pnlStr ? ctx.measureText(pnlStr).width + padX * 2 : 0;
           const xW = ctx.measureText(xStr).width + padX * 2;
           const bW = qtyW + pnlW + xW;
-          const bX = w - bW - 40 * hpr; // 40px gap from the price axis
+          const bX = w - bW - 70 * hpr; // gap from the price axis
 
           // qty block — solid line colour, white text
           ctx.fillStyle = lineColor;

@@ -10,8 +10,8 @@
     "semantic_hash": ""
   },
   ".remember/tmp/last-save.json": {
-    "mtime": 1783155495.3626456,
-    "ast_hash": "3297b28fd521fe8a5e72d037fdb066df",
+    "mtime": 1783157810.0317156,
+    "ast_hash": "1bf679e68383a6355d522cb8c271be47",
     "semantic_hash": ""
   },
   ".storybook/main.ts": {
@@ -1180,8 +1180,8 @@
     "semantic_hash": "c47c12424e19ff93ddb9f37f9cfc1ea2"
   },
   "lib/orderOverlayPrimitive.ts": {
-    "mtime": 1783157222.2296393,
-    "ast_hash": "677ac2c62b557e492d984efe64c345ae",
+    "mtime": 1783157776.4555483,
+    "ast_hash": "07644462a9ae99515026babf5c665376",
     "semantic_hash": ""
   },
   "lib/paper.test.ts": {
@@ -1590,8 +1590,8 @@
     "semantic_hash": "3f3c0159a639662449303d5753913b9f"
   },
   ".remember/now.md": {
-    "mtime": 1783155516.2686007,
-    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "mtime": 1783157809.475325,
+    "ast_hash": "9b1aad32b1b437f9b60ebb34426180a6",
     "semantic_hash": ""
   },
   ".remember/today-2026-07-02.md": {
@@ -1815,8 +1815,8 @@
     "semantic_hash": ""
   },
   "components/chart/TradeOverlay.tsx": {
-    "mtime": 1783157247.5300272,
-    "ast_hash": "1355bdb42de52fc8f41c6ea354569332",
+    "mtime": 1783157810.3352318,
+    "ast_hash": "edf4ce0d396ed1507ad5c63278b396d2",
     "semantic_hash": ""
   },
   "components/trade/CloseConfirmDialog.tsx": {

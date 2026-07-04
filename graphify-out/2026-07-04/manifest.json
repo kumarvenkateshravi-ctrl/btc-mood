@@ -1180,8 +1180,8 @@
     "semantic_hash": "c47c12424e19ff93ddb9f37f9cfc1ea2"
   },
   "lib/orderOverlayPrimitive.ts": {
-    "mtime": 1783147891.737448,
-    "ast_hash": "f3f0d30384afb9b5fd8f6e2a20a90951",
+    "mtime": 1783157222.2296393,
+    "ast_hash": "677ac2c62b557e492d984efe64c345ae",
     "semantic_hash": ""
   },
   "lib/paper.test.ts": {
@@ -1815,8 +1815,8 @@
     "semantic_hash": ""
   },
   "components/chart/TradeOverlay.tsx": {
-    "mtime": 1783156848.7746856,
-    "ast_hash": "139db91df2b2b10b58dc725464486120",
+    "mtime": 1783157247.5300272,
+    "ast_hash": "1355bdb42de52fc8f41c6ea354569332",
     "semantic_hash": ""
   },
   "components/trade/CloseConfirmDialog.tsx": {

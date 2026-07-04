@@ -54,36 +54,6 @@
   },
   "nodes": [
     {
-      "label": "Chart.tsx",
-      "file_type": "code",
-      "source_file": "components/Chart.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "components_chart",
-      "community": 89,
-      "norm_label": "chart.tsx"
-    },
-    {
-      "label": "EMPTY_DIV_MARKERS",
-      "file_type": "code",
-      "source_file": "components/Chart.tsx",
-      "source_location": "L73",
-      "_origin": "ast",
-      "id": "components_chart_empty_div_markers",
-      "community": 89,
-      "norm_label": "empty_div_markers"
-    },
-    {
-      "label": "Chart()",
-      "file_type": "code",
-      "source_file": "components/Chart.tsx",
-      "source_location": "L75",
-      "_origin": "ast",
-      "id": "components_chart_chart",
-      "community": 89,
-      "norm_label": "chart()"
-    },
-    {
       "label": "TradeOverlay.tsx",
       "file_type": "code",
       "source_file": "components/chart/TradeOverlay.tsx",
@@ -112,6 +82,216 @@
       "id": "chart_tradeoverlay_tradeoverlay",
       "community": 89,
       "norm_label": "tradeoverlay()"
+    },
+    {
+      "label": "orderOverlayPrimitive.ts",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive",
+      "community": 293,
+      "norm_label": "orderoverlayprimitive.ts"
+    },
+    {
+      "label": "OrderOverlayOptions",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L11",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayoptions",
+      "community": 293,
+      "norm_label": "orderoverlayoptions"
+    },
+    {
+      "label": "OverlayLineBadge",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L25",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_overlaylinebadge",
+      "community": 293,
+      "norm_label": "overlaylinebadge"
+    },
+    {
+      "label": "OrderRenderer",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L31",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderrenderer",
+      "community": 293,
+      "norm_label": "orderrenderer"
+    },
+    {
+      "label": ".constructor()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L32",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderrenderer_constructor",
+      "community": 293,
+      "norm_label": ".constructor()"
+    },
+    {
+      "label": ".draw()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L34",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderrenderer_draw",
+      "community": 293,
+      "norm_label": ".draw()"
+    },
+    {
+      "label": "OrderPaneView",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L119",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderpaneview",
+      "community": 293,
+      "norm_label": "orderpaneview"
+    },
+    {
+      "label": ".constructor()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L120",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderpaneview_constructor",
+      "community": 293,
+      "norm_label": ".constructor()"
+    },
+    {
+      "label": ".zOrder()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L121",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderpaneview_zorder",
+      "community": 293,
+      "norm_label": ".zorder()"
+    },
+    {
+      "label": ".renderer()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L122",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderpaneview_renderer",
+      "community": 293,
+      "norm_label": ".renderer()"
+    },
+    {
+      "label": "OrderOverlayPrimitive",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L125",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "community": 293,
+      "norm_label": "orderoverlayprimitive"
+    },
+    {
+      "label": ".attached()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L135",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_attached",
+      "community": 293,
+      "norm_label": ".attached()"
+    },
+    {
+      "label": ".detached()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L139",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_detached",
+      "community": 293,
+      "norm_label": ".detached()"
+    },
+    {
+      "label": ".updateAllViews()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L143",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_updateallviews",
+      "community": 293,
+      "norm_label": ".updateallviews()"
+    },
+    {
+      "label": ".paneViews()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L147",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_paneviews",
+      "community": 293,
+      "norm_label": ".paneviews()"
+    },
+    {
+      "label": ".setOverlays()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L152",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays",
+      "community": 293,
+      "norm_label": ".setoverlays()"
+    },
+    {
+      "label": ".setDragging()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L157",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_setdragging",
+      "community": 293,
+      "norm_label": ".setdragging()"
+    },
+    {
+      "label": ".customHitTest()",
+      "file_type": "code",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L161",
+      "_origin": "ast",
+      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_customhittest",
+      "community": 293,
+      "norm_label": ".customhittest()"
+    },
+    {
+      "label": "Chart.tsx",
+      "file_type": "code",
+      "source_file": "components/Chart.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 89,
+      "norm_label": "chart.tsx",
+      "id": "components_chart"
+    },
+    {
+      "label": "EMPTY_DIV_MARKERS",
+      "file_type": "code",
+      "source_file": "components/Chart.tsx",
+      "source_location": "L73",
+      "_origin": "ast",
+      "community": 89,
+      "norm_label": "empty_div_markers",
+      "id": "components_chart_empty_div_markers"
+    },
+    {
+      "label": "Chart()",
+      "file_type": "code",
+      "source_file": "components/Chart.tsx",
+      "source_location": "L75",
+      "_origin": "ast",
+      "community": 89,
+      "norm_label": "chart()",
+      "id": "components_chart_chart"
     },
     {
       "label": "ChartPanel.tsx",
@@ -15222,186 +15402,6 @@
       "community": 149,
       "norm_label": "delta()",
       "id": "lib_orderflow_delta"
-    },
-    {
-      "label": "orderOverlayPrimitive.ts",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": "orderoverlayprimitive.ts",
-      "id": "lib_orderoverlayprimitive"
-    },
-    {
-      "label": "OrderOverlayOptions",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L11",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": "orderoverlayoptions",
-      "id": "lib_orderoverlayprimitive_orderoverlayoptions"
-    },
-    {
-      "label": "OverlayLineBadge",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L25",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": "overlaylinebadge",
-      "id": "lib_orderoverlayprimitive_overlaylinebadge"
-    },
-    {
-      "label": "OrderRenderer",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L31",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": "orderrenderer",
-      "id": "lib_orderoverlayprimitive_orderrenderer"
-    },
-    {
-      "label": ".constructor()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L32",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".constructor()",
-      "id": "lib_orderoverlayprimitive_orderrenderer_constructor"
-    },
-    {
-      "label": ".draw()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L34",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".draw()",
-      "id": "lib_orderoverlayprimitive_orderrenderer_draw"
-    },
-    {
-      "label": "OrderPaneView",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L109",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": "orderpaneview",
-      "id": "lib_orderoverlayprimitive_orderpaneview"
-    },
-    {
-      "label": ".constructor()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L110",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".constructor()",
-      "id": "lib_orderoverlayprimitive_orderpaneview_constructor"
-    },
-    {
-      "label": ".zOrder()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L111",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".zorder()",
-      "id": "lib_orderoverlayprimitive_orderpaneview_zorder"
-    },
-    {
-      "label": ".renderer()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L112",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".renderer()",
-      "id": "lib_orderoverlayprimitive_orderpaneview_renderer"
-    },
-    {
-      "label": "OrderOverlayPrimitive",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L115",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": "orderoverlayprimitive",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive"
-    },
-    {
-      "label": ".attached()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L125",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".attached()",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_attached"
-    },
-    {
-      "label": ".detached()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L129",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".detached()",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_detached"
-    },
-    {
-      "label": ".updateAllViews()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L133",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".updateallviews()",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_updateallviews"
-    },
-    {
-      "label": ".paneViews()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L137",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".paneviews()",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_paneviews"
-    },
-    {
-      "label": ".setOverlays()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L142",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".setoverlays()",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays"
-    },
-    {
-      "label": ".setDragging()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L147",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".setdragging()",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_setdragging"
-    },
-    {
-      "label": ".customHitTest()",
-      "file_type": "code",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L151",
-      "_origin": "ast",
-      "community": 293,
-      "norm_label": ".customhittest()",
-      "id": "lib_orderoverlayprimitive_orderoverlayprimitive_customhittest"
     },
     {
       "label": "paper.projectedPnl.test.ts",
@@ -47858,6 +47858,482 @@
   ],
   "links": [
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/TradeOverlay.tsx",
+      "source_location": "L28",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_tradeoverlay",
+      "target": "chart_tradeoverlay_tradeoverlay"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/TradeOverlay.tsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_tradeoverlay",
+      "target": "chart_tradeoverlay_tradeoverlayprops"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/Chart.tsx",
+      "source_location": "L29",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "components_chart",
+      "target": "chart_tradeoverlay"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/Chart.tsx",
+      "source_location": "L29",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "components_chart",
+      "target": "chart_tradeoverlay_tradeoverlay"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/refs.ts",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_refs",
+      "target": "lib_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/types.ts",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_types",
+      "target": "lib_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/useChartInit.ts",
+      "source_location": "L12",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_usechartinit",
+      "target": "lib_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/useOrderOverlays.ts",
+      "source_location": "L3",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_useorderoverlays",
+      "target": "lib_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/Chart.tsx",
+      "source_location": "L28",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "components_chart",
+      "target": "lib_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/ChartPanel.tsx",
+      "source_location": "L17",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "components_chartpanel",
+      "target": "lib_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive",
+      "target": "chart_types_chartoverlay"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive",
+      "target": "chart_types_overlaykind"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L11",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayoptions"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L89",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L83",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderpaneview"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L23",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderrenderer"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L25",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_overlaylinebadge"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/types.ts",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_types",
+      "target": "lib_orderoverlayprimitive_overlaylinebadge"
+    },
+    {
+      "relation": "references",
+      "context": "field",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/types.ts",
+      "source_location": "L77",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_types_chartprops",
+      "target": "lib_orderoverlayprimitive_overlaylinebadge"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/useOrderOverlays.ts",
+      "source_location": "L3",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_useorderoverlays",
+      "target": "lib_orderoverlayprimitive_overlaylinebadge"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/ChartPanel.tsx",
+      "source_location": "L17",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "components_chartpanel",
+      "target": "lib_orderoverlayprimitive_overlaylinebadge"
+    },
+    {
+      "relation": "references",
+      "context": "field",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L26",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_overlaylinebadge",
+      "target": "chart_types_overlaykind"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L24",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderrenderer",
+      "target": "lib_orderoverlayprimitive_orderrenderer_constructor"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L26",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderrenderer",
+      "target": "lib_orderoverlayprimitive_orderrenderer_draw"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L84",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderpaneview",
+      "target": "lib_orderoverlayprimitive_orderpaneview_constructor"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L86",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderpaneview",
+      "target": "lib_orderoverlayprimitive_orderpaneview_renderer"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L85",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderpaneview",
+      "target": "lib_orderoverlayprimitive_orderpaneview_zorder"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/refs.ts",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_refs",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
+    },
+    {
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/refs.ts",
+      "source_location": "L36",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_refs_chartrefs",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/useChartInit.ts",
+      "source_location": "L12",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_usechartinit",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/useOrderOverlays.ts",
+      "source_location": "L3",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_useorderoverlays",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "components/Chart.tsx",
+      "source_location": "L28",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "components_chart",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
+    },
+    {
+      "relation": "references",
+      "context": "field",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L91",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "chart_types_chartoverlay"
+    },
+    {
+      "relation": "references",
+      "context": "field",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L93",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "chart_types_overlaykind"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L95",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_attached"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L121",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_customhittest"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L99",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_detached"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L107",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_paneviews"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L117",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_setdragging"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L112",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L103",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_updateallviews"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L114",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays",
+      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_updateallviews"
+    },
+    {
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L112",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays",
+      "target": "chart_types_chartoverlay"
+    },
+    {
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L117",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_setdragging",
+      "target": "chart_types_overlaykind"
+    },
+    {
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "lib/orderOverlayPrimitive.ts",
+      "source_location": "L121",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_customhittest",
+      "target": "chart_types_overlaykind"
+    },
+    {
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -47988,28 +48464,6 @@
       "confidence_score": 1.0,
       "source": "components_chart",
       "target": "chart_refs_chartrefs"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/Chart.tsx",
-      "source_location": "L29",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "components_chart",
-      "target": "chart_tradeoverlay"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/Chart.tsx",
-      "source_location": "L29",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "components_chart",
-      "target": "chart_tradeoverlay_tradeoverlay"
     },
     {
       "relation": "re_exports",
@@ -48608,28 +49062,6 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "components/Chart.tsx",
-      "source_location": "L28",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "components_chart",
-      "target": "lib_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/Chart.tsx",
-      "source_location": "L28",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "components_chart",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/Chart.tsx",
       "source_location": "L33",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -48956,26 +49388,6 @@
       "target": "lib_divergencemarkers_builddivergencemarkers"
     },
     {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/TradeOverlay.tsx",
-      "source_location": "L28",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_tradeoverlay",
-      "target": "chart_tradeoverlay_tradeoverlay"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/TradeOverlay.tsx",
-      "source_location": "L6",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_tradeoverlay",
-      "target": "chart_tradeoverlay_tradeoverlayprops"
-    },
-    {
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -49278,28 +49690,6 @@
       "confidence_score": 1.0,
       "source": "components_chartpanel",
       "target": "lib_markpricestore_setmarkprice"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/ChartPanel.tsx",
-      "source_location": "L17",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "components_chartpanel",
-      "target": "lib_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/ChartPanel.tsx",
-      "source_location": "L17",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "components_chartpanel",
-      "target": "lib_orderoverlayprimitive_overlaylinebadge"
     },
     {
       "relation": "imports_from",
@@ -49918,28 +50308,6 @@
       "confidence_score": 1.0,
       "source": "chart_types",
       "target": "lib_indicatorframework_indicatorsettings"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/types.ts",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_types",
-      "target": "lib_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/types.ts",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_types",
-      "target": "lib_orderoverlayprimitive_overlaylinebadge"
     },
     {
       "relation": "imports_from",
@@ -50605,99 +50973,11 @@
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L8",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive",
-      "target": "chart_types_overlaykind"
-    },
-    {
-      "relation": "references",
-      "context": "field",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L93",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "chart_types_overlaykind"
-    },
-    {
-      "relation": "references",
-      "context": "return_type",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L121",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_customhittest",
-      "target": "chart_types_overlaykind"
-    },
-    {
-      "relation": "references",
-      "context": "parameter_type",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L117",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_setdragging",
-      "target": "chart_types_overlaykind"
-    },
-    {
-      "relation": "references",
-      "context": "field",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L26",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_overlaylinebadge",
-      "target": "chart_types_overlaykind"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
       "source_file": "components/chart/useOrderOverlays.ts",
       "source_location": "L4",
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "chart_useorderoverlays",
-      "target": "chart_types_chartoverlay"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L8",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive",
-      "target": "chart_types_chartoverlay"
-    },
-    {
-      "relation": "references",
-      "context": "field",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L91",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "chart_types_chartoverlay"
-    },
-    {
-      "relation": "references",
-      "context": "parameter_type",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L112",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays",
       "target": "chart_types_chartoverlay"
     },
     {
@@ -50721,17 +51001,6 @@
       "confidence_score": 1.0,
       "source": "chart_types_chartprops",
       "target": "lib_indicatorframework_indicatorsettings"
-    },
-    {
-      "relation": "references",
-      "context": "field",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/types.ts",
-      "source_location": "L77",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_types_chartprops",
-      "target": "lib_orderoverlayprimitive_overlaylinebadge"
     },
     {
       "relation": "references",
@@ -67495,28 +67764,6 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "components/chart/refs.ts",
-      "source_location": "L10",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_refs",
-      "target": "lib_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/refs.ts",
-      "source_location": "L10",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_refs",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/refs.ts",
       "source_location": "L13",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -67654,17 +67901,6 @@
       "confidence_score": 1.0,
       "source": "chart_refs_chartrefs",
       "target": "lib_gradientzoneprimitive_gradientzoneprimitive"
-    },
-    {
-      "relation": "references",
-      "context": "generic_arg",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/refs.ts",
-      "source_location": "L36",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_refs_chartrefs",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
     },
     {
       "relation": "references",
@@ -68025,28 +68261,6 @@
       "target": "lib_chartfxprimitive_chartfxprimitive"
     },
     {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/useChartInit.ts",
-      "source_location": "L12",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_usechartinit",
-      "target": "lib_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/useChartInit.ts",
-      "source_location": "L12",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_usechartinit",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
-    },
-    {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "components/chart/useChartTheme.ts",
@@ -68194,39 +68408,6 @@
       "confidence_score": 1.0,
       "source": "chart_useorderoverlays",
       "target": "chart_useorderoverlays_useorderoverlays"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/useOrderOverlays.ts",
-      "source_location": "L3",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_useorderoverlays",
-      "target": "lib_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/useOrderOverlays.ts",
-      "source_location": "L3",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_useorderoverlays",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/useOrderOverlays.ts",
-      "source_location": "L3",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_useorderoverlays",
-      "target": "lib_orderoverlayprimitive_overlaylinebadge"
     },
     {
       "relation": "contains",
@@ -91664,187 +91845,6 @@
       "confidence_score": 1.0,
       "source": "lib_orderflow_accumulate",
       "target": "lib_orderflow_candlebucket"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L11",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayoptions"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L89",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L83",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderpaneview"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L23",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderrenderer"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L25",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_overlaylinebadge"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L24",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderrenderer",
-      "target": "lib_orderoverlayprimitive_orderrenderer_constructor"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L26",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderrenderer",
-      "target": "lib_orderoverlayprimitive_orderrenderer_draw"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L84",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderpaneview",
-      "target": "lib_orderoverlayprimitive_orderpaneview_constructor"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L86",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderpaneview",
-      "target": "lib_orderoverlayprimitive_orderpaneview_renderer"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L85",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderpaneview",
-      "target": "lib_orderoverlayprimitive_orderpaneview_zorder"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L95",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_attached"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L121",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_customhittest"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L99",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_detached"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L107",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_paneviews"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L117",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_setdragging"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L112",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L103",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_updateallviews"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "lib/orderOverlayPrimitive.ts",
-      "source_location": "L114",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "lib_orderoverlayprimitive_orderoverlayprimitive_setoverlays",
-      "target": "lib_orderoverlayprimitive_orderoverlayprimitive_updateallviews"
     },
     {
       "relation": "imports_from",
@@ -126799,5 +126799,5 @@
       "source_file": "PRODUCT.md"
     }
   ],
-  "built_at_commit": "e0925e0a48e879a0de2e3e7daa54ab08c795a99c"
+  "built_at_commit": "98af0dd356d194aa0790a95c860e04dbd5314c00"
 }
