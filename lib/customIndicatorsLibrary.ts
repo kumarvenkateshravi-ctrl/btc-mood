@@ -16,6 +16,7 @@ import { computeSuperTrend } from './indicators/superTrend';
 import { computeVwapBands } from './indicators/vwapBands';
 import { computeWilliamsR } from './indicators/williamsR';
 import { computeSma } from './indicators/sma';
+import { computeSdZones } from './indicators/sdZones';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -407,5 +408,30 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'background', name: 'Background', color: '#7E57C21A', thickness: 1, lineStyle: 'solid', display: true, isFill: true },
     ],
     compute: computeWilliamsR,
+  },
+  {
+    id: 'sd_zones',
+    name: 'Supply / Demand Zones',
+    description: 'Non-repainting supply/demand price bands from the prior higher-TF period (up to 3 TFs), ranked by a configurable Zone Strength Score.',
+    inputs: [
+      { id: 'tf1', name: 'Timeframe 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf2', name: 'Timeframe 2', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf3', name: 'Timeframe 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'targetFactor', name: 'Target projection ×', type: 'number', default: 1.5, min: 0, max: 5, step: 0.1 },
+      { id: 'showLabels', name: 'Show labels', type: 'boolean', default: true },
+      { id: 'showStrength', name: 'Show strength score', type: 'boolean', default: true },
+      { id: 'minStrength', name: 'Min strength', type: 'number', default: 0, min: 0, max: 100, step: 1 },
+      { id: 'wConfluence', name: 'Weight: Confluence', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wRejection', name: 'Weight: Rejection', type: 'number', default: 0.22, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wVolume', name: 'Weight: Volume', type: 'number', default: 0.18, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wRetests', name: 'Weight: Retests', type: 'number', default: 0.13, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wZoneWidth', name: 'Weight: Zone Width', type: 'number', default: 0.12, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wFreshness', name: 'Weight: Freshness', type: 'number', default: 0.10, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+    ],
+    styles: [
+      { id: 'D Su', name: 'Supply', color: 'rgba(242,54,69,0.10)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'D De', name: 'Demand', color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeSdZones,
   },
 ];
