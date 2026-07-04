@@ -517,8 +517,9 @@ describe('buildZones', () => {
     // First formation is at index 2 (day 1), from day 0: o100 h110 l90 c105.
     const day1 = zones.filter((z) => z.formedAtIndex === 2);
     const byKind = Object.fromEntries(day1.map((z) => [z.kind, z]));
-    // range = 20; bodyTop 105; bodyBottom 100.
-    expect(byKind.supply).toMatchObject({ upper: 110, lower: 105 });
+    // day-0 BUCKET is o100 h110 l90 c108 (last close in the period wins), so
+    // range = 20; bodyTop = max(100,108) = 108; bodyBottom = 100.
+    expect(byKind.supply).toMatchObject({ upper: 110, lower: 108 });
     expect(byKind.demand).toMatchObject({ upper: 100, lower: 90 });
     expect(byKind.supplyTarget).toMatchObject({ upper: 110 + 20 * 1.5, lower: 110 });
     expect(byKind.demandTarget).toMatchObject({ upper: 90, lower: 90 - 20 * 1.5 });
