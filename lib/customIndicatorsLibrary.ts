@@ -17,6 +17,7 @@ import { computeVwapBands } from './indicators/vwapBands';
 import { computeWilliamsR } from './indicators/williamsR';
 import { computeSma } from './indicators/sma';
 import { computeSdZones } from './indicators/sdZones';
+import { computeVolSpike } from './indicators/volSpike';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -433,5 +434,16 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'D De', name: 'Demand', color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid', display: true },
     ],
     compute: computeSdZones,
+  },
+  {
+    id: 'vol_spike',
+    name: 'Volume Spike Detection',
+    description: 'Marks abnormal-volume bars: blue up-arrow = major buying, dark down-arrow = major selling.',
+    inputs: [
+      { id: 'length', name: 'Volume MA Length', type: 'number', default: 20, min: 1, max: 500, step: 1 },
+      { id: 'mult', name: 'Spike ×', type: 'number', default: 1.8, min: 1, max: 10, step: 0.1 },
+    ],
+    styles: [],
+    compute: computeVolSpike,
   },
 ];
