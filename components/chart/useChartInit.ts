@@ -126,6 +126,7 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
       refs.indicatorSeriesRef.current.clear();
       refs.indicatorPanesRef.current.clear();
       refs.indicatorGradientRef.current.clear();
+      refs.indicatorBandRef.current.clear();
       refs.indicatorMarkersRef.current.clear();
       refs.indicatorSigRef.current = '';
       refs.lastBarTimeRef.current = null;

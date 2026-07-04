@@ -15,6 +15,7 @@ import {
 } from 'lightweight-charts';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
+import { IndicatorBandPrimitive } from '@/lib/indicatorBandPrimitive';
 import type { Candle } from '@/lib/types';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { shiftTime, getTfMinutes, type ChartType, type IndicatorRender } from './types';
@@ -48,6 +49,7 @@ export function useChartData(
     indicatorPanesRef,
     indicatorSigRef,
     indicatorGradientRef,
+    indicatorBandRef,
     indicatorMarkersRef,
     separatePaneRef,
     hoverInputsRef,
@@ -193,6 +195,7 @@ export function useChartData(
         }
         existing.clear();
         indicatorGradientRef.current.clear();
+        indicatorBandRef.current.clear();
         indicatorMarkersRef.current.clear();
         for (const pane of [...panes.values()].sort((a, b) => b.paneIndex() - a.paneIndex())) {
           try { chart.removePane(pane.paneIndex()); } catch {}
@@ -261,6 +264,17 @@ export function useChartData(
               );
             }
             if (series) existing.set(`${key}::${plot.id}`, series);
+
+            // `band` plots have no line data — a per-bar filled rectangle
+            // primitive draws them (supply/demand zones etc.). Attached to the
+            // band's own (empty) series so it detaches on the next teardown.
+            if (series && plot.type === 'band') {
+              try {
+                const bp = new IndicatorBandPrimitive();
+                series.attachPrimitive(bp);
+                indicatorBandRef.current.set(`${key}::${plot.id}`, bp);
+              } catch {}
+            }
           }
 
           // Horizontal levels (hlines) + fills on the indicator's main series.
@@ -324,6 +338,28 @@ export function useChartData(
               console.error(`Failed to set indicator data for ${key}::${plot.id}:`, err);
             }
           }
+        }
+
+        // Band plots: feed each per-bar { upper, lower } + bar times into its
+        // fill primitive (supply/demand zones etc.).
+        for (const plot of result.plots) {
+          if (plot.type !== 'band') continue;
+          const bp = indicatorBandRef.current.get(`${key}::${plot.id}`);
+          if (!bp) continue;
+          const upper: (number | null)[] = [];
+          const lower: (number | null)[] = [];
+          for (const v of plot.data) {
+            if (v != null && typeof v === 'object' && 'upper' in v && 'lower' in v) {
+              upper.push(v.upper);
+              lower.push(v.lower);
+            } else {
+              upper.push(null);
+              lower.push(null);
+            }
+          }
+          const times = candles.map((c) => shiftTime(c.time as number) as number);
+          const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
+          bp.setData(upper, lower, times, st?.color || plot.color);
         }
 
         // Gradient zones: feed the source plot's per-bar values + bar times.
