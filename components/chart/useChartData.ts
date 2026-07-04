@@ -195,6 +195,11 @@ export function useChartData(
         }
         existing.clear();
         indicatorGradientRef.current.clear();
+        // Band primitives live on the candle series (which survives teardown),
+        // so detach them explicitly before dropping the refs.
+        for (const [, bp] of indicatorBandRef.current) {
+          try { candleSeriesRef.current?.detachPrimitive(bp); } catch {}
+        }
         indicatorBandRef.current.clear();
         indicatorMarkersRef.current.clear();
         for (const pane of [...panes.values()].sort((a, b) => b.paneIndex() - a.paneIndex())) {
@@ -266,12 +271,15 @@ export function useChartData(
             if (series) existing.set(`${key}::${plot.id}`, series);
 
             // `band` plots have no line data — a per-bar filled rectangle
-            // primitive draws them (supply/demand zones etc.). Attached to the
-            // band's own (empty) series so it detaches on the next teardown.
-            if (series && plot.type === 'band') {
+            // primitive draws them (supply/demand zones etc.). Attach to the
+            // CANDLE series: a primitive's priceToCoordinate uses its host
+            // series' price mapping, and the band's own series is empty (no
+            // range → null coordinates). The candle series has data and shares
+            // the main price scale. Detached explicitly on teardown below.
+            if (plot.type === 'band' && candleSeriesRef.current) {
               try {
                 const bp = new IndicatorBandPrimitive();
-                series.attachPrimitive(bp);
+                candleSeriesRef.current.attachPrimitive(bp);
                 indicatorBandRef.current.set(`${key}::${plot.id}`, bp);
               } catch {}
             }
