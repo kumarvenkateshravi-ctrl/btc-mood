@@ -290,19 +290,9 @@ export default function ChartPanel({
     }
   }, [hasPosition]);
 
-  // Auto-seed ATR-based default TP/SL once, right after a new position opens
-  // without exits. Keeps the ATR logic near the chart data; commits to the store.
-  const seededPosRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (replayTrading || !hasPosition || !pos) { seededPosRef.current = null; return; }
-    if (seededPosRef.current === pos.id) return;
-    if (pos.tp != null || pos.sl != null) { seededPosRef.current = pos.id; return; }
-    seededPosRef.current = pos.id;
-    const atr = atr14Last(candles) ?? pos.entryPrice * 0.005;
-    const sign = pos.side === 'long' ? 1 : -1;
-    setPositionOverlay('tp', Number((pos.entryPrice + sign * atr * 3).toFixed(1)), symbol);
-    setPositionOverlay('sl', Number((pos.entryPrice - sign * atr * 1.5).toFixed(1)), symbol);
-  }, [replayTrading, hasPosition, pos, candles, symbol]);
+  // A placed order shows only the entry line — no auto TP/SL. The trader adds
+  // exits on demand with the TP/SL chips (each seeds an ATR-based default line
+  // that can then be dragged), so nothing appears until they ask for it.
 
   // Entry / TP / SL lines. Entry is fixed; TP/SL are draggable for a live position.
   const overlays = useMemo<ChartOverlay[]>(() => {
@@ -377,7 +367,7 @@ export default function ChartPanel({
     if (!pos) return;
     const newSide = pos.side === 'long' ? 'sell' : 'buy';
     // Reverse = flatten current + open the opposite of equal size (2× units at
-    // market). The ATR-seed effect re-seeds TP/SL for the new side.
+    // market). The new position opens with no exits — add TP/SL via the chips.
     paper.placeOrder({
       symbol, side: newSide, type: 'market', units: pos.units * 2, price: null,
       tp: null, sl: null, reduceOnly: false, postOnly: false, leverage: pos.leverage, midPrice: mid,
