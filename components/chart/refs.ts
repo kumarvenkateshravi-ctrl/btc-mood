@@ -10,6 +10,7 @@ import type {
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive } from '@/lib/chartFxPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
+import { IndicatorBandPrimitive } from '@/lib/indicatorBandPrimitive';
 import { PriceLinesPrimitive } from '@/lib/priceLinesPrimitive';
 import type { ChartPalette } from '@/lib/chartTheme';
 import type { HoverPayload } from '@/lib/chartHoverStore';
@@ -44,6 +45,7 @@ export interface ChartRefs {
   indicatorPanesRef: MutableRefObject<Map<string, IPaneApi<Time>>>;
   indicatorSigRef: MutableRefObject<string>;
   indicatorGradientRef: MutableRefObject<Map<string, GradientZonePrimitive>>;
+  indicatorBandRef: MutableRefObject<Map<string, IndicatorBandPrimitive>>;
   indicatorMarkersRef: MutableRefObject<Map<string, ISeriesMarkersPluginApi<Time>>>;
   priceLinesPrimitiveRef: MutableRefObject<PriceLinesPrimitive | null>;
 

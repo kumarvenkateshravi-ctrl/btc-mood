@@ -32,6 +32,7 @@ import { getChartPalette, useThemeName, type ChartPalette } from '@/lib/chartThe
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
+import { IndicatorBandPrimitive } from '@/lib/indicatorBandPrimitive';
 import { PriceLinesPrimitive } from '@/lib/priceLinesPrimitive';
 import type { Candle, Timeframe } from '@/lib/types';
 import {
@@ -191,6 +192,7 @@ export default function Chart({
   const indicatorPanesRef = useRef<Map<string, IPaneApi<Time>>>(new Map());
   const indicatorSigRef = useRef<string>('');
   const indicatorGradientRef = useRef<Map<string, GradientZonePrimitive>>(new Map());
+  const indicatorBandRef = useRef<Map<string, IndicatorBandPrimitive>>(new Map());
   const indicatorMarkersRef = useRef<Map<string, ISeriesMarkersPluginApi<Time>>>(new Map());
   const priceLinesPrimitiveRef = useRef<PriceLinesPrimitive | null>(null);
   const [, setHasSeparatePane] = useState(false);
@@ -280,7 +282,7 @@ export default function Chart({
       overlayPrimitiveRef, fxPrimitiveRef, daySepCanvasRef, daySepRafRef,
       separatePaneRef,
       indicatorSeriesRef, indicatorPanesRef, indicatorSigRef,
-      indicatorGradientRef, indicatorMarkersRef, priceLinesPrimitiveRef,
+      indicatorGradientRef, indicatorBandRef, indicatorMarkersRef, priceLinesPrimitiveRef,
       paletteRef,
       hoverInputsRef, lastBarTimeRef, firstBarTimeRef,
       prevTypeRef, prevTfRef, prevOpenRef, prevCloseRef, lastCandleTimeRef,
