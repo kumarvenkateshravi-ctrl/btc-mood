@@ -75,23 +75,21 @@ export interface ChartProps {
   overlayLeverage?: number;
   /** `qty | ±USD | ✕` pills drawn on each overlay line (Task 5). */
   overlayBadges?: OverlayLineBadge[];
-  /** Immediate-place trade control center docked to the entry line. Null when
-   *  flat / during replay. `mode` toggles between Normal (Edit/Reverse/Close)
-   *  and Edit (Save/Cancel + draggable TP/SL). */
+  /** Immediate-place trade control row docked to the entry line. Null when flat
+   *  / during replay. TP/SL lines are always draggable; `isDirty` (a staged,
+   *  unconfirmed TP/SL change) reveals the Discard/Confirm buttons. */
   tradeOverlay?: {
-    side: 'buy' | 'sell';
     symbol: string;
-    qty: number;
     entryPrice: number;
-    mode: 'normal' | 'edit';
+    isDirty: boolean;
+    hasTp: boolean;
+    hasSl: boolean;
   } | null;
-  /** Live risk/reward for the edit-mode readout. */
-  tradeOverlayRr?: { risk: number; reward: number; ratio: number | null } | null;
-  onOverlayEdit?: () => void;
-  onOverlaySave?: () => void;
-  onOverlayCancel?: () => void;
+  onOverlayDiscard?: () => void;
+  onOverlayConfirm?: () => void;
+  onOverlayToggleTp?: () => void;
+  onOverlayToggleSl?: () => void;
   onOverlayReverse?: () => void;
-  onOverlayClose?: () => void;
   onReady?: (api: ChartApi) => void;
   onLoadOlder?: () => void;
   regime?: number;

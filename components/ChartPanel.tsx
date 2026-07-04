@@ -6,7 +6,6 @@ import { type RenkoConfig, DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/ren
 import ChartContextMenu from './trade/ChartContextMenu';
 import { usePaperStore, setPositionOverlay } from '@/lib/paperStore';
 import { projectedPnl, unrealizedPnl } from '@/lib/paper';
-import { riskReward } from '@/lib/trading';
 import ReverseConfirmDialog from '@/components/trade/ReverseConfirmDialog';
 import CloseConfirmDialog from '@/components/trade/CloseConfirmDialog';
 import type { OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
@@ -266,26 +265,25 @@ export default function ChartPanel({
     [replayTrading, onQuickTrade],
   );
 
-  // ---- Immediate-place trade overlay (position-driven) ----
+  // ---- Immediate-place trade overlay (position-driven, TV-style) ----
   // The chart overlay is the single management surface for the open position.
-  // Two modes: 'normal' (Edit/Reverse/Close) and 'edit' (drag TP/SL, Save/Cancel).
-  // The overlay owns only transient UI state (mode + the in-progress TP/SL draft);
-  // the paper store stays the single source of truth for the trade.
-  const [overlayMode, setOverlayMode] = useState<'normal' | 'edit'>('normal');
+  // TP/SL lines are ALWAYS draggable; dragging or toggling a TP/SL chip stages a
+  // local draft and reveals Discard/Confirm. Confirm commits to the store;
+  // Discard reverts. Reverse = the ⇅ button; Close = the ✕ on the entry pill.
+  // The overlay owns only the transient draft; the store stays the source of truth.
   const [draftTpSl, setDraftTpSl] = useState<{ tp: number | null; sl: number | null } | null>(null);
   const [showReverseConfirm, setShowReverseConfirm] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
-  // Editing only makes sense for a live open position.
-  const isEditing = overlayMode === 'edit' && hasPosition && !replayTrading;
-  // Effective TP/SL shown on the chart: the draft while editing, else committed.
-  const effTp = isEditing ? draftTpSl?.tp ?? null : pos?.tp ?? null;
-  const effSl = isEditing ? draftTpSl?.sl ?? null : pos?.sl ?? null;
+  // Effective TP/SL shown on the chart: the draft when editing, else committed.
+  const effTp = draftTpSl ? draftTpSl.tp : pos?.tp ?? null;
+  const effSl = draftTpSl ? draftTpSl.sl : pos?.sl ?? null;
+  // "Dirty" once a staged draft differs from the committed levels.
+  const isDirty = !!draftTpSl && (draftTpSl.tp !== (pos?.tp ?? null) || draftTpSl.sl !== (pos?.sl ?? null));
 
-  // Leaving a position (closed/flat) always drops back to normal mode.
+  // Leaving a position clears any pending edit + dialogs.
   useEffect(() => {
     if (!hasPosition) {
-      setOverlayMode('normal');
       setDraftTpSl(null);
       setShowReverseConfirm(false);
       setShowCloseConfirm(false);
@@ -306,31 +304,29 @@ export default function ChartPanel({
     setPositionOverlay('sl', Number((pos.entryPrice - sign * atr * 1.5).toFixed(1)), symbol);
   }, [replayTrading, hasPosition, pos, candles, symbol]);
 
-  // Entry / TP / SL lines for the open position. TP/SL are draggable ONLY in
-  // edit mode; the entry line is never draggable (market fill is fixed).
+  // Entry / TP / SL lines. Entry is fixed; TP/SL are draggable for a live position.
   const overlays = useMemo<ChartOverlay[]>(() => {
     if (!hasPosition || !pos) return [];
     const o: ChartOverlay[] = [{ kind: 'entry', price: pos.entryPrice, draggable: false }];
-    const draggable = isEditing || replayTrading;
+    const draggable = !replayTrading;
     if (effTp != null) o.push({ kind: 'tp', price: effTp, draggable });
     if (effSl != null) o.push({ kind: 'sl', price: effSl, draggable });
     return o;
-  }, [hasPosition, pos, effTp, effSl, isEditing, replayTrading]);
+  }, [hasPosition, pos, effTp, effSl, replayTrading]);
 
-  // Dragging a TP/SL line: in edit mode it updates the local draft (store
-  // untouched until Save); during replay it routes to the isolated session.
+  // Dragging a TP/SL line stages the draft (store untouched until Confirm);
+  // during replay it routes straight to the isolated session.
   const handleOverlayDrag = useCallback(
     (kind: OverlayKind, price: number) => {
       if (kind !== 'tp' && kind !== 'sl') return;
       if (replayTrading) { replaySetOverlay(kind, price); return; }
-      if (!isEditing) return;
       setDraftTpSl((d) => ({
         tp: d?.tp ?? pos?.tp ?? null,
         sl: d?.sl ?? pos?.sl ?? null,
         [kind]: price,
       }));
     },
-    [replayTrading, isEditing, pos],
+    [replayTrading, pos],
   );
 
   const handleOverlayChipClick = useCallback(
@@ -340,36 +336,42 @@ export default function ChartPanel({
         else setShowCloseConfirm(true); // confirm dialog before booking P&L
         return;
       }
-      // ✕ on a TP/SL line removes that exit.
+      // ✕ on a TP/SL line removes that exit (staged until Confirm).
       if (replayTrading) replaySetOverlay(key, null);
-      else if (isEditing) setDraftTpSl((d) => ({ tp: d?.tp ?? null, sl: d?.sl ?? null, [key]: null }));
-      else setPositionOverlay(key, null, symbol);
+      else setDraftTpSl((d) => ({ tp: d?.tp ?? pos?.tp ?? null, sl: d?.sl ?? pos?.sl ?? null, [key]: null }));
     },
-    [replayTrading, isEditing, replayLast, mid, symbol],
+    [replayTrading, replayLast, mid, pos],
   );
 
   const handlePriceAlertDrag = useCallback((id: string, newPrice: number) => {
     updatePriceAlertPrice(id, newPrice);
   }, []);
 
-  // ---- Overlay control-center actions (live account only) ----
-  const onOverlayEdit = useCallback(() => {
-    if (!pos) return;
-    setDraftTpSl({ tp: pos.tp, sl: pos.sl });
-    setOverlayMode('edit');
-  }, [pos]);
-  const onOverlaySave = useCallback(() => {
+  // ---- Overlay actions (live account only) ----
+  const onOverlayConfirm = useCallback(() => {
     if (draftTpSl) {
       setPositionOverlay('tp', draftTpSl.tp, symbol);
       setPositionOverlay('sl', draftTpSl.sl, symbol);
     }
     setDraftTpSl(null);
-    setOverlayMode('normal');
   }, [draftTpSl, symbol]);
-  const onOverlayCancel = useCallback(() => {
-    setDraftTpSl(null);
-    setOverlayMode('normal');
-  }, []);
+  const onOverlayDiscard = useCallback(() => setDraftTpSl(null), []);
+  const onToggleTp = useCallback(() => {
+    if (!pos) return;
+    const cur = draftTpSl ? draftTpSl.tp : pos.tp;
+    const atr = atr14Last(candles) ?? pos.entryPrice * 0.005;
+    const sign = pos.side === 'long' ? 1 : -1;
+    const next = cur != null ? null : Number((pos.entryPrice + sign * atr * 3).toFixed(1));
+    setDraftTpSl((d) => ({ tp: next, sl: d?.sl ?? pos.sl ?? null }));
+  }, [pos, draftTpSl, candles]);
+  const onToggleSl = useCallback(() => {
+    if (!pos) return;
+    const cur = draftTpSl ? draftTpSl.sl : pos.sl;
+    const atr = atr14Last(candles) ?? pos.entryPrice * 0.005;
+    const sign = pos.side === 'long' ? 1 : -1;
+    const next = cur != null ? null : Number((pos.entryPrice - sign * atr * 1.5).toFixed(1));
+    setDraftTpSl((d) => ({ tp: d?.tp ?? pos.tp ?? null, sl: next }));
+  }, [pos, draftTpSl, candles]);
   const doReverse = useCallback(() => {
     setShowReverseConfirm(false);
     if (!pos) return;
@@ -380,7 +382,6 @@ export default function ChartPanel({
       symbol, side: newSide, type: 'market', units: pos.units * 2, price: null,
       tp: null, sl: null, reduceOnly: false, postOnly: false, leverage: pos.leverage, midPrice: mid,
     });
-    setOverlayMode('normal');
     setDraftTpSl(null);
   }, [pos, symbol, mid, paper]);
   const doClose = useCallback(() => {
@@ -408,28 +409,19 @@ export default function ChartPanel({
     return b;
   }, [hasPosition, pos, mid, effTp, effSl]);
 
-  // Live risk/reward for the edit-mode readout.
-  const overlayRr = useMemo(() => {
-    if (!hasPosition || !pos || !isEditing || effTp == null || effSl == null) return null;
-    const dir = pos.side === 'long' ? 'long' as const : 'short' as const;
-    const risk = Math.abs(pos.entryPrice - effSl) * pos.units;
-    const reward = Math.abs(effTp - pos.entryPrice) * pos.units;
-    return { risk, reward, ratio: riskReward(dir, pos.entryPrice, effTp, effSl) };
-  }, [hasPosition, pos, isEditing, effTp, effSl]);
-
-  // Data for the on-chart TradeOverlay control center (null when flat / replay).
+  // Data for the on-chart TradeOverlay control row (null when flat / replay).
   const tradeOverlay = useMemo(
     () =>
       hasPosition && pos && !replayTrading
         ? {
-            side: pos.side === 'long' ? 'buy' as const : 'sell' as const,
             symbol,
-            qty: pos.units,
             entryPrice: pos.entryPrice,
-            mode: overlayMode,
+            isDirty,
+            hasTp: effTp != null,
+            hasSl: effSl != null,
           }
         : null,
-    [hasPosition, pos, replayTrading, symbol, overlayMode],
+    [hasPosition, pos, replayTrading, symbol, isDirty, effTp, effSl],
   );
 
   // Price alerts for this symbol → dashed lines on the chart + management pills.
@@ -716,12 +708,11 @@ export default function ChartPanel({
             overlayLeverage={overlayLeverage}
             overlayBadges={overlayBadges}
             tradeOverlay={tradeOverlay}
-            tradeOverlayRr={overlayRr}
-            onOverlayEdit={onOverlayEdit}
-            onOverlaySave={onOverlaySave}
-            onOverlayCancel={onOverlayCancel}
+            onOverlayDiscard={onOverlayDiscard}
+            onOverlayConfirm={onOverlayConfirm}
+            onOverlayToggleTp={onToggleTp}
+            onOverlayToggleSl={onToggleSl}
             onOverlayReverse={() => setShowReverseConfirm(true)}
-            onOverlayClose={() => setShowCloseConfirm(true)}
             priceLines={priceLines}
             onPriceLineDrag={handlePriceAlertDrag}
             onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}
@@ -852,6 +843,7 @@ export default function ChartPanel({
       <ReverseConfirmDialog
         open={showReverseConfirm}
         side={overlaySide ?? 'buy'}
+        symbol={symbol}
         onConfirm={doReverse}
         onCancel={() => setShowReverseConfirm(false)}
       />

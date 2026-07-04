@@ -5,13 +5,13 @@
     "semantic_hash": "5300a9feb8255cdd3c0f819a6fd8fb24"
   },
   ".remember/tmp/last-ndc.ts": {
-    "mtime": 1783139089.3986568,
-    "ast_hash": "67adda6b5ec4b20abc8a1302bc46bfea",
+    "mtime": 1783148612.7759044,
+    "ast_hash": "f519aa0819231ff6ad686a26e86e4a43",
     "semantic_hash": ""
   },
   ".remember/tmp/last-save.json": {
-    "mtime": 1783139088.780185,
-    "ast_hash": "08c708b2fd829eb9848001fea3b9b8de",
+    "mtime": 1783148611.0469122,
+    "ast_hash": "e0d060a6b2a7df5e288c797de7d9417f",
     "semantic_hash": ""
   },
   ".storybook/main.ts": {
@@ -1590,7 +1590,7 @@
     "semantic_hash": "3f3c0159a639662449303d5753913b9f"
   },
   ".remember/now.md": {
-    "mtime": 1783139110.8169417,
+    "mtime": 1783148641.3334682,
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": ""
   },
@@ -1785,8 +1785,8 @@
     "semantic_hash": ""
   },
   ".remember/today-2026-07-04.md": {
-    "mtime": 1783139110.8159487,
-    "ast_hash": "5e66cfe5d47cb3b71500472b76a81d7a",
+    "mtime": 1783148641.3279939,
+    "ast_hash": "084b511e7a671e9bda0811c71c954590",
     "semantic_hash": ""
   },
   ".superpowers/sdd/gti-progress.md": {
@@ -1817,6 +1817,11 @@
   "lib/paperStore.staged.test.ts": {
     "mtime": 1783147891.7462778,
     "ast_hash": "d336893f4df840fe79399c66533d329d",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/specs/2026-07-04-immediate-place-trade-overlay-design.md": {
+    "mtime": 1783148681.3451366,
+    "ast_hash": "875886a86626dee22193e27ced1770a0",
     "semantic_hash": ""
   }
 }

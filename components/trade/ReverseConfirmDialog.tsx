@@ -5,6 +5,7 @@ import { Modal, Button } from '@/components/ui';
 interface ReverseConfirmDialogProps {
   open: boolean;
   side: 'buy' | 'sell';
+  symbol: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -17,6 +18,7 @@ export default function ReverseConfirmDialog(p: ReverseConfirmDialogProps) {
   return (
     <Modal open={p.open} onClose={p.onCancel} size="sm" title="Reverse Trade?">
       <p className="text-sm text-ink-muted">
+        <span className="font-mono text-ink">{p.symbol}</span>{'  '}
         <span className={p.side === 'buy' ? 'font-semibold text-bull-bright' : 'font-semibold text-bear-bright'}>
           {current}
         </span>

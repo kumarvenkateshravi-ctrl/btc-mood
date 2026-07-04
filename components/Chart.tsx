@@ -100,12 +100,11 @@ export default function Chart({
   overlayLeverage = 10,
   overlayBadges,
   tradeOverlay = null,
-  tradeOverlayRr = null,
-  onOverlayEdit,
-  onOverlaySave,
-  onOverlayCancel,
+  onOverlayDiscard,
+  onOverlayConfirm,
+  onOverlayToggleTp,
+  onOverlayToggleSl,
   onOverlayReverse,
-  onOverlayClose,
   onReady,
   onLoadOlder,
   overlayPnL = null,
@@ -417,17 +416,16 @@ export default function Chart({
         <TradeOverlay
           chart={chartRef.current}
           series={candleSeriesRef.current}
-          side={tradeOverlay.side}
           symbol={tradeOverlay.symbol}
-          qty={tradeOverlay.qty}
           entryPrice={tradeOverlay.entryPrice}
-          mode={tradeOverlay.mode}
-          rr={tradeOverlayRr}
-          onEdit={onOverlayEdit!}
-          onSave={onOverlaySave!}
-          onCancel={onOverlayCancel!}
+          isDirty={tradeOverlay.isDirty}
+          hasTp={tradeOverlay.hasTp}
+          hasSl={tradeOverlay.hasSl}
           onReverse={onOverlayReverse!}
-          onClose={onOverlayClose!}
+          onDiscard={onOverlayDiscard!}
+          onConfirm={onOverlayConfirm!}
+          onToggleTp={onOverlayToggleTp!}
+          onToggleSl={onOverlayToggleSl!}
         />
       )}
 
