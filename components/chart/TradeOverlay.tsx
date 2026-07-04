@@ -40,13 +40,17 @@ export function TradeOverlay(p: TradeOverlayProps) {
 
   const chip = 'h-6 rounded border border-line bg-surface-1/95 px-2 text-[11px] leading-none text-ink hover:bg-surface-2';
   const primary = 'h-6 rounded bg-accent px-2.5 text-[11px] font-semibold leading-none text-white hover:opacity-90';
+  const TP_COLOR = '#22d39a';   // green
+  const SL_COLOR = '#f5a623';   // amber
 
   return (
     <div
-      className="pointer-events-auto absolute right-[230px] z-[45] flex -translate-y-1/2 items-center gap-1"
+      className="pointer-events-auto absolute right-[260px] z-[45] flex -translate-y-1/2 items-center gap-1"
       style={{ top: y }}
     >
-      <button type="button" className={chip} title="Reverse position" onClick={p.onReverse}>⇅</button>
+      <button type="button" className={chip} style={{ borderColor: '#2A62FF' }} title="Reverse position" onClick={p.onReverse}>
+        ⇅
+      </button>
 
       {p.isDirty && (
         <>
@@ -57,7 +61,8 @@ export function TradeOverlay(p: TradeOverlayProps) {
 
       <button
         type="button"
-        className={`${chip} ${p.hasTp ? 'text-bull-bright' : 'border-dashed text-ink-faint'}`}
+        className={`${chip} ${p.hasTp ? '' : 'border-dotted'}`}
+        style={{ color: TP_COLOR, borderColor: TP_COLOR }}
         onClick={p.onToggleTp}
         title={p.hasTp ? 'Remove take-profit' : 'Add take-profit'}
       >
@@ -65,7 +70,8 @@ export function TradeOverlay(p: TradeOverlayProps) {
       </button>
       <button
         type="button"
-        className={`${chip} ${p.hasSl ? 'text-bear-bright' : 'border-dashed text-ink-faint'}`}
+        className={`${chip} ${p.hasSl ? '' : 'border-dotted'}`}
+        style={{ color: SL_COLOR, borderColor: SL_COLOR }}
         onClick={p.onToggleSl}
         title={p.hasSl ? 'Remove stop-loss' : 'Add stop-loss'}
       >

@@ -85,30 +85,50 @@ class OrderRenderer implements IPrimitivePaneRenderer {
         ctx.fillStyle = '#0a0e16';
         ctx.fillText(text, boxX + padX, cy);
 
-        // Right-aligned `qty | ±USD | ✕` pill (TV-style). The P&L segment is
-        // coloured green for profit / red for loss; qty and ✕ use the line colour.
+        // Right-aligned `[qty][±USD][✕]` pill (TV-style), left of the price axis
+        // with a clear gap. The qty sits on a solid line-colour block; the P&L
+        // block is dark with green (profit) / red (loss) text.
         const badge = (opts.badges ?? []).find((b) => b.kind === o.kind);
         if (badge) {
+          const qtyStr = `${badge.qty}`;
           const pnlStr = badge.pnl == null ? null :
             `${badge.pnl >= 0 ? '+' : '−'}${Math.abs(badge.pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
           const pnlColor = badge.pnl == null || badge.pnl >= 0 ? '#22d39a' : '#fb5168';
-          // Coloured text runs: [text, colour].
-          const segs: [string, string][] = pnlStr == null
-            ? [[`${badge.qty} | ✕`, lineColor]]
-            : [[`${badge.qty} | `, lineColor], [pnlStr, pnlColor], [' | ✕', lineColor]];
-          const totalW = segs.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
-          const bW = totalW + padX * 2;
-          const bX = w - bW - 8 * hpr;
-          ctx.fillStyle = 'rgba(10, 14, 22, 0.9)';
-          ctx.fillRect(bX, boxY, bW, boxH);
-          ctx.strokeStyle = lineColor;
-          ctx.strokeRect(bX, boxY, bW, boxH);
-          let tx = bX + padX;
-          for (const [t, c] of segs) {
-            ctx.fillStyle = c;
-            ctx.fillText(t, tx, cy);
-            tx += ctx.measureText(t).width;
+          const xStr = '✕';
+
+          const qtyW = ctx.measureText(qtyStr).width + padX * 2;
+          const pnlW = pnlStr ? ctx.measureText(pnlStr).width + padX * 2 : 0;
+          const xW = ctx.measureText(xStr).width + padX * 2;
+          const bW = qtyW + pnlW + xW;
+          const bX = w - bW - 40 * hpr; // 40px gap from the price axis
+
+          // qty block — solid line colour, white text
+          ctx.fillStyle = lineColor;
+          ctx.fillRect(bX, boxY, qtyW, boxH);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(qtyStr, bX + padX, cy);
+
+          // P&L + ✕ block — dark fill
+          ctx.fillStyle = 'rgba(10, 14, 22, 0.95)';
+          ctx.fillRect(bX + qtyW, boxY, pnlW + xW, boxH);
+          if (pnlStr) {
+            ctx.fillStyle = pnlColor;
+            ctx.fillText(pnlStr, bX + qtyW + padX, cy);
+            ctx.strokeStyle = 'rgba(154, 178, 215, 0.25)';
+            ctx.lineWidth = Math.max(1, vpr);
+            ctx.beginPath();
+            ctx.moveTo(bX + qtyW + pnlW, boxY + 3 * vpr);
+            ctx.lineTo(bX + qtyW + pnlW, boxY + boxH - 3 * vpr);
+            ctx.stroke();
           }
+          ctx.fillStyle = lineColor;
+          ctx.fillText(xStr, bX + qtyW + pnlW + padX, cy);
+
+          // outer border
+          ctx.strokeStyle = lineColor;
+          ctx.lineWidth = Math.max(1, vpr);
+          ctx.strokeRect(bX, boxY, bW, boxH);
+
           this._prim.badgeRects.set(o.kind, { x: bX / hpr, y: boxY / vpr, w: bW / hpr, h: boxH / vpr });
         }
       }
