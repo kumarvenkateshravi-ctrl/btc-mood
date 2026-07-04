@@ -1,15 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { usePaperStore, setPositionOverlay, closePosition } from '@/lib/paperStore';
+import { usePaperStore } from '@/lib/paperStore';
 import { unrealizedPnl } from '@/lib/paper';
 import { useMarkPrice } from '@/lib/markPriceStore';
-import {
-  useReplaySession,
-  sessionBalance,
-  replaySetOverlay,
-  replayClose,
-} from '@/lib/replaySession';
+import { useReplaySession, sessionBalance } from '@/lib/replaySession';
 import { positionSize, riskReward, formatRR } from '@/lib/trading';
 
 export default function TradingPanel({ symbol, midPrice }: { symbol: string; midPrice: number }) {
@@ -24,12 +19,6 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
   // The chart's current mark (tracks replay during Bar Replay), else the prop.
   const mark = useMarkPrice(symbol);
   const markPrice = mark?.price ?? midPrice;
-  const markTime = mark?.time;
-
-  const setOverlay = (field: 'tp' | 'sl', value: number | null) => {
-    if (replay) replaySetOverlay(field, value);
-    else setPositionOverlay(field, value, symbol);
-  };
 
   const [qty, setQty] = useState('0.1');
   const [balanceInput, setBalanceInput] = useState('');
@@ -47,14 +36,6 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
     hasPos && pos && pos.entryPrice > 0
       ? ((markPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.side === 'long' ? 1 : -1)
       : 0;
-
-  // Default level distance: the calculator's SL distance, else ~1% of entry/price.
-  const baseEntry = hasPos && pos ? pos.entryPrice : markPrice;
-  const dist = Number(slDist) > 0 ? Number(slDist) : baseEntry * 0.01;
-  const long = pos?.side === 'long';
-
-  const addTp = () => pos && setOverlay('tp', long ? pos.entryPrice + dist * 2 : pos.entryPrice - dist * 2);
-  const addSl = () => pos && setOverlay('sl', long ? pos.entryPrice - dist : pos.entryPrice + dist);
 
   return (
     <div className="panel space-y-3 rounded-xl p-3">
@@ -135,8 +116,8 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
       {hasPos && pos && (
         <div className="space-y-2 rounded-lg border border-line bg-base/40 p-2.5">
           <div className="flex items-center justify-between">
-            <span className={['text-xs font-semibold', long ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>
-              {long ? 'LONG' : 'SHORT'} {pos.units} {symbol.replace('USDT', '')}
+            <span className={['text-xs font-semibold', pos.side === 'long' ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>
+              {pos.side === 'long' ? 'LONG' : 'SHORT'} {pos.units} {symbol.replace('USDT', '')}
             </span>
             <span className="font-mono text-[11px] text-ink-muted">@ {pos.entryPrice.toFixed(1)}</span>
           </div>
@@ -156,23 +137,6 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
             </span>
           </div>
 
-          <LevelRow
-            label="TP"
-            value={pos.tp}
-            color="text-bull-bright"
-            onChange={(v) => setOverlay('tp', v)}
-            onAdd={addTp}
-            onClear={() => setOverlay('tp', null)}
-          />
-          <LevelRow
-            label="SL"
-            value={pos.sl}
-            color="text-bear-bright"
-            onChange={(v) => setOverlay('sl', v)}
-            onAdd={addSl}
-            onClear={() => setOverlay('sl', null)}
-          />
-
           <div className="flex items-center justify-between border-t border-line pt-2">
             <span className="text-[11px] uppercase tracking-wider text-ink-faint">Reward : Risk</span>
             <span
@@ -185,16 +149,9 @@ export default function TradingPanel({ symbol, midPrice }: { symbol: string; mid
             </span>
           </div>
 
-          <button
-            onClick={() =>
-              replay
-                ? replayClose(markPrice, markTime ?? Math.floor(Date.now() / 1000))
-                : closePosition(markPrice, symbol)
-            }
-            className="focus-ring w-full rounded-md bg-surface-2 py-1.5 text-xs text-ink-muted transition hover:text-bear-bright"
-          >
-            Close position @ market
-          </button>
+          <p className="border-t border-line pt-2 text-center text-[11px] text-ink-faint">
+            Edit TP/SL, reverse, or close from the trade overlay on the chart.
+          </p>
         </div>
       )}
 
@@ -219,52 +176,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <label className="flex items-center gap-3 rounded-lg border border-line bg-base px-3 py-2.5 text-sm">
       <span className="shrink-0 font-medium text-ink-faint">{label}</span>
       {children}
-    </label>
-  );
-}
-
-function LevelRow({
-  label,
-  value,
-  color,
-  onChange,
-  onAdd,
-  onClear,
-}: {
-  label: string;
-  value: number | null;
-  color: string;
-  onChange: (v: number) => void;
-  onAdd: () => void;
-  onClear: () => void;
-}) {
-  if (value == null) {
-    return (
-      <div className="flex items-center justify-between py-1">
-        <span className={['text-sm font-semibold', color].join(' ')}>{label}</span>
-        <button onClick={onAdd} className="focus-ring rounded bg-surface-2 px-3 py-1 text-xs font-medium text-ink-muted transition hover:bg-surface-3 hover:text-ink">
-          Add {label}
-        </button>
-      </div>
-    );
-  }
-  return (
-    <label className="flex items-center gap-3 rounded-lg border border-line bg-base px-3 py-2 text-sm">
-      <span className={['w-8 shrink-0 font-bold', color].join(' ')}>{label}</span>
-      <input
-        type="number"
-        min={0}
-        step="any"
-        value={value}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          if (Number.isFinite(n) && n > 0) onChange(n);
-        }}
-        className="num-input text-sm"
-      />
-      <button onClick={onClear} aria-label={`Remove ${label}`} className="text-ink-faint transition hover:text-bear-bright p-1">
-        ✕
-      </button>
     </label>
   );
 }

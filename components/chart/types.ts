@@ -75,18 +75,23 @@ export interface ChartProps {
   overlayLeverage?: number;
   /** `qty | ±USD | ✕` pills drawn on each overlay line (Task 5). */
   overlayBadges?: OverlayLineBadge[];
-  /** Staged-order (pre-Confirm) control row docked to the entry line. */
-  stagedOrder?: { entry: number; hasTp: boolean; hasSl: boolean } | null;
-  onStageReverse?: () => void;
-  onStageDiscard?: () => void;
-  onStageConfirm?: () => void;
-  onStageToggleTp?: () => void;
-  onStageToggleSl?: () => void;
-  /** Reduced-mode controls row for an open position with no tp/sl yet
-   *  (TV-style dotted "TP SL" add-chips). Null hides the row. */
-  positionControls?: { entry: number; hasTp: boolean; hasSl: boolean } | null;
-  onPositionToggleTp?: () => void;
-  onPositionToggleSl?: () => void;
+  /** Immediate-place trade control center docked to the entry line. Null when
+   *  flat / during replay. `mode` toggles between Normal (Edit/Reverse/Close)
+   *  and Edit (Save/Cancel + draggable TP/SL). */
+  tradeOverlay?: {
+    side: 'buy' | 'sell';
+    symbol: string;
+    qty: number;
+    entryPrice: number;
+    mode: 'normal' | 'edit';
+  } | null;
+  /** Live risk/reward for the edit-mode readout. */
+  tradeOverlayRr?: { risk: number; reward: number; ratio: number | null } | null;
+  onOverlayEdit?: () => void;
+  onOverlaySave?: () => void;
+  onOverlayCancel?: () => void;
+  onOverlayReverse?: () => void;
+  onOverlayClose?: () => void;
   onReady?: (api: ChartApi) => void;
   onLoadOlder?: () => void;
   regime?: number;

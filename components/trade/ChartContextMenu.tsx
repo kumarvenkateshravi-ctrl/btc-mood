@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { ArrowDown, ArrowUp, Bell, GripVertical, Zap } from 'lucide-react';
-import { setActiveOrder, executeOrder } from '@/lib/paperStore';
+import { placeOrder, executeOrder } from '@/lib/paperStore';
 import { addPriceAlert } from '@/lib/priceAlertsStore';
 import { sideForLevel } from '@/lib/priceAlerts';
 import type { Side } from '@/lib/paper';
@@ -56,19 +56,21 @@ export default function ChartContextMenu({
     };
   }, [onClose]);
 
-  const stage = (side: Side, type: 'limit' | 'stop') => {
-    setActiveOrder({
-      id: `ctx_${crypto.randomUUID().slice(0, 12)}`,
+  // Immediate-place: a limit/stop from the menu becomes a working order at the
+  // clicked price right away (no staging).
+  const placeWorking = (side: Side, type: 'limit' | 'stop') => {
+    placeOrder({
       symbol,
       side,
       type,
       units: size,
-      entry: price,
+      price,
       tp: null,
       sl: null,
       reduceOnly: false,
       postOnly: false,
-      ocoGroup: null,
+      leverage,
+      midPrice,
     });
     onClose();
   };
@@ -139,26 +141,26 @@ export default function ChartContextMenu({
           icon={<ArrowUp className="h-3.5 w-3.5" />}
           label="Buy limit"
           desc={`Limit buy @ ${displayPrice}`}
-          onClick={() => stage('buy', 'limit')}
+          onClick={() => placeWorking('buy', 'limit')}
         />
         <MenuItem
           icon={<ArrowDown className="h-3.5 w-3.5" />}
           label="Sell limit"
           desc={`Limit sell @ ${displayPrice}`}
-          onClick={() => stage('sell', 'limit')}
+          onClick={() => placeWorking('sell', 'limit')}
         />
         <div className="my-1 border-t border-line" />
         <MenuItem
           icon={<ArrowUp className="h-3.5 w-3.5" />}
           label="Buy stop"
           desc={`Stop buy @ ${displayPrice}`}
-          onClick={() => stage('buy', 'stop')}
+          onClick={() => placeWorking('buy', 'stop')}
         />
         <MenuItem
           icon={<ArrowDown className="h-3.5 w-3.5" />}
           label="Sell stop"
           desc={`Stop sell @ ${displayPrice}`}
-          onClick={() => stage('sell', 'stop')}
+          onClick={() => placeWorking('sell', 'stop')}
         />
         <div className="my-1 border-t border-line" />
         <MenuItem

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ShieldCheck, TrendingDown, TrendingUp, X } from 'lucide-react';
+import { ShieldCheck, TrendingDown, TrendingUp } from 'lucide-react';
 import { usePaperStore } from '@/lib/paperStore';
 import { Tabs, Tab } from '@/components/ui';
 import {
@@ -20,10 +20,10 @@ interface OrderTicketProps {
   reduceAvailable: number;
   initialSide?: 'buy' | 'sell';
   active?: boolean;
-  /** Called after a submit stages/confirms an order — the modal host
-   *  (OrderModal) wires this to its own onClose so the chart can take
-   *  over (staged lines + Task 5's on-chart Confirm/Discard). */
-  onStaged?: () => void;
+  /** Called after an order is placed immediately — the modal host
+   *  (OrderModal) wires this to its own onClose so the ticket card
+   *  closes once the order has been sent to the store. */
+  onPlaced?: () => void;
 }
 
 /** Tick-offset choices for the Exits (TP/SL) dropdowns, matching the
@@ -43,24 +43,14 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function OrderTicket(p: OrderTicketProps) {
-  const {
-    lastError,
-    activeOrder,
-    setActiveOrder,
-    updateActiveOverlay,
-    clearActiveOrder,
-    confirmActiveOrder,
-    toggleActiveOverlay,
-    balance,
-  } = usePaperStore();
+  const { placeOrder, lastError, balance } = usePaperStore();
   const [tab, setTab] = useState<Tab>('market');
   const [side, setSide] = useState<Side>(p.initialSide ?? 'buy');
   const [units, setUnits] = useState<string>('0.10');
   const [price, setPrice] = useState<string>(p.midPrice.toFixed(1));
-  // TP/SL on by default so a freshly-staged order shows all three
-  // draggable lines on the chart (TradingView-style). The actual price
-  // falls back to the suggested defaults (suggestTp / suggestSl) when
-  // the user hasn't typed an explicit value.
+  // TP/SL on by default (TradingView-style). The actual price falls
+  // back to the suggested defaults (suggestTp / suggestSl) when the
+  // user hasn't typed an explicit value.
   const [tpEnabled, setTpEnabled] = useState(true);
   const [slEnabled, setSlEnabled] = useState(true);
   const [tp, setTp] = useState<string>('');
@@ -73,34 +63,19 @@ export default function OrderTicket(p: OrderTicketProps) {
   const [postOnly, setPostOnly] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [priceTouched, setPriceTouched] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [riskPct, setRiskPct] = useState('');
   const [ocoEnabled, setOcoEnabled] = useState(false);
   const ocoGroupRef = useRef<string | null>(null);
-  const stagedIdRef = useRef<string | null>(null);
   const ctaRef = useRef<HTMLButtonElement | null>(null);
 
   // Re-sync the side toggle when the modal reopens with a different
   // clicked side (e.g. SELL pill after a prior BUY-prefilled ticket).
-  // A previously staged order carries its own side; if it no longer
-  // matches, drop it — otherwise confirmActiveOrder would submit the
-  // stale side while the UI shows the new one. The next input change
-  // re-stages with the correct side.
   useEffect(() => {
     if (!p.initialSide) return;
     setSide(p.initialSide);
-    if (
-      activeOrder &&
-      activeOrder.symbol === p.symbol &&
-      activeOrder.side !== p.initialSide
-    ) {
-      clearActiveOrder();
-      stagedIdRef.current = null;
-    }
     // Intentionally keyed on initialSide only: this must fire when the
-    // ticket reopens with a different pill, not on every staged-order
-    // change (e.g. the in-ticket side toggle, which re-stages itself).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // ticket reopens with a different pill, not on every local-state
+    // change (e.g. the in-ticket side toggle).
   }, [p.initialSide]);
 
   const autoPrice = priceTouched ? null : p.midPrice.toFixed(1);
@@ -168,87 +143,28 @@ export default function OrderTicket(p: OrderTicketProps) {
 
   const displayUnits = riskUnits != null ? riskUnits.toFixed(4) : units;
 
-  // Render-time derivation: when the staged activeOrder matches the
-  // current ticket (symbol/side/type/units), the chart is the source
-  // of truth and the ticket mirrors it. No setState-in-effect needed.
-  const activeMatches =
-    activeOrder != null &&
-    activeOrder.symbol === p.symbol &&
-    activeOrder.side === side &&
-    activeOrder.type === tab &&
-    activeOrder.units === effectiveUnits;
-  const displayedTp = tpEnabled && activeMatches
-    ? activeOrder!.tp
-    : resolveLevel(tpEnabled, tp, suggestTp);
-  const displayedSl = slEnabled && activeMatches
-    ? activeOrder!.sl
-    : resolveLevel(slEnabled, sl, suggestSl);
-  const displayedPrice = activeMatches ? activeOrder!.entry : priceN;
+  const displayedTp = resolveLevel(tpEnabled, tp, suggestTp);
+  const displayedSl = resolveLevel(slEnabled, sl, suggestSl);
+  const displayedPrice = priceN;
   const effectiveTpEnabled = displayedTp != null;
   const effectiveSlEnabled = displayedSl != null;
-
-  // User typed -> push to the staged order (event-handler only, no
-  // setState in effects). Called from onChange handlers below.
-  // The staged order carries the entry line unconditionally but only
-  // carries TP/SL when the user has explicitly enabled the toggle —
-  // matches TradingView's behavior where Buy/Sell drops a single line
-  // and TP/SL show up only after the user turns them on.
-  const stageFromInputs = () => {
-    if (!canSubmit) {
-      if (
-        activeOrder &&
-        activeOrder.symbol === p.symbol &&
-        activeOrder.side === side &&
-        activeOrder.type === tab
-      ) {
-        clearActiveOrder();
-        stagedIdRef.current = null;
-      }
-      return;
-    }
-    if (!stagedIdRef.current) {
-      stagedIdRef.current = `stg_${crypto.randomUUID().slice(0, 12)}`;
-    }
-    setActiveOrder({
-      id: stagedIdRef.current,
-      symbol: p.symbol,
-      side,
-      type: tab,
-      units: effectiveUnits,
-      entry: displayedPrice,
-      tp: tpEnabled ? displayedTp : null,
-      sl: slEnabled ? displayedSl : null,
-      reduceOnly,
-      postOnly,
-      ocoGroup: ocoEnabled ? (ocoGroupRef.current ?? (ocoGroupRef.current = `oco_${crypto.randomUUID().slice(0, 10)}`)) : null,
-    });
-  };
 
   const handleUnitsChange = (v: string) => {
     setUnits(v);
     setRiskPct('');
-    setConfirming(false);
-    stageFromInputs();
   };
   const handleRiskPctChange = (v: string) => {
     setRiskPct(v);
-    stageFromInputs();
   };
   const handlePriceChange = (v: string) => {
     setPriceTouched(true);
     setPrice(v);
-    setConfirming(false);
-    stageFromInputs();
   };
   const handleTpChange = (v: string) => {
     setTp(v);
-    const n = Number(v);
-    updateActiveOverlay('tp', n > 0 ? n : null);
   };
   const handleSlChange = (v: string) => {
     setSl(v);
-    const n = Number(v);
-    updateActiveOverlay('sl', n > 0 ? n : null);
   };
   // Changing the percent-offset dropdown re-seeds the exit price off the entry.
   const handleTpPctChange = (pct: number) => {
@@ -265,71 +181,37 @@ export default function OrderTicket(p: OrderTicketProps) {
   };
   const handleReduceOnlyChange = (v: boolean) => {
     setReduceOnly(v);
-    stageFromInputs();
   };
   const handlePostOnlyChange = (v: boolean) => {
     setPostOnly(v);
-    stageFromInputs();
   };
   const handleSideChange = (s: Side) => {
     setSide(s);
-    stageFromInputs();
   };
   const handleTabChange = (t: Tab) => {
     setTab(t);
-    stageFromInputs();
   };
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    if (tab === 'market' && !confirming) {
-      setConfirming(true);
-      return;
-    }
-    if (tab === 'market') {
-      setConfirming(false);
-      // Market orders stage too (TV parity): entry pins to mid and the
-      // chart takes over for Confirm/Discard (Task 5) instead of filling
-      // immediately here.
-      if (!stagedIdRef.current) {
-        stagedIdRef.current = `stg_${crypto.randomUUID().slice(0, 12)}`;
-      }
-      setActiveOrder({
-        id: stagedIdRef.current,
-        symbol: p.symbol,
-        side,
-        type: 'market',
-        units: effectiveUnits,
-        entry: p.midPrice,
-        tp: resolveLevel(tpEnabled, tp, suggestTp),
-        sl: resolveLevel(slEnabled, sl, suggestSl),
-        reduceOnly,
-        postOnly,
-        ocoGroup: ocoEnabled
-          ? (ocoGroupRef.current ?? (ocoGroupRef.current = `oco_${crypto.randomUUID().slice(0, 10)}`))
-          : null,
-      });
-      p.onStaged?.();
-      return;
-    }
-    const res = confirmActiveOrder({
+    const res = placeOrder({
+      symbol: p.symbol,
+      side,
+      type: tab,
+      units: effectiveUnits,
+      price: tab === 'market' ? null : priceN,
+      tp: resolveLevel(tpEnabled, tp, suggestTp),
+      sl: resolveLevel(slEnabled, sl, suggestSl),
+      reduceOnly,
+      postOnly,
       leverage: p.leverage,
       midPrice: p.midPrice,
+      ocoGroup: ocoEnabled ? (ocoGroupRef.current ?? (ocoGroupRef.current = `oco_${crypto.randomUUID().slice(0, 10)}`)) : null,
     });
-    if (res.ok) p.onStaged?.();
+    if (res.ok) p.onPlaced?.();
   };
 
-  const handleDiscard = () => {
-    clearActiveOrder();
-    setPrice(p.midPrice.toFixed(1));
-    setPriceTouched(false);
-    setTp('');
-    setSl('');
-    setTpEnabled(false);
-    setSlEnabled(false);
-  };
-
-  // Keyboard trading: B/S flips side, Enter submits, Esc discards.
+  // Keyboard trading: B/S flips side, Enter submits.
   // We DO listen for B/S even when an input is focused — these are
   // common single-letter keys that are unlikely to clash with normal
   // typing. We only intercept B/S outside of inputs; for arrow keys
@@ -367,24 +249,17 @@ export default function OrderTicket(p: OrderTicketProps) {
         }
         return;
       }
-      // Esc — discard the staged order (if any).
-      if (k === 'Escape') {
-        if (activeOrder && activeOrder.symbol === p.symbol) {
-          handleDiscard();
-          e.preventDefault();
-        }
-        return;
-      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  // We intentionally re-bind on canSubmit/activeOrder so the closure
-  // sees the latest values. The handlers are stable enough. Gated on
-  // p.active so the listener is only attached while the modal is open —
-  // otherwise these hotkeys (incl. Enter-to-market-order) would be live
-  // app-wide even with the ticket hidden behind a permanently-mounted modal.
+  // We intentionally re-bind on canSubmit so the closure sees the latest
+  // value. The handlers are stable enough. Gated on p.active so the
+  // listener is only attached while the modal is open — otherwise these
+  // hotkeys (incl. Enter-to-market-order) would be live app-wide even
+  // with the ticket hidden behind a permanently-mounted modal. Escape is
+  // left unhandled here — the Modal primitive already closes on Escape.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.active, canSubmit, activeOrder, p.symbol]);
+  }, [p.active, canSubmit]);
 
   // Arrow-key nudges inside the price + units fields. We use a
   // capture-phase listener on the inputs themselves so the default
@@ -471,7 +346,7 @@ export default function OrderTicket(p: OrderTicketProps) {
         >
           <NumberField
             label={tab === 'limit' ? 'Limit price' : 'Stop price'}
-            value={activeMatches ? displayedPrice.toFixed(1) : effectivePrice}
+            value={effectivePrice}
             onChange={handlePriceChange}
             step={0.1}
             suffix="USD"
@@ -493,12 +368,8 @@ export default function OrderTicket(p: OrderTicketProps) {
               onToggle={() => {
                 const next = !effectiveTpEnabled;
                 if (next && suggestTp != null && !tp) setTp(suggestTp.toFixed(1));
-                if (next) setTpEnabled(true);
-                else if (!activeMatches) {
-                  setTpEnabled(false);
-                  setTp('');
-                }
-                toggleActiveOverlay('tp', next, suggestTp ?? 0);
+                setTpEnabled(next);
+                if (!next) setTp('');
               }}
             />
             <ToggleChip
@@ -507,12 +378,8 @@ export default function OrderTicket(p: OrderTicketProps) {
               onToggle={() => {
                 const next = !effectiveSlEnabled;
                 if (next && suggestSl != null && !sl) setSl(suggestSl.toFixed(1));
-                if (next) setSlEnabled(true);
-                else if (!activeMatches) {
-                  setSlEnabled(false);
-                  setSl('');
-                }
-                toggleActiveOverlay('sl', next, suggestSl ?? 0);
+                setSlEnabled(next);
+                if (!next) setSl('');
               }}
             />
           </div>
@@ -520,7 +387,7 @@ export default function OrderTicket(p: OrderTicketProps) {
             <NumberField
               label="Take profit, price"
               labelRight={<PctSelect value={tpPct} onChange={handleTpPctChange} />}
-              value={activeMatches && displayedTp != null ? displayedTp.toFixed(1) : tp}
+              value={tp}
               onChange={handleTpChange}
               step={0.1}
               suffix="USD"
@@ -531,7 +398,7 @@ export default function OrderTicket(p: OrderTicketProps) {
             <NumberField
               label="Stop loss, price"
               labelRight={<PctSelect value={slPct} onChange={handleSlPctChange} />}
-              value={activeMatches && displayedSl != null ? displayedSl.toFixed(1) : sl}
+              value={sl}
               onChange={handleSlChange}
               step={0.1}
               suffix="USD"
@@ -549,7 +416,6 @@ export default function OrderTicket(p: OrderTicketProps) {
               onChange={(e) => {
                 setOcoEnabled(e.target.checked);
                 if (!e.target.checked) ocoGroupRef.current = null;
-                stageFromInputs();
               }}
               className="h-3.5 w-3.5 accent-accent"
             />
@@ -608,97 +474,51 @@ export default function OrderTicket(p: OrderTicketProps) {
         )}
 
         {tab === 'market' ? (
-          <div className="space-y-1.5">
-            <button
-              ref={ctaRef}
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className={[
-                'focus-ring relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200',
-                side === 'buy'
-                  ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
-                  : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
-                !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
-                confirming ? 'animate-pulse' : '',
-              ].join(' ')}
-              aria-label={
-                confirming
-                  ? `Confirm ${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} @ ${fillPrice.toFixed(1)}`
-                  : `${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} at market`
-              }
-            >
-              {confirming ? (
-                <>
-                  <span className="text-xs font-normal text-ink">Confirm</span>
-                  <span className="font-semibold">
-                    {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol} @ {fillPrice.toFixed(1)}
-                  </span>
-                  <span className="text-[10px] font-medium opacity-70">
-                    ≈${notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </>
-              ) : (
-                <>
-                  {side === 'buy' ? (
-                    <TrendingUp className="h-4 w-4" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4" />
-                  )}
-                  <span>
-                    {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol}
-                  </span>
-                  <span className="text-xs font-normal uppercase tracking-wide opacity-80">market</span>
-                  <kbd className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-current/30 px-1 text-[10px] font-medium opacity-70">
-                    ⏎
-                  </kbd>
-                </>
-              )}
-
-            </button>
-            {confirming && (
-              <button
-                onClick={() => setConfirming(false)}
-                className="focus-ring w-full rounded-md border border-line bg-surface-2/40 px-2 py-1 text-[10px] font-medium text-ink-muted transition hover:text-ink"
-              >
-                Cancel
-              </button>
+          <button
+            ref={ctaRef}
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className={[
+              'focus-ring relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200',
+              side === 'buy'
+                ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
+                : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
+              !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
+            ].join(' ')}
+            aria-label={`${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} at market`}
+          >
+            {side === 'buy' ? (
+              <TrendingUp className="h-4 w-4" />
+            ) : (
+              <TrendingDown className="h-4 w-4" />
             )}
-          </div>
+            <span>
+              {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol}
+            </span>
+            <span className="text-xs font-normal uppercase tracking-wide opacity-80">market</span>
+            <kbd className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-current/30 px-1 text-[10px] font-medium opacity-70">
+              ⏎
+            </kbd>
+          </button>
         ) : (
-          <div className="grid grid-cols-[1fr_auto_auto] items-stretch gap-1.5">
-            <button
-              ref={ctaRef}
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className={[
-                'focus-ring relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-lg px-3 py-3 text-sm font-semibold transition-all duration-200',
-                side === 'buy'
-                  ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
-                  : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
-                !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
-              ].join(' ')}
-              aria-label={`Confirm ${side === 'buy' ? 'buy' : 'sell'} ${effectiveUnits} ${p.symbol} at ${priceN}`}
-            >
-              <span>
-                {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol} @ {priceN > 0 ? priceN : '—'}
-              </span>
-              <span className="text-xs font-normal uppercase tracking-wide opacity-80">{tab}</span>
-            </button>
-            <button
-              onClick={handleDiscard}
-              className="focus-ring inline-flex items-center justify-center gap-1 rounded-lg border border-line bg-surface-2/40 px-3 text-xs font-medium text-ink-muted transition hover:text-ink"
-              aria-label="Discard staged order"
-              title="Discard staged order"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-
-        {tab !== 'market' && activeOrder && activeOrder.symbol === p.symbol && (
-          <p className="text-[10px] text-ink-faint">
-            <span className="font-medium text-ink-muted">Drag the lines</span> on the chart to fine-tune entry, TP, and SL. Confirm to place.
-          </p>
+          <button
+            ref={ctaRef}
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className={[
+              'focus-ring relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-3 py-3 text-sm font-semibold transition-all duration-200',
+              side === 'buy'
+                ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
+                : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
+              !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
+            ].join(' ')}
+            aria-label={`${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} at ${tab} ${priceN}`}
+          >
+            <span>
+              {side === 'buy' ? 'Buy' : 'Sell'} {effectiveUnits.toFixed(4)} {p.symbol} @ {priceN > 0 ? priceN : '—'}
+            </span>
+            <span className="text-xs font-normal uppercase tracking-wide opacity-80">{tab}</span>
+          </button>
         )}
 
         <p className="flex items-center gap-1.5 text-[10px] text-ink-faint">

@@ -4,16 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Chart, { type ChartType, type PriceScaleModeOption, type ChartOverlay, type OverlayKind, type ChartApi } from './Chart';
 import { type RenkoConfig, DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import ChartContextMenu from './trade/ChartContextMenu';
-import {
-  usePaperStore,
-  setPositionOverlay,
-  updateActiveOverlay,
-  confirmActiveOrder,
-  clearActiveOrder,
-  setActiveOrder,
-  toggleActiveOverlay,
-} from '@/lib/paperStore';
-import { projectedPnl, unrealizedPnl, BTC_TICK_SIZE } from '@/lib/paper';
+import { usePaperStore, setPositionOverlay } from '@/lib/paperStore';
+import { projectedPnl, unrealizedPnl } from '@/lib/paper';
+import { riskReward } from '@/lib/trading';
+import ReverseConfirmDialog from '@/components/trade/ReverseConfirmDialog';
+import CloseConfirmDialog from '@/components/trade/CloseConfirmDialog';
 import type { OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
 import { setMarkPrice } from '@/lib/markPriceStore';
 import {
@@ -75,7 +70,22 @@ interface ChartPanelProps {
   candlesByTf?: Record<string, import('@/lib/types').Candle[]>;
 }
 
-
+/** Last Wilder ATR(14) value of a candle series (null when too short). Used to
+ *  seed default TP/SL distances the moment a position opens. */
+function atr14Last(candles: Candle[]): number | null {
+  const n = candles.length;
+  if (n < 2) return null;
+  let atr = candles[1].high - candles[1].low; // seed with first true range
+  for (let i = 2; i < n; i++) {
+    const tr = Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - candles[i - 1].close),
+      Math.abs(candles[i].low - candles[i - 1].close),
+    );
+    atr = (atr * 13 + tr) / 14; // RMA smoothing
+  }
+  return atr > 0 ? atr : null;
+}
 
 export default function ChartPanel({
   candles,
@@ -256,154 +266,171 @@ export default function ChartPanel({
     [replayTrading, onQuickTrade],
   );
 
-  const activeOrder = paper.activeOrder; // already in usePaperStore() state
+  // ---- Immediate-place trade overlay (position-driven) ----
+  // The chart overlay is the single management surface for the open position.
+  // Two modes: 'normal' (Edit/Reverse/Close) and 'edit' (drag TP/SL, Save/Cancel).
+  // The overlay owns only transient UI state (mode + the in-progress TP/SL draft);
+  // the paper store stays the single source of truth for the trade.
+  const [overlayMode, setOverlayMode] = useState<'normal' | 'edit'>('normal');
+  const [draftTpSl, setDraftTpSl] = useState<{ tp: number | null; sl: number | null } | null>(null);
+  const [showReverseConfirm, setShowReverseConfirm] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
-  // Draw the open position or staged order as entry / TP / SL lines; TP & SL
-  // are always draggable, entry is draggable unless the order is a market
-  // order (which pins to mid — see the effect below).
-  const overlays = useMemo<ChartOverlay[]>(() => {
-    // A staged order takes over the overlay layer (TV behavior: you adjust
-    // the pending ticket on the chart before Confirm).
-    if (activeOrder && !replayTrading) {
-      const o: ChartOverlay[] = [{
-        kind: 'entry',
-        price: activeOrder.entry,
-        draggable: activeOrder.type !== 'market', // market entry pins to mid
-      }];
-      if (activeOrder.tp != null) o.push({ kind: 'tp', price: activeOrder.tp, draggable: true });
-      if (activeOrder.sl != null) o.push({ kind: 'sl', price: activeOrder.sl, draggable: true });
-      return o;
+  // Editing only makes sense for a live open position.
+  const isEditing = overlayMode === 'edit' && hasPosition && !replayTrading;
+  // Effective TP/SL shown on the chart: the draft while editing, else committed.
+  const effTp = isEditing ? draftTpSl?.tp ?? null : pos?.tp ?? null;
+  const effSl = isEditing ? draftTpSl?.sl ?? null : pos?.sl ?? null;
+
+  // Leaving a position (closed/flat) always drops back to normal mode.
+  useEffect(() => {
+    if (!hasPosition) {
+      setOverlayMode('normal');
+      setDraftTpSl(null);
+      setShowReverseConfirm(false);
+      setShowCloseConfirm(false);
     }
+  }, [hasPosition]);
+
+  // Auto-seed ATR-based default TP/SL once, right after a new position opens
+  // without exits. Keeps the ATR logic near the chart data; commits to the store.
+  const seededPosRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (replayTrading || !hasPosition || !pos) { seededPosRef.current = null; return; }
+    if (seededPosRef.current === pos.id) return;
+    if (pos.tp != null || pos.sl != null) { seededPosRef.current = pos.id; return; }
+    seededPosRef.current = pos.id;
+    const atr = atr14Last(candles) ?? pos.entryPrice * 0.005;
+    const sign = pos.side === 'long' ? 1 : -1;
+    setPositionOverlay('tp', Number((pos.entryPrice + sign * atr * 3).toFixed(1)), symbol);
+    setPositionOverlay('sl', Number((pos.entryPrice - sign * atr * 1.5).toFixed(1)), symbol);
+  }, [replayTrading, hasPosition, pos, candles, symbol]);
+
+  // Entry / TP / SL lines for the open position. TP/SL are draggable ONLY in
+  // edit mode; the entry line is never draggable (market fill is fixed).
+  const overlays = useMemo<ChartOverlay[]>(() => {
     if (!hasPosition || !pos) return [];
     const o: ChartOverlay[] = [{ kind: 'entry', price: pos.entryPrice, draggable: false }];
-    if (pos.tp != null) o.push({ kind: 'tp', price: pos.tp, draggable: true });
-    if (pos.sl != null) o.push({ kind: 'sl', price: pos.sl, draggable: true });
+    const draggable = isEditing || replayTrading;
+    if (effTp != null) o.push({ kind: 'tp', price: effTp, draggable });
+    if (effSl != null) o.push({ kind: 'sl', price: effSl, draggable });
     return o;
-  }, [activeOrder, replayTrading, hasPosition, pos]);
+  }, [hasPosition, pos, effTp, effSl, isEditing, replayTrading]);
 
-  // Dragging a line on a staged order updates the stage; dragging a TP/SL
-  // line on an open position *is* the order — routed to the session during
-  // replay.
+  // Dragging a TP/SL line: in edit mode it updates the local draft (store
+  // untouched until Save); during replay it routes to the isolated session.
   const handleOverlayDrag = useCallback(
-    (kind: OverlayKind, p: number) => {
-      if (activeOrder && !replayTrading) {
-        if (kind === 'entry' || kind === 'tp' || kind === 'sl') updateActiveOverlay(kind, p);
-        return;
-      }
+    (kind: OverlayKind, price: number) => {
       if (kind !== 'tp' && kind !== 'sl') return;
-      if (replayTrading) replaySetOverlay(kind, p);
-      else setPositionOverlay(kind, p, symbol);
+      if (replayTrading) { replaySetOverlay(kind, price); return; }
+      if (!isEditing) return;
+      setDraftTpSl((d) => ({
+        tp: d?.tp ?? pos?.tp ?? null,
+        sl: d?.sl ?? pos?.sl ?? null,
+        [kind]: price,
+      }));
     },
-    [activeOrder, replayTrading, symbol],
+    [replayTrading, isEditing, pos],
   );
-
-  // Market-stage entry always tracks mid (you can't "drag" a market fill).
-  useEffect(() => {
-    if (activeOrder?.type === 'market') updateActiveOverlay('entry', mid);
-  }, [activeOrder?.type, mid]);
 
   const handleOverlayChipClick = useCallback(
     (key: 'tp' | 'sl' | 'close') => {
-      // Staged order: ✕ on a line edits the stage, never the live account.
-      if (activeOrder && !replayTrading) {
-        if (key === 'close') clearActiveOrder();          // entry ✕ = discard
-        else toggleActiveOverlay(key, false, 0);          // tp/sl ✕ = remove exit
-        return;
-      }
       if (key === 'close') {
         if (replayTrading) replayClose(replayLast?.close ?? mid, replayLast?.time ?? Math.floor(Date.now() / 1000));
-        else paper.closePosition(mid, symbol);            // books profit/loss at market
-      } else if (replayTrading) {
-        replaySetOverlay(key, null);
-      } else {
-        setPositionOverlay(key, null, symbol);
+        else setShowCloseConfirm(true); // confirm dialog before booking P&L
+        return;
       }
+      // ✕ on a TP/SL line removes that exit.
+      if (replayTrading) replaySetOverlay(key, null);
+      else if (isEditing) setDraftTpSl((d) => ({ tp: d?.tp ?? null, sl: d?.sl ?? null, [key]: null }));
+      else setPositionOverlay(key, null, symbol);
     },
-    [activeOrder, replayTrading, replayLast, paper, mid, symbol],
+    [replayTrading, isEditing, replayLast, mid, symbol],
   );
 
   const handlePriceAlertDrag = useCallback((id: string, newPrice: number) => {
     updatePriceAlertPrice(id, newPrice);
   }, []);
 
-  // ---- Staged-order control row (Discard/Confirm/⇅/TP/SL) ----
-  // Live-account only: replay keeps its isolated session + current UX.
-  const stageConfirm = useCallback(() => {
-    const res = confirmActiveOrder({ leverage: LEVERAGE, midPrice: mid });
-    if (!res.ok && res.error) console.warn(res.error); // store also sets lastError → toast
-  }, [mid]);
-  const stageReverse = useCallback(() => {
-    if (!activeOrder) return;
-    setActiveOrder({ ...activeOrder, side: activeOrder.side === 'buy' ? 'sell' : 'buy' });
-  }, [activeOrder]);
-  const stageToggleTp = useCallback(() => {
-    if (!activeOrder) return;
-    const on = activeOrder.tp == null;
-    toggleActiveOverlay('tp', on, activeOrder.entry + (activeOrder.side === 'buy' ? 1 : -1) * 75 * BTC_TICK_SIZE * 10);
-  }, [activeOrder]);
-  const stageToggleSl = useCallback(() => {
-    if (!activeOrder) return;
-    const on = activeOrder.sl == null;
-    toggleActiveOverlay('sl', on, activeOrder.entry - (activeOrder.side === 'buy' ? 1 : -1) * 25 * BTC_TICK_SIZE * 10);
-  }, [activeOrder]);
-
-  const isStaged = !!(activeOrder && !replayTrading);
-  const overlaySide = isStaged ? activeOrder!.side : (hasPosition && pos ? (pos.side === 'long' ? 'buy' : 'sell') : null);
-  const overlayEntryPrice = isStaged ? activeOrder!.entry : (hasPosition && pos ? pos.entryPrice : null);
-  const overlayTpPrice = isStaged ? activeOrder!.tp : (hasPosition && pos ? pos.tp : null);
-  const overlaySlPrice = isStaged ? activeOrder!.sl : (hasPosition && pos ? pos.sl : null);
-  const overlayHasTp = isStaged ? activeOrder!.tp != null : !!(hasPosition && pos && pos.tp != null);
-  const overlayHasSl = isStaged ? activeOrder!.sl != null : !!(hasPosition && pos && pos.sl != null);
-  const overlayUnitsLabel = isStaged ? String(activeOrder!.units) : (hasPosition && pos ? String(pos.units) : '—');
-  const overlayTypeLabel = isStaged ? activeOrder!.type.toUpperCase() : 'Market';
-  const overlayLeverage = (hasPosition && pos ? pos.leverage : LEVERAGE);
-
-  // `qty | ±USD | ✕` pills per line: projected P&L for a staged order's
-  // entry/TP/SL, or live P&L on the entry + projected P&L on TP/SL for an
-  // open position.
-  const overlayBadges = useMemo<OverlayLineBadge[]>(() => {
-    if (activeOrder && !replayTrading) {
-      const b: OverlayLineBadge[] = [{ kind: 'entry', qty: String(activeOrder.units), pnl: projectedPnl(activeOrder.side, activeOrder.units, mid, activeOrder.entry) }];
-      if (activeOrder.tp != null) b.push({ kind: 'tp', qty: String(activeOrder.units), pnl: projectedPnl(activeOrder.side, activeOrder.units, activeOrder.entry, activeOrder.tp) });
-      if (activeOrder.sl != null) b.push({ kind: 'sl', qty: String(activeOrder.units), pnl: projectedPnl(activeOrder.side, activeOrder.units, activeOrder.entry, activeOrder.sl) });
-      return b;
+  // ---- Overlay control-center actions (live account only) ----
+  const onOverlayEdit = useCallback(() => {
+    if (!pos) return;
+    setDraftTpSl({ tp: pos.tp, sl: pos.sl });
+    setOverlayMode('edit');
+  }, [pos]);
+  const onOverlaySave = useCallback(() => {
+    if (draftTpSl) {
+      setPositionOverlay('tp', draftTpSl.tp, symbol);
+      setPositionOverlay('sl', draftTpSl.sl, symbol);
     }
+    setDraftTpSl(null);
+    setOverlayMode('normal');
+  }, [draftTpSl, symbol]);
+  const onOverlayCancel = useCallback(() => {
+    setDraftTpSl(null);
+    setOverlayMode('normal');
+  }, []);
+  const doReverse = useCallback(() => {
+    setShowReverseConfirm(false);
+    if (!pos) return;
+    const newSide = pos.side === 'long' ? 'sell' : 'buy';
+    // Reverse = flatten current + open the opposite of equal size (2× units at
+    // market). The ATR-seed effect re-seeds TP/SL for the new side.
+    paper.placeOrder({
+      symbol, side: newSide, type: 'market', units: pos.units * 2, price: null,
+      tp: null, sl: null, reduceOnly: false, postOnly: false, leverage: pos.leverage, midPrice: mid,
+    });
+    setOverlayMode('normal');
+    setDraftTpSl(null);
+  }, [pos, symbol, mid, paper]);
+  const doClose = useCallback(() => {
+    setShowCloseConfirm(false);
+    paper.closePosition(mid, symbol);
+  }, [paper, mid, symbol]);
+
+  const overlaySide = hasPosition && pos ? (pos.side === 'long' ? 'buy' : 'sell') : null;
+  const overlayEntryPrice = hasPosition && pos ? pos.entryPrice : null;
+  const overlayTpPrice = effTp;
+  const overlaySlPrice = effSl;
+  const overlayHasTp = effTp != null;
+  const overlayHasSl = effSl != null;
+  const overlayUnitsLabel = hasPosition && pos ? String(pos.units) : '—';
+  const overlayTypeLabel = 'Market';
+  const overlayLeverage = hasPosition && pos ? pos.leverage : LEVERAGE;
+
+  // `qty | ±USD | ✕` pills per line: live P&L on the entry, projected P&L on TP/SL.
+  const overlayBadges = useMemo<OverlayLineBadge[]>(() => {
     if (!hasPosition || !pos) return [];
     const side = pos.side === 'long' ? 'buy' as const : 'sell' as const;
     const b: OverlayLineBadge[] = [{ kind: 'entry', qty: String(pos.units), pnl: unrealizedPnl(pos, mid) }];
-    if (pos.tp != null) b.push({ kind: 'tp', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, pos.tp) });
-    if (pos.sl != null) b.push({ kind: 'sl', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, pos.sl) });
+    if (effTp != null) b.push({ kind: 'tp', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, effTp) });
+    if (effSl != null) b.push({ kind: 'sl', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, effSl) });
     return b;
-  }, [activeOrder, replayTrading, hasPosition, pos, mid]);
+  }, [hasPosition, pos, mid, effTp, effSl]);
 
-  const stagedOrder = useMemo(
-    () =>
-      activeOrder && !replayTrading
-        ? { entry: activeOrder.entry, hasTp: activeOrder.tp != null, hasSl: activeOrder.sl != null }
-        : null,
-    [activeOrder, replayTrading],
-  );
+  // Live risk/reward for the edit-mode readout.
+  const overlayRr = useMemo(() => {
+    if (!hasPosition || !pos || !isEditing || effTp == null || effSl == null) return null;
+    const dir = pos.side === 'long' ? 'long' as const : 'short' as const;
+    const risk = Math.abs(pos.entryPrice - effSl) * pos.units;
+    const reward = Math.abs(effTp - pos.entryPrice) * pos.units;
+    return { risk, reward, ratio: riskReward(dir, pos.entryPrice, effTp, effSl) };
+  }, [hasPosition, pos, isEditing, effTp, effSl]);
 
-  // Reduced-mode controls row for an open live position: TV shows dotted
-  // "TP SL" add-chips when the position has no tp/sl yet. Live-account only
-  // (replay keeps its isolated session + current UX).
-  const positionControls = useMemo(
+  // Data for the on-chart TradeOverlay control center (null when flat / replay).
+  const tradeOverlay = useMemo(
     () =>
-      !replayTrading && !activeOrder && hasPosition && pos
-        ? { entry: pos.entryPrice, hasTp: pos.tp != null, hasSl: pos.sl != null }
+      hasPosition && pos && !replayTrading
+        ? {
+            side: pos.side === 'long' ? 'buy' as const : 'sell' as const,
+            symbol,
+            qty: pos.units,
+            entryPrice: pos.entryPrice,
+            mode: overlayMode,
+          }
         : null,
-    [replayTrading, activeOrder, hasPosition, pos],
+    [hasPosition, pos, replayTrading, symbol, overlayMode],
   );
-  const positionToggleTp = useCallback(() => {
-    if (!hasPosition || !pos) return;
-    const sign = pos.side === 'long' ? 1 : -1;
-    setPositionOverlay('tp', pos.entryPrice + sign * 75 * BTC_TICK_SIZE, symbol);
-  }, [hasPosition, pos, symbol]);
-  const positionToggleSl = useCallback(() => {
-    if (!hasPosition || !pos) return;
-    const sign = pos.side === 'long' ? 1 : -1;
-    setPositionOverlay('sl', pos.entryPrice - sign * 25 * BTC_TICK_SIZE, symbol);
-  }, [hasPosition, pos, symbol]);
 
   // Price alerts for this symbol → dashed lines on the chart + management pills.
   const allPriceAlerts = usePriceAlerts();
@@ -688,15 +715,13 @@ export default function ChartPanel({
             overlayUnitsLabel={overlayUnitsLabel}
             overlayLeverage={overlayLeverage}
             overlayBadges={overlayBadges}
-            stagedOrder={stagedOrder}
-            onStageReverse={stageReverse}
-            onStageDiscard={clearActiveOrder}
-            onStageConfirm={stageConfirm}
-            onStageToggleTp={stageToggleTp}
-            onStageToggleSl={stageToggleSl}
-            positionControls={positionControls}
-            onPositionToggleTp={positionToggleTp}
-            onPositionToggleSl={positionToggleSl}
+            tradeOverlay={tradeOverlay}
+            tradeOverlayRr={overlayRr}
+            onOverlayEdit={onOverlayEdit}
+            onOverlaySave={onOverlaySave}
+            onOverlayCancel={onOverlayCancel}
+            onOverlayReverse={() => setShowReverseConfirm(true)}
+            onOverlayClose={() => setShowCloseConfirm(true)}
             priceLines={priceLines}
             onPriceLineDrag={handlePriceAlertDrag}
             onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}
@@ -822,6 +847,19 @@ export default function ChartPanel({
         onLeverageChange={() => {}}
         reduceAvailable={hasPosition && pos ? pos.units : 0}
         initialSide={ticketSide ?? undefined}
+      />
+
+      <ReverseConfirmDialog
+        open={showReverseConfirm}
+        side={overlaySide ?? 'buy'}
+        onConfirm={doReverse}
+        onCancel={() => setShowReverseConfirm(false)}
+      />
+      <CloseConfirmDialog
+        open={showCloseConfirm}
+        pnl={hasPosition && pos ? unrealizedPnl(pos, mid) : 0}
+        onConfirm={doClose}
+        onCancel={() => setShowCloseConfirm(false)}
       />
     </section>
   );

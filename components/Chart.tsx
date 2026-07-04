@@ -26,7 +26,7 @@ import {
 } from 'lightweight-charts';
 import { setHover, type HoverPayload } from '@/lib/chartHoverStore';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
-import { OrderControlsRow } from './chart/OrderControlsRow';
+import { TradeOverlay } from './chart/TradeOverlay';
 import { getChartPalette, useThemeName, type ChartPalette } from '@/lib/chartTheme';
 
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
@@ -99,15 +99,13 @@ export default function Chart({
   overlayEntryPrice = null,
   overlayLeverage = 10,
   overlayBadges,
-  stagedOrder = null,
-  onStageReverse,
-  onStageDiscard,
-  onStageConfirm,
-  onStageToggleTp,
-  onStageToggleSl,
-  positionControls = null,
-  onPositionToggleTp,
-  onPositionToggleSl,
+  tradeOverlay = null,
+  tradeOverlayRr = null,
+  onOverlayEdit,
+  onOverlaySave,
+  onOverlayCancel,
+  onOverlayReverse,
+  onOverlayClose,
   onReady,
   onLoadOlder,
   overlayPnL = null,
@@ -415,31 +413,21 @@ export default function Chart({
           background: `radial-gradient(120% 90% at 50% 50%, transparent 55%, ${palette.vignette} 100%)`,
         }}
       />
-      {stagedOrder && (
-        <OrderControlsRow
-          mode="staged"
+      {tradeOverlay && (
+        <TradeOverlay
           chart={chartRef.current}
           series={candleSeriesRef.current}
-          entryPrice={stagedOrder.entry}
-          hasTp={stagedOrder.hasTp}
-          hasSl={stagedOrder.hasSl}
-          onReverse={onStageReverse!}
-          onDiscard={onStageDiscard!}
-          onConfirm={onStageConfirm!}
-          onToggleTp={onStageToggleTp!}
-          onToggleSl={onStageToggleSl!}
-        />
-      )}
-      {!stagedOrder && positionControls && (!positionControls.hasTp || !positionControls.hasSl) && (
-        <OrderControlsRow
-          mode="position"
-          chart={chartRef.current}
-          series={candleSeriesRef.current}
-          entryPrice={positionControls.entry}
-          hasTp={positionControls.hasTp}
-          hasSl={positionControls.hasSl}
-          onToggleTp={onPositionToggleTp!}
-          onToggleSl={onPositionToggleSl!}
+          side={tradeOverlay.side}
+          symbol={tradeOverlay.symbol}
+          qty={tradeOverlay.qty}
+          entryPrice={tradeOverlay.entryPrice}
+          mode={tradeOverlay.mode}
+          rr={tradeOverlayRr}
+          onEdit={onOverlayEdit!}
+          onSave={onOverlaySave!}
+          onCancel={onOverlayCancel!}
+          onReverse={onOverlayReverse!}
+          onClose={onOverlayClose!}
         />
       )}
 

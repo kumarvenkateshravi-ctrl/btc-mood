@@ -2,108 +2,37 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   __getStateForTest,
   __resetForTest,
-  clearActiveOrder,
-  confirmActiveOrder,
   placeOrder,
-  setActiveOrder,
   setPositionOverlay,
-  toggleActiveOverlay,
-  updateActiveOverlay,
-  type ActiveOrder,
 } from './paperStore';
-
-const baseActive: ActiveOrder = {
-  id: 'stg_test',
-  symbol: 'BTCUSDT',
-  side: 'buy',
-  type: 'limit',
-  units: 0.5,
-  entry: 65000,
-  tp: 66000,
-  sl: 64000,
-  reduceOnly: false,
-  postOnly: false,
-  ocoGroup: null,
-};
 
 beforeEach(() => {
   __resetForTest();
 });
 
-describe('paperStore: active order staging', () => {
-  it('sets, clears, and replaces the active order', () => {
-    setActiveOrder(baseActive);
-    expect(__getStateForTest().activeOrder).toEqual(baseActive);
-    clearActiveOrder();
-    expect(__getStateForTest().activeOrder).toBeNull();
-  });
-
-  it('updates a single field without replacing the rest', () => {
-    setActiveOrder(baseActive);
-    updateActiveOverlay('entry', 65100);
-    const ao = __getStateForTest().activeOrder!;
-    expect(ao.entry).toBe(65100);
-    expect(ao.tp).toBe(66000);
-    expect(ao.sl).toBe(64000);
-    expect(ao.units).toBe(0.5);
-  });
-
-  it('clears tp/sl when set to null', () => {
-    setActiveOrder(baseActive);
-    updateActiveOverlay('tp', null);
-    updateActiveOverlay('sl', null);
-    const ao = __getStateForTest().activeOrder!;
-    expect(ao.tp).toBeNull();
-    expect(ao.sl).toBeNull();
-  });
-
-  it('toggleActiveOverlay turns the field on at the suggested price', () => {
-    setActiveOrder({ ...baseActive, tp: null, sl: null });
-    toggleActiveOverlay('tp', true, 67000);
-    toggleActiveOverlay('sl', true, 63000);
-    const ao = __getStateForTest().activeOrder!;
-    expect(ao.tp).toBe(67000);
-    expect(ao.sl).toBe(63000);
-
-    toggleActiveOverlay('tp', false, 67000);
-    expect(__getStateForTest().activeOrder!.tp).toBeNull();
-  });
-
-  it('toggleActiveOverlay preserves an existing value on enable', () => {
-    setActiveOrder(baseActive);
-    toggleActiveOverlay('tp', true, 99999);
-    expect(__getStateForTest().activeOrder!.tp).toBe(66000);
-  });
-});
-
-describe('paperStore: confirm active order', () => {
-  it('promotes a limit staged order to a working order and clears staging', () => {
-    setActiveOrder({ ...baseActive, type: 'limit', entry: 64000 });
-    const res = confirmActiveOrder({ leverage: 10, midPrice: 65000 });
+describe('paperStore: immediate place', () => {
+  it('a market order fills immediately into a position with its tp/sl', () => {
+    const res = placeOrder({
+      symbol: 'BTCUSDT', side: 'buy', type: 'market', units: 0.1, price: null,
+      tp: 66000, sl: 64000, reduceOnly: false, postOnly: false, leverage: 10, midPrice: 65000,
+    });
     expect(res.ok).toBe(true);
-    const s = __getStateForTest();
-    expect(s.activeOrder).toBeNull();
-    expect(s.positions.BTCUSDT).toBeFalsy(); // limit hasn't filled yet
-    expect(s.pending.length).toBe(1);
-    expect(s.pending[0].price).toBe(64000);
-  });
-
-  it('promotes a market staged order to a filled position with attached tp/sl', () => {
-    setActiveOrder({ ...baseActive, type: 'market', entry: 65000 });
-    const res = confirmActiveOrder({ leverage: 10, midPrice: 65000 });
-    expect(res.ok).toBe(true);
-    const s = __getStateForTest();
-    expect(s.activeOrder).toBeNull();
-    const pos = s.positions.BTCUSDT;
+    const pos = __getStateForTest().positions.BTCUSDT;
     expect(pos?.side).toBe('long');
     expect(pos?.tp).toBe(66000);
     expect(pos?.sl).toBe(64000);
   });
 
-  it('refuses to confirm when no staged order exists', () => {
-    const res = confirmActiveOrder({ leverage: 10, midPrice: 65000 });
-    expect(res.ok).toBe(false);
-    expect(res.error).toMatch(/no active order/i);
+  it('a limit order becomes a working order (does not fill yet)', () => {
+    const res = placeOrder({
+      symbol: 'BTCUSDT', side: 'buy', type: 'limit', units: 0.1, price: 64000,
+      tp: null, sl: null, reduceOnly: false, postOnly: false, leverage: 10, midPrice: 65000,
+    });
+    expect(res.ok).toBe(true);
+    const s = __getStateForTest();
+    expect(s.positions.BTCUSDT).toBeFalsy();
+    expect(s.pending.length).toBe(1);
+    expect(s.pending[0].price).toBe(64000);
   });
 });
 

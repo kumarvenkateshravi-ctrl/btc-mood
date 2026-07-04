@@ -26,23 +26,8 @@ interface State {
   lastError: string | null;
   lastFill: PaperFill | null;
   toast: { id: number; message: string; tone: 'buy' | 'sell' | 'info' } | null;
-  activeOrder: ActiveOrder | null;
   balance: number;
   initialBalance: number;
-}
-
-export interface ActiveOrder {
-  id: string;
-  symbol: string;
-  side: Side;
-  type: PaperOrder['type'];
-  units: number;
-  entry: number;
-  tp: number | null;
-  sl: number | null;
-  reduceOnly: boolean;
-  postOnly: boolean;
-  ocoGroup: string | null;
 }
 
 const initialState: State = {
@@ -52,7 +37,6 @@ const initialState: State = {
   lastError: null,
   lastFill: null,
   toast: null,
-  activeOrder: null,
   balance: INITIAL_PAPER_BALANCE,
   initialBalance: INITIAL_PAPER_BALANCE,
 };
@@ -107,83 +91,19 @@ function setPos(s: State, sym: string, pos: PaperPosition): State {
   return { ...s, positions: { ...s.positions, [sym]: pos } };
 }
 
-// ----- Active-order (staged) actions ----------------------------------
+// ----- Open-position exit management ----------------------------------
 
-export function setActiveOrder(order: ActiveOrder | null) {
-  patch((s) => ({ ...s, activeOrder: order, lastError: null }));
-}
-
-export function updateActiveOverlay(
-  field: 'entry' | 'tp' | 'sl',
-  value: number | null,
-) {
-  patch((s) => {
-    if (!s.activeOrder) return s;
-    if (field === 'tp' || field === 'sl') {
-      return { ...s, activeOrder: { ...s.activeOrder, [field]: value } };
-    }
-    return { ...s, activeOrder: { ...s.activeOrder, entry: value ?? s.activeOrder.entry } };
-  });
-}
-
-export function clearActiveOrder() {
-  patch((s) => ({ ...s, activeOrder: null }));
-}
-
-export function confirmActiveOrder(opts: {
-  leverage: number;
-  midPrice: number;
-}): { ok: boolean; error?: string } {
-  const a = state.activeOrder;
-  if (!a) return { ok: false, error: 'No active order to confirm.' };
-  const res = placeOrder({
-    symbol: a.symbol,
-    side: a.side,
-    type: a.type,
-    units: a.units,
-    price: a.type === 'market' ? null : a.entry,
-    tp: a.tp,
-    sl: a.sl,
-    reduceOnly: a.reduceOnly,
-    postOnly: a.postOnly,
-    leverage: opts.leverage,
-    midPrice: opts.midPrice,
-    ocoGroup: a.ocoGroup,
-  });
-  if (res.ok) {
-    patch((s) => ({ ...s, activeOrder: null }));
-  }
-  return res;
-}
-
+/** Set (or clear, with null) the TP or SL price on a symbol's open position.
+ *  The chart overlay commits dragged levels here on Save. */
 export function setPositionOverlay(
   field: 'tp' | 'sl',
   value: number | null,
-  symbol?: string,
+  symbol = 'BTCUSDT',
 ) {
-  const sym = symbol ?? state.activeOrder?.symbol ?? 'BTCUSDT';
   patch((s) => {
-    const pos = posFor(s, sym);
+    const pos = posFor(s, symbol);
     if (!pos || pos.side === 'flat') return s;
-    return setPos(s, sym, { ...pos, [field]: value });
-  });
-}
-
-export function toggleActiveOverlay(
-  field: 'tp' | 'sl',
-  enabled: boolean,
-  suggested: number,
-) {
-  patch((s) => {
-    if (!s.activeOrder) return s;
-    const cur = s.activeOrder[field];
-    return {
-      ...s,
-      activeOrder: {
-        ...s.activeOrder,
-        [field]: enabled ? (cur ?? suggested) : null,
-      },
-    };
+    return setPos(s, symbol, { ...pos, [field]: value });
   });
 }
 
@@ -434,7 +354,6 @@ export function resetAll() {
     lastError: null,
     lastFill: null,
     toast: null,
-    activeOrder: null,
     balance: INITIAL_PAPER_BALANCE,
     initialBalance: INITIAL_PAPER_BALANCE,
   });
@@ -589,18 +508,11 @@ export function usePaperStore() {
       lastError: s.lastError,
       lastFill: s.lastFill,
       toast: s.toast,
-      activeOrder: s.activeOrder,
       balance: s.balance,
       initialBalance: s.initialBalance,
-      // Convenience: the position for the active order's symbol when
-      // there's no active order; falls back to BTCUSDT.
-      position: s.activeOrder ? posFor(s, s.activeOrder.symbol) : posFor(s, 'BTCUSDT'),
-      setActiveOrder,
-      updateActiveOverlay,
-      clearActiveOrder,
-      confirmActiveOrder,
+      // Convenience: the BTCUSDT position (the app trades one symbol on-chart).
+      position: posFor(s, 'BTCUSDT'),
       setPositionOverlay,
-      toggleActiveOverlay,
       placeOrder,
       cancelOrder,
       cancelAll,
@@ -616,7 +528,6 @@ export function usePaperStore() {
       s.lastError,
       s.lastFill,
       s.toast,
-      s.activeOrder,
       s.balance,
       s.initialBalance,
     ],

@@ -42,7 +42,7 @@ export default function OrderModal(p: OrderModalProps) {
         reduceAvailable={p.reduceAvailable}
         initialSide={p.initialSide}
         active={p.open}
-        onStaged={p.onClose}
+        onPlaced={p.onClose}
       />
     </Modal>
   );
