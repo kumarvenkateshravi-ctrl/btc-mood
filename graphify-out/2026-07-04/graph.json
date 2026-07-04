@@ -97,7 +97,7 @@
       "label": "ChartPanelProps",
       "file_type": "code",
       "source_file": "components/ChartPanel.tsx",
-      "source_location": "L37",
+      "source_location": "L36",
       "_origin": "ast",
       "id": "components_chartpanel_chartpanelprops",
       "community": 81,
@@ -107,7 +107,7 @@
       "label": "atr14Last()",
       "file_type": "code",
       "source_file": "components/ChartPanel.tsx",
-      "source_location": "L75",
+      "source_location": "L74",
       "_origin": "ast",
       "id": "components_chartpanel_atr14last",
       "community": 81,
@@ -117,7 +117,7 @@
       "label": "ChartPanel()",
       "file_type": "code",
       "source_file": "components/ChartPanel.tsx",
-      "source_location": "L90",
+      "source_location": "L89",
       "_origin": "ast",
       "id": "components_chartpanel_chartpanel",
       "community": 86,
@@ -127,7 +127,7 @@
       "label": "ChartSkeleton()",
       "file_type": "code",
       "source_file": "components/ChartPanel.tsx",
-      "source_location": "L868",
+      "source_location": "L860",
       "_origin": "ast",
       "id": "components_chartpanel_chartskeleton",
       "community": 81,
@@ -157,7 +157,7 @@
       "label": "TradeOverlay()",
       "file_type": "code",
       "source_file": "components/chart/TradeOverlay.tsx",
-      "source_location": "L28",
+      "source_location": "L29",
       "_origin": "ast",
       "id": "chart_tradeoverlay_tradeoverlay",
       "community": 89,
@@ -247,7 +247,7 @@
       "label": "shiftTime()",
       "file_type": "code",
       "source_file": "components/chart/types.ts",
-      "source_location": "L119",
+      "source_location": "L117",
       "_origin": "ast",
       "id": "chart_types_shifttime",
       "community": 89,
@@ -257,251 +257,11 @@
       "label": "getTfMinutes()",
       "file_type": "code",
       "source_file": "components/chart/types.ts",
-      "source_location": "L125",
+      "source_location": "L123",
       "_origin": "ast",
       "id": "chart_types_gettfminutes",
       "community": 145,
       "norm_label": "gettfminutes()"
-    },
-    {
-      "label": "ChartContextMenu.tsx",
-      "file_type": "code",
-      "source_file": "components/trade/ChartContextMenu.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "trade_chartcontextmenu",
-      "community": 53,
-      "norm_label": "chartcontextmenu.tsx"
-    },
-    {
-      "label": "ChartContextMenuProps",
-      "file_type": "code",
-      "source_file": "components/trade/ChartContextMenu.tsx",
-      "source_location": "L10",
-      "_origin": "ast",
-      "id": "trade_chartcontextmenu_chartcontextmenuprops",
-      "community": 53,
-      "norm_label": "chartcontextmenuprops"
-    },
-    {
-      "label": "ChartContextMenu()",
-      "file_type": "code",
-      "source_file": "components/trade/ChartContextMenu.tsx",
-      "source_location": "L29",
-      "_origin": "ast",
-      "id": "trade_chartcontextmenu_chartcontextmenu",
-      "community": 53,
-      "norm_label": "chartcontextmenu()"
-    },
-    {
-      "label": "MenuItem()",
-      "file_type": "code",
-      "source_file": "components/trade/ChartContextMenu.tsx",
-      "source_location": "L188",
-      "_origin": "ast",
-      "id": "trade_chartcontextmenu_menuitem",
-      "community": 53,
-      "norm_label": "menuitem()"
-    },
-    {
-      "label": "CloseConfirmDialog.tsx",
-      "file_type": "code",
-      "source_file": "components/trade/CloseConfirmDialog.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "trade_closeconfirmdialog",
-      "community": 81,
-      "norm_label": "closeconfirmdialog.tsx"
-    },
-    {
-      "label": "CloseConfirmDialogProps",
-      "file_type": "code",
-      "source_file": "components/trade/CloseConfirmDialog.tsx",
-      "source_location": "L5",
-      "_origin": "ast",
-      "id": "trade_closeconfirmdialog_closeconfirmdialogprops",
-      "community": 81,
-      "norm_label": "closeconfirmdialogprops"
-    },
-    {
-      "label": "CloseConfirmDialog()",
-      "file_type": "code",
-      "source_file": "components/trade/CloseConfirmDialog.tsx",
-      "source_location": "L13",
-      "_origin": "ast",
-      "id": "trade_closeconfirmdialog_closeconfirmdialog",
-      "community": 81,
-      "norm_label": "closeconfirmdialog()"
-    },
-    {
-      "label": "OrderModal.tsx",
-      "file_type": "code",
-      "source_file": "components/trade/OrderModal.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "trade_ordermodal",
-      "community": 286,
-      "norm_label": "ordermodal.tsx"
-    },
-    {
-      "label": "OrderModalProps",
-      "file_type": "code",
-      "source_file": "components/trade/OrderModal.tsx",
-      "source_location": "L7",
-      "_origin": "ast",
-      "id": "trade_ordermodal_ordermodalprops",
-      "community": 286,
-      "norm_label": "ordermodalprops"
-    },
-    {
-      "label": "OrderModal()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderModal.tsx",
-      "source_location": "L23",
-      "_origin": "ast",
-      "id": "trade_ordermodal_ordermodal",
-      "community": 286,
-      "norm_label": "ordermodal()"
-    },
-    {
-      "label": "OrderTicket.tsx",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "trade_orderticket",
-      "community": 118,
-      "norm_label": "orderticket.tsx"
-    },
-    {
-      "label": "OrderTicketProps",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L15",
-      "_origin": "ast",
-      "id": "trade_orderticket_orderticketprops",
-      "community": 118,
-      "norm_label": "orderticketprops"
-    },
-    {
-      "label": "PCT_OPTIONS",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L35",
-      "_origin": "ast",
-      "id": "trade_orderticket_pct_options",
-      "community": 118,
-      "norm_label": "pct_options"
-    },
-    {
-      "label": "Tab",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L37",
-      "_origin": "ast",
-      "id": "trade_orderticket_tab",
-      "community": 118,
-      "norm_label": "tab"
-    },
-    {
-      "label": "TABS",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L39",
-      "_origin": "ast",
-      "id": "trade_orderticket_tabs",
-      "community": 118,
-      "norm_label": "tabs"
-    },
-    {
-      "label": "OrderTicket()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L45",
-      "_origin": "ast",
-      "id": "trade_orderticket_orderticket",
-      "community": 118,
-      "norm_label": "orderticket()"
-    },
-    {
-      "label": "fmt()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L533",
-      "_origin": "ast",
-      "id": "trade_orderticket_fmt",
-      "community": 118,
-      "norm_label": "fmt()"
-    },
-    {
-      "label": "SideToggle()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L538",
-      "_origin": "ast",
-      "id": "trade_orderticket_sidetoggle",
-      "community": 118,
-      "norm_label": "sidetoggle()"
-    },
-    {
-      "label": "NumberField()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L608",
-      "_origin": "ast",
-      "id": "trade_orderticket_numberfield",
-      "community": 118,
-      "norm_label": "numberfield()"
-    },
-    {
-      "label": "RiskField()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L677",
-      "_origin": "ast",
-      "id": "trade_orderticket_riskfield",
-      "community": 118,
-      "norm_label": "riskfield()"
-    },
-    {
-      "label": "PctSelect()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L722",
-      "_origin": "ast",
-      "id": "trade_orderticket_pctselect",
-      "community": 118,
-      "norm_label": "pctselect()"
-    },
-    {
-      "label": "ToggleChip()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L745",
-      "_origin": "ast",
-      "id": "trade_orderticket_togglechip",
-      "community": 118,
-      "norm_label": "togglechip()"
-    },
-    {
-      "label": "MarginRow()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L785",
-      "_origin": "ast",
-      "id": "trade_orderticket_marginrow",
-      "community": 118,
-      "norm_label": "marginrow()"
-    },
-    {
-      "label": "Row()",
-      "file_type": "code",
-      "source_file": "components/trade/OrderTicket.tsx",
-      "source_location": "L807",
-      "_origin": "ast",
-      "id": "trade_orderticket_row",
-      "community": 118,
-      "norm_label": "row()"
     },
     {
       "label": "ReverseConfirmDialog.tsx",
@@ -527,11 +287,251 @@
       "label": "ReverseConfirmDialog()",
       "file_type": "code",
       "source_file": "components/trade/ReverseConfirmDialog.tsx",
-      "source_location": "L13",
+      "source_location": "L14",
       "_origin": "ast",
       "id": "trade_reverseconfirmdialog_reverseconfirmdialog",
       "community": 81,
       "norm_label": "reverseconfirmdialog()"
+    },
+    {
+      "label": "ChartContextMenu.tsx",
+      "file_type": "code",
+      "source_file": "components/trade/ChartContextMenu.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 53,
+      "norm_label": "chartcontextmenu.tsx",
+      "id": "trade_chartcontextmenu"
+    },
+    {
+      "label": "ChartContextMenuProps",
+      "file_type": "code",
+      "source_file": "components/trade/ChartContextMenu.tsx",
+      "source_location": "L10",
+      "_origin": "ast",
+      "community": 53,
+      "norm_label": "chartcontextmenuprops",
+      "id": "trade_chartcontextmenu_chartcontextmenuprops"
+    },
+    {
+      "label": "ChartContextMenu()",
+      "file_type": "code",
+      "source_file": "components/trade/ChartContextMenu.tsx",
+      "source_location": "L29",
+      "_origin": "ast",
+      "community": 53,
+      "norm_label": "chartcontextmenu()",
+      "id": "trade_chartcontextmenu_chartcontextmenu"
+    },
+    {
+      "label": "MenuItem()",
+      "file_type": "code",
+      "source_file": "components/trade/ChartContextMenu.tsx",
+      "source_location": "L188",
+      "_origin": "ast",
+      "community": 53,
+      "norm_label": "menuitem()",
+      "id": "trade_chartcontextmenu_menuitem"
+    },
+    {
+      "label": "CloseConfirmDialog.tsx",
+      "file_type": "code",
+      "source_file": "components/trade/CloseConfirmDialog.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 81,
+      "norm_label": "closeconfirmdialog.tsx",
+      "id": "trade_closeconfirmdialog"
+    },
+    {
+      "label": "CloseConfirmDialogProps",
+      "file_type": "code",
+      "source_file": "components/trade/CloseConfirmDialog.tsx",
+      "source_location": "L5",
+      "_origin": "ast",
+      "community": 81,
+      "norm_label": "closeconfirmdialogprops",
+      "id": "trade_closeconfirmdialog_closeconfirmdialogprops"
+    },
+    {
+      "label": "CloseConfirmDialog()",
+      "file_type": "code",
+      "source_file": "components/trade/CloseConfirmDialog.tsx",
+      "source_location": "L13",
+      "_origin": "ast",
+      "community": 81,
+      "norm_label": "closeconfirmdialog()",
+      "id": "trade_closeconfirmdialog_closeconfirmdialog"
+    },
+    {
+      "label": "OrderModal.tsx",
+      "file_type": "code",
+      "source_file": "components/trade/OrderModal.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 286,
+      "norm_label": "ordermodal.tsx",
+      "id": "trade_ordermodal"
+    },
+    {
+      "label": "OrderModalProps",
+      "file_type": "code",
+      "source_file": "components/trade/OrderModal.tsx",
+      "source_location": "L7",
+      "_origin": "ast",
+      "community": 286,
+      "norm_label": "ordermodalprops",
+      "id": "trade_ordermodal_ordermodalprops"
+    },
+    {
+      "label": "OrderModal()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderModal.tsx",
+      "source_location": "L23",
+      "_origin": "ast",
+      "community": 286,
+      "norm_label": "ordermodal()",
+      "id": "trade_ordermodal_ordermodal"
+    },
+    {
+      "label": "OrderTicket.tsx",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "orderticket.tsx",
+      "id": "trade_orderticket"
+    },
+    {
+      "label": "OrderTicketProps",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L15",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "orderticketprops",
+      "id": "trade_orderticket_orderticketprops"
+    },
+    {
+      "label": "PCT_OPTIONS",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L35",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "pct_options",
+      "id": "trade_orderticket_pct_options"
+    },
+    {
+      "label": "Tab",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L37",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "tab",
+      "id": "trade_orderticket_tab"
+    },
+    {
+      "label": "TABS",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L39",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "tabs",
+      "id": "trade_orderticket_tabs"
+    },
+    {
+      "label": "OrderTicket()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L45",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "orderticket()",
+      "id": "trade_orderticket_orderticket"
+    },
+    {
+      "label": "fmt()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L533",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "fmt()",
+      "id": "trade_orderticket_fmt"
+    },
+    {
+      "label": "SideToggle()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L538",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "sidetoggle()",
+      "id": "trade_orderticket_sidetoggle"
+    },
+    {
+      "label": "NumberField()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L608",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "numberfield()",
+      "id": "trade_orderticket_numberfield"
+    },
+    {
+      "label": "RiskField()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L677",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "riskfield()",
+      "id": "trade_orderticket_riskfield"
+    },
+    {
+      "label": "PctSelect()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L722",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "pctselect()",
+      "id": "trade_orderticket_pctselect"
+    },
+    {
+      "label": "ToggleChip()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L745",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "togglechip()",
+      "id": "trade_orderticket_togglechip"
+    },
+    {
+      "label": "MarginRow()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L785",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "marginrow()",
+      "id": "trade_orderticket_marginrow"
+    },
+    {
+      "label": "Row()",
+      "file_type": "code",
+      "source_file": "components/trade/OrderTicket.tsx",
+      "source_location": "L807",
+      "_origin": "ast",
+      "community": 118,
+      "norm_label": "row()",
+      "id": "trade_orderticket_row"
     },
     {
       "label": "TradingPanel.tsx",
@@ -539,9 +539,9 @@
       "source_file": "components/trade/TradingPanel.tsx",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "trade_tradingpanel",
       "community": 74,
-      "norm_label": "tradingpanel.tsx"
+      "norm_label": "tradingpanel.tsx",
+      "id": "trade_tradingpanel"
     },
     {
       "label": "TradingPanel()",
@@ -549,9 +549,9 @@
       "source_file": "components/trade/TradingPanel.tsx",
       "source_location": "L10",
       "_origin": "ast",
-      "id": "trade_tradingpanel_tradingpanel",
       "community": 74,
-      "norm_label": "tradingpanel()"
+      "norm_label": "tradingpanel()",
+      "id": "trade_tradingpanel_tradingpanel"
     },
     {
       "label": "Field()",
@@ -559,9 +559,9 @@
       "source_file": "components/trade/TradingPanel.tsx",
       "source_location": "L174",
       "_origin": "ast",
-      "id": "trade_tradingpanel_field",
       "community": 74,
-      "norm_label": "field()"
+      "norm_label": "field()",
+      "id": "trade_tradingpanel_field"
     },
     {
       "label": "paperStore.test.ts",
@@ -569,9 +569,9 @@
       "source_file": "lib/paperStore.test.ts",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "lib_paperstore_test",
       "community": 51,
-      "norm_label": "paperstore.test.ts"
+      "norm_label": "paperstore.test.ts",
+      "id": "lib_paperstore_test"
     },
     {
       "label": "paperStore.ts",
@@ -579,9 +579,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "lib_paperstore",
       "community": 51,
-      "norm_label": "paperstore.ts"
+      "norm_label": "paperstore.ts",
+      "id": "lib_paperstore"
     },
     {
       "label": "State",
@@ -589,9 +589,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L21",
       "_origin": "ast",
-      "id": "lib_paperstore_state",
       "community": 58,
-      "norm_label": "state"
+      "norm_label": "state",
+      "id": "lib_paperstore_state"
     },
     {
       "label": "initialState",
@@ -599,9 +599,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L33",
       "_origin": "ast",
-      "id": "lib_paperstore_initialstate",
       "community": 51,
-      "norm_label": "initialstate"
+      "norm_label": "initialstate",
+      "id": "lib_paperstore_initialstate"
     },
     {
       "label": "listeners",
@@ -609,9 +609,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L45",
       "_origin": "ast",
-      "id": "lib_paperstore_listeners",
       "community": 51,
-      "norm_label": "listeners"
+      "norm_label": "listeners",
+      "id": "lib_paperstore_listeners"
     },
     {
       "label": "subscribe()",
@@ -619,9 +619,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L50",
       "_origin": "ast",
-      "id": "lib_paperstore_subscribe",
       "community": 51,
-      "norm_label": "subscribe()"
+      "norm_label": "subscribe()",
+      "id": "lib_paperstore_subscribe"
     },
     {
       "label": "getSnapshot()",
@@ -629,9 +629,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L54",
       "_origin": "ast",
-      "id": "lib_paperstore_getsnapshot",
       "community": 51,
-      "norm_label": "getsnapshot()"
+      "norm_label": "getsnapshot()",
+      "id": "lib_paperstore_getsnapshot"
     },
     {
       "label": "scheduleEmit()",
@@ -639,9 +639,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L56",
       "_origin": "ast",
-      "id": "lib_paperstore_scheduleemit",
       "community": 51,
-      "norm_label": "scheduleemit()"
+      "norm_label": "scheduleemit()",
+      "id": "lib_paperstore_scheduleemit"
     },
     {
       "label": "setState()",
@@ -649,9 +649,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L73",
       "_origin": "ast",
-      "id": "lib_paperstore_setstate",
       "community": 51,
-      "norm_label": "setstate()"
+      "norm_label": "setstate()",
+      "id": "lib_paperstore_setstate"
     },
     {
       "label": "patch()",
@@ -659,9 +659,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L78",
       "_origin": "ast",
-      "id": "lib_paperstore_patch",
       "community": 51,
-      "norm_label": "patch()"
+      "norm_label": "patch()",
+      "id": "lib_paperstore_patch"
     },
     {
       "label": "posFor()",
@@ -669,9 +669,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L81",
       "_origin": "ast",
-      "id": "lib_paperstore_posfor",
       "community": 51,
-      "norm_label": "posfor()"
+      "norm_label": "posfor()",
+      "id": "lib_paperstore_posfor"
     },
     {
       "label": "setPos()",
@@ -679,9 +679,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L85",
       "_origin": "ast",
-      "id": "lib_paperstore_setpos",
       "community": 51,
-      "norm_label": "setpos()"
+      "norm_label": "setpos()",
+      "id": "lib_paperstore_setpos"
     },
     {
       "label": "setPositionOverlay()",
@@ -689,9 +689,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L98",
       "_origin": "ast",
-      "id": "lib_paperstore_setpositionoverlay",
       "community": 51,
-      "norm_label": "setpositionoverlay()"
+      "norm_label": "setpositionoverlay()",
+      "id": "lib_paperstore_setpositionoverlay"
     },
     {
       "label": "toggleTrailingSl()",
@@ -699,9 +699,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L113",
       "_origin": "ast",
-      "id": "lib_paperstore_toggletrailingsl",
       "community": 51,
-      "norm_label": "toggletrailingsl()"
+      "norm_label": "toggletrailingsl()",
+      "id": "lib_paperstore_toggletrailingsl"
     },
     {
       "label": "pushToast()",
@@ -709,9 +709,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L126",
       "_origin": "ast",
-      "id": "lib_paperstore_pushtoast",
       "community": 51,
-      "norm_label": "pushtoast()"
+      "norm_label": "pushtoast()",
+      "id": "lib_paperstore_pushtoast"
     },
     {
       "label": "newOrderId()",
@@ -719,9 +719,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L134",
       "_origin": "ast",
-      "id": "lib_paperstore_neworderid",
       "community": 51,
-      "norm_label": "neworderid()"
+      "norm_label": "neworderid()",
+      "id": "lib_paperstore_neworderid"
     },
     {
       "label": "__resetForTest()",
@@ -729,9 +729,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L139",
       "_origin": "ast",
-      "id": "lib_paperstore_resetfortest",
       "community": 51,
-      "norm_label": "__resetfortest()"
+      "norm_label": "__resetfortest()",
+      "id": "lib_paperstore_resetfortest"
     },
     {
       "label": "__getStateForTest()",
@@ -739,9 +739,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L144",
       "_origin": "ast",
-      "id": "lib_paperstore_getstatefortest",
       "community": 51,
-      "norm_label": "__getstatefortest()"
+      "norm_label": "__getstatefortest()",
+      "id": "lib_paperstore_getstatefortest"
     },
     {
       "label": "PlaceOrderInput",
@@ -749,9 +749,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L148",
       "_origin": "ast",
-      "id": "lib_paperstore_placeorderinput",
       "community": 118,
-      "norm_label": "placeorderinput"
+      "norm_label": "placeorderinput",
+      "id": "lib_paperstore_placeorderinput"
     },
     {
       "label": "placeOrder()",
@@ -759,9 +759,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L168",
       "_origin": "ast",
-      "id": "lib_paperstore_placeorder",
       "community": 51,
-      "norm_label": "placeorder()"
+      "norm_label": "placeorder()",
+      "id": "lib_paperstore_placeorder"
     },
     {
       "label": "cancelOrder()",
@@ -769,9 +769,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L256",
       "_origin": "ast",
-      "id": "lib_paperstore_cancelorder",
       "community": 51,
-      "norm_label": "cancelorder()"
+      "norm_label": "cancelorder()",
+      "id": "lib_paperstore_cancelorder"
     },
     {
       "label": "closePosition()",
@@ -779,9 +779,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L284",
       "_origin": "ast",
-      "id": "lib_paperstore_closeposition",
       "community": 51,
-      "norm_label": "closeposition()"
+      "norm_label": "closeposition()",
+      "id": "lib_paperstore_closeposition"
     },
     {
       "label": "partialClose()",
@@ -789,9 +789,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L292",
       "_origin": "ast",
-      "id": "lib_paperstore_partialclose",
       "community": 51,
-      "norm_label": "partialclose()"
+      "norm_label": "partialclose()",
+      "id": "lib_paperstore_partialclose"
     },
     {
       "label": "_closeUnits()",
@@ -799,9 +799,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L300",
       "_origin": "ast",
-      "id": "lib_paperstore_closeunits",
       "community": 51,
-      "norm_label": "_closeunits()"
+      "norm_label": "_closeunits()",
+      "id": "lib_paperstore_closeunits"
     },
     {
       "label": "cancelAll()",
@@ -809,9 +809,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L337",
       "_origin": "ast",
-      "id": "lib_paperstore_cancelall",
       "community": 51,
-      "norm_label": "cancelall()"
+      "norm_label": "cancelall()",
+      "id": "lib_paperstore_cancelall"
     },
     {
       "label": "resetAll()",
@@ -819,9 +819,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L349",
       "_origin": "ast",
-      "id": "lib_paperstore_resetall",
       "community": 51,
-      "norm_label": "resetall()"
+      "norm_label": "resetall()",
+      "id": "lib_paperstore_resetall"
     },
     {
       "label": "ExecuteOrderInput",
@@ -829,9 +829,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L365",
       "_origin": "ast",
-      "id": "lib_paperstore_executeorderinput",
       "community": 51,
-      "norm_label": "executeorderinput"
+      "norm_label": "executeorderinput",
+      "id": "lib_paperstore_executeorderinput"
     },
     {
       "label": "ExecuteOrderResult",
@@ -839,9 +839,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L378",
       "_origin": "ast",
-      "id": "lib_paperstore_executeorderresult",
       "community": 51,
-      "norm_label": "executeorderresult"
+      "norm_label": "executeorderresult",
+      "id": "lib_paperstore_executeorderresult"
     },
     {
       "label": "executeOrder()",
@@ -849,9 +849,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L384",
       "_origin": "ast",
-      "id": "lib_paperstore_executeorder",
       "community": 51,
-      "norm_label": "executeorder()"
+      "norm_label": "executeorder()",
+      "id": "lib_paperstore_executeorder"
     },
     {
       "label": "setStopLoss()",
@@ -859,9 +859,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L409",
       "_origin": "ast",
-      "id": "lib_paperstore_setstoploss",
       "community": 51,
-      "norm_label": "setstoploss()"
+      "norm_label": "setstoploss()",
+      "id": "lib_paperstore_setstoploss"
     },
     {
       "label": "setTakeProfit()",
@@ -869,9 +869,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L413",
       "_origin": "ast",
-      "id": "lib_paperstore_settakeprofit",
       "community": 51,
-      "norm_label": "settakeprofit()"
+      "norm_label": "settakeprofit()",
+      "id": "lib_paperstore_settakeprofit"
     },
     {
       "label": "reconcileBar()",
@@ -879,9 +879,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L421",
       "_origin": "ast",
-      "id": "lib_paperstore_reconcilebar",
       "community": 51,
-      "norm_label": "reconcilebar()"
+      "norm_label": "reconcilebar()",
+      "id": "lib_paperstore_reconcilebar"
     },
     {
       "label": "usePaperStore()",
@@ -889,9 +889,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L501",
       "_origin": "ast",
-      "id": "lib_paperstore_usepaperstore",
       "community": 86,
-      "norm_label": "usepaperstore()"
+      "norm_label": "usepaperstore()",
+      "id": "lib_paperstore_usepaperstore"
     },
     {
       "label": "useMarginFor()",
@@ -899,9 +899,9 @@
       "source_file": "lib/paperStore.ts",
       "source_location": "L537",
       "_origin": "ast",
-      "id": "lib_paperstore_usemarginfor",
       "community": 51,
-      "norm_label": "usemarginfor()"
+      "norm_label": "usemarginfor()",
+      "id": "lib_paperstore_usemarginfor"
     },
     {
       "label": "2026-07-04-immediate-place-trade-overlay-design.md",
@@ -47996,9 +47996,9 @@
       "source_file": "components/Chart.tsx",
       "source_location": "L29",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "components_chart",
-      "target": "chart_tradeoverlay",
-      "confidence_score": 1.0
+      "target": "chart_tradeoverlay"
     },
     {
       "relation": "imports",
@@ -48007,9 +48007,9 @@
       "source_file": "components/Chart.tsx",
       "source_location": "L29",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "components_chart",
-      "target": "chart_tradeoverlay_tradeoverlay",
-      "confidence_score": 1.0
+      "target": "chart_tradeoverlay_tradeoverlay"
     },
     {
       "relation": "re_exports",
@@ -49016,9 +49016,9 @@
       "source_file": "components/ChartPanel.tsx",
       "source_location": "L75",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "components_chartpanel",
-      "target": "components_chartpanel_atr14last",
-      "confidence_score": 1.0
+      "target": "components_chartpanel_atr14last"
     },
     {
       "relation": "contains",
@@ -49519,9 +49519,9 @@
       "source_file": "components/ChartPanel.tsx",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "components_chartpanel",
-      "target": "lib_trading_riskreward",
-      "confidence_score": 1.0
+      "target": "lib_trading_riskreward"
     },
     {
       "relation": "imports_from",
@@ -49574,9 +49574,9 @@
       "source_file": "components/ChartPanel.tsx",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "components_chartpanel",
-      "target": "trade_closeconfirmdialog",
-      "confidence_score": 1.0
+      "target": "trade_closeconfirmdialog"
     },
     {
       "relation": "imports_from",
@@ -49607,9 +49607,9 @@
       "source_file": "components/ChartPanel.tsx",
       "source_location": "L10",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "components_chartpanel",
-      "target": "trade_reverseconfirmdialog",
-      "confidence_score": 1.0
+      "target": "trade_reverseconfirmdialog"
     },
     {
       "relation": "references",
@@ -49705,9 +49705,9 @@
       "source_file": "components/chart/TradeOverlay.tsx",
       "source_location": "L28",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "chart_tradeoverlay",
-      "target": "chart_tradeoverlay_tradeoverlay",
-      "confidence_score": 1.0
+      "target": "chart_tradeoverlay_tradeoverlay"
     },
     {
       "relation": "contains",
@@ -49715,9 +49715,9 @@
       "source_file": "components/chart/TradeOverlay.tsx",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "chart_tradeoverlay",
-      "target": "chart_tradeoverlay_tradeoverlayprops",
-      "confidence_score": 1.0
+      "target": "chart_tradeoverlay_tradeoverlayprops"
     },
     {
       "relation": "imports_from",
@@ -50844,6 +50844,26 @@
       "target": "chart_types_gettfminutes"
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/trade/ReverseConfirmDialog.tsx",
+      "source_location": "L13",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "trade_reverseconfirmdialog",
+      "target": "trade_reverseconfirmdialog_reverseconfirmdialog"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/trade/ReverseConfirmDialog.tsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "trade_reverseconfirmdialog",
+      "target": "trade_reverseconfirmdialog_reverseconfirmdialogprops"
+    },
+    {
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -50894,9 +50914,9 @@
       "source_file": "components/trade/ChartContextMenu.tsx",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "trade_chartcontextmenu",
-      "target": "lib_paperstore_placeorder",
-      "confidence_score": 1.0
+      "target": "lib_paperstore_placeorder"
     },
     {
       "relation": "imports_from",
@@ -50978,9 +50998,9 @@
       "source_file": "components/trade/CloseConfirmDialog.tsx",
       "source_location": "L13",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "trade_closeconfirmdialog",
-      "target": "trade_closeconfirmdialog_closeconfirmdialog",
-      "confidence_score": 1.0
+      "target": "trade_closeconfirmdialog_closeconfirmdialog"
     },
     {
       "relation": "contains",
@@ -50988,9 +51008,9 @@
       "source_file": "components/trade/CloseConfirmDialog.tsx",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "trade_closeconfirmdialog",
-      "target": "trade_closeconfirmdialog_closeconfirmdialogprops",
-      "confidence_score": 1.0
+      "target": "trade_closeconfirmdialog_closeconfirmdialogprops"
     },
     {
       "relation": "contains",
@@ -51328,26 +51348,6 @@
       "confidence_score": 1.0,
       "source": "trade_orderticket_sidetoggle",
       "target": "trade_orderticket_fmt"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "components/trade/ReverseConfirmDialog.tsx",
-      "source_location": "L13",
-      "weight": 1.0,
-      "source": "trade_reverseconfirmdialog",
-      "target": "trade_reverseconfirmdialog_reverseconfirmdialog",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "components/trade/ReverseConfirmDialog.tsx",
-      "source_location": "L5",
-      "weight": 1.0,
-      "source": "trade_reverseconfirmdialog",
-      "target": "trade_reverseconfirmdialog_reverseconfirmdialogprops",
-      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -126799,5 +126799,5 @@
       "source_file": "PRODUCT.md"
     }
   ],
-  "built_at_commit": "960df2c365e212a7cd4182f39476f11c271b4605"
+  "built_at_commit": "8bf408a32d3bacb2e3c1ab016fd38a773c1a03c4"
 }

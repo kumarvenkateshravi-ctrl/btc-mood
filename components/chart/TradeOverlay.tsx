@@ -43,7 +43,7 @@ export function TradeOverlay(p: TradeOverlayProps) {
 
   return (
     <div
-      className="pointer-events-auto absolute right-[150px] z-[45] flex -translate-y-1/2 items-center gap-1"
+      className="pointer-events-auto absolute right-[230px] z-[45] flex -translate-y-1/2 items-center gap-1"
       style={{ top: y }}
     >
       <button type="button" className={chip} title="Reverse position" onClick={p.onReverse}>⇅</button>

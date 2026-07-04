@@ -84,56 +84,6 @@
       "norm_label": "chart()"
     },
     {
-      "label": "ChartPanel.tsx",
-      "file_type": "code",
-      "source_file": "components/ChartPanel.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "components_chartpanel",
-      "community": 81,
-      "norm_label": "chartpanel.tsx"
-    },
-    {
-      "label": "ChartPanelProps",
-      "file_type": "code",
-      "source_file": "components/ChartPanel.tsx",
-      "source_location": "L36",
-      "_origin": "ast",
-      "id": "components_chartpanel_chartpanelprops",
-      "community": 81,
-      "norm_label": "chartpanelprops"
-    },
-    {
-      "label": "atr14Last()",
-      "file_type": "code",
-      "source_file": "components/ChartPanel.tsx",
-      "source_location": "L74",
-      "_origin": "ast",
-      "id": "components_chartpanel_atr14last",
-      "community": 81,
-      "norm_label": "atr14last()"
-    },
-    {
-      "label": "ChartPanel()",
-      "file_type": "code",
-      "source_file": "components/ChartPanel.tsx",
-      "source_location": "L89",
-      "_origin": "ast",
-      "id": "components_chartpanel_chartpanel",
-      "community": 86,
-      "norm_label": "chartpanel()"
-    },
-    {
-      "label": "ChartSkeleton()",
-      "file_type": "code",
-      "source_file": "components/ChartPanel.tsx",
-      "source_location": "L860",
-      "_origin": "ast",
-      "id": "components_chartpanel_chartskeleton",
-      "community": 81,
-      "norm_label": "chartskeleton()"
-    },
-    {
       "label": "TradeOverlay.tsx",
       "file_type": "code",
       "source_file": "components/chart/TradeOverlay.tsx",
@@ -157,11 +107,61 @@
       "label": "TradeOverlay()",
       "file_type": "code",
       "source_file": "components/chart/TradeOverlay.tsx",
-      "source_location": "L29",
+      "source_location": "L28",
       "_origin": "ast",
       "id": "chart_tradeoverlay_tradeoverlay",
       "community": 89,
       "norm_label": "tradeoverlay()"
+    },
+    {
+      "label": "ChartPanel.tsx",
+      "file_type": "code",
+      "source_file": "components/ChartPanel.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 81,
+      "norm_label": "chartpanel.tsx",
+      "id": "components_chartpanel"
+    },
+    {
+      "label": "ChartPanelProps",
+      "file_type": "code",
+      "source_file": "components/ChartPanel.tsx",
+      "source_location": "L36",
+      "_origin": "ast",
+      "community": 81,
+      "norm_label": "chartpanelprops",
+      "id": "components_chartpanel_chartpanelprops"
+    },
+    {
+      "label": "atr14Last()",
+      "file_type": "code",
+      "source_file": "components/ChartPanel.tsx",
+      "source_location": "L74",
+      "_origin": "ast",
+      "community": 81,
+      "norm_label": "atr14last()",
+      "id": "components_chartpanel_atr14last"
+    },
+    {
+      "label": "ChartPanel()",
+      "file_type": "code",
+      "source_file": "components/ChartPanel.tsx",
+      "source_location": "L89",
+      "_origin": "ast",
+      "community": 86,
+      "norm_label": "chartpanel()",
+      "id": "components_chartpanel_chartpanel"
+    },
+    {
+      "label": "ChartSkeleton()",
+      "file_type": "code",
+      "source_file": "components/ChartPanel.tsx",
+      "source_location": "L860",
+      "_origin": "ast",
+      "community": 81,
+      "norm_label": "chartskeleton()",
+      "id": "components_chartpanel_chartskeleton"
     },
     {
       "label": "types.ts",
@@ -169,9 +169,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "chart_types",
       "community": 145,
-      "norm_label": "types.ts"
+      "norm_label": "types.ts",
+      "id": "chart_types"
     },
     {
       "label": "ChartType",
@@ -179,9 +179,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L7",
       "_origin": "ast",
-      "id": "chart_types_charttype",
       "community": 297,
-      "norm_label": "charttype"
+      "norm_label": "charttype",
+      "id": "chart_types_charttype"
     },
     {
       "label": "PriceScaleModeOption",
@@ -189,9 +189,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L9",
       "_origin": "ast",
-      "id": "chart_types_pricescalemodeoption",
       "community": 297,
-      "norm_label": "pricescalemodeoption"
+      "norm_label": "pricescalemodeoption",
+      "id": "chart_types_pricescalemodeoption"
     },
     {
       "label": "ChartApi",
@@ -199,9 +199,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L12",
       "_origin": "ast",
-      "id": "chart_types_chartapi",
       "community": 145,
-      "norm_label": "chartapi"
+      "norm_label": "chartapi",
+      "id": "chart_types_chartapi"
     },
     {
       "label": "IndicatorRender",
@@ -209,9 +209,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L36",
       "_origin": "ast",
-      "id": "chart_types_indicatorrender",
       "community": 145,
-      "norm_label": "indicatorrender"
+      "norm_label": "indicatorrender",
+      "id": "chart_types_indicatorrender"
     },
     {
       "label": "OverlayKind",
@@ -219,9 +219,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L41",
       "_origin": "ast",
-      "id": "chart_types_overlaykind",
       "community": 293,
-      "norm_label": "overlaykind"
+      "norm_label": "overlaykind",
+      "id": "chart_types_overlaykind"
     },
     {
       "label": "ChartOverlay",
@@ -229,9 +229,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L43",
       "_origin": "ast",
-      "id": "chart_types_chartoverlay",
       "community": 293,
-      "norm_label": "chartoverlay"
+      "norm_label": "chartoverlay",
+      "id": "chart_types_chartoverlay"
     },
     {
       "label": "ChartProps",
@@ -239,9 +239,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L50",
       "_origin": "ast",
-      "id": "chart_types_chartprops",
       "community": 145,
-      "norm_label": "chartprops"
+      "norm_label": "chartprops",
+      "id": "chart_types_chartprops"
     },
     {
       "label": "shiftTime()",
@@ -249,9 +249,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L117",
       "_origin": "ast",
-      "id": "chart_types_shifttime",
       "community": 89,
-      "norm_label": "shifttime()"
+      "norm_label": "shifttime()",
+      "id": "chart_types_shifttime"
     },
     {
       "label": "getTfMinutes()",
@@ -259,9 +259,9 @@
       "source_file": "components/chart/types.ts",
       "source_location": "L123",
       "_origin": "ast",
-      "id": "chart_types_gettfminutes",
       "community": 145,
-      "norm_label": "gettfminutes()"
+      "norm_label": "gettfminutes()",
+      "id": "chart_types_gettfminutes"
     },
     {
       "label": "ReverseConfirmDialog.tsx",
@@ -269,9 +269,9 @@
       "source_file": "components/trade/ReverseConfirmDialog.tsx",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "trade_reverseconfirmdialog",
       "community": 81,
-      "norm_label": "reverseconfirmdialog.tsx"
+      "norm_label": "reverseconfirmdialog.tsx",
+      "id": "trade_reverseconfirmdialog"
     },
     {
       "label": "ReverseConfirmDialogProps",
@@ -279,9 +279,9 @@
       "source_file": "components/trade/ReverseConfirmDialog.tsx",
       "source_location": "L5",
       "_origin": "ast",
-      "id": "trade_reverseconfirmdialog_reverseconfirmdialogprops",
       "community": 81,
-      "norm_label": "reverseconfirmdialogprops"
+      "norm_label": "reverseconfirmdialogprops",
+      "id": "trade_reverseconfirmdialog_reverseconfirmdialogprops"
     },
     {
       "label": "ReverseConfirmDialog()",
@@ -289,9 +289,9 @@
       "source_file": "components/trade/ReverseConfirmDialog.tsx",
       "source_location": "L14",
       "_origin": "ast",
-      "id": "trade_reverseconfirmdialog_reverseconfirmdialog",
       "community": 81,
-      "norm_label": "reverseconfirmdialog()"
+      "norm_label": "reverseconfirmdialog()",
+      "id": "trade_reverseconfirmdialog_reverseconfirmdialog"
     },
     {
       "label": "ChartContextMenu.tsx",
@@ -48956,6 +48956,26 @@
       "target": "lib_divergencemarkers_builddivergencemarkers"
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/TradeOverlay.tsx",
+      "source_location": "L28",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_tradeoverlay",
+      "target": "chart_tradeoverlay_tradeoverlay"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/chart/TradeOverlay.tsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "chart_tradeoverlay",
+      "target": "chart_tradeoverlay_tradeoverlayprops"
+    },
+    {
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -49698,26 +49718,6 @@
       "weight": 1.0,
       "source": "components_chartpanel_chartpanel",
       "target": "lib_replaysession_usereplaysession"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/TradeOverlay.tsx",
-      "source_location": "L28",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_tradeoverlay",
-      "target": "chart_tradeoverlay_tradeoverlay"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "components/chart/TradeOverlay.tsx",
-      "source_location": "L6",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "chart_tradeoverlay",
-      "target": "chart_tradeoverlay_tradeoverlayprops"
     },
     {
       "relation": "imports_from",
@@ -126799,5 +126799,5 @@
       "source_file": "PRODUCT.md"
     }
   ],
-  "built_at_commit": "8bf408a32d3bacb2e3c1ab016fd38a773c1a03c4"
+  "built_at_commit": "e0925e0a48e879a0de2e3e7daa54ab08c795a99c"
 }

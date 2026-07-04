@@ -48,7 +48,7 @@ class OrderRenderer implements IPrimitivePaneRenderer {
         const cy = Math.round(y * vpr);
 
         const lineColor =
-          o.color || (o.kind === 'tp' ? '#22d39a' : o.kind === 'sl' ? '#fb5168' : '#5aa2e6');
+          o.color || (o.kind === 'tp' ? '#22d39a' : o.kind === 'sl' ? '#fb5168' : '#2A62FF');
 
         ctx.strokeStyle = lineColor;
         ctx.lineWidth = Math.max(1, vpr);
@@ -85,20 +85,30 @@ class OrderRenderer implements IPrimitivePaneRenderer {
         ctx.fillStyle = '#0a0e16';
         ctx.fillText(text, boxX + padX, cy);
 
-        // Right-aligned `qty | ±USD | ✕` pill (TV-style).
+        // Right-aligned `qty | ±USD | ✕` pill (TV-style). The P&L segment is
+        // coloured green for profit / red for loss; qty and ✕ use the line colour.
         const badge = (opts.badges ?? []).find((b) => b.kind === o.kind);
         if (badge) {
-          const pnlTxt = badge.pnl == null ? '' :
-            ` | ${badge.pnl >= 0 ? '+' : '−'}${Math.abs(badge.pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
-          const btxt = `${badge.qty}${pnlTxt} | ✕`;
-          const bW = ctx.measureText(btxt).width + padX * 2;
+          const pnlStr = badge.pnl == null ? null :
+            `${badge.pnl >= 0 ? '+' : '−'}${Math.abs(badge.pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+          const pnlColor = badge.pnl == null || badge.pnl >= 0 ? '#22d39a' : '#fb5168';
+          // Coloured text runs: [text, colour].
+          const segs: [string, string][] = pnlStr == null
+            ? [[`${badge.qty} | ✕`, lineColor]]
+            : [[`${badge.qty} | `, lineColor], [pnlStr, pnlColor], [' | ✕', lineColor]];
+          const totalW = segs.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
+          const bW = totalW + padX * 2;
           const bX = w - bW - 8 * hpr;
           ctx.fillStyle = 'rgba(10, 14, 22, 0.9)';
           ctx.fillRect(bX, boxY, bW, boxH);
           ctx.strokeStyle = lineColor;
           ctx.strokeRect(bX, boxY, bW, boxH);
-          ctx.fillStyle = lineColor;
-          ctx.fillText(btxt, bX + padX, cy);
+          let tx = bX + padX;
+          for (const [t, c] of segs) {
+            ctx.fillStyle = c;
+            ctx.fillText(t, tx, cy);
+            tx += ctx.measureText(t).width;
+          }
           this._prim.badgeRects.set(o.kind, { x: bX / hpr, y: boxY / vpr, w: bW / hpr, h: boxH / vpr });
         }
       }

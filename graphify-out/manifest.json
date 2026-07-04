@@ -150,8 +150,8 @@
     "semantic_hash": "6d583ac418e1682fa193b1b5ccceece6"
   },
   "components/Chart.tsx": {
-    "mtime": 1783155748.1894658,
-    "ast_hash": "fef7855e7d46b8cc6c14a1f45b0f691b",
+    "mtime": 1783156875.1822524,
+    "ast_hash": "f6a3f73511d50db15d16d769fc5d995e",
     "semantic_hash": ""
   },
   "components/ChartPanel.tsx": {
@@ -1815,8 +1815,8 @@
     "semantic_hash": ""
   },
   "components/chart/TradeOverlay.tsx": {
-    "mtime": 1783155837.7214894,
-    "ast_hash": "abf57b99e940f6060daa48db880de3d1",
+    "mtime": 1783156848.7746856,
+    "ast_hash": "139db91df2b2b10b58dc725464486120",
     "semantic_hash": ""
   },
   "components/trade/CloseConfirmDialog.tsx": {
