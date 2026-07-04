@@ -154,6 +154,14 @@ is emitted for that band plot at bar `i` (or `null` before any zone formed).
 - `showLabels` boolean, default `true`
 - `showStrength` boolean, default `true` — append the strength score to labels
 - `minStrength` number, default `0`, min `0`, max `100` — hide zones scoring below
+- **Strength weights** (group `"Zone Strength Weights"`, each number min `0` max
+  `1` step `0.01`, passed straight to `scoreZone`): `wConfluence` 0.25,
+  `wRejection` 0.22, `wVolume` 0.18, `wRetests` 0.13, `wZoneWidth` 0.12,
+  `wFreshness` 0.10. (Normalized internally, so they need not sum to 1.)
+
+The compute assembles these six into a `Partial<ZoneStrengthWeights>` and forwards
+it to `scoreZone` / `summarizeZones`, so the user tunes the model without any code
+change.
 
 **Output:** For each active (non-`None`) TF, four `band` plots, id/title
 `"{tfLabel} {zoneLabel}"` where `tfLabel ∈ {4H,D,W,M}` and `zoneLabel ∈
@@ -178,26 +186,35 @@ zone below `minStrength` is filtered out.
 
 **Purpose:** Rank each supply/demand zone by importance so the strongest zones
 stand out and weak ones can be filtered. A pure, deterministic, unit-tested
-function — no framework or chart coupling — so it's reusable and extensible.
+function — **no framework, chart, or rendering coupling** — so future visual
+improvements never require touching the calculation, and other systems (notably
+the future AI Confluence Engine) can consume it directly.
 
 ```ts
+export type ZoneFactor =
+  | 'formationVolume' | 'rejectionStrength' | 'retests'
+  | 'freshness' | 'confluence' | 'zoneWidth';
+
+/** Relative importance of each factor. Need not sum to 1 — scoreZone
+ *  normalizes by the total weight, so any positive numbers work. */
+export type ZoneStrengthWeights = Record<ZoneFactor, number>;
+
+export const DEFAULT_ZONE_STRENGTH_WEIGHTS: ZoneStrengthWeights = {
+  confluence: 0.25, rejectionStrength: 0.22, formationVolume: 0.18,
+  retests: 0.13, zoneWidth: 0.12, freshness: 0.10,
+};
+
 export interface ZoneStrength {
   score: number;   // 0..100
   tier: 'weak' | 'medium' | 'strong';
-  factors: {       // each normalized 0..1, for transparency/testing
-    formationVolume: number;
-    rejectionStrength: number;
-    retests: number;
-    freshness: number;
-    confluence: number;
-  };
+  factors: Record<ZoneFactor, number>; // each normalized 0..1, for transparency/testing
 }
 
 export function scoreZone(
   zone: Zone,
   candles: Candle[],
-  otherActiveZones: Zone[], // same-instance zones from OTHER timeframes
-  cfg?: Partial<ZoneStrengthWeights>,
+  otherActiveZones: Zone[],            // same-instance zones from OTHER timeframes
+  weights?: Partial<ZoneStrengthWeights>, // caller override; merged over defaults
 ): ZoneStrength;
 ```
 
@@ -218,20 +235,54 @@ lookahead beyond formation; each clamped to `[0,1]`):
 5. **Confluence** — overlap with a **same-kind** zone from another active TF
    (Daily supply overlapping Weekly supply). `confluence = clamp(overlapCount /
    2, 0, 1)`; `0` when only one TF is active.
+6. **Zone width** — tighter zones are more precise/decisive, so they score higher:
+   `zoneWidth = clamp(1 - (zoneHeight / (atr * widthAtrMult)), 0, 1)` where
+   `zoneHeight = upper - lower`, `atr` is ATR(14) at formation, `widthAtrMult`
+   default `3`. A very wide zone (≥ 3×ATR) → ~0; a tight zone → ~1.
 
-**Score:** weighted sum × 100, default weights (documented, overridable via
-`cfg`, so the model is extensible):
-`confluence 0.30, rejectionStrength 0.25, formationVolume 0.20, retests 0.15,
-freshness 0.10`.
+**Score:** `100 × Σ(weightᵢ × factorᵢ) / Σ(weightᵢ)` using
+`DEFAULT_ZONE_STRENGTH_WEIGHTS` merged with any caller override — so weights are
+fully configurable and never need to sum to 1.
 **Tier:** `< 40` weak, `40–70` medium, `> 70` strong.
 
 **Consumption:** `sd_zones` scores every zone it builds, filters by `minStrength`,
-and uses `tier` for label text + band opacity (see Indicator 1 output).
+and uses `tier` for label text + band opacity (see Indicator 1 output). The
+scoring output is independent of all of that — rendering reads the numbers, it
+does not feed them.
 
 **Unit test:** construct zones with controlled candle fixtures and assert each
-factor independently (e.g. a high-volume formation raises `formationVolume`; two
-overlapping-TF zones raise `confluence`; an untouched fresh zone scores on
-`freshness` only), plus the final weighted score and tier boundaries.
+factor independently (high-volume formation raises `formationVolume`; two
+overlapping-TF zones raise `confluence`; a tight vs wide zone changes `zoneWidth`;
+an untouched fresh zone scores on `freshness` only); assert custom `weights`
+change the score; assert the final weighted score and tier boundaries.
+
+### AI-Confluence-Engine-facing output
+
+So a later AI Confluence Engine can rank/aggregate zones without re-deriving them
+or touching indicator internals, `sdZones.ts` exports a pure summary API:
+
+```ts
+export interface ZoneSummary {
+  zoneType: 'supply' | 'demand';   // simplified kind for the engine
+  kind: Zone['kind'];              // supply | supplyTarget | demand | demandTarget
+  tf: HtfPeriod;
+  upper: number; lower: number; mid: number;
+  zoneStrength: number;            // 0..100 (ZoneStrength.score)
+  tier: ZoneStrength['tier'];
+  factors: Record<ZoneFactor, number>;
+  distanceToPrice: number;         // signed % from last close to zone mid (+ = above price)
+  isMultiTimeframeConfluence: boolean; // overlaps a same-kind zone on another active TF
+  retestCount: number;             // raw touch count (not normalized)
+  formedAtIndex: number;
+  formedTime: number;              // unix seconds
+}
+
+/** Pure: build → score → summarize the active zones for the engine. */
+export function summarizeZones(candles: Candle[], cfg: SdZonesConfig): ZoneSummary[];
+```
+
+`computeSdZones` (the indicator) and `summarizeZones` (the engine API) share the
+same internal `buildZones` + `scoreZone` steps, so the numbers can never diverge.
 
 ## Indicator 2: Volume-Spike Detection (`vol_spike`)
 
@@ -334,16 +385,23 @@ second period.
 ## Task decomposition (for the implementation plan)
 
 1. `lib/indicators/htf.ts` + unit tests (foundation for `sd_zones` and `fib_pivot`).
-2. `lib/indicators/zoneStrength.ts` + unit tests (foundation for `sd_zones`).
-3. `sd_zones` compute (zone objects + scoring + bands/labels) + golden test +
-   registration.
+2. `lib/indicators/zoneStrength.ts` — `ZoneStrengthWeights` + defaults, the six
+   factors (incl. `zoneWidth`), `scoreZone` (configurable weights) + unit tests.
+   Pure; no imports from the framework, chart, or rendering.
+3. `lib/indicators/sdZones.ts` — `buildZones`, `summarizeZones` (→ `ZoneSummary[]`
+   for the AI Confluence Engine), and `computeSdZones` (→ `IndicatorResult`
+   bands/labels), sharing one build+score path. Golden test for the indicator +
+   a unit test for `summarizeZones` output fields (`zoneStrength`, `zoneType`,
+   `distanceToPrice`, `isMultiTimeframeConfluence`, `retestCount`). Register in
+   `customIndicatorsLibrary.ts`.
 4. `vol_spike` compute + golden test + registration.
 5. `magic_sr` compute + golden test + registration.
 6. `fib_pivot` compute + golden test + registration.
 7. Full verification + `graphify update .`.
 
-(Order: the two helpers first, then `sd_zones` which depends on both; the other
-three indicators are independent and could be built in any order or in parallel.)
+(Order: `htf` + `zoneStrength` helpers first, then `sdZones` which depends on
+both; the other three indicators are independent and could be built in any order
+or in parallel.)
 
 ## Open risks
 
