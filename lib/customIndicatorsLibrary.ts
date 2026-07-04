@@ -16,6 +16,10 @@ import { computeSuperTrend } from './indicators/superTrend';
 import { computeVwapBands } from './indicators/vwapBands';
 import { computeWilliamsR } from './indicators/williamsR';
 import { computeSma } from './indicators/sma';
+import { computeSdZones } from './indicators/sdZones';
+import { computeVolSpike } from './indicators/volSpike';
+import { computeMagicSr } from './indicators/magicSr';
+import { computeFibPivot } from './indicators/fibPivot';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -407,5 +411,72 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'background', name: 'Background', color: '#7E57C21A', thickness: 1, lineStyle: 'solid', display: true, isFill: true },
     ],
     compute: computeWilliamsR,
+  },
+  {
+    id: 'sd_zones',
+    name: 'Supply / Demand Zones',
+    description: 'Non-repainting supply/demand price bands from the prior higher-TF period (up to 3 TFs), ranked by a configurable Zone Strength Score.',
+    inputs: [
+      { id: 'tf1', name: 'Timeframe 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf2', name: 'Timeframe 2', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf3', name: 'Timeframe 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'targetFactor', name: 'Target projection ×', type: 'number', default: 1.5, min: 0, max: 5, step: 0.1 },
+      { id: 'showLabels', name: 'Show labels', type: 'boolean', default: true },
+      { id: 'showStrength', name: 'Show strength score', type: 'boolean', default: true },
+      { id: 'minStrength', name: 'Min strength', type: 'number', default: 0, min: 0, max: 100, step: 1 },
+      { id: 'wConfluence', name: 'Weight: Confluence', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wRejection', name: 'Weight: Rejection', type: 'number', default: 0.22, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wVolume', name: 'Weight: Volume', type: 'number', default: 0.18, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wRetests', name: 'Weight: Retests', type: 'number', default: 0.13, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wZoneWidth', name: 'Weight: Zone Width', type: 'number', default: 0.12, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+      { id: 'wFreshness', name: 'Weight: Freshness', type: 'number', default: 0.10, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
+    ],
+    // One style entry per band plot id (`{TF} {kind}`) so the settings modal
+    // exposes color + visibility for every timeframe and both target zones.
+    // Ids must match the `${TF_LABEL} ${KIND_LABEL}` plot ids in computeSdZones.
+    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => [
+      { id: `${tf} Su`, name: `${tf} Supply`, color: 'rgba(242,54,69,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} Su T`, name: `${tf} Supply Target`, color: 'rgba(242,54,69,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} De`, name: `${tf} Demand`, color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} De T`, name: `${tf} Demand Target`, color: 'rgba(38,166,154,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
+    ]),
+    compute: computeSdZones,
+  },
+  {
+    id: 'vol_spike',
+    name: 'Volume Spike Detection',
+    description: 'Marks abnormal-volume bars: blue up-arrow = major buying, dark down-arrow = major selling.',
+    inputs: [
+      { id: 'length', name: 'Volume MA Length', type: 'number', default: 20, min: 1, max: 500, step: 1 },
+      { id: 'mult', name: 'Spike ×', type: 'number', default: 1.8, min: 1, max: 10, step: 0.1 },
+    ],
+    styles: [],
+    compute: computeVolSpike,
+  },
+  {
+    id: 'magic_sr',
+    name: 'Support & Resistance',
+    description: 'Horizontal S/R from recent swing pivots: resistance above price, support below.',
+    inputs: [
+      { id: 'lookback', name: 'Pivot Lookback', type: 'number', default: 10, min: 2, max: 100, step: 1 },
+      { id: 'count', name: 'Lines Each Side', type: 'number', default: 3, min: 1, max: 10, step: 1 },
+      { id: 'showUp', name: 'Show Resistance', type: 'boolean', default: true },
+      { id: 'showDown', name: 'Show Support', type: 'boolean', default: true },
+    ],
+    styles: [],
+    compute: computeMagicSr,
+  },
+  {
+    id: 'fib_pivot',
+    name: 'Fibonacci Pivots',
+    description: 'Fibonacci pivot P / R1-3 / S1-3 from the prior Day/Week/Month range.',
+    inputs: [
+      { id: 'period', name: 'Period', type: 'select', default: 'D', options: [{ value: 'D', label: 'Day' }, { value: 'W', label: 'Week' }, { value: 'M', label: 'Month' }] },
+      { id: 'f1', name: 'Fib 1', type: 'number', default: 0.382, min: 0, max: 4, step: 0.001 },
+      { id: 'f2', name: 'Fib 2', type: 'number', default: 0.618, min: 0, max: 4, step: 0.001 },
+      { id: 'f3', name: 'Fib 3', type: 'number', default: 1.0, min: 0, max: 4, step: 0.001 },
+    ],
+    styles: [],
+    compute: computeFibPivot,
   },
 ];

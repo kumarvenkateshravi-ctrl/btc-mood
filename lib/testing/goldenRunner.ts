@@ -51,6 +51,10 @@ export function defineGoldenTest(opts: GoldenTestOptions): void {
     const report = compareIndicator(result, fixture);
 
     expect(report.ok, formatGoldenReport(report)).toBe(true);
-    expect(report.checked).toBeGreaterThan(0);
+    // Allow indicators with no plots/signals (e.g., marker-only) to have checked === 0
+    const hasChecks = Object.keys(fixture.expected.plots).length > 0 || (fixture.expected.signals && Object.keys(fixture.expected.signals).length > 0);
+    if (hasChecks) {
+      expect(report.checked).toBeGreaterThan(0);
+    }
   });
 }
