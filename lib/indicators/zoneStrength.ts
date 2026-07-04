@@ -105,10 +105,12 @@ export function scoreZone(
   const barsSince = Math.max(0, (n - 1) - zone.formedAtIndex);
   const freshness = clamp01(1 - barsSince / freshWindow);
 
-  const type = zoneType(zone.kind);
+  // Confluence requires the SAME exact zone kind on another TF (e.g. Daily
+  // supply overlapping Weekly supply) — a projected target band must not
+  // inflate a real reaction zone's score.
   let overlapCount = 0;
   for (const o of otherActiveZones) {
-    if (zoneType(o.kind) === type && zone.lower <= o.upper && zone.upper >= o.lower) overlapCount++;
+    if (o.kind === zone.kind && zone.lower <= o.upper && zone.upper >= o.lower) overlapCount++;
   }
   const confluence = clamp01(overlapCount / 2);
 

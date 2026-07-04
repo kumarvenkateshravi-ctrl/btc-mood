@@ -106,10 +106,8 @@ export function summarizeZones(candles: Candle[], cfg: SdZonesConfig): ZoneSumma
     const strength = scoreZone(z, candles, others, ctx, cfg.weights);
     const type = z.kind === 'supply' || z.kind === 'supplyTarget' ? 'supply' : 'demand';
     const mid = (z.upper + z.lower) / 2;
-    const conf = others.some(
-      (o) => (o.kind === 'supply' || o.kind === 'supplyTarget' ? 'supply' : 'demand') === type &&
-        z.lower <= o.upper && z.upper >= o.lower,
-    );
+    // Same exact kind on another TF (matches scoreZone's confluence rule).
+    const conf = others.some((o) => o.kind === z.kind && z.lower <= o.upper && z.upper >= o.lower);
     return {
       zoneType: type, kind: z.kind, tf: z.tf,
       upper: z.upper, lower: z.lower, mid,
