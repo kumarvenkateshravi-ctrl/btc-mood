@@ -367,7 +367,8 @@ export function useChartData(
           }
           const times = candles.map((c) => shiftTime(c.time as number) as number);
           const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
-          bp.setData(upper, lower, times, st?.color || plot.color);
+          const visible = hiddenKeys.has(key) ? false : st?.display !== false;
+          bp.setData(upper, lower, times, st?.color || plot.color, visible);
         }
 
         // Gradient zones: feed the source plot's per-bar values + bar times.

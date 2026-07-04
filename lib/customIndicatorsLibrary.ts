@@ -431,10 +431,15 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'wZoneWidth', name: 'Weight: Zone Width', type: 'number', default: 0.12, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
       { id: 'wFreshness', name: 'Weight: Freshness', type: 'number', default: 0.10, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
     ],
-    styles: [
-      { id: 'D Su', name: 'Supply', color: 'rgba(242,54,69,0.10)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'D De', name: 'Demand', color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid', display: true },
-    ],
+    // One style entry per band plot id (`{TF} {kind}`) so the settings modal
+    // exposes color + visibility for every timeframe and both target zones.
+    // Ids must match the `${TF_LABEL} ${KIND_LABEL}` plot ids in computeSdZones.
+    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => [
+      { id: `${tf} Su`, name: `${tf} Supply`, color: 'rgba(242,54,69,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} Su T`, name: `${tf} Supply Target`, color: 'rgba(242,54,69,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} De`, name: `${tf} Demand`, color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} De T`, name: `${tf} Demand Target`, color: 'rgba(38,166,154,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
+    ]),
     compute: computeSdZones,
   },
   {

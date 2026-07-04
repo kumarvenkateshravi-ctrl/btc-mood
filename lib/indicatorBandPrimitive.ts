@@ -17,6 +17,7 @@ class BandRenderer implements IPrimitivePaneRenderer {
   ) {}
 
   draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]) {
+    if (!this._prim.visible) return;
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
       const hpr = scope.horizontalPixelRatio;
@@ -63,6 +64,7 @@ export class IndicatorBandPrimitive implements ISeriesPrimitive {
   public lower: (number | null)[] = [];
   public times: number[] = [];
   public color = 'rgba(120,120,120,0.10)';
+  public visible = true;
   private _api: SeriesAttachedParameter<Time> | null = null;
 
   attached(api: SeriesAttachedParameter<Time>) {
@@ -79,11 +81,18 @@ export class IndicatorBandPrimitive implements ISeriesPrimitive {
     return [new BandPaneView(this._api, this)];
   }
 
-  setData(upper: (number | null)[], lower: (number | null)[], times: number[], color: string) {
+  setData(
+    upper: (number | null)[],
+    lower: (number | null)[],
+    times: number[],
+    color: string,
+    visible = true,
+  ) {
     this.upper = upper;
     this.lower = lower;
     this.times = times;
     this.color = color;
+    this.visible = visible;
     this.updateAllViews();
   }
 }
