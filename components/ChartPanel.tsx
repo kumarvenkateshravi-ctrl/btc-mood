@@ -399,29 +399,31 @@ export default function ChartPanel({
   const overlayTypeLabel = 'Market';
   const overlayLeverage = hasPosition && pos ? pos.leverage : LEVERAGE;
 
-  // `qty | ±USD | ✕` pills per line: live P&L on the entry, projected P&L on TP/SL.
+  // `qty | ±USD | ✕` pills on the TP/SL lines (projected P&L). The entry pill is
+  // rendered in the DOM TradeOverlay row instead of on the canvas.
   const overlayBadges = useMemo<OverlayLineBadge[]>(() => {
     if (!hasPosition || !pos) return [];
     const side = pos.side === 'long' ? 'buy' as const : 'sell' as const;
-    const b: OverlayLineBadge[] = [{ kind: 'entry', qty: String(pos.units), pnl: unrealizedPnl(pos, mid) }];
+    const b: OverlayLineBadge[] = [];
     if (effTp != null) b.push({ kind: 'tp', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, effTp) });
     if (effSl != null) b.push({ kind: 'sl', qty: String(pos.units), pnl: projectedPnl(side, pos.units, pos.entryPrice, effSl) });
     return b;
-  }, [hasPosition, pos, mid, effTp, effSl]);
+  }, [hasPosition, pos, effTp, effSl]);
 
   // Data for the on-chart TradeOverlay control row (null when flat / replay).
   const tradeOverlay = useMemo(
     () =>
       hasPosition && pos && !replayTrading
         ? {
-            symbol,
             entryPrice: pos.entryPrice,
+            qty: pos.units,
+            pnl: unrealizedPnl(pos, mid),
             isDirty,
             hasTp: effTp != null,
             hasSl: effSl != null,
           }
         : null,
-    [hasPosition, pos, replayTrading, symbol, isDirty, effTp, effSl],
+    [hasPosition, pos, mid, replayTrading, isDirty, effTp, effSl],
   );
 
   // Price alerts for this symbol → dashed lines on the chart + management pills.
@@ -713,6 +715,7 @@ export default function ChartPanel({
             onOverlayToggleTp={onToggleTp}
             onOverlayToggleSl={onToggleSl}
             onOverlayReverse={() => setShowReverseConfirm(true)}
+            onOverlayClose={() => setShowCloseConfirm(true)}
             priceLines={priceLines}
             onPriceLineDrag={handlePriceAlertDrag}
             onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}

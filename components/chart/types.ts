@@ -79,8 +79,9 @@ export interface ChartProps {
    *  / during replay. TP/SL lines are always draggable; `isDirty` (a staged,
    *  unconfirmed TP/SL change) reveals the Discard/Confirm buttons. */
   tradeOverlay?: {
-    symbol: string;
     entryPrice: number;
+    qty: number;
+    pnl: number;
     isDirty: boolean;
     hasTp: boolean;
     hasSl: boolean;
@@ -90,6 +91,7 @@ export interface ChartProps {
   onOverlayToggleTp?: () => void;
   onOverlayToggleSl?: () => void;
   onOverlayReverse?: () => void;
+  onOverlayClose?: () => void;
   onReady?: (api: ChartApi) => void;
   onLoadOlder?: () => void;
   regime?: number;

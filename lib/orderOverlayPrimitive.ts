@@ -88,7 +88,9 @@ class OrderRenderer implements IPrimitivePaneRenderer {
         // Right-aligned `[qty][±USD][✕]` pill (TV-style), left of the price axis
         // with a clear gap. The qty sits on a solid line-colour block; the P&L
         // block is dark with green (profit) / red (loss) text.
-        const badge = (opts.badges ?? []).find((b) => b.kind === o.kind);
+        // The entry line's pill is rendered in the DOM TradeOverlay row; only
+        // the TP/SL pills are drawn here (they live at their own y-coordinates).
+        const badge = o.kind === 'entry' ? undefined : (opts.badges ?? []).find((b) => b.kind === o.kind);
         if (badge) {
           const qtyStr = `${badge.qty}`;
           const pnlStr = badge.pnl == null ? null :

@@ -105,6 +105,7 @@ export default function Chart({
   onOverlayToggleTp,
   onOverlayToggleSl,
   onOverlayReverse,
+  onOverlayClose,
   onReady,
   onLoadOlder,
   overlayPnL = null,
@@ -417,6 +418,8 @@ export default function Chart({
           chart={chartRef.current}
           series={candleSeriesRef.current}
           entryPrice={tradeOverlay.entryPrice}
+          qty={tradeOverlay.qty}
+          pnl={tradeOverlay.pnl}
           isDirty={tradeOverlay.isDirty}
           hasTp={tradeOverlay.hasTp}
           hasSl={tradeOverlay.hasSl}
@@ -425,6 +428,7 @@ export default function Chart({
           onConfirm={onOverlayConfirm!}
           onToggleTp={onOverlayToggleTp!}
           onToggleSl={onOverlayToggleSl!}
+          onClose={onOverlayClose!}
         />
       )}
 
