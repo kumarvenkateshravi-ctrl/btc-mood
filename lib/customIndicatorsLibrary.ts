@@ -18,6 +18,7 @@ import { computeWilliamsR } from './indicators/williamsR';
 import { computeSma } from './indicators/sma';
 import { computeSdZones } from './indicators/sdZones';
 import { computeVolSpike } from './indicators/volSpike';
+import { computeMagicSr } from './indicators/magicSr';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -445,5 +446,18 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     ],
     styles: [],
     compute: computeVolSpike,
+  },
+  {
+    id: 'magic_sr',
+    name: 'Support & Resistance',
+    description: 'Horizontal S/R from recent swing pivots: resistance above price, support below.',
+    inputs: [
+      { id: 'lookback', name: 'Pivot Lookback', type: 'number', default: 10, min: 2, max: 100, step: 1 },
+      { id: 'count', name: 'Lines Each Side', type: 'number', default: 3, min: 1, max: 10, step: 1 },
+      { id: 'showUp', name: 'Show Resistance', type: 'boolean', default: true },
+      { id: 'showDown', name: 'Show Support', type: 'boolean', default: true },
+    ],
+    styles: [],
+    compute: computeMagicSr,
   },
 ];
