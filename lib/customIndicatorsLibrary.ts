@@ -435,12 +435,19 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     // One style entry per band plot id (`{TF} {kind}`) so the settings modal
     // exposes color + visibility for every timeframe and both target zones.
     // Ids must match the `${TF_LABEL} ${KIND_LABEL}` plot ids in computeSdZones.
-    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => [
-      { id: `${tf} Su`, name: `${tf} Supply`, color: 'rgba(242,54,69,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
-      { id: `${tf} Su T`, name: `${tf} Supply Target`, color: 'rgba(242,54,69,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
-      { id: `${tf} De`, name: `${tf} Demand`, color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
-      { id: `${tf} De T`, name: `${tf} Demand Target`, color: 'rgba(38,166,154,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
-    ]),
+    // Mockup palette: supply = deep blue, demand = muted orange (structure
+    // colors; green/red stay reserved for signals + trade levels). Measured-
+    // move target bands default OFF — context on demand, not clutter.
+    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => {
+      const su = { '4H': '100,141,245', D: '61,109,235', W: '47,86,199', M: '38,70,163' }[tf];
+      const de = { '4H': '238,168,96', D: '224,138,46', W: '191,112,32', M: '158,92,26' }[tf];
+      return [
+        { id: `${tf} Su`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
+        { id: `${tf} Su T`, name: `${tf} Supply Target`, color: `rgba(${su},0.05)`, thickness: 1, lineStyle: 'solid' as const, display: false },
+        { id: `${tf} De`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
+        { id: `${tf} De T`, name: `${tf} Demand Target`, color: `rgba(${de},0.05)`, thickness: 1, lineStyle: 'solid' as const, display: false },
+      ];
+    }),
     compute: computeSdZones,
   },
   {
@@ -470,13 +477,24 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'showTp1', name: 'Show TP1', type: 'boolean', default: true, group: 'Display' },
       { id: 'showTp2', name: 'Show TP2', type: 'boolean', default: true, group: 'Display' },
       { id: 'showConfidence', name: 'Show confidence labels', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showRRBox', name: 'Show risk/reward box', type: 'boolean', default: true, group: 'Display' },
     ],
     // Zone band styles must match the `${TF} ${KIND}` plot ids emitted by computeSdZones.
-    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => [
-      { id: `${tf} Su`, name: `${tf} Supply`, color: 'rgba(242,54,69,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
-      { id: `${tf} Su T`, name: `${tf} Supply Target`, color: 'rgba(242,54,69,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
-      { id: `${tf} De`, name: `${tf} Demand`, color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
-      { id: `${tf} De T`, name: `${tf} Demand Target`, color: 'rgba(38,166,154,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
+    // Mockup palette: supply = deep blue, demand = muted orange (structure
+    // colors; green/red stay reserved for signals + trade levels). Measured-
+    // move target bands default OFF — context on demand, not clutter.
+    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf): IndicatorStyleDef[] => {
+      const su = { '4H': '100,141,245', D: '61,109,235', W: '47,86,199', M: '38,70,163' }[tf];
+      const de = { '4H': '238,168,96', D: '224,138,46', W: '191,112,32', M: '158,92,26' }[tf];
+      return [
+        { id: `${tf} Su`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
+        { id: `${tf} Su T`, name: `${tf} Supply Target`, color: `rgba(${su},0.05)`, thickness: 1, lineStyle: 'solid', display: false },
+        { id: `${tf} De`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
+        { id: `${tf} De T`, name: `${tf} Demand Target`, color: `rgba(${de},0.05)`, thickness: 1, lineStyle: 'solid', display: false },
+      ];
+    }).concat([
+      { id: 'R:R Reward', name: 'R:R Reward box', color: 'rgba(34,211,154,0.05)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'R:R Risk', name: 'R:R Risk box', color: 'rgba(242,54,69,0.05)', thickness: 1, lineStyle: 'solid', display: true },
     ]),
     compute: computeSdSignals,
   },

@@ -138,14 +138,18 @@ const TF_LABEL: Record<string, string> = { '4H': '4H', D: 'D', W: 'W', M: 'M' };
 const KIND_LABEL: Record<Zone['kind'], string> = {
   supply: 'Su', supplyTarget: 'Su T', demand: 'De', demandTarget: 'De T',
 };
-const SUPPLY_FILL = 'rgba(242,54,69,0.10)';
-const SUPPLY_TARGET_FILL = 'rgba(242,54,69,0.06)';
-const DEMAND_FILL = 'rgba(38,166,154,0.10)';
-const DEMAND_TARGET_FILL = 'rgba(38,166,154,0.06)';
+// Deep, muted, professional palette (mockup color system): supply = blue,
+// demand = orange — STRUCTURE colors, deliberately distinct from the green/red
+// DIRECTION colors reserved for signals and trade levels. Slight tone shift
+// per timeframe so D and 4H zones read apart even before the label.
+const SUPPLY_RGB: Record<string, string> = { '4H': '100,141,245', D: '61,109,235', W: '47,86,199', M: '38,70,163' };
+const DEMAND_RGB: Record<string, string> = { '4H': '238,168,96', D: '224,138,46', W: '191,112,32', M: '158,92,26' };
 
-const fillFor = (kind: Zone['kind']): string =>
-  kind === 'supply' ? SUPPLY_FILL : kind === 'supplyTarget' ? SUPPLY_TARGET_FILL :
-  kind === 'demand' ? DEMAND_FILL : DEMAND_TARGET_FILL;
+const fillFor = (kind: Zone['kind'], tf: HtfPeriod): string => {
+  const rgb = kind === 'supply' || kind === 'supplyTarget' ? SUPPLY_RGB[tf] : DEMAND_RGB[tf];
+  const isTarget = kind === 'supplyTarget' || kind === 'demandTarget';
+  return `rgba(${rgb},${isTarget ? 0.05 : 0.10})`;
+};
 
 export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
   const inp = resolveInputs<SdZonesInputs>(config, SD_DEFAULTS);
@@ -183,6 +187,24 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
   const kinds: Zone['kind'][] = ['supply', 'supplyTarget', 'demand', 'demandTarget'];
   const FULL_KIND: Record<'supply' | 'demand', string> = { supply: 'Supply', demand: 'Demand' };
 
+  // Nearest decision zone: the current entry zone closest to price gets the
+  // bright "focus" treatment (mockup hierarchy: current > near-term > history).
+  const lastClose = candles[n - 1].close;
+  let focusKey: string | null = null;
+  let focusDist = Infinity;
+  for (const z of current) {
+    if (z.kind !== 'supply' && z.kind !== 'demand') continue;
+    const st = scored.get(z);
+    if ((st?.score ?? 0) < inp.minStrength) continue;
+    const dist = lastClose >= z.lower && lastClose <= z.upper
+      ? 0
+      : Math.min(Math.abs(lastClose - z.upper), Math.abs(lastClose - z.lower));
+    if (dist < focusDist) {
+      focusDist = dist;
+      focusKey = `${z.tf}:${z.kind}`;
+    }
+  }
+
   for (const tf of tfs) {
     const zones = allByTf.get(tf) ?? [];
     for (const kind of kinds) {
@@ -216,13 +238,15 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
       if (isEntry) {
         zoneStyle.boundary = kind === 'supply' ? 'lower' : 'upper';
         zoneStyle.emphasis = curScore / 100;
+        zoneStyle.mid = true;
+        zoneStyle.focus = focusKey === `${tf}:${kind}`;
         if (inp.showLabels && cur && curScore >= inp.minStrength) {
-          const scoreTxt = inp.showStrength ? ` ★${Math.round(curScore)}` : '';
+          const scoreTxt = inp.showStrength ? ` ★ ${Math.round(curScore)}` : '';
           zoneStyle.label = `${TF_LABEL[tf]} ${FULL_KIND[kind]}${scoreTxt}`;
         }
       }
 
-      plots.push({ id: label, title: label, color: fillFor(kind), type: 'band', pane: 'overlay', data, zoneStyle });
+      plots.push({ id: label, title: label, color: fillFor(kind, tf), type: 'band', pane: 'overlay', data, zoneStyle });
     }
   }
 

@@ -78,7 +78,10 @@ class BandRenderer implements IPrimitivePaneRenderer {
         return;
       }
 
-      // ---- Zone mode ------------------------------------------------------
+      // ---- Zone mode: each run is a market OBJECT --------------------------
+      // Border-defined rectangle (upper bound / dashed mid / lower bound) with
+      // a soft glassy fill — never a painted block. Hierarchy: focus (nearest
+      // decision zone) bright → active normal → historical dimmed.
       const runs = this._prim.runs;
       if (runs.length === 0) return;
       const rgb = rgbOf(color);
@@ -95,6 +98,7 @@ class BandRenderer implements IPrimitivePaneRenderer {
 
       for (const run of runs) {
         const active = run === lastRun;
+        const focus = active && zoneStyle.focus === true;
         const yU = series.priceToCoordinate(run.upper);
         const yL = series.priceToCoordinate(run.lower);
         if (yU === null || yL === null) continue;
@@ -106,7 +110,6 @@ class BandRenderer implements IPrimitivePaneRenderer {
         let x1 = xOf(run.start);
         let x2 = xOf(run.end);
         if (x1 == null && x2 == null) {
-          // Entirely offscreen — unless it spans the view (start left, end right).
           const first = ts.timeToCoordinate(times[Math.max(0, run.start)] as Time);
           const last = ts.timeToCoordinate(times[Math.min(times.length - 1, run.end)] as Time);
           if (first == null && last == null && !(run.start < 0)) continue;
@@ -120,61 +123,60 @@ class BandRenderer implements IPrimitivePaneRenderer {
         const boundaryY = zoneStyle.boundary === 'lower' ? bot : top;
         const distalY = zoneStyle.boundary === 'lower' ? top : bot;
 
-        // 1. Fill — gradient fading away from the boundary; historical runs flat + faint.
-        if (active && !isSubtle) {
-          const grad = ctx.createLinearGradient(0, boundaryY, 0, distalY);
-          grad.addColorStop(0, `rgba(${rgb},${0.05 + 0.10 * emphasis})`);
-          grad.addColorStop(1, `rgba(${rgb},0.015)`);
-          ctx.fillStyle = grad;
-        } else if (active) {
-          ctx.fillStyle = `rgba(${rgb},0.035)`; // active target band: whisper-quiet
-        } else {
-          ctx.fillStyle = `rgba(${rgb},${isSubtle ? 0.015 : 0.03})`; // history
-        }
+        // 1. Fill — flat, glassy, quiet. The border carries the zone, not the fill.
+        const fillAlpha = isSubtle
+          ? (active ? 0.03 : 0.015)
+          : focus ? 0.11 : active ? 0.06 : 0.025;
+        ctx.fillStyle = `rgba(${rgb},${fillAlpha})`;
         ctx.fillRect(left, top, right - left, bot - top);
 
-        // 2. Boundary line (entry zones only) — the visual spine of the zone.
+        // 2. Borders — upper + lower bounds, 1–2px, weight scales with strength.
         if (!isSubtle) {
-          const alpha = active ? 0.35 + 0.55 * emphasis : 0.18;
-          ctx.strokeStyle = `rgba(${rgb},${alpha})`;
-          ctx.lineWidth = Math.max(1, (active ? 2 : 1) * vpr);
+          const borderAlpha = focus ? 0.95 : active ? 0.5 : 0.15;
+          const widthPx = Math.min(2, 1 + emphasis); // ★ weak 1px → ★★★★★ 2px
+          ctx.strokeStyle = `rgba(${rgb},${borderAlpha})`;
+          ctx.lineWidth = Math.max(1, widthPx * vpr);
           ctx.setLineDash(dashed ? [5 * hpr, 4 * hpr] : []);
-          ctx.beginPath();
-          ctx.moveTo(left, boundaryY);
-          ctx.lineTo(right, boundaryY);
-          ctx.stroke();
-          // Distal hairline closes the zone quietly (active only).
-          if (active) {
-            ctx.strokeStyle = `rgba(${rgb},0.15)`;
-            ctx.lineWidth = Math.max(1, vpr);
+          for (const ey of [top, bot]) {
             ctx.beginPath();
-            ctx.moveTo(left, distalY);
-            ctx.lineTo(right, distalY);
+            ctx.moveTo(left, ey);
+            ctx.lineTo(right, ey);
+            ctx.stroke();
+          }
+          // 3. Dashed midline (zone anatomy) — active zones only, half-weight.
+          if (zoneStyle.mid && active && bot - top > 8 * vpr) {
+            const my = (top + bot) / 2;
+            ctx.strokeStyle = `rgba(${rgb},${borderAlpha * 0.45})`;
+            ctx.lineWidth = Math.max(1, vpr);
+            ctx.setLineDash([3 * hpr, 3 * hpr]);
+            ctx.beginPath();
+            ctx.moveTo(left, my);
+            ctx.lineTo(right, my);
             ctx.stroke();
           }
           ctx.setLineDash([]);
         }
 
-        // 3. Label — active run only, tucked against the boundary at the right end.
+        // 4. Label chip — solid bar at the FAR edge (away from price), inside the
+        //    zone with clear padding; white text on a muted accent fill.
         if (active && zoneStyle.label) {
           const fontPx = 10 * vpr;
           ctx.font = `500 ${fontPx}px Inter, ui-sans-serif, system-ui`;
           ctx.textBaseline = 'middle';
           const text = zoneStyle.label;
-          const padX = 5 * hpr;
+          const padX = 6 * hpr;
           const w = ctx.measureText(text).width + padX * 2;
-          const h = 15 * vpr;
-          const lx = Math.min(right, scope.bitmapSize.width) - w - 6 * hpr;
-          // Inside the zone, hugging the boundary edge.
-          const inset = 3 * vpr + h / 2;
-          const ly = zoneStyle.boundary === 'lower' ? bot - inset : top + inset;
-          ctx.fillStyle = 'rgba(8,12,20,0.72)';
+          const h = 16 * vpr;
+          const lx = Math.min(right, scope.bitmapSize.width) - w - 8 * hpr;
+          const inset = 4 * vpr + h / 2;
+          const ly = distalY === top ? top + inset : bot - inset;
+          ctx.fillStyle = `rgba(${rgb},${focus ? 0.9 : 0.55})`;
           ctx.fillRect(lx, ly - h / 2, w, h);
-          ctx.fillStyle = `rgba(${rgb},0.95)`;
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
           ctx.fillText(text, lx + padX, ly);
         }
 
-        // 4. Signal-origin anchors — dot + tick on the boundary at trigger bars.
+        // 5. Signal-origin anchors — dot + tick on the price-facing boundary.
         if (!isSubtle && anchors.length > 0) {
           for (const a of anchors) {
             if (a < run.start || a > run.end + 1) continue; // +1: confirm bar can close just past the run
@@ -184,7 +186,6 @@ class BandRenderer implements IPrimitivePaneRenderer {
             ctx.beginPath();
             ctx.arc(ax, boundaryY, 3 * hpr, 0, Math.PI * 2);
             ctx.fill();
-            // Tick pointing out of the zone toward price.
             const dir = zoneStyle.boundary === 'lower' ? 1 : -1;
             ctx.strokeStyle = `rgba(${rgb},0.6)`;
             ctx.lineWidth = Math.max(1, vpr);

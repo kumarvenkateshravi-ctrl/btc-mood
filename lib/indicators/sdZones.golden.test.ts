@@ -54,8 +54,13 @@ describe('sd_zones golden master', () => {
     // Timeframes are differentiated by dash style.
     expect(byId.get('D Su')?.zoneStyle?.lineStyle).toBe('solid');
     expect(byId.get('4H Su')?.zoneStyle?.lineStyle).toBe('dashed');
-    // Labels read "TF Kind ★score".
+    // Labels read "TF Kind ★ score" (mockup chip format).
     const label = byId.get('D Su')?.zoneStyle?.label ?? byId.get('D De')?.zoneStyle?.label ?? '';
-    expect(label).toMatch(/^D (Supply|Demand) ★\d+$/);
+    expect(label).toMatch(/^D (Supply|Demand) ★ \d+$/);
+    // Zone anatomy: entry zones carry a dashed midline; exactly one current
+    // entry zone is the bright "focus" (nearest decision zone).
+    expect(byId.get('D Su')?.zoneStyle?.mid).toBe(true);
+    const focusCount = res.plots.filter((p) => p.zoneStyle?.focus).length;
+    expect(focusCount).toBe(1);
   });
 });

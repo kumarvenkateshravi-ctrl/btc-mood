@@ -50,16 +50,21 @@ export interface IndicatorSettings {
  * absent, bands keep the legacy flat-fill rendering.
  */
 export interface BandZoneStyle {
-  /** Which edge faces price and gets the emphasized boundary line. Omit for
-   *  subtle context bands (e.g. measured-move target zones): no boundary,
+  /** Which edge faces price (signal side; anchors render here). Omit for
+   *  subtle context bands (e.g. measured-move target zones): no borders,
    *  fainter fill. */
   boundary?: 'upper' | 'lower';
-  /** Boundary dash style — differentiates timeframes (e.g. D solid, 4H dashed). */
+  /** Border dash style — differentiates timeframes (e.g. D solid, 4H dashed). */
   lineStyle?: 'solid' | 'dashed';
-  /** Label for the ACTIVE (latest) zone run, e.g. "D Supply ★91". */
+  /** Label chip for the ACTIVE (latest) zone run, e.g. "D Supply ★ 92". */
   label?: string;
-  /** Boundary/label strength emphasis 0..1 (zone strength score / 100). */
+  /** Strength 0..1 (zone score / 100) — drives border weight + label stars. */
   emphasis?: number;
+  /** Draw a dashed midline through the zone (TradingView-style anatomy). */
+  mid?: boolean;
+  /** The nearest decision zone to current price — rendered bright; other
+   *  active zones render normal; historical runs render dimmed. */
+  focus?: boolean;
   /** Bar indices where a signal originated from this zone — the primitive
    *  draws an origin dot + tick on the boundary at each. */
   anchors?: number[];

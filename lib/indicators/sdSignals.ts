@@ -21,7 +21,7 @@ interface SdSignalsInputs {
   // Display toggles — the indicator renders the full trade setup by default.
   showSupply: boolean; showDemand: boolean; showSignals: boolean;
   showEntry: boolean; showSl: boolean; showTp1: boolean; showTp2: boolean;
-  showConfidence: boolean;
+  showConfidence: boolean; showRRBox: boolean;
 }
 
 // Default to TWO zone timeframes (D + 4H): the zone-strength score weights
@@ -36,7 +36,7 @@ const SD_SIGNALS_DEFAULTS: SdSignalsInputs = {
   signalOn: 'close',
   showSupply: true, showDemand: true, showSignals: true,
   showEntry: true, showSl: true, showTp1: true, showTp2: true,
-  showConfidence: true,
+  showConfidence: true, showRRBox: true,
 };
 
 const avgPeriodVolume = (zones: Zone[]): number => {
@@ -182,17 +182,39 @@ export function computeSdSignals(candles: Candle[], config?: CustomIndicatorConf
   }
 
   // 3. Full trade setup for the most-recent signal (a live one if any, else the latest).
+  //    Mockup trade levels: entry teal, stop red, targets dashed green.
   const active = [...triggered].reverse().find((e) => LIVE.has(e.status)) ?? triggered[triggered.length - 1];
   if (active) {
     const sideTxt = active.side === 'buy' ? 'BUY' : 'SELL';
     const entryTitle = inp.showConfidence
-      ? `${sideTxt} · ★${Math.round(active.confidence)} · R${active.riskReward.toFixed(1)}`
+      ? `${sideTxt} · ★ ${Math.round(active.confidence)} · R${active.riskReward.toFixed(1)}`
       : `Entry ${active.entry.toFixed(1)}`;
-    if (inp.showEntry) levels.push({ value: active.entry, color: '#2A62FF', lineStyle: 'solid', lineWidth: 2, title: entryTitle });
-    if (inp.showSl) levels.push({ value: active.stopLoss, color: '#f5a623', lineStyle: 'dashed', lineWidth: 1, title: `SL ${active.stopLoss.toFixed(1)}` });
+    if (inp.showEntry) levels.push({ value: active.entry, color: '#26c6da', lineStyle: 'solid', lineWidth: 2, title: entryTitle });
+    if (inp.showSl) levels.push({ value: active.stopLoss, color: '#f23645', lineStyle: 'solid', lineWidth: 1, title: `SL ${active.stopLoss.toFixed(1)}` });
     if (inp.showTp1) levels.push({ value: active.takeProfit1, color: '#22d39a', lineStyle: 'dashed', lineWidth: 1, title: `TP1 ${active.takeProfit1.toFixed(1)}` });
-    if (inp.showTp2) levels.push({ value: active.takeProfit2, color: '#22d39a', lineStyle: 'dotted', lineWidth: 1, title: `TP2 ${active.takeProfit2.toFixed(1)}` });
+    if (inp.showTp2) levels.push({ value: active.takeProfit2, color: '#22d39a', lineStyle: 'dashed', lineWidth: 1, title: `TP2 ${active.takeProfit2.toFixed(1)}` });
   }
+
+  // 4. R:R box — reward (entry→TP1) and risk (entry→SL) shading from the
+  //    trigger bar forward, so the trade's geometry is visible at a glance.
+  //    Plots are always emitted (null data when absent) to keep the chart's
+  //    plot signature stable; they render via the legacy soft-fill band path.
+  const reward = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  const risk = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  if (active && inp.showRRBox && active.triggeredIndex != null) {
+    for (let i = active.triggeredIndex; i < n; i++) {
+      reward[i] = {
+        upper: Math.max(active.entry, active.takeProfit1),
+        lower: Math.min(active.entry, active.takeProfit1),
+      };
+      risk[i] = {
+        upper: Math.max(active.entry, active.stopLoss),
+        lower: Math.min(active.entry, active.stopLoss),
+      };
+    }
+  }
+  plots.push({ id: 'R:R Reward', title: 'R:R Reward', color: 'rgba(34,211,154,0.05)', type: 'band', pane: 'overlay', data: reward });
+  plots.push({ id: 'R:R Risk', title: 'R:R Risk', color: 'rgba(242,54,69,0.05)', type: 'band', pane: 'overlay', data: risk });
 
   return { plots, signals, levels };
 }
