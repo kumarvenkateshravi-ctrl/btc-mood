@@ -439,8 +439,8 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     // colors; green/red stay reserved for signals + trade levels). Measured-
     // move target bands default OFF — context on demand, not clutter.
     styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => {
-      const su = { '4H': '100,141,245', D: '61,109,235', W: '47,86,199', M: '38,70,163' }[tf];
-      const de = { '4H': '238,168,96', D: '224,138,46', W: '191,112,32', M: '158,92,26' }[tf];
+      const su = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' }[tf];
+      const de = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' }[tf];
       return [
         { id: `${tf} Su`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
         { id: `${tf} Su T`, name: `${tf} Supply Target`, color: `rgba(${su},0.05)`, thickness: 1, lineStyle: 'solid' as const, display: false },
@@ -484,8 +484,8 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     // colors; green/red stay reserved for signals + trade levels). Measured-
     // move target bands default OFF — context on demand, not clutter.
     styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf): IndicatorStyleDef[] => {
-      const su = { '4H': '100,141,245', D: '61,109,235', W: '47,86,199', M: '38,70,163' }[tf];
-      const de = { '4H': '238,168,96', D: '224,138,46', W: '191,112,32', M: '158,92,26' }[tf];
+      const su = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' }[tf];
+      const de = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' }[tf];
       return [
         { id: `${tf} Su`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
         { id: `${tf} Su T`, name: `${tf} Supply Target`, color: `rgba(${su},0.05)`, thickness: 1, lineStyle: 'solid', display: false },

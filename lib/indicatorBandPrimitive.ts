@@ -123,16 +123,20 @@ class BandRenderer implements IPrimitivePaneRenderer {
         const boundaryY = zoneStyle.boundary === 'lower' ? bot : top;
         const distalY = zoneStyle.boundary === 'lower' ? top : bot;
 
-        // 1. Fill — flat, glassy, quiet. The border carries the zone, not the fill.
+        // 1. Fill — flat and glassy, but BRIGHT across all runs: historical
+        //    zones keep the same color at near-full strength so past signals
+        //    can be analysed against the zones that produced them. Focus is
+        //    only one step brighter, not the only visible zone.
         const fillAlpha = isSubtle
           ? (active ? 0.03 : 0.015)
-          : focus ? 0.11 : active ? 0.06 : 0.025;
+          : focus ? 0.16 : active ? 0.12 : 0.10;
         ctx.fillStyle = `rgba(${rgb},${fillAlpha})`;
         ctx.fillRect(left, top, right - left, bot - top);
 
         // 2. Borders — upper + lower bounds, 1–2px, weight scales with strength.
+        //    Historical borders stay clearly visible (same hue, one step down).
         if (!isSubtle) {
-          const borderAlpha = focus ? 0.95 : active ? 0.5 : 0.15;
+          const borderAlpha = focus ? 1.0 : active ? 0.75 : 0.55;
           const widthPx = Math.min(2, 1 + emphasis); // ★ weak 1px → ★★★★★ 2px
           ctx.strokeStyle = `rgba(${rgb},${borderAlpha})`;
           ctx.lineWidth = Math.max(1, widthPx * vpr);

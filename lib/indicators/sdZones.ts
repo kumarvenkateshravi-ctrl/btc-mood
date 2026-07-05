@@ -142,8 +142,8 @@ const KIND_LABEL: Record<Zone['kind'], string> = {
 // demand = orange — STRUCTURE colors, deliberately distinct from the green/red
 // DIRECTION colors reserved for signals and trade levels. Slight tone shift
 // per timeframe so D and 4H zones read apart even before the label.
-const SUPPLY_RGB: Record<string, string> = { '4H': '100,141,245', D: '61,109,235', W: '47,86,199', M: '38,70,163' };
-const DEMAND_RGB: Record<string, string> = { '4H': '238,168,96', D: '224,138,46', W: '191,112,32', M: '158,92,26' };
+const SUPPLY_RGB: Record<string, string> = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' };
+const DEMAND_RGB: Record<string, string> = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' };
 
 const fillFor = (kind: Zone['kind'], tf: HtfPeriod): string => {
   const rgb = kind === 'supply' || kind === 'supplyTarget' ? SUPPLY_RGB[tf] : DEMAND_RGB[tf];
