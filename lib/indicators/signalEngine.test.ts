@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { computeStopLoss, DEFAULT_SIGNAL_CONFIG, computeTargets } from './signalEngine';
+import { computeStopLoss, DEFAULT_SIGNAL_CONFIG, computeTargets, computeConfidence } from './signalEngine';
 import type { ScoredZone } from './signalTypes';
+
+const CFG = DEFAULT_SIGNAL_CONFIG;
 
 const zone = { upper: 105, lower: 100 };
 
@@ -61,5 +63,28 @@ describe('computeTargets (sell at supply)', () => {
     const { tp1, tp2 } = computeTargets('sell', 100, 102, zones, 5, 1.5);
     expect(tp1).toBe(80);
     expect(tp2).toBe(60);
+  });
+});
+
+describe('computeConfidence', () => {
+  const strong = z({
+    zoneType: 'demand', kind: 'demand', isConfluence: true, retestCount: 3,
+    strength: { score: 90, tier: 'strong', factors: { formationVolume: 0.9, rejectionStrength: 0.8, retests: 0.3, freshness: 0.2, confluence: 1, zoneWidth: 0.6 } },
+  });
+  it('returns 0..100 and factors sorted by contribution desc', () => {
+    const { confidence, explanation } = computeConfidence(strong, 2.1, 1.5, CFG);
+    expect(confidence).toBeGreaterThan(0);
+    expect(confidence).toBeLessThanOrEqual(100);
+    const contribs = explanation.factors.map((f) => f.contribution);
+    expect(contribs).toEqual([...contribs].sort((a, b) => b - a));
+  });
+  it('surfaces counter-signals (high retests, stale zone)', () => {
+    const { explanation } = computeConfidence(strong, 2.1, 1.5, CFG);
+    expect(explanation.counterSignals).toContain('retested 3×');
+    expect(explanation.counterSignals).toContain('stale zone');
+  });
+  it('summary mentions the R multiple', () => {
+    const { explanation } = computeConfidence(strong, 2.1, 1.5, CFG);
+    expect(explanation.summary).toMatch(/2\.1R/);
   });
 });

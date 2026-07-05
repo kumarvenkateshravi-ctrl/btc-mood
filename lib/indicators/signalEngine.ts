@@ -1,4 +1,4 @@
-import type { Side, ScoredZone } from './signalTypes';
+import type { Side, ScoredZone, SignalFactor, SignalExplanation } from './signalTypes';
 
 export type SlBufferMode = 'atr' | 'percent' | 'ticks';
 export type ConfirmationMode = 'touch' | 'rejection_close' | 'reversal_candle';
@@ -89,4 +89,47 @@ export function computeTargets(
   let tp2 = targets.length ? targets[0] : entry - 2 * (entry - tp1);
   if (tp2 >= tp1) tp2 = tp1 - (entry - tp1);
   return { tp1, tp2 };
+}
+
+const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+const clamp100 = (x: number): number => (x < 0 ? 0 : x > 100 ? 100 : x);
+const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+const FACTOR_LABEL: Record<SignalFactor['key'], string> = {
+  zoneStrength: 'Zone strength',
+  confluence: 'Multi-TF confluence',
+  riskReward: 'Risk/reward',
+  freshness: 'Freshness',
+  formationVolume: 'Formation volume',
+};
+
+export function computeConfidence(
+  zone: ScoredZone,
+  rr1: number,
+  minRR: number,
+  cfg: SignalEngineConfig,
+): { confidence: number; explanation: SignalExplanation } {
+  const raw: Array<Pick<SignalFactor, 'key' | 'input' | 'weight'>> = [
+    { key: 'zoneStrength', input: clamp01(zone.strength.score / 100), weight: cfg.wZoneStrength },
+    { key: 'confluence', input: zone.isConfluence ? 1 : 0, weight: cfg.wConfluence },
+    { key: 'riskReward', input: clamp01(rr1 / 3), weight: cfg.wRiskReward },
+    { key: 'freshness', input: clamp01(zone.strength.factors.freshness), weight: cfg.wFreshness },
+    { key: 'formationVolume', input: clamp01(zone.strength.factors.formationVolume), weight: cfg.wFormationVolume },
+  ];
+  const factors: SignalFactor[] = raw
+    .map((f) => ({ ...f, label: FACTOR_LABEL[f.key], contribution: f.weight * f.input * 100 }))
+    .sort((a, b) => b.contribution - a.contribution);
+  const confidence = clamp100(factors.reduce((s, f) => s + f.contribution, 0));
+
+  const counterSignals: string[] = [];
+  if (zone.retestCount >= 3) counterSignals.push(`retested ${zone.retestCount}×`);
+  if (rr1 < minRR * 1.1) counterSignals.push('R:R near floor');
+  if (zone.strength.factors.freshness < 0.3) counterSignals.push('stale zone');
+
+  const summary =
+    `${cap(zone.strength.tier)} ${zone.zoneType} zone` +
+    `${zone.isConfluence ? ' with multi-TF confluence' : ''}, ${rr1.toFixed(1)}R ` +
+    `(top: ${factors[0].label.toLowerCase()})`;
+
+  return { confidence, explanation: { factors, summary, counterSignals } };
 }
