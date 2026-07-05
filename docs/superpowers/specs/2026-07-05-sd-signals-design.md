@@ -282,12 +282,12 @@ auth+Stripe plan.
 - **Phase 2 (later):** breakout/continuation archetype, alerts, subscription gate +
   public track-record page.
 
-## 16. Open questions (confirm at review)
+## 16. Locked decisions (approved 2026-07-05)
 
-1. **Archetype for Phase 1:** reversal-only (this spec) — confirm, or fold in breakout now?
-2. **Signal timeframe:** confirm signals fire on the **chart TF** vs a fixed
-   confirmation TF (e.g. always 1h/4h regardless of chart).
-3. **TP model:** TP1 = nearest opposing zone + TP2 = measured move (this spec) — or a
-   simpler fixed-R (e.g. 1R/2R/3R) model?
-4. **Separate indicator (`sd_signals`) vs extending `sd_zones`** to also emit signals —
-   this spec proposes a **separate** indicator so users can toggle signals independently.
+1. **Archetype:** **Reversal-only** for Phase 1. Breakout/continuation is Phase 2.
+2. **Signal timeframe:** signals are generated on the **current chart timeframe**
+   (the confirmation bar is a chart-TF bar; zones still come from the configured HTFs).
+3. **Target model:** **TP1 = nearest opposing zone, TP2 = measured-move target band**
+   (as specified in §7). Fixed-R is not used in Phase 1.
+4. **Indicator packaging:** **`sd_signals` is a separate indicator** from `sd_zones`,
+   toggled independently in the indicator library.
