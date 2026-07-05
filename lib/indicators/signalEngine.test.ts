@@ -112,7 +112,7 @@ const ctx = { symbol: 'BTCUSDT', timeframe: '1h' };
 
 describe('generateSignals (buy lifecycle)', () => {
   it('arms, triggers on rejection close, resolves at TP1, carries the contract fields', () => {
-    const sigs = generateSignals(bars, [demand, supply], atr, { ...CFG }, ctx);
+    const sigs = generateSignals(bars, [demand, supply], atr, { ...CFG, closedBarOnly: false }, ctx);
     const s = sigs.find((e) => e.side === 'buy')!;
     expect(s.symbol).toBe('BTCUSDT');
     expect(s.timeframe).toBe('1h');
@@ -126,10 +126,34 @@ describe('generateSignals (buy lifecycle)', () => {
     expect(s.createdAt).toBe(bars[3].time);
   });
 
-  it('fails the R:R gate -> invalidated, never triggered', () => {
-    const sigs = generateSignals(bars, [demand, supply], atr, { ...CFG, minRR: 100 }, ctx);
+  it('fails the R:R gate -> invalidated, never triggered, with rejectReason', () => {
+    const sigs = generateSignals(bars, [demand, supply], atr, { ...CFG, closedBarOnly: false, minRR: 100 }, ctx);
     const s = sigs.find((e) => e.side === 'buy')!;
     expect(s.status).toBe('invalidated');
     expect(s.triggeredIndex).toBeNull();
+    expect(s.rejectReason).toBe('riskReward');
+  });
+});
+
+describe('generateSignals closedBarOnly', () => {
+  // Demand 100-105; bar 1 enters, bar 2 (the LAST bar) closes back above.
+  const dz = z({
+    kind: 'demand', zoneType: 'demand', lower: 100, upper: 105, formedAtIndex: 0,
+    strength: { score: 80, tier: 'strong', factors: { formationVolume: 0.7, rejectionStrength: 0.7, retests: 0, freshness: 0.9, confluence: 0, zoneWidth: 0.5 } },
+  });
+  const sup = z({ kind: 'supply', zoneType: 'supply', lower: 130, upper: 135, formedAtIndex: 0 });
+  const three: Candle[] = [c(0, 110, 112, 108, 111), c(1, 107, 108, 101, 103), c(2, 103, 109, 102, 108)];
+  const atr3 = three.map(() => 4);
+
+  it('does NOT confirm on the still-forming last bar (strict, default)', () => {
+    const sigs = generateSignals(three, [dz, sup], atr3, { ...CFG }, ctx); // closedBarOnly default true
+    const s = sigs.find((e) => e.side === 'buy');
+    expect(s?.triggeredIndex ?? null).toBeNull(); // last-bar confirm ignored
+  });
+
+  it('DOES confirm on that same bar once treated as closed', () => {
+    const sigs = generateSignals(three, [dz, sup], atr3, { ...CFG, closedBarOnly: false }, ctx);
+    const s = sigs.find((e) => e.side === 'buy');
+    expect(s?.triggeredIndex).toBe(2);
   });
 });

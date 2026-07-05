@@ -14,6 +14,9 @@ export interface SignalEngineConfig {
   tickSize: number;
   maxBarsToTrigger: number;
   maxBarsInTrade: number;
+  /** When true, the still-forming last bar is ignored for arm/confirm/resolve
+   *  so a signal only appears after its bar has CLOSED (strictly non-repainting). */
+  closedBarOnly: boolean;
   wZoneStrength: number;
   wConfluence: number;
   wRiskReward: number;
@@ -31,6 +34,7 @@ export const DEFAULT_SIGNAL_CONFIG: SignalEngineConfig = {
   tickSize: 0.1,
   maxBarsToTrigger: 20,
   maxBarsInTrade: 150,
+  closedBarOnly: true,
   wZoneStrength: 0.35,
   wConfluence: 0.20,
   wRiskReward: 0.20,
@@ -161,6 +165,9 @@ export function generateSignals(
   ctx: SignalContext,
 ): SdSignal[] {
   const out: SdSignal[] = [];
+  // Strict non-repaint: when closedBarOnly, never evaluate the still-forming
+  // last bar — a signal only appears once its bar has closed.
+  const evalLen = cfg.closedBarOnly ? candles.length - 1 : candles.length;
   const entryZones = zones.filter(
     (zn) => (zn.kind === 'demand' || zn.kind === 'supply') && TIER_RANK[zn.strength.tier] >= TIER_RANK[cfg.minTier],
   );
@@ -172,7 +179,7 @@ export function generateSignals(
 
     // 1. Arm: first bar after formation that enters the zone.
     let armedIndex = -1;
-    for (let i = zone.formedAtIndex + 1; i < candles.length; i++) {
+    for (let i = zone.formedAtIndex + 1; i < evalLen; i++) {
       if (inZone(zone, candles[i])) { armedIndex = i; break; }
     }
     if (armedIndex === -1) continue;
@@ -183,16 +190,17 @@ export function generateSignals(
       zoneId, zoneTf: zone.tf, zoneKind, status: 'armed',
       entry: NaN, stopLoss: NaN, takeProfit1: NaN, takeProfit2: NaN, riskReward: NaN,
       confidence: 0, explanation: { factors: [], summary: '', counterSignals: [] }, tier,
+      rejectReason: null,
       armedIndex, triggeredIndex: null, resolvedIndex: null,
       createdAt: candles[armedIndex].time, resolvedAt: null,
     };
 
     // 2. Confirm within maxBarsToTrigger; a close beyond the far edge invalidates.
     let triggeredIndex = -1;
-    for (let j = armedIndex; j < candles.length && j - armedIndex <= cfg.maxBarsToTrigger; j++) {
+    for (let j = armedIndex; j < evalLen && j - armedIndex <= cfg.maxBarsToTrigger; j++) {
       const bar = candles[j];
       const broken = side === 'buy' ? bar.close < zone.lower : bar.close > zone.upper;
-      if (broken) { out.push({ ...base, status: 'invalidated' }); triggeredIndex = -2; break; }
+      if (broken) { out.push({ ...base, status: 'invalidated', rejectReason: 'zoneBroken' }); triggeredIndex = -2; break; }
       if (isConfirmed(side, zone, bar, cfg.confirmation)) { triggeredIndex = j; break; }
     }
     if (triggeredIndex === -2) continue;
@@ -213,7 +221,9 @@ export function generateSignals(
     if (confidence < cfg.confidenceFloor || riskReward < cfg.minRR) {
       // Failed the quality gate: it armed + confirmed but never became a live
       // signal, so it is invalidated with no trigger (triggeredIndex stays null).
-      out.push({ ...gated, status: 'invalidated', triggeredIndex: null });
+      // Record which gate rejected it so the UI can explain "no signals".
+      const rejectReason = confidence < cfg.confidenceFloor ? 'confidence' : 'riskReward';
+      out.push({ ...gated, status: 'invalidated', triggeredIndex: null, rejectReason });
       continue;
     }
 
@@ -221,7 +231,7 @@ export function generateSignals(
     let status: SdSignalStatus = 'triggered';
     let resolvedIndex: number | null = null;
     let hitTp1 = false;
-    for (let k = triggeredIndex + 1; k < candles.length && k - triggeredIndex <= cfg.maxBarsInTrade; k++) {
+    for (let k = triggeredIndex + 1; k < evalLen && k - triggeredIndex <= cfg.maxBarsInTrade; k++) {
       const bar = candles[k];
       const slHit = side === 'buy' ? bar.low <= stopLoss : bar.high >= stopLoss;
       const tp1Hit = side === 'buy' ? bar.high >= tp1 : bar.low <= tp1;

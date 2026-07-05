@@ -27,7 +27,7 @@ const GOLDEN = join(__dirname, '..', 'testing', 'fixtures', 'signalEngine.golden
 
 describe('signalEngine golden', () => {
   it('matches the frozen SdSignal snapshot', () => {
-    const sigs = generateSignals(bars, zones, atr, DEFAULT_SIGNAL_CONFIG, ctx);
+    const sigs = generateSignals(bars, zones, atr, { ...DEFAULT_SIGNAL_CONFIG, closedBarOnly: false }, ctx);
     const expected = JSON.parse(readFileSync(GOLDEN, 'utf8'));
     // Compare serialized form: the golden file is JSON, so un-set NaN levels on
     // never-triggered signals normalize to null on both sides.
@@ -35,7 +35,7 @@ describe('signalEngine golden', () => {
   });
 
   it('does not repaint: a triggered signal is identical when computed over a prefix', () => {
-    const full = generateSignals(bars, zones, atr, DEFAULT_SIGNAL_CONFIG, ctx).find((e) => e.triggeredIndex === 3)!;
+    const full = generateSignals(bars, zones, atr, { ...DEFAULT_SIGNAL_CONFIG, closedBarOnly: false }, ctx).find((e) => e.triggeredIndex === 3)!;
     const prefix = generateSignals(bars.slice(0, 5), zones, atr.slice(0, 5), DEFAULT_SIGNAL_CONFIG, ctx).find((e) => e.triggeredIndex === 3)!;
     expect(prefix.entry).toBe(full.entry);
     expect(prefix.stopLoss).toBe(full.stopLoss);

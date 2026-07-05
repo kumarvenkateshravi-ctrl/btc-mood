@@ -446,12 +446,13 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'sd_signals',
     name: 'Supply / Demand Signals',
-    description: 'Non-repainting reversal Buy/Sell signals at S/D zones — configurable stop-loss, TP1 (opposing zone) / TP2 (measured move), and an explained confidence score. Note: historical zone strength is scored against the full zone set (not strictly as-of-formation) — a Phase-1 approximation. Paper & educational — not financial advice.',
+    description: 'Complete reversal trade setup on the same Supply/Demand zones as sd_zones: draws the zones, prints strictly non-repainting BUY/SELL signals (closed-bar only), and marks entry / stop-loss / TP1 (opposing zone) / TP2 (measured move) with an explained confidence score. One indicator = one full setup. Note: historical zone strength is scored against the full zone set (not strictly as-of-formation) — a Phase-1 approximation. Paper & educational — not financial advice.',
     inputs: [
       { id: 'tf1', name: 'Zone Timeframe 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
       { id: 'tf2', name: 'Zone Timeframe 2', type: 'select', default: '4H', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
       { id: 'tf3', name: 'Zone Timeframe 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
       { id: 'targetFactor', name: 'Target projection ×', type: 'number', default: 1.5, min: 0, max: 5, step: 0.1 },
+      { id: 'signalOn', name: 'Signal on', type: 'select', default: 'close', options: [{ value: 'close', label: 'Bar close (strict)' }, { value: 'live', label: 'Live (provisional)' }] },
       { id: 'confirmation', name: 'Confirmation', type: 'select', default: 'rejection_close', options: ['touch','rejection_close','reversal_candle'].map((v) => ({ value: v, label: v })) },
       { id: 'minTier', name: 'Min zone tier', type: 'select', default: 'medium', options: ['medium','strong'].map((v) => ({ value: v, label: v })) },
       { id: 'confidenceFloor', name: 'Min confidence', type: 'number', default: 55, min: 0, max: 100, step: 1 },
@@ -461,8 +462,22 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'tickSize', name: 'Tick size', type: 'number', default: 0.1, min: 0.00000001, max: 1000, step: 0.1 },
       { id: 'maxBarsToTrigger', name: 'Max bars to trigger', type: 'number', default: 20, min: 1, max: 500, step: 1 },
       { id: 'maxBarsInTrade', name: 'Max bars in trade', type: 'number', default: 150, min: 1, max: 5000, step: 1 },
+      { id: 'showSupply', name: 'Show supply zones', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showDemand', name: 'Show demand zones', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showSignals', name: 'Show buy/sell signals', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showEntry', name: 'Show entry line', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showSl', name: 'Show stop loss', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showTp1', name: 'Show TP1', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showTp2', name: 'Show TP2', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showConfidence', name: 'Show confidence labels', type: 'boolean', default: true, group: 'Display' },
     ],
-    styles: [],
+    // Zone band styles must match the `${TF} ${KIND}` plot ids emitted by computeSdZones.
+    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => [
+      { id: `${tf} Su`, name: `${tf} Supply`, color: 'rgba(242,54,69,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} Su T`, name: `${tf} Supply Target`, color: 'rgba(242,54,69,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} De`, name: `${tf} Demand`, color: 'rgba(38,166,154,0.10)', thickness: 1, lineStyle: 'solid' as const, display: true },
+      { id: `${tf} De T`, name: `${tf} Demand Target`, color: 'rgba(38,166,154,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
+    ]),
     compute: computeSdSignals,
   },
   {

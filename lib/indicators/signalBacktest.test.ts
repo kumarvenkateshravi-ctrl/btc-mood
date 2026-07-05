@@ -7,7 +7,7 @@ const base: SdSignal = {
   id: 'buy:D:demand:0', side: 'buy', timeframe: '1h', symbol: 'BTCUSDT',
   zoneId: 'D:demand:0', zoneTf: 'D', zoneKind: 'demand', status: 'tp1',
   entry: 100, stopLoss: 90, takeProfit1: 120, takeProfit2: 140, riskReward: 2, confidence: 70,
-  explanation: { factors: [], summary: '', counterSignals: [] }, tier: 'strong',
+  explanation: { factors: [], summary: '', counterSignals: [] }, tier: 'strong', rejectReason: null,
   armedIndex: 1, triggeredIndex: 2, resolvedIndex: 5, createdAt: 0, resolvedAt: 5,
 };
 

@@ -18,6 +18,9 @@ export const SIGNAL_STATUSES: SdSignalStatus[] = [
   'armed', 'triggered', 'tp1', 'tp2', 'stopped', 'expired', 'invalidated',
 ];
 
+/** Why a setup did not become a tradeable signal — powers the "no signals" explainer. */
+export type SdRejectReason = 'confidence' | 'riskReward' | 'zoneBroken' | null;
+
 /** One weighted piece of evidence behind the confidence score. */
 export interface SignalFactor {
   key: 'zoneStrength' | 'confluence' | 'riskReward' | 'freshness' | 'formationVolume';
@@ -71,6 +74,7 @@ export interface SdSignal {
   confidence: number;         // 0..100
   explanation: SignalExplanation;
   tier: 'medium' | 'strong';
+  rejectReason: SdRejectReason; // set when status === 'invalidated', else null
   armedIndex: number | null;
   triggeredIndex: number | null;
   resolvedIndex: number | null;

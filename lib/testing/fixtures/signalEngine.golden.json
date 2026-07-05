@@ -56,6 +56,7 @@
       "counterSignals": []
     },
     "tier": "strong",
+    "rejectReason": null,
     "armedIndex": 2,
     "triggeredIndex": 3,
     "resolvedIndex": 5,
@@ -83,6 +84,7 @@
       "counterSignals": []
     },
     "tier": "strong",
+    "rejectReason": null,
     "armedIndex": 5,
     "triggeredIndex": null,
     "resolvedIndex": null,

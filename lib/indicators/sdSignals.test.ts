@@ -19,12 +19,23 @@ function synth(): Candle[] {
 }
 
 describe('computeSdSignals glue', () => {
-  it('returns an IndicatorResult with the framework shape', () => {
+  it('renders the zone bands + per-bar signals (complete-setup shape)', () => {
     const bars = synth();
     const res = computeSdSignals(bars, { id: 'sd_signals' });
-    expect(Array.isArray(res.signals)).toBe(true);
     expect(res.signals.length).toBe(bars.length);
-    expect(Array.isArray(res.markers)).toBe(true);
+    // Default D+4H draws zone band plots (the host for the entry/SL/TP lines).
+    expect(res.plots.length).toBeGreaterThan(0);
+    expect(res.plots.every((p) => p.type === 'band')).toBe(true);
+    expect(Array.isArray(res.levels)).toBe(true);
+  });
+
+  it('showSignals=false clears the arrows; showSupply=false blanks supply band data', () => {
+    const bars = synth();
+    const off = computeSdSignals(bars, { id: 'sd_signals', settings: { inputs: { showSignals: false, showSupply: false } } } as never);
+    expect(off.signals.every((s) => s === 'neutral')).toBe(true);
+    const supplyPlot = off.plots.find((p) => p.id.includes(' Su'));
+    expect(supplyPlot).toBeTruthy();
+    expect(supplyPlot!.data.every((d) => d === null)).toBe(true); // hidden but host kept
   });
 
   it('caches on the closed-bar signature so repeated intrabar calls are O(1)', () => {

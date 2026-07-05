@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import SignalsPanel, { confidenceBand, signalRows, SignalDetails, STATUS_LABEL } from './SignalsPanel';
+import SignalsPanel, { confidenceBand, signalRows, SignalDetails, STATUS_LABEL, rejectionSummary } from './SignalsPanel';
 import type { SdSignal } from '@/lib/indicators/signalTypes';
 
 const sig: SdSignal = {
@@ -11,8 +11,10 @@ const sig: SdSignal = {
     factors: [{ key: 'zoneStrength', label: 'Zone strength', input: 0.9, weight: 0.35, contribution: 31.5 }],
     summary: 'Strong demand zone, 2.4R', counterSignals: ['retested 3×'],
   },
-  tier: 'strong', armedIndex: 2, triggeredIndex: 3, resolvedIndex: null, createdAt: 1_600_000_000, resolvedAt: null,
+  tier: 'strong', rejectReason: null, armedIndex: 2, triggeredIndex: 3, resolvedIndex: null, createdAt: 1_600_000_000, resolvedAt: null,
 };
+
+const rejected: SdSignal = { ...sig, id: 'buy:D:demand:9', status: 'invalidated', rejectReason: 'confidence', triggeredIndex: null };
 
 describe('SignalsPanel helpers', () => {
   it('confidenceBand bands the score', () => {
@@ -39,9 +41,26 @@ describe('SignalsPanel render', () => {
     expect(html).toContain('82');
     expect(html).toContain('not financial advice');
   });
-  it('shows the empty state when there are no signals', () => {
+  it('empty state (no events) explains no zone was reached', () => {
     const html = renderToStaticMarkup(<SignalsPanel signals={[]} />);
-    expect(html).toMatch(/No signals/i);
+    expect(html).toMatch(/No qualifying signals/i);
+    expect(html).toMatch(/zone of the\s+required tier/i);
+  });
+  it('empty state (only rejects) explains the filter reason', () => {
+    const html = renderToStaticMarkup(<SignalsPanel signals={[rejected]} />);
+    expect(html).toMatch(/No qualifying signals/i);
+    expect(html).toMatch(/1 setup filtered/i);
+    expect(html).toMatch(/by confidence/i);
+  });
+});
+
+describe('rejectionSummary', () => {
+  it('tallies invalidations by reason', () => {
+    const s = rejectionSummary([sig, rejected, { ...rejected, rejectReason: 'riskReward' }]);
+    expect(s.total).toBe(3);
+    expect(s.confidence).toBe(1);
+    expect(s.riskReward).toBe(1);
+    expect(s.zoneBroken).toBe(0);
   });
   it('SignalDetails shows explanation factors and counter-signals', () => {
     const html = renderToStaticMarkup(<SignalDetails signal={sig} />);

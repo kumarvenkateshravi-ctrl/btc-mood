@@ -1,8 +1,8 @@
 // lib/indicators/sdSignals.ts
 import type { Candle } from '../types';
-import type { CustomIndicatorConfig, IndicatorResult, IndicatorLevel, IndicatorMarker, SignalSide } from '../indicatorFramework';
+import type { CustomIndicatorConfig, IndicatorResult, IndicatorLevel, IndicatorPlot, SignalSide } from '../indicatorFramework';
 import type { HtfPeriod } from './htf';
-import { buildZones, atrSeries } from './sdZones';
+import { buildZones, atrSeries, computeSdZones } from './sdZones';
 import { scoreZone, countRetests, DEFAULT_ZONE_STRENGTH_WEIGHTS, type Zone } from './zoneStrength';
 import { resolveInputs } from './itsTemplates';
 import {
@@ -17,6 +17,11 @@ interface SdSignalsInputs {
   confidenceFloor: number; minRR: number;
   slBufferMode: SlBufferMode; slBuffer: number; tickSize: number;
   maxBarsToTrigger: number; maxBarsInTrade: number;
+  signalOn: 'close' | 'live';
+  // Display toggles — the indicator renders the full trade setup by default.
+  showSupply: boolean; showDemand: boolean; showSignals: boolean;
+  showEntry: boolean; showSl: boolean; showTp1: boolean; showTp2: boolean;
+  showConfidence: boolean;
 }
 
 // Default to TWO zone timeframes (D + 4H): the zone-strength score weights
@@ -28,6 +33,10 @@ const SD_SIGNALS_DEFAULTS: SdSignalsInputs = {
   confidenceFloor: 55, minRR: 1.5,
   slBufferMode: 'atr', slBuffer: 0.25, tickSize: 0.1,
   maxBarsToTrigger: 20, maxBarsInTrade: 150,
+  signalOn: 'close',
+  showSupply: true, showDemand: true, showSignals: true,
+  showEntry: true, showSl: true, showTp1: true, showTp2: true,
+  showConfidence: true,
 };
 
 const avgPeriodVolume = (zones: Zone[]): number => {
@@ -77,6 +86,7 @@ function toEngineConfig(inp: SdSignalsInputs): SignalEngineConfig {
     confidenceFloor: inp.confidenceFloor, minRR: inp.minRR,
     slBufferMode: inp.slBufferMode, slBuffer: inp.slBuffer, tickSize: inp.tickSize,
     maxBarsToTrigger: inp.maxBarsToTrigger, maxBarsInTrade: inp.maxBarsInTrade,
+    closedBarOnly: inp.signalOn === 'close',
   };
 }
 
@@ -124,33 +134,56 @@ export function computeSdSignalEvents(
 }
 
 const TRIGGERED = new Set<SdSignal['status']>(['triggered', 'tp1', 'tp2', 'stopped', 'expired']);
+const LIVE = new Set<SdSignal['status']>(['triggered', 'tp1']);
 
+/**
+ * Complete trade-setup renderer: draws the same Supply/Demand zones as sd_zones
+ * (reused verbatim) PLUS BUY/SELL arrows across all history and the entry/SL/TP
+ * lines for the most-recent signal — so one indicator gives the full context.
+ * All parts are individually toggleable.
+ */
 export function computeSdSignals(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
+  const inp = resolveInputs<SdSignalsInputs>(config, SD_SIGNALS_DEFAULTS);
   const n = candles.length;
   const signals = new Array<SignalSide>(n).fill('neutral');
-  const events = computeSdSignalEvents(candles, config);
-  const markers: IndicatorMarker[] = [];
   const levels: IndicatorLevel[] = [];
 
-  for (const e of events) {
-    if (e.triggeredIndex == null || !TRIGGERED.has(e.status)) continue;
-    signals[e.triggeredIndex] = e.side;
-    markers.push({
-      index: e.triggeredIndex,
-      position: e.side === 'buy' ? 'belowBar' : 'aboveBar',
-      color: e.side === 'buy' ? '#26a69a' : '#f23645',
-      shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown',
-      text: `${e.side === 'buy' ? 'BUY' : 'SELL'} ${e.zoneTf} ★${Math.round(e.confidence)} · R${e.riskReward.toFixed(1)}`,
-    });
+  // 1. Zones — reuse sd_zones' exact band plots so the Signals indicator shows
+  //    the same context the engine is built on. Hidden kinds keep their (empty)
+  //    host line series so the entry/SL/TP price-lines still render.
+  const zoneResult = computeSdZones(candles, {
+    id: 'sd_zones',
+    settings: { inputs: {
+      tf1: inp.tf1, tf2: inp.tf2, tf3: inp.tf3, targetFactor: inp.targetFactor,
+      showLabels: inp.showConfidence, showStrength: inp.showConfidence, minStrength: 0,
+    } },
+  } as unknown as CustomIndicatorConfig);
+
+  const plots: IndicatorPlot[] = zoneResult.plots.map((p) => {
+    const show = p.id.includes(' Su') ? inp.showSupply : inp.showDemand;
+    return show ? p : { ...p, data: p.data.map(() => null) };
+  });
+  if (inp.showConfidence) levels.push(...(zoneResult.levels ?? []));
+
+  // 2. Signals over ALL history — arrows via the per-bar signals[] path.
+  const events = computeSdSignalEvents(candles, config);
+  const triggered = events.filter((e) => e.triggeredIndex != null && TRIGGERED.has(e.status));
+  if (inp.showSignals) {
+    for (const e of triggered) signals[e.triggeredIndex as number] = e.side;
   }
 
-  const active = [...events].reverse().find((e) => e.status === 'triggered' || e.status === 'tp1');
+  // 3. Full trade setup for the most-recent signal (a live one if any, else the latest).
+  const active = [...triggered].reverse().find((e) => LIVE.has(e.status)) ?? triggered[triggered.length - 1];
   if (active) {
-    levels.push({ value: active.entry, color: '#2A62FF', lineStyle: 'solid', lineWidth: 1, title: `Entry ${active.entry.toFixed(1)}` });
-    levels.push({ value: active.stopLoss, color: '#f5a623', lineStyle: 'dashed', lineWidth: 1, title: `SL ${active.stopLoss.toFixed(1)}` });
-    levels.push({ value: active.takeProfit1, color: '#22d39a', lineStyle: 'dashed', lineWidth: 1, title: `TP1 ${active.takeProfit1.toFixed(1)}` });
-    levels.push({ value: active.takeProfit2, color: '#22d39a', lineStyle: 'dotted', lineWidth: 1, title: `TP2 ${active.takeProfit2.toFixed(1)}` });
+    const sideTxt = active.side === 'buy' ? 'BUY' : 'SELL';
+    const entryTitle = inp.showConfidence
+      ? `${sideTxt} · ★${Math.round(active.confidence)} · R${active.riskReward.toFixed(1)}`
+      : `Entry ${active.entry.toFixed(1)}`;
+    if (inp.showEntry) levels.push({ value: active.entry, color: '#2A62FF', lineStyle: 'solid', lineWidth: 2, title: entryTitle });
+    if (inp.showSl) levels.push({ value: active.stopLoss, color: '#f5a623', lineStyle: 'dashed', lineWidth: 1, title: `SL ${active.stopLoss.toFixed(1)}` });
+    if (inp.showTp1) levels.push({ value: active.takeProfit1, color: '#22d39a', lineStyle: 'dashed', lineWidth: 1, title: `TP1 ${active.takeProfit1.toFixed(1)}` });
+    if (inp.showTp2) levels.push({ value: active.takeProfit2, color: '#22d39a', lineStyle: 'dotted', lineWidth: 1, title: `TP2 ${active.takeProfit2.toFixed(1)}` });
   }
 
-  return { plots: [], signals, markers, levels };
+  return { plots, signals, levels };
 }
