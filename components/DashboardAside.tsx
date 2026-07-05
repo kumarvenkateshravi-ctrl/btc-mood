@@ -2,10 +2,12 @@
 
 import SignalMatrix from './SignalMatrix';
 import TradingPanel from './trade/TradingPanel';
+import SignalsPanel from './trade/SignalsPanel';
 import type { Timeframe } from '@/lib/types';
 import type { TFSnapshot } from '@/lib/signals';
 import type { CompareSymbol } from '@/lib/compare';
 import type { IndicatorCell } from './SignalMatrix';
+import type { SdSignal } from '@/lib/indicators/signalTypes';
 
 interface DashboardAsideProps {
   snapshots: Record<Timeframe, TFSnapshot | null>;
@@ -17,6 +19,7 @@ interface DashboardAsideProps {
   midPrice: number;
   tab: 'signals' | 'trade';
   onTabChange: (t: 'signals' | 'trade') => void;
+  signals: SdSignal[];
 }
 
 export default function DashboardAside({
@@ -29,6 +32,7 @@ export default function DashboardAside({
   midPrice,
   tab,
   onTabChange,
+  signals,
 }: DashboardAsideProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -56,7 +60,10 @@ export default function DashboardAside({
           indicatorRows={indicatorRows}
         />
       ) : (
-        <TradingPanel symbol={symbol} midPrice={midPrice} />
+        <>
+          <TradingPanel symbol={symbol} midPrice={midPrice} />
+          <SignalsPanel signals={signals} />
+        </>
       )}
     </div>
   );

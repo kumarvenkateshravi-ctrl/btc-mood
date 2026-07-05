@@ -18,6 +18,7 @@ const BottomDock = dynamic(() => import('@/components/BottomDock'), {
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, type PanelImperativeHandle } from 'react-resizable-panels';
 import SymbolSearch from '@/components/SymbolSearch';
 import DashboardAside from '@/components/DashboardAside';
+import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 import StrategyBuilderPanel from '@/components/StrategyBuilderPanel';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
@@ -175,6 +176,13 @@ export default function DashboardPage() {
   // ---- Derived display values ----
   const currentCandles = candlesByTf[selected];
 
+  // Emission boundary: on each closed bar this yields the current SdSignal[].
+  // Phase 2 alerts/webhooks subscribe by diffing newly-`triggered` ids here.
+  const signalEvents = useMemo(
+    () => computeSdSignalEvents(currentCandles ?? [], { id: 'sd_signals' }, { symbol, timeframe: selected }),
+    [currentCandles, symbol, selected],
+  );
+
   const currentPrice = ticker24h ? ticker24h.price : prices[selected];
   const currentChange = ticker24h ? ticker24h.change : changes[selected];
   const mid = useMemo(
@@ -303,6 +311,7 @@ export default function DashboardPage() {
                 midPrice={currentPrice ?? mid}
                 tab={tab}
                 onTabChange={setTab}
+                signals={signalEvents}
               />
             )}
             {rightPanel === 'orderflow' && <OrderFlowPanel symbol={symbol} tf={selected} />}
