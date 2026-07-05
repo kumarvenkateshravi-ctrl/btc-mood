@@ -163,13 +163,22 @@ export function computeSdSignals(candles: Candle[], config?: CustomIndicatorConf
     const show = p.id.includes(' Su') ? inp.showSupply : inp.showDemand;
     return show ? p : { ...p, data: p.data.map(() => null) };
   });
-  if (inp.showConfidence) levels.push(...(zoneResult.levels ?? []));
 
   // 2. Signals over ALL history — arrows via the per-bar signals[] path.
   const events = computeSdSignalEvents(candles, config);
   const triggered = events.filter((e) => e.triggeredIndex != null && TRIGGERED.has(e.status));
   if (inp.showSignals) {
     for (const e of triggered) signals[e.triggeredIndex as number] = e.side;
+  }
+
+  // 2b. Anchor each signal to its source zone: the band primitive draws an
+  //     origin dot + tick on the zone boundary at the trigger bar, so the
+  //     arrow visibly originates from the zone that produced it.
+  for (const e of triggered) {
+    const plotId = `${e.zoneTf} ${e.zoneKind === 'supply' ? 'Su' : 'De'}`;
+    const plot = plots.find((p) => p.id === plotId);
+    if (!plot?.zoneStyle) continue;
+    (plot.zoneStyle.anchors ??= []).push(e.triggeredIndex as number);
   }
 
   // 3. Full trade setup for the most-recent signal (a live one if any, else the latest).

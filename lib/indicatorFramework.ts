@@ -42,6 +42,29 @@ export interface IndicatorSettings {
   valuesInStatusLine?: boolean;
 }
 
+/**
+ * Premium zone styling for `band` plots (supply/demand zones). When present,
+ * the band primitive renders boundary-first: an emphasized edge line facing
+ * price, a gradient fill fading away from it, dimmed historical runs, an
+ * on-zone label for the active run, and signal-origin anchor dots. When
+ * absent, bands keep the legacy flat-fill rendering.
+ */
+export interface BandZoneStyle {
+  /** Which edge faces price and gets the emphasized boundary line. Omit for
+   *  subtle context bands (e.g. measured-move target zones): no boundary,
+   *  fainter fill. */
+  boundary?: 'upper' | 'lower';
+  /** Boundary dash style — differentiates timeframes (e.g. D solid, 4H dashed). */
+  lineStyle?: 'solid' | 'dashed';
+  /** Label for the ACTIVE (latest) zone run, e.g. "D Supply ★91". */
+  label?: string;
+  /** Boundary/label strength emphasis 0..1 (zone strength score / 100). */
+  emphasis?: number;
+  /** Bar indices where a signal originated from this zone — the primitive
+   *  draws an origin dot + tick on the boundary at each. */
+  anchors?: number[];
+}
+
 export interface IndicatorPlot {
   id: string;
   title: string;
@@ -60,6 +83,8 @@ export interface IndicatorPlot {
    *     `overlay=false`)
    */
   pane?: 'overlay' | 'separate';
+  /** Premium zone rendering for band plots (see BandZoneStyle). */
+  zoneStyle?: BandZoneStyle;
 }
 
 /** A horizontal reference line on the indicator's pane (PineScript `hline`). */

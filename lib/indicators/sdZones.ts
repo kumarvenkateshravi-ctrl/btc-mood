@@ -6,7 +6,7 @@ import {
   scoreZone, countRetests, type Zone, type ZoneStrength,
   type ZoneStrengthWeights, type ScoreZoneCtx,
 } from './zoneStrength';
-import type { IndicatorResult, IndicatorPlot, IndicatorLevel, CustomIndicatorConfig, SignalSide } from '../indicatorFramework';
+import type { IndicatorResult, IndicatorPlot, BandZoneStyle, CustomIndicatorConfig, SignalSide } from '../indicatorFramework';
 import { resolveInputs } from './itsTemplates';
 
 export interface SdZonesConfig {
@@ -180,8 +180,8 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
   }
 
   const plots: IndicatorPlot[] = [];
-  const levels: IndicatorLevel[] = [];
   const kinds: Zone['kind'][] = ['supply', 'supplyTarget', 'demand', 'demandTarget'];
+  const FULL_KIND: Record<'supply' | 'demand', string> = { supply: 'Supply', demand: 'Demand' };
 
   for (const tf of tfs) {
     const zones = allByTf.get(tf) ?? [];
@@ -202,19 +202,29 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
         }
       }
       const label = `${TF_LABEL[tf]} ${KIND_LABEL[kind]}`;
-      plots.push({ id: label, title: label, color: fillFor(kind), type: 'band', pane: 'overlay', data });
 
-      // label + strength for the current zone of this kind
+      // Boundary-first zone styling: the edge FACING price carries the weight
+      // (supply is approached from below → lower edge; demand from above →
+      // upper edge). Timeframes are told apart by dash style; target bands
+      // stay subtle context (no boundary, no label).
+      const isEntry = kind === 'supply' || kind === 'demand';
       const cur = kindZones[kindZones.length - 1];
-      if (cur && inp.showLabels) {
-        const st = scored.get(cur);
-        if ((st?.score ?? 0) >= inp.minStrength) {
-          const scoreTxt = inp.showStrength && st ? ` ★${Math.round(st.score)}` : '';
-          levels.push({ value: cur.upper, color: fillFor(kind), lineStyle: 'dotted', lineWidth: 1, title: `${label}${scoreTxt}` });
+      const curScore = cur && current.includes(cur) ? scored.get(cur)?.score ?? 0 : 0;
+      const zoneStyle: BandZoneStyle = {
+        lineStyle: tf === '4H' ? 'dashed' : 'solid',
+      };
+      if (isEntry) {
+        zoneStyle.boundary = kind === 'supply' ? 'lower' : 'upper';
+        zoneStyle.emphasis = curScore / 100;
+        if (inp.showLabels && cur && curScore >= inp.minStrength) {
+          const scoreTxt = inp.showStrength ? ` ★${Math.round(curScore)}` : '';
+          zoneStyle.label = `${TF_LABEL[tf]} ${FULL_KIND[kind]}${scoreTxt}`;
         }
       }
+
+      plots.push({ id: label, title: label, color: fillFor(kind), type: 'band', pane: 'overlay', data, zoneStyle });
     }
   }
 
-  return { plots, signals, levels };
+  return { plots, signals };
 }
