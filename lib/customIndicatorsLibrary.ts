@@ -17,6 +17,7 @@ import { computeVwapBands } from './indicators/vwapBands';
 import { computeWilliamsR } from './indicators/williamsR';
 import { computeSma } from './indicators/sma';
 import { computeSdZones } from './indicators/sdZones';
+import { computeSdSignals } from './indicators/sdSignals';
 import { computeVolSpike } from './indicators/volSpike';
 import { computeMagicSr } from './indicators/magicSr';
 import { computeFibPivot } from './indicators/fibPivot';
@@ -441,6 +442,28 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: `${tf} De T`, name: `${tf} Demand Target`, color: 'rgba(38,166,154,0.06)', thickness: 1, lineStyle: 'solid' as const, display: true },
     ]),
     compute: computeSdZones,
+  },
+  {
+    id: 'sd_signals',
+    name: 'Supply / Demand Signals',
+    description: 'Non-repainting reversal Buy/Sell signals at S/D zones — configurable stop-loss, TP1 (opposing zone) / TP2 (measured move), and an explained confidence score. Note: historical zone strength is scored against the full zone set (not strictly as-of-formation) — a Phase-1 approximation. Paper & educational — not financial advice.',
+    inputs: [
+      { id: 'tf1', name: 'Zone Timeframe 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf2', name: 'Zone Timeframe 2', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf3', name: 'Zone Timeframe 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'targetFactor', name: 'Target projection ×', type: 'number', default: 1.5, min: 0, max: 5, step: 0.1 },
+      { id: 'confirmation', name: 'Confirmation', type: 'select', default: 'rejection_close', options: ['touch','rejection_close','reversal_candle'].map((v) => ({ value: v, label: v })) },
+      { id: 'minTier', name: 'Min zone tier', type: 'select', default: 'medium', options: ['medium','strong'].map((v) => ({ value: v, label: v })) },
+      { id: 'confidenceFloor', name: 'Min confidence', type: 'number', default: 55, min: 0, max: 100, step: 1 },
+      { id: 'minRR', name: 'Min R:R', type: 'number', default: 1.5, min: 0, max: 10, step: 0.1 },
+      { id: 'slBufferMode', name: 'Stop buffer mode', type: 'select', default: 'atr', options: ['atr','percent','ticks'].map((v) => ({ value: v, label: v })) },
+      { id: 'slBuffer', name: 'Stop buffer', type: 'number', default: 0.25, min: 0, max: 100, step: 0.05 },
+      { id: 'tickSize', name: 'Tick size', type: 'number', default: 0.1, min: 0.00000001, max: 1000, step: 0.1 },
+      { id: 'maxBarsToTrigger', name: 'Max bars to trigger', type: 'number', default: 20, min: 1, max: 500, step: 1 },
+      { id: 'maxBarsInTrade', name: 'Max bars in trade', type: 'number', default: 150, min: 1, max: 5000, step: 1 },
+    ],
+    styles: [],
+    compute: computeSdSignals,
   },
   {
     id: 'vol_spike',

@@ -988,14 +988,14 @@ function synth(): Candle[] {
 describe('computeSdSignals glue', () => {
   it('returns an IndicatorResult with the framework shape', () => {
     const bars = synth();
-    const res = computeSdSignals(bars, { id: 'sd_signals', settings: {} });
+    const res = computeSdSignals(bars, { id: 'sd_signals' });
     expect(Array.isArray(res.signals)).toBe(true);
     expect(res.signals.length).toBe(bars.length);
     expect(Array.isArray(res.markers)).toBe(true);
   });
 
   it('emits SdSignal contract objects; triggered ones have concrete levels', () => {
-    const events = computeSdSignalEvents(synth(), { id: 'sd_signals', settings: {} }, { symbol: 'BTCUSDT', timeframe: '1h' });
+    const events = computeSdSignalEvents(synth(), { id: 'sd_signals' }, { symbol: 'BTCUSDT', timeframe: '1h' });
     for (const e of events) {
       expect(['buy', 'sell']).toContain(e.side);
       if (e.triggeredIndex != null) {
@@ -1358,7 +1358,7 @@ import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 
 // `tf`/`interval` is the chart timeframe string already in scope; pass the real ctx.
 const signalEvents = useMemo(
-  () => computeSdSignalEvents(candles, { id: 'sd_signals', settings: {} }, { symbol, timeframe: tf }),
+  () => computeSdSignalEvents(candles, { id: 'sd_signals' }, { symbol, timeframe: tf }),
   [candles, symbol, tf],
 );
 ```
