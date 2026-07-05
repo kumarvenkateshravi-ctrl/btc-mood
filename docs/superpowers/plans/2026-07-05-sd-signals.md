@@ -671,7 +671,9 @@ export function generateSignals(
       triggeredIndex, createdAt: candles[triggeredIndex].time,
     };
     if (confidence < cfg.confidenceFloor || riskReward < cfg.minRR) {
-      out.push({ ...gated, status: 'invalidated' });
+      // Failed the quality gate: armed + confirmed but never became live, so it
+      // is invalidated with no trigger (triggeredIndex stays null).
+      out.push({ ...gated, status: 'invalidated', triggeredIndex: null });
       continue;
     }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { computeStopLoss, DEFAULT_SIGNAL_CONFIG, computeTargets, computeConfidence } from './signalEngine';
+import { computeStopLoss, DEFAULT_SIGNAL_CONFIG, computeTargets, computeConfidence, generateSignals } from './signalEngine';
 import type { ScoredZone } from './signalTypes';
+import type { Candle } from '../types';
 
 const CFG = DEFAULT_SIGNAL_CONFIG;
 
@@ -86,5 +87,49 @@ describe('computeConfidence', () => {
   it('summary mentions the R multiple', () => {
     const { explanation } = computeConfidence(strong, 2.1, 1.5, CFG);
     expect(explanation.summary).toMatch(/2\.1R/);
+  });
+});
+
+const c = (i: number, o: number, h: number, l: number, cl: number): Candle =>
+  ({ time: 1000 + i * 60, open: o, high: h, low: l, close: cl, volume: 100 } as Candle);
+
+const demand = z({
+  kind: 'demand', zoneType: 'demand', lower: 100, upper: 105, mid: 102.5,
+  formedAtIndex: 0, strength: { score: 80, tier: 'strong', factors: { formationVolume: 0.7, rejectionStrength: 0.7, retests: 0, freshness: 0.9, confluence: 0, zoneWidth: 0.5 } },
+});
+const supply = z({ kind: 'supply', zoneType: 'supply', lower: 130, upper: 135, formedAtIndex: 0 });
+
+const bars: Candle[] = [
+  c(0, 110, 112, 108, 111),
+  c(1, 111, 112, 106, 107),
+  c(2, 107, 108, 101, 103),   // enters demand -> armed
+  c(3, 103, 109, 102, 108),   // close 108 > 105 -> rejection confirm -> triggered
+  c(4, 108, 122, 107, 120),
+  c(5, 120, 131, 119, 130),   // high 131 >= supply.lower 130 -> tp1
+];
+const atr = bars.map(() => 4);
+const ctx = { symbol: 'BTCUSDT', timeframe: '1h' };
+
+describe('generateSignals (buy lifecycle)', () => {
+  it('arms, triggers on rejection close, resolves at TP1, carries the contract fields', () => {
+    const sigs = generateSignals(bars, [demand, supply], atr, { ...CFG }, ctx);
+    const s = sigs.find((e) => e.side === 'buy')!;
+    expect(s.symbol).toBe('BTCUSDT');
+    expect(s.timeframe).toBe('1h');
+    expect(s.zoneId).toBe('D:demand:0');
+    expect(s.armedIndex).toBe(2);
+    expect(s.triggeredIndex).toBe(3);
+    expect(s.entry).toBeCloseTo(108, 6);
+    expect(s.stopLoss).toBeCloseTo(99, 6);
+    expect(s.takeProfit1).toBe(130);
+    expect(s.status).toBe('tp1');
+    expect(s.createdAt).toBe(bars[3].time);
+  });
+
+  it('fails the R:R gate -> invalidated, never triggered', () => {
+    const sigs = generateSignals(bars, [demand, supply], atr, { ...CFG, minRR: 100 }, ctx);
+    const s = sigs.find((e) => e.side === 'buy')!;
+    expect(s.status).toBe('invalidated');
+    expect(s.triggeredIndex).toBeNull();
   });
 });
