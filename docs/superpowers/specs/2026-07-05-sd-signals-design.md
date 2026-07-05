@@ -282,6 +282,20 @@ auth+Stripe plan.
 - **Phase 2 (later):** breakout/continuation archetype, alerts, subscription gate +
   public track-record page.
 
+## 15b. Revision (2026-07-05, per SDSignal.md)
+
+- The `SignalEvent` in §5 is finalized as the centralized **`SdSignal`** contract
+  (fields `status`, `stopLoss`, `takeProfit1/2`, `riskReward`, plus `symbol`,
+  `timeframe`, `zoneId`, `createdAt`/`resolvedAt`), defined once in
+  `lib/indicators/signalTypes.ts` and shared by the engine, chart, dashboard,
+  backtester, and future alerts/AI. Status values use `tp1`/`tp2` (not `hit_tp1`).
+- The engine is **event-driven at the emission boundary**: `computeSdSignalEvents`
+  is the single point every consumer reads; a future alert/webhook layer subscribes
+  by diffing newly-`triggered` signals on bar close (no engine change).
+- **Phase-2 TODO:** score zones **as-of-formation** (confluence using only zones that
+  existed at the formation bar), replacing the Phase-1 full-history approximation
+  (documented in code + the user-facing indicator description).
+
 ## 16. Locked decisions (approved 2026-07-05)
 
 1. **Archetype:** **Reversal-only** for Phase 1. Breakout/continuation is Phase 2.
