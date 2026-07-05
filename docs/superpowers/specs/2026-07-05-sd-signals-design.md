@@ -93,7 +93,8 @@ interface SignalEvent {
   zoneUpper: number; zoneLower: number;
   entry: number; sl: number; tp1: number; tp2: number;
   rr1: number;                // (tp1-entry)/(entry-sl), sell mirrored
-  confidence: number;         // 0..100
+  confidence: number;         // 0..100 (scalar score)
+  explanation: SignalExplanation;  // structured 'why' behind the score — see below
   tier: 'medium' | 'strong';  // weak never emits a signal
   state: SignalState;
   armedIndex: number | null;
@@ -102,6 +103,22 @@ interface SignalEvent {
   armedTime: number | null;
   triggeredTime: number | null;
   resolvedTime: number | null;
+}
+
+/** One weighted piece of evidence behind the confidence score. */
+interface SignalFactor {
+  key: 'zoneStrength' | 'confluence' | 'riskReward' | 'freshness' | 'formationVolume';
+  label: string;         // UI label, e.g. "Multi-TF confluence"
+  input: number;         // normalized factor value, 0..1
+  weight: number;        // weight applied (from config, §8)
+  contribution: number;  // points added to confidence = weight × input × 100
+}
+
+/** Structured, renderable rationale — maps to DESIGN.md §E explainable-AI grammar. */
+interface SignalExplanation {
+  factors: SignalFactor[];   // ordered by contribution desc (§E3 evidence ordering)
+  summary: string;           // one-line rationale, e.g. "Fresh strong D-zone, 4H/D confluence, 2.1R"
+  counterSignals: string[];  // weakening evidence, e.g. ["retested 3×", "R:R near floor"]
 }
 ```
 
@@ -139,8 +156,10 @@ For a **BUY at a Demand zone** (SELL at Supply is the mirror; swap high/low, abo
   - `rejection_close` (default): close back out of the zone.
   - `reversal_candle` (strict): bullish engulf / hammer within the zone, then close out.
 - **Entry** = confirmation bar `close`.
-- **Stop-loss** = `zone.lower − slBufferAtr × ATR(14)` (default `slBufferAtr = 0.25`).
-  A clean close beyond this invalidates the zone thesis.
+- **Stop-loss** = `zone.lower − buffer`, where `buffer` is **fully configurable** via
+  `slBufferMode` + `slBuffer` (§9): `atr` → `slBuffer × ATR(14)` (default, `slBuffer = 0.25`),
+  `percent` → `(slBuffer / 100) × entry`, or `ticks` → `slBuffer × tickSize`. Nothing is
+  hard-coded. A clean close beyond the SL invalidates the zone thesis.
 - **TP1** = lower edge of the **nearest active opposing zone** above entry (nearest
   Supply `lower`). If none exists above, `TP1 = entry + minRR × risk`.
 - **TP2** = the corresponding **measured-move target band** (`supplyTarget`/`demandTarget`)
@@ -166,6 +185,17 @@ confidence = 100 × Σ wᵢ·factorᵢ, over:
 Weights are config-exposed. `confidenceFloor` default = 55. Banded for UI:
 `≥80 High · 65–79 Medium · 55–64 Low` (below floor → not emitted).
 
+**Structured output (not just the scalar):** `generateSignals` returns, on every event,
+a `SignalExplanation` (§5) alongside `confidence`:
+- `factors[]` — each contributing factor with its normalized `input`, `weight`, and
+  point `contribution`, **sorted high→low** so the UI can list the strongest evidence first.
+- `summary` — a one-line human rationale generated from the top factors.
+- `counterSignals[]` — weakening evidence that did *not* block the signal but should be
+  disclosed (e.g. high `retestCount`, `rr1` within 10% of `minRR`, stale zone).
+
+This makes the score auditable and feeds the DESIGN.md §E explainable-AI card directly —
+the confidence number is never shown without its reasons.
+
 ## 9. Configuration (indicator inputs)
 
 Added to the `sd_signals` indicator config (via `resolveInputs`, matching `sdZones`):
@@ -176,7 +206,8 @@ Added to the `sd_signals` indicator config (via `resolveInputs`, matching `sdZon
 | `minTier` | `medium` | medium \| strong |
 | `confidenceFloor` | `55` | discard signals below |
 | `minRR` | `1.5` | discard signals below TP1 R:R |
-| `slBufferAtr` | `0.25` | SL buffer beyond zone, in ATR(14) |
+| `slBufferMode` | `atr` | `atr` \| `percent` \| `ticks` — how the SL buffer is measured |
+| `slBuffer` | `0.25` | SL buffer magnitude, in the chosen mode's units |
 | `maxBarsToTrigger` | `20` | armed→expired if no confirm |
 | `maxBarsInTrade` | `150` | triggered→expired if unresolved |
 | `w*` (confidence weights) | see §8 | tuning without code change |
@@ -207,7 +238,9 @@ existing S/D config.
   SL/TP, labels). Reuses `IndicatorLevel[]` (or the existing overlay primitive).
 - **Signals panel (new component):** table of recent signals — time, side, tf, entry,
   SL, TP1/TP2, R:R, confidence band, state — sorted newest first. Row → focus the
-  chart. All numbers via `Num.*` (B5-FREEZE), panel via `Panel` (C-FREEZE).
+  chart; **expanding a row reveals the `SignalExplanation`** (factor contribution bars +
+  `summary` + `counterSignals`). All numbers via `Num.*` (B5-FREEZE), panel via
+  `Panel` (C-FREEZE).
 - **Disclaimer:** persistent "paper & educational — not financial advice" line
   wherever signals/track-record are shown.
 
