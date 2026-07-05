@@ -19,8 +19,11 @@ interface SdSignalsInputs {
   maxBarsToTrigger: number; maxBarsInTrade: number;
 }
 
+// Default to TWO zone timeframes (D + 4H): the zone-strength score weights
+// multi-timeframe confluence highest, so a single TF scores "weak" and gets
+// filtered out — one TF produces no signals. D+4H lets confluence contribute.
 const SD_SIGNALS_DEFAULTS: SdSignalsInputs = {
-  tf1: 'D', tf2: 'None', tf3: 'None', targetFactor: 1.5,
+  tf1: 'D', tf2: '4H', tf3: 'None', targetFactor: 1.5,
   confirmation: 'rejection_close', minTier: 'medium',
   confidenceFloor: 55, minRR: 1.5,
   slBufferMode: 'atr', slBuffer: 0.25, tickSize: 0.1,
