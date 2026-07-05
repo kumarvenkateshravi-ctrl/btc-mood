@@ -27,6 +27,13 @@ describe('computeSdSignals glue', () => {
     expect(Array.isArray(res.markers)).toBe(true);
   });
 
+  it('caches on the closed-bar signature so repeated intrabar calls are O(1)', () => {
+    const bars = synth();
+    const a = computeSdSignalEvents(bars, { id: 'sd_signals' }, { symbol: 'BTCUSDT', timeframe: '1h' });
+    const b = computeSdSignalEvents(bars, { id: 'sd_signals' }, { symbol: 'BTCUSDT', timeframe: '1h' });
+    expect(b).toBe(a); // same reference → cache hit, no recompute
+  });
+
   it('emits SdSignal contract objects; triggered ones have concrete levels', () => {
     const events = computeSdSignalEvents(synth(), { id: 'sd_signals' }, { symbol: 'BTCUSDT', timeframe: '1h' });
     for (const e of events) {

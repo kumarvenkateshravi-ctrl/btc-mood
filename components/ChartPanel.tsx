@@ -574,8 +574,15 @@ export default function ChartPanel({
       const def = CUSTOM_INDICATORS.find((d) => d.id === id);
       if (!def) return;
       
-      const result = def.compute(baseCandlesForIndicators, { id, settings: indicatorSettings[id] }, computedSources);
-      
+      let result;
+      try {
+        result = def.compute(baseCandlesForIndicators, { id, settings: indicatorSettings[id] }, computedSources);
+      } catch (err) {
+        // One indicator throwing must not blank the entire chart.
+        console.error(`Indicator "${id}" failed to compute:`, err);
+        result = { plots: [], signals: Array.from({ length: baseCandlesForIndicators.length }, () => 'neutral' as const) };
+      }
+
       // Feed line/histogram plot outputs into the computed sources for downstream indicators
       result.plots.forEach(plot => {
         if (plot.type === 'line' || plot.type === 'histogram') {

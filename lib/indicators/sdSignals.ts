@@ -80,8 +80,24 @@ function toEngineConfig(inp: SdSignalsInputs): SignalEngineConfig {
 const resolveTfs = (inp: SdSignalsInputs): HtfPeriod[] =>
   [inp.tf1, inp.tf2, inp.tf3].filter((t): t is HtfPeriod => t === '4H' || t === 'D' || t === 'W' || t === 'M');
 
+// Signals are non-repainting (they depend only on CLOSED bars), so a live
+// forming-bar tick cannot change any past signal. Rebuilding every zone +
+// re-simulating on every WebSocket tick would saturate the main thread and
+// hang the chart, so we cache on a cheap closed-bar signature and only
+// recompute when a bar actually closes (candle count / last-closed time
+// changes) or the config/context changes.
+const _eventCache = new Map<string, SdSignal[]>();
+
+function eventCacheKey(candles: Candle[], inp: SdSignalsInputs, ctx: SignalContext): string {
+  const n = candles.length;
+  const firstTime = n > 0 ? candles[0].time : 0;
+  const lastClosedTime = n > 1 ? candles[n - 2].time : 0; // penultimate = last closed bar
+  return `${n}|${firstTime}|${lastClosedTime}|${ctx.symbol}|${ctx.timeframe}|${JSON.stringify(inp)}`;
+}
+
 /** Emission boundary — every consumer (chart, dashboard, backtester, future
- *  alerts) reads SdSignal[] from here. Pure + deterministic. */
+ *  alerts) reads SdSignal[] from here. Pure + deterministic, cached per
+ *  closed-bar signature so repeated intrabar calls are O(1). */
 export function computeSdSignalEvents(
   candles: Candle[],
   config?: CustomIndicatorConfig,
@@ -90,9 +106,18 @@ export function computeSdSignalEvents(
   const inp = resolveInputs<SdSignalsInputs>(config, SD_SIGNALS_DEFAULTS);
   const tfs = resolveTfs(inp);
   if (candles.length === 0 || tfs.length === 0) return [];
+
+  const key = eventCacheKey(candles, inp, ctx);
+  const cached = _eventCache.get(key);
+  if (cached) return cached;
+
   const zones = buildScoredZones(candles, tfs, inp.targetFactor);
   const atr = atrSeries(candles, 14);
-  return generateSignals(candles, zones, atr, toEngineConfig(inp), ctx);
+  const events = generateSignals(candles, zones, atr, toEngineConfig(inp), ctx);
+
+  if (_eventCache.size > 8) _eventCache.clear(); // bound memory; keys rotate as bars close
+  _eventCache.set(key, events);
+  return events;
 }
 
 const TRIGGERED = new Set<SdSignal['status']>(['triggered', 'tp1', 'tp2', 'stopped', 'expired']);
