@@ -764,7 +764,9 @@ describe('signalEngine golden', () => {
   it('matches the frozen SdSignal snapshot', () => {
     const sigs = generateSignals(bars, zones, atr, DEFAULT_SIGNAL_CONFIG, ctx);
     const expected = JSON.parse(readFileSync(GOLDEN, 'utf8'));
-    expect(sigs).toEqual(expected);
+    // Compare serialized form: the golden file is JSON, so un-set NaN levels on
+    // never-triggered signals normalize to null on both sides.
+    expect(JSON.parse(JSON.stringify(sigs))).toEqual(expected);
   });
 
   it('does not repaint: a triggered signal is identical when computed over a prefix', () => {
