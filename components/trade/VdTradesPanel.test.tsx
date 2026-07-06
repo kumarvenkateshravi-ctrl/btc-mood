@@ -48,10 +48,13 @@ describe('VdTradesPanel', () => {
     const html = renderToStaticMarkup(<VdTradesPanel />);
     expect(html).toMatch(/Loss \(SL hit\) -3\.0 pts/);
   });
-  it('an open trade shows best excursion so far', () => {
+  it('an open trade shows live P/L (from midPrice) and best excursion', () => {
     publishVdTrades([trade({ status: 'active', exitPrice: null, resolvedIndex: null, resolvedTime: null, realizedR: null })]);
-    const html = renderToStaticMarkup(<VdTradesPanel />);
-    expect(html).toMatch(/Open · best \+6\.0 pts/); // mfeR 2 × risk 3
+    const html = renderToStaticMarkup(<VdTradesPanel midPrice={110} />);
+    expect(html).toMatch(/live \+7\.0 pts/);        // 110 − entry 103
+    expect(html).toMatch(/best \+6\.0 pts/);        // mfeR 2 × risk 3
+    const noMid = renderToStaticMarkup(<VdTradesPanel />);
+    expect(noMid).toMatch(/Open · best \+6\.0 pts/); // graceful without midPrice
   });
   it('empty state explains where trades come from', () => {
     const html = renderToStaticMarkup(<VdTradesPanel />);

@@ -71,7 +71,7 @@ export function vdStats(trades: VdTrade[], gradeOfTrade: (t: VdTrade) => SignalG
   };
 }
 
-export default function VdTradesPanel({ symbol, tf }: { symbol?: string; tf?: string } = {}) {
+export default function VdTradesPanel({ symbol, tf, midPrice }: { symbol?: string; tf?: string; midPrice?: number } = {}) {
   const [selected, setSelected] = useState<string | null>(selectedVdTradeId());
   const trades = latestVdTrades() ?? [];
   const decisions = latestVdDecisions()?.decisions ?? [];
@@ -139,10 +139,12 @@ export default function VdTradesPanel({ symbol, tf }: { symbol?: string; tf?: st
                   {(() => {
                     const { points, open } = tradePoints(t);
                     if (open) {
+                      const dir = s.side === 'buy' ? 1 : -1;
+                      const live = midPrice != null ? dir * (midPrice - s.entry) : null;
                       return (
-                        <div className="mt-0.5 text-[10px] text-ink-muted">
-                          Open · best +{points.toFixed(1)} pts so far
-                          {d ? ` · ctx ${Math.round(d.contextScore)} · ${d.riskProfile} risk` : ''}
+                        <div className={`mt-0.5 text-[10px] ${live != null && live < 0 ? 'text-bear-bright' : 'text-ink-muted'}`}>
+                          Open{live != null ? ` · live ${live >= 0 ? '+' : ''}${live.toFixed(1)} pts` : ''} · best +{points.toFixed(1)} pts
+                          {d ? ` · ${d.riskProfile} risk` : ''}
                         </div>
                       );
                     }

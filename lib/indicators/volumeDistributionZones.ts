@@ -213,6 +213,7 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   const selId = selectedVdTradeId();
   const outcomeLabels: Record<number, string> = {};
   const priceTags: Record<number, Array<{ price: number; text: string }>> = {};
+  const riskTags: Record<number, Array<{ price: number; text: string }>> = {};
   let emphasisRunStart: number | null = null;
   if (inp.showTradeSetups) {
     // Last 10 trades draw on the chart, PLUS the panel-selected trade (if older).
@@ -238,18 +239,29 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
         { price: s.tp1, text: `TP1 ${s.tp1.toFixed(1)} (${fmtPts(s.tp1 - s.entry)})` },
         { price: s.tp2, text: `TP2 ${s.tp2.toFixed(1)} (${fmtPts(s.tp2 - s.entry)})` },
       ];
-      // Final outcome, readable directly on the chart (self-sufficiency).
+      // SL tag in the red risk zone: distance from entry to the CURRENT stop
+      // (negative = points at risk; positive = profit locked by BE/trailing).
       const dir = s.side === 'buy' ? 1 : -1;
+      const slPts = dir * (t.slCurrent - s.entry);
+      riskTags[t.entryIndex] = [{
+        price: t.slCurrent,
+        text: `SL ${t.slCurrent.toFixed(1)} (${slPts >= 0 ? `+${slPts.toFixed(0)} locked` : `−${Math.abs(slPts).toFixed(0)} pts risk`})`,
+      }];
+
+      // Final outcome — or LIVE unrealized P/L while the trade is open.
       outcomeLabels[t.entryIndex] = t.exitPrice != null
         ? (() => {
             const pts = dir * (t.exitPrice! - s.entry);
             const be = Math.abs(pts) < 1e-9;
             return be ? 'BE' : `${pts >= 0 ? '+' : ''}${pts.toFixed(1)} pts${t.status === 'stopped' && pts < 0 ? ' · SL' : ''}`;
           })()
-        : STATUS_TXT[t.status];
+        : (() => {
+            const live = dir * (lastClose - s.entry);
+            return `${STATUS_TXT[t.status]} · ${live >= 0 ? '+' : ''}${live.toFixed(1)} pts`;
+          })();
     }
   }
-  plots.push({ id: 'Trade Risk', title: 'Trade Risk', color: 'rgba(242,54,69,0.07)', type: 'band', pane: 'overlay', data: riskBox, zoneStyle: { flatLabels: {}, emphasisRunStart } });
+  plots.push({ id: 'Trade Risk', title: 'Trade Risk', color: 'rgba(242,54,69,0.07)', type: 'band', pane: 'overlay', data: riskBox, zoneStyle: { flatLabels: {}, emphasisRunStart, priceTags: riskTags } });
   plots.push({ id: 'Trade Reward', title: 'Trade Reward', color: 'rgba(34,211,154,0.07)', type: 'band', pane: 'overlay', data: rewardBox, zoneStyle: { flatLabels: outcomeLabels, emphasisRunStart, priceTags } });
   plots.push({ id: 'Trade Runner', title: 'Trade Runner', color: 'rgba(34,211,154,0.035)', type: 'band', pane: 'overlay', data: runnerBox, zoneStyle: { flatLabels: {}, emphasisRunStart } });
 

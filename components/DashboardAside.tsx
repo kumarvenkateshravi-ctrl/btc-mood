@@ -61,7 +61,7 @@ export default function DashboardAside({
           indicatorRows={indicatorRows}
         />
       ) : tab === 'trades' ? (
-        <VdTradesPanel symbol={symbol} tf={selected} />
+        <VdTradesPanel symbol={symbol} tf={selected} midPrice={midPrice} />
       ) : (
         <>
           <TradingPanel symbol={symbol} midPrice={midPrice} />
