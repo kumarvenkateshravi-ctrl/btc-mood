@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { OPERATORS } from './operators';
 import { SCANNER_SOURCES, SCANNER_SOURCE_LIST, publishScannerLiveScores } from './registry';
 import { getSeries, __clearSeriesCacheForTest } from './seriesCache';
-import { evaluateCondition, evaluate, snapshotCondition } from './evaluate';
+import { evaluateCondition, evaluate, snapshotCondition, mapTfIndices, explainAt } from './evaluate';
 import type { Candle } from '../types';
 import type { Condition } from './types';
 
@@ -111,5 +111,92 @@ describe('evaluate() funnel (S1: single-group, single-TF)', () => {
     expect(snap.pass).toBe(true);
     expect(snap.label).toContain('EMA');
     expect(snap.expect).toContain('crosses above');
+  });
+});
+
+describe('S2: cross-TF mapping', () => {
+  // 15m eval bars across two hours; 1h target bars. Candle time = OPEN time.
+  const t0 = 1_600_000_000 - (1_600_000_000 % 3600); // hour-aligned
+  const m15 = Array.from({ length: 8 }, (_, i) => bar(0, 100)).map((c, i) => ({ ...c, time: t0 + i * 900 }));
+  const h1 = [{ ...bar(0, 100), time: t0 }, { ...bar(0, 101), time: t0 + 3600 }];
+  it('an eval bar sees a higher-TF bar only once that bar has CLOSED', () => {
+    const map = mapTfIndices(m15 as Candle[], '15m', h1 as Candle[], '1h');
+    // Hour 0's 15m bars :00/:15/:30 close before hour 0 closes → no 1h bar yet.
+    expect(map[0]).toBe(-1);
+    expect(map[2]).toBe(-1);
+    // The :45 bar closes exactly when hour 0 closes → hour 0 becomes visible.
+    expect(map[3]).toBe(0);
+    // Hour 1's :00/:15/:30 still see hour 0; its :45 sees hour 1.
+    expect(map[4]).toBe(0);
+    expect(map[6]).toBe(0);
+    expect(map[7]).toBe(1);
+  });
+});
+
+describe('S2: nested tree + Kleene logic', () => {
+  const up = ramp(120, 1);
+  const cTrue: Condition = { left: { source: 'price', output: 'close' }, op: 'gt', right: 0, tf: '15m' };
+  const cFalse: Condition = { left: { source: 'price', output: 'close' }, op: 'lt', right: 0, tf: '15m' };
+  const cNull: Condition = { left: { source: 'ema', output: 'value', params: { length: 200 } }, op: 'gt', right: 0, tf: '15m' }; // warm-up > data
+
+  it('(false-group) OR (true-group) fires; nested depth works', () => {
+    const tree = {
+      logic: 'OR' as const,
+      children: [
+        { logic: 'AND' as const, children: [cTrue, cFalse] },
+        { logic: 'AND' as const, children: [cTrue, { logic: 'OR' as const, children: [cTrue] }] },
+      ],
+    };
+    const res = evaluate(tree, { '15m': up }, '15m');
+    expect(res[100]).toBe(true);
+  });
+  it('Kleene: OR(true, null) → true; AND(false, null) → false; AND(true, null) → null', () => {
+    expect(evaluate({ logic: 'OR', children: [cTrue, cNull] }, { '15m': up }, '15m')[100]).toBe(true);
+    expect(evaluate({ logic: 'AND', children: [cFalse, cNull] }, { '15m': up }, '15m')[100]).toBe(false);
+    expect(evaluate({ logic: 'AND', children: [cTrue, cNull] }, { '15m': up }, '15m')[100]).toBeNull();
+  });
+  it('a higher-TF condition gates the eval TF (cross-TF evaluation)', () => {
+    // 1h RSI > 0 is true once warm; before the first 1h bar closes it's null.
+    const t0 = 1_600_000_000 - (1_600_000_000 % 86400);
+    const m15 = Array.from({ length: 400 }, (_, i) => ({ ...bar(0, 100 + i * 0.5), time: t0 + i * 900 }));
+    const h1 = Array.from({ length: 100 }, (_, i) => ({ ...bar(0, 100 + i * 2), time: t0 + i * 3600 }));
+    const tree = {
+      logic: 'AND' as const,
+      children: [
+        { left: { source: 'price', output: 'close' }, op: 'gt' as const, right: 0, tf: '15m' as const },
+        { left: { source: 'rsi', output: 'rsi' }, op: 'gt' as const, right: 50, tf: '1h' as const },
+      ],
+    };
+    const res = evaluate(tree, { '15m': m15 as Candle[], '1h': h1 as Candle[] }, '15m');
+    expect(res[3]).toBeNull();        // 1h RSI not warm yet → unknown, no trigger
+    expect(res[350]).toBe(true);      // both true late in the uptrend
+    const why = explainAt(tree, { '15m': m15 as Candle[], '1h': h1 as Candle[] }, '15m', 350);
+    expect(why).toHaveLength(2);
+    expect(why[1].label).toContain('1h');
+    expect(why[1].pass).toBe(true);
+  });
+});
+
+describe('S2: prefix invariance (non-repaint lock)', () => {
+  it('truncating history never changes past evaluations', () => {
+    const t0 = 1_600_000_000 - (1_600_000_000 % 86400);
+    const m15 = Array.from({ length: 300 }, (_, i) => ({ ...bar(0, 100 + Math.sin(i / 9) * 10 + i * 0.2), time: t0 + i * 900 }));
+    const h1 = Array.from({ length: 75 }, (_, i) => ({ ...bar(0, 100 + Math.sin(i / 5) * 8 + i * 0.8), time: t0 + i * 3600 }));
+    const tree = {
+      logic: 'AND' as const,
+      children: [
+        { left: { source: 'ema', output: 'value', params: { length: 20 } }, op: 'crossAbove' as const, right: { source: 'ema', output: 'value', params: { length: 50 } }, tf: '15m' as const },
+        { left: { source: 'rsi', output: 'rsi' }, op: 'gt' as const, right: 40, tf: '1h' as const },
+      ],
+    };
+    const full = evaluate(tree, { '15m': m15 as Candle[], '1h': h1 as Candle[] }, '15m');
+    // Cut at a time boundary: keep 15m bars < T and 1h bars < T.
+    const T = t0 + 200 * 900;
+    const m15cut = (m15 as Candle[]).filter((c) => c.time < T);
+    const h1cut = (h1 as Candle[]).filter((c) => c.time < T);
+    const cut = evaluate(tree, { '15m': m15cut, '1h': h1cut }, '15m');
+    for (let i = 0; i < cut.length; i++) {
+      expect(cut[i], `bar ${i}`).toBe(full[i]);
+    }
   });
 });
