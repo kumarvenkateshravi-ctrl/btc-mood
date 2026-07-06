@@ -50,6 +50,10 @@ const CLASS_LABEL: Record<VdZone['classification'], string> = {
   institutional: 'Inst', exhaustion: 'Exh', major: 'Major', minor: '',
 };
 
+const STATUS_TXT: Record<VdTrade['status'], string> = {
+  active: 'open', tp1: 'TP1 · open', tp2: 'TP2 · open', tp3: 'TP3', stopped: 'SL', exit: 'exit',
+};
+
 const resolveTfs = (inp: VdInputs): HtfPeriod[] =>
   [inp.tf1, inp.tf2, inp.tf3].filter((t): t is HtfPeriod => t === '4H' || t === 'D' || t === 'W' || t === 'M');
 
@@ -112,7 +116,7 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   // an informational grade (neutral context); failed gates become warnings.
   const LIVE_WINDOW_BARS = 12;
   let decisions: Decision[] = [];
-  let rejections: Rejection[] = [];
+  const rejections: Rejection[] = [];
   let accepted: VdSignal[] = sigs;
   if (inp.useContextGate) {
     const atr = vdAtr(candles);
@@ -206,8 +210,18 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   const riskBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
   const rewardBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
   const runnerBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  const selId = selectedVdTradeId();
+  const outcomeLabels: Record<number, string> = {};
+  let emphasisRunStart: number | null = null;
   if (inp.showTradeSetups) {
-    for (const t of trades.slice(-10)) { // only the last 10 trades draw on the chart
+    // Last 10 trades draw on the chart, PLUS the panel-selected trade (if older).
+    const drawSet = new Set(trades.slice(-10));
+    const selTrade = selId ? trades.find((t) => vdTradeId(t) === selId) : undefined;
+    if (selTrade) {
+      drawSet.add(selTrade);
+      emphasisRunStart = selTrade.entryIndex;
+    }
+    for (const t of drawSet) {
       const s = t.signal;
       const to = Math.min(t.resolvedIndex ?? n - 1, n - 1);
       for (let i = t.entryIndex; i <= to; i++) {
@@ -215,11 +229,20 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
         rewardBox[i] = { upper: Math.max(s.entry, s.tp1), lower: Math.min(s.entry, s.tp1) };
         runnerBox[i] = { upper: Math.max(s.tp1, s.tp3), lower: Math.min(s.tp1, s.tp3) };
       }
+      // Final outcome, readable directly on the chart (self-sufficiency).
+      const dir = s.side === 'buy' ? 1 : -1;
+      outcomeLabels[t.entryIndex] = t.exitPrice != null
+        ? (() => {
+            const pts = dir * (t.exitPrice! - s.entry);
+            const be = Math.abs(pts) < 1e-9;
+            return be ? 'BE' : `${pts >= 0 ? '+' : ''}${pts.toFixed(1)} pts${t.status === 'stopped' && pts < 0 ? ' · SL' : ''}`;
+          })()
+        : STATUS_TXT[t.status];
     }
   }
-  plots.push({ id: 'Trade Risk', title: 'Trade Risk', color: 'rgba(242,54,69,0.07)', type: 'band', pane: 'overlay', data: riskBox });
-  plots.push({ id: 'Trade Reward', title: 'Trade Reward', color: 'rgba(34,211,154,0.07)', type: 'band', pane: 'overlay', data: rewardBox });
-  plots.push({ id: 'Trade Runner', title: 'Trade Runner', color: 'rgba(34,211,154,0.035)', type: 'band', pane: 'overlay', data: runnerBox });
+  plots.push({ id: 'Trade Risk', title: 'Trade Risk', color: 'rgba(242,54,69,0.07)', type: 'band', pane: 'overlay', data: riskBox, zoneStyle: { flatLabels: {}, emphasisRunStart } });
+  plots.push({ id: 'Trade Reward', title: 'Trade Reward', color: 'rgba(34,211,154,0.07)', type: 'band', pane: 'overlay', data: rewardBox, zoneStyle: { flatLabels: outcomeLabels, emphasisRunStart } });
+  plots.push({ id: 'Trade Runner', title: 'Trade Runner', color: 'rgba(34,211,154,0.035)', type: 'band', pane: 'overlay', data: runnerBox, zoneStyle: { flatLabels: {}, emphasisRunStart } });
 
   // Arrows via the standard per-bar signal path (context-gated when enabled).
   if (inp.showSignals) {
@@ -228,7 +251,6 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
 
   // Trade levels for the FOCUSED trade (table-row click) or the most recent
   // accepted signal, labeled with its grade.
-  const selId = selectedVdTradeId();
   const focused = selId
     ? trades.find((t) => vdTradeId(t) === selId)?.signal
     : undefined;

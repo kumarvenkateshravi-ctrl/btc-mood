@@ -78,6 +78,50 @@ class BandRenderer implements IPrimitivePaneRenderer {
         return;
       }
 
+      // ---- FLAT trade-box mode: fill runs with the plot color as-is, label
+      //      each run with its trade outcome, emphasize the selected trade. --
+      if (zoneStyle.flatLabels) {
+        const rgbF = rgbOf(color);
+        for (const run of this._prim.runs) {
+          const yU = series.priceToCoordinate(run.upper);
+          const yL = series.priceToCoordinate(run.lower);
+          if (yU === null || yL === null) continue;
+          const top = Math.min(yU, yL) * vpr;
+          const bot = Math.max(yU, yL) * vpr;
+          const x1 = ts.timeToCoordinate(times[run.start] as Time);
+          const x2 = ts.timeToCoordinate(times[run.end] as Time);
+          if (x1 == null && x2 == null) continue;
+          const left = (x1 ?? 0) * hpr - halfW;
+          const right = (x2 != null ? x2 * hpr : scope.bitmapSize.width) + halfW;
+          if (right < 0 || left > scope.bitmapSize.width) continue;
+          const emphasized = zoneStyle.emphasisRunStart === run.start;
+          ctx.fillStyle = color;
+          ctx.fillRect(left, top, right - left, bot - top);
+          if (emphasized) {
+            ctx.fillRect(left, top, right - left, bot - top); // double the fill
+            ctx.strokeStyle = `rgba(${rgbF},0.7)`;
+            ctx.lineWidth = Math.max(1, vpr);
+            ctx.strokeRect(left, top, right - left, bot - top);
+          }
+          const label = zoneStyle.flatLabels[run.start];
+          if (label) {
+            const fontPx = 9 * vpr;
+            ctx.font = `500 ${fontPx}px Inter, ui-sans-serif, system-ui`;
+            ctx.textBaseline = 'middle';
+            const padX = 4 * hpr;
+            const w = ctx.measureText(label).width + padX * 2;
+            const h = 13 * vpr;
+            const lx = Math.max(left, Math.min(right - w, scope.bitmapSize.width - w));
+            const ly = top - h / 2 - 2 * vpr; // just above the box
+            ctx.fillStyle = 'rgba(8,12,20,0.78)';
+            ctx.fillRect(lx, ly - h / 2, w, h);
+            ctx.fillStyle = `rgba(${rgbF},0.95)`;
+            ctx.fillText(label, lx + padX, ly);
+          }
+        }
+        return;
+      }
+
       // ---- Zone mode: each run is a market OBJECT --------------------------
       // Border-defined rectangle (upper bound / dashed mid / lower bound) with
       // a soft glassy fill — never a painted block. Hierarchy: focus (nearest

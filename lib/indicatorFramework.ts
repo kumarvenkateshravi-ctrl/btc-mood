@@ -68,6 +68,12 @@ export interface BandZoneStyle {
   /** Bar indices where a signal originated from this zone — the primitive
    *  draws an origin dot + tick on the boundary at each. */
   anchors?: number[];
+  /** FLAT trade-box mode (R:R boxes): fill each run with the plot color as-is
+   *  (no zone hierarchy) and draw the label mapped from the run's START bar
+   *  index — e.g. a trade's outcome ("+512 pts"). */
+  flatLabels?: Record<number, string>;
+  /** Run (by start index) to emphasize — the trade selected in the panel. */
+  emphasisRunStart?: number | null;
 }
 
 export interface IndicatorPlot {

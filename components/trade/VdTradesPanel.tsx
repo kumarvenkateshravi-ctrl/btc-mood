@@ -31,8 +31,10 @@ export function tradePoints(t: VdTrade): { points: number; open: boolean } {
 }
 
 export interface VdStats {
-  trades: number; resolved: number; winRate: number; avgR: number; profitFactor: number;
+  trades: number; resolved: number; winRate: number; avgR: number;
+  expectancy: number; profitFactor: number; avgMfeR: number; avgMaeR: number;
   byGrade: Partial<Record<SignalGrade, { n: number; winRate: number }>>;
+  byTf: Record<string, { n: number; winRate: number }>;
 }
 
 export function vdStats(trades: VdTrade[], gradeOfTrade: (t: VdTrade) => SignalGrade | null): VdStats {
@@ -42,27 +44,34 @@ export function vdStats(trades: VdTrade[], gradeOfTrade: (t: VdTrade) => SignalG
   const grossWin = wins.reduce((s, r) => s + r, 0);
   const grossLoss = Math.abs(rs.filter((r) => r < 0).reduce((s, r) => s + r, 0));
   const byGrade: VdStats['byGrade'] = {};
+  const byTf: VdStats['byTf'] = {};
   for (const t of resolved) {
+    const win = (t.realizedR as number) > 0 ? 1 : 0;
     const g = gradeOfTrade(t);
-    if (!g) continue;
-    const slot = (byGrade[g] ??= { n: 0, winRate: 0 });
-    slot.n++;
-    if ((t.realizedR as number) > 0) slot.winRate++;
+    if (g) {
+      const slot = (byGrade[g] ??= { n: 0, winRate: 0 });
+      slot.n++; slot.winRate += win;
+    }
+    const tfSlot = (byTf[t.signal.tf] ??= { n: 0, winRate: 0 });
+    tfSlot.n++; tfSlot.winRate += win;
   }
-  for (const g of Object.keys(byGrade) as SignalGrade[]) {
-    byGrade[g]!.winRate = byGrade[g]!.n ? byGrade[g]!.winRate / byGrade[g]!.n : 0;
-  }
+  for (const g of Object.keys(byGrade) as SignalGrade[]) byGrade[g]!.winRate /= byGrade[g]!.n || 1;
+  for (const tf of Object.keys(byTf)) byTf[tf].winRate /= byTf[tf].n || 1;
+  const avgR = rs.length ? rs.reduce((s, r) => s + r, 0) / rs.length : 0;
   return {
     trades: trades.length,
     resolved: resolved.length,
     winRate: rs.length ? wins.length / rs.length : 0,
-    avgR: rs.length ? rs.reduce((s, r) => s + r, 0) / rs.length : 0,
+    avgR,
+    expectancy: avgR, // R per trade
     profitFactor: grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : 0,
-    byGrade,
+    avgMfeR: resolved.length ? resolved.reduce((s, t) => s + t.mfeR, 0) / resolved.length : 0,
+    avgMaeR: resolved.length ? resolved.reduce((s, t) => s + t.maeR, 0) / resolved.length : 0,
+    byGrade, byTf,
   };
 }
 
-export default function VdTradesPanel() {
+export default function VdTradesPanel({ symbol, tf }: { symbol?: string; tf?: string } = {}) {
   const [selected, setSelected] = useState<string | null>(selectedVdTradeId());
   const trades = latestVdTrades() ?? [];
   const decisions = latestVdDecisions()?.decisions ?? [];
@@ -79,14 +88,21 @@ export default function VdTradesPanel() {
   };
 
   return (
-    <Panel title="VD Trades">
+    <Panel title="VD Trades" sym={symbol && tf ? `(${symbol} · ${tf})` : undefined}>
       <p className="mb-1 text-[10px] text-ink-faint">Paper &amp; educational — not financial advice.</p>
       {stats.resolved > 0 && (
-        <p className="mb-2 font-mono text-[10px] tabular-nums text-ink-muted">
-          {stats.resolved} closed · win {(stats.winRate * 100).toFixed(0)}% · avg {stats.avgR.toFixed(2)}R · PF{' '}
-          {Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞'}
-          {Object.entries(stats.byGrade).map(([g, v]) => ` · ${g} ${(v.winRate * 100).toFixed(0)}% (${v.n})`).join('')}
-        </p>
+        <div className="mb-2 space-y-0.5 font-mono text-[10px] tabular-nums text-ink-muted">
+          <p>
+            {stats.resolved} closed · win {(stats.winRate * 100).toFixed(0)}% · exp {stats.expectancy.toFixed(2)}R · PF{' '}
+            {Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞'}
+            {' '}· MFE {stats.avgMfeR.toFixed(1)}R · MAE {stats.avgMaeR.toFixed(1)}R
+          </p>
+          <p className="text-ink-faint">
+            {Object.entries(stats.byGrade).map(([g, v]) => `${g} ${(v.winRate * 100).toFixed(0)}% (${v.n})`).join(' · ')}
+            {Object.keys(stats.byTf).length > 1 &&
+              ' · ' + Object.entries(stats.byTf).map(([t, v]) => `${t}-zone ${(v.winRate * 100).toFixed(0)}% (${v.n})`).join(' · ')}
+          </p>
+        </div>
       )}
       {rows.length === 0 ? (
         <p className="py-5 text-center text-xs text-ink-muted">
@@ -136,7 +152,8 @@ export default function VdTradesPanel() {
                       <div className={`mt-0.5 text-[10px] font-medium ${win ? 'text-bull-bright' : 'text-bear-bright'}`}>
                         {label} {points >= 0 ? '+' : ''}{points.toFixed(1)} pts
                         ({t.realizedR! >= 0 ? '+' : ''}{t.realizedR!.toFixed(2)}R)
-                        {t.resolvedTime ? ` · closed ${fmtTime(t.resolvedTime)}` : ''} · {t.barsHeld} bars
+                        {t.exitPrice != null ? ` · exit ${t.exitPrice.toFixed(1)}` : ''}
+                        {t.resolvedTime ? ` · ${fmtTime(t.resolvedTime)}` : ''} · {t.barsHeld} bars
                       </div>
                     );
                   })()}
