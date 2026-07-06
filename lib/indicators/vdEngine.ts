@@ -652,8 +652,20 @@ export function generateVdSignals(
 
 export type VdTradeStatus = 'active' | 'tp1' | 'tp2' | 'tp3' | 'stopped' | 'exit';
 
-export interface VdTrade {
-  signal: VdSignal;
+/** The minimal shape the trade walker needs — any signal type that carries
+ *  these fields (VD signals, Technical Scanner signals, …) can be walked. */
+export interface TradePlanLike {
+  side: 'buy' | 'sell';
+  entry: number;
+  stopLoss: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  index: number;
+}
+
+export interface VdTrade<S extends TradePlanLike = VdSignal> {
+  signal: S;
   status: VdTradeStatus;
   /** The stop as currently enforced (steps to break-even / trails in later phases). */
   slCurrent: number;
@@ -666,6 +678,10 @@ export interface VdTrade {
   mfeR: number; // max favorable excursion, in R
   maeR: number; // max adverse excursion, in R
   realizedR: number | null; // null while unresolved
+  /** Bar indices where each target was first touched (event timestamps). */
+  tp1Index?: number;
+  tp2Index?: number;
+  tp3Index?: number;
 }
 
 export interface VdExitOptions {
@@ -686,13 +702,13 @@ export const VD_EXIT_DEFAULTS: VdExitOptions = { beAfterTp1: true, trailAtr: 1.0
  * 1) stop check (with the stop as it stood BEFORE this bar), 2) TP
  * progression + break-even, 3) context-exit check, 4) trailing update.
  */
-export function walkVdTrades(
+export function walkVdTrades<S extends TradePlanLike>(
   candles: Candle[],
-  signals: VdSignal[],
+  signals: S[],
   exits: VdExitOptions = VD_EXIT_DEFAULTS,
-): VdTrade[] {
+): Array<VdTrade<S>> {
   const lastClosed = candles.length - 1; // callers pass closed candles
-  const out: VdTrade[] = [];
+  const out: Array<VdTrade<S>> = [];
   if (signals.length === 0) return out;
   const atr = vdAtr(candles);
   const closes = candles.map((c) => c.close);
@@ -702,7 +718,7 @@ export function walkVdTrades(
   for (const s of signals) {
     const dir = s.side === 'buy' ? 1 : -1;
     const risk = Math.abs(s.entry - s.stopLoss);
-    const t: VdTrade = {
+    const t: VdTrade<S> = {
       signal: s, status: 'active', slCurrent: s.stopLoss,
       entryIndex: s.index, entryTime: candles[s.index]?.time ?? 0,
       resolvedIndex: null, resolvedTime: null, exitPrice: null,
@@ -733,12 +749,14 @@ export function walkVdTrades(
       // 2. TP progression + break-even.
       const hit = (tp: number) => (dir > 0 ? c.high >= tp : c.low <= tp);
       if (t.status === 'active' && hit(s.tp1)) {
+        t.tp1Index = i;
         t.status = 'tp1';
         if (exits.beAfterTp1) t.slCurrent = dir > 0 ? Math.max(t.slCurrent, s.entry) : Math.min(t.slCurrent, s.entry);
       }
-      if (t.status === 'tp1' && hit(s.tp2)) t.status = 'tp2';
+      if (t.status === 'tp1' && hit(s.tp2)) { t.status = 'tp2'; t.tp2Index = i; }
       if (t.status === 'tp2' && hit(s.tp3)) {
         t.status = 'tp3';
+        t.tp3Index = i;
         t.resolvedIndex = i;
         t.resolvedTime = c.time;
         t.exitPrice = s.tp3;

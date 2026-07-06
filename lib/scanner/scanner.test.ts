@@ -249,6 +249,95 @@ describe('S3: Validation Engine', () => {
   });
 });
 
+describe('S4: signals + events + store', async () => {
+  const { generateScannerSignals } = await import('./signals');
+  const { deriveScannerEvents } = await import('./events');
+  const { walkVdTrades } = await import('../indicators/vdEngine');
+  const store = await import('./scannerStore');
+
+  const okCond: Condition = { left: { source: 'rsi', output: 'rsi' }, op: 'gt', right: 55, tf: '15m' };
+  const mkStrategy = (over: Record<string, unknown> = {}) => ({
+    id: 'strat_test', name: 'Momentum', direction: 'long' as const, schemaVersion: 1 as const,
+    versions: [{ v: 1, createdAt: 0, note: '', tree: { logic: 'AND' as const, children: [okCond] } }],
+    activeVersion: 1, enabled: true, archived: false,
+    exits: { slAtr: 1.5, tp1R: 1, tp2R: 2, tp3R: 3 },
+    ownerId: null, visibility: 'private' as const, createdAt: 0, updatedAt: 0,
+    parentStrategy: null, forkCount: 0, likes: 0,
+    ...over,
+  });
+
+  it('signals fire on the rising edge only, with frozen Why? + exact levels', () => {
+    const up = ramp(120, 1); // RSI > 55 becomes true and STAYS true → one edge
+    const sigs = generateScannerSignals(mkStrategy(), { '15m': up }, '15m', 777);
+    expect(sigs.length).toBe(1);
+    const s = sigs[0];
+    expect(s.id).toBe(`strat_test@v1@${s.barTime}`);
+    expect(s.barTime).toBe(up[s.index].time + 900);          // CLOSE time of the bar
+    expect(s.side).toBe('buy');
+    expect(s.stopLoss).toBeLessThan(s.entry);
+    const risk = s.entry - s.stopLoss;
+    expect(s.tp1).toBeCloseTo(s.entry + risk, 6);
+    expect(s.tp3).toBeCloseTo(s.entry + 3 * risk, 6);
+    expect(s.why[0].pass).toBe(true);
+    expect(s.confidence).toBe(100);
+    expect(s.createdAt).toBe(777);
+  });
+
+  it('short strategies mirror the exits', () => {
+    const down = ramp(150, -1, 500);
+    const sigs = generateScannerSignals(
+      mkStrategy({ direction: 'short', versions: [{ v: 1, createdAt: 0, note: '', tree: { logic: 'AND', children: [{ ...okCond, op: 'lt', right: 45 }] } }] }),
+      { '15m': down }, '15m',
+    );
+    expect(sigs.length).toBeGreaterThan(0);
+    const s = sigs[0];
+    expect(s.side).toBe('sell');
+    expect(s.stopLoss).toBeGreaterThan(s.entry);
+    expect(s.tp1).toBeLessThan(s.entry);
+  });
+
+  it('scanner signals walk through the generalized trade engine and derive the event timeline', () => {
+    const up = ramp(200, 1);
+    const [sig] = generateScannerSignals(mkStrategy(), { '15m': up }, '15m', 5);
+    const trades = walkVdTrades(up, [sig], { beAfterTp1: false, trailAtr: 0, contextExit: false });
+    expect(trades[0].status).toBe('tp3'); // relentless uptrend hits all targets
+    const events = deriveScannerEvents(trades, up, '15m', 5);
+    const types = events.map((e) => e.eventType);
+    expect(types).toEqual(['StrategyMatched', 'SignalCreated', 'TradeOpened', 'TP1Hit', 'TP2Hit', 'TP3Hit', 'TradeClosed']);
+    expect(new Set(events.map((e) => e.eventId)).size).toBe(events.length); // unique ids
+    expect(events[0].explainSnapshot?.[0].pass).toBe(true);                 // frozen Why?
+    expect(events[3].barTime).toBeGreaterThan(events[2].barTime);           // TP1 after open
+    for (const e of events) expect(e.strategyVersionId).toBe('strat_test@v1');
+  });
+
+  it('store: create validates, versions are immutable, archive never deletes', () => {
+    store.__resetScannerStoreForTest();
+    const bad = store.createStrategy({ name: 'x', direction: 'long', tree: { logic: 'AND', children: [] } });
+    expect(bad.strategy).toBeNull(); // empty group refused
+    const good = store.createStrategy({ name: 'Momentum', direction: 'long', tree: { logic: 'AND', children: [okCond] } });
+    expect(good.strategy).not.toBeNull();
+    const id = good.strategy!.id;
+
+    const v2 = store.saveNewVersion(id, { logic: 'AND', children: [okCond, okCond] }, 'Added filter');
+    expect(v2.strategy!.activeVersion).toBe(2);
+    expect(v2.strategy!.versions[0].tree.children).toHaveLength(1); // v1 untouched
+    expect(v2.strategy!.versions[1].note).toBe('Added filter');
+
+    store.archiveStrategy(id);
+    const archived = store.getStrategy(id)!;
+    expect(archived.archived).toBe(true); // still present — never deleted
+  });
+
+  it('store: signals/events append-only with dedupe by immutable id', () => {
+    store.__resetScannerStoreForTest();
+    const up = ramp(120, 1);
+    const sigs = generateScannerSignals(mkStrategy(), { '15m': up }, '15m', 9);
+    expect(store.recordSignals(sigs)).toBe(1);
+    expect(store.recordSignals(sigs)).toBe(0); // same ids → nothing appended
+    expect(store.listSignals()).toHaveLength(1);
+  });
+});
+
 describe('S2: prefix invariance (non-repaint lock)', () => {
   it('truncating history never changes past evaluations', () => {
     const t0 = 1_600_000_000 - (1_600_000_000 % 86400);
