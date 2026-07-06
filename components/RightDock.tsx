@@ -8,7 +8,7 @@ const ITEMS: { id: RightPanelId; label: string; Icon: LucideIcon }[] = [
   { id: 'mood', label: 'Mood', Icon: Gauge },
   { id: 'signals', label: 'Signals', Icon: Radar },
   { id: 'orderflow', label: 'Order Flow', Icon: Waves },
-  { id: 'strategy', label: 'Strategy Builder', Icon: Cpu },
+  { id: 'strategy', label: 'Technical Scanner', Icon: Cpu },
 ];
 
 /**

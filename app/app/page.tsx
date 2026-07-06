@@ -23,7 +23,7 @@ import { useMarketContext } from '@/lib/hooks/useMarketContext';
 import { useScannerEngine } from '@/lib/hooks/useScannerEngine';
 import ScannerSignalsDock from '@/components/scanner/ScannerSignalsDock';
 import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
-import StrategyBuilderPanel from '@/components/StrategyBuilderPanel';
+import TechnicalScannerPanel from '@/components/scanner/TechnicalScannerPanel';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
@@ -338,7 +338,7 @@ export default function DashboardPage() {
               />
             )}
             {rightPanel === 'orderflow' && <OrderFlowPanel symbol={symbol} tf={selected} />}
-            {rightPanel === 'strategy' && <StrategyBuilderPanel activeIndicators={activeIndicators} />}
+            {rightPanel === 'strategy' && <TechnicalScannerPanel />}
           </aside>
         )}
 
