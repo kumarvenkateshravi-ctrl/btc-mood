@@ -11,7 +11,10 @@ import {
   type VdZone, type VdSignal, type VdConfig, type VdTrade,
 } from './vdEngine';
 import { decide } from '../context/decisionEngine';
-import { latestMarketContext, publishVdDecisions, publishVdTrades } from '../context/contextStore';
+import {
+  latestMarketContext, publishVdDecisions, publishVdTrades,
+  selectedVdTradeId, vdTradeId,
+} from '../context/contextStore';
 import { DEFAULT_DECISION_CONFIG, type Decision, type Rejection } from '../context/types';
 
 interface VdInputs {
@@ -204,8 +207,13 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
     for (const s of accepted) signals[s.index] = s.side;
   }
 
-  // Trade levels for the most recent accepted signal, labeled with its grade.
-  const last = accepted[accepted.length - 1];
+  // Trade levels for the FOCUSED trade (table-row click) or the most recent
+  // accepted signal, labeled with its grade.
+  const selId = selectedVdTradeId();
+  const focused = selId
+    ? trades.find((t) => vdTradeId(t) === selId)?.signal
+    : undefined;
+  const last = focused ?? accepted[accepted.length - 1];
   if (last && inp.showTradeLevels) {
     const sideTxt = last.side === 'buy' ? 'BUY' : 'SELL';
     const d = decisions.find((x) => x.signal === last);

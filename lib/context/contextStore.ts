@@ -21,6 +21,8 @@ export function latestMarketContext(): MarketContext | null {
 export function __resetContextForTest(): void {
   _latest = null;
   _decisions = null;
+  _trades = null;
+  _selectedTradeId = null;
 }
 
 // ---- Latest decisions/rejections (published by the VD indicator, read by the
@@ -53,4 +55,18 @@ export function publishVdTrades(trades: VdTrade[]): void {
 
 export function latestVdTrades(): VdTrade[] | null {
   return _trades;
+}
+
+// ---- Trade selection (table row click → chart focuses that trade). ---------
+
+export const vdTradeId = (t: VdTrade): string => `${t.signal.zoneId}@${t.signal.index}`;
+
+let _selectedTradeId: string | null = null;
+
+export function selectVdTrade(id: string | null): void {
+  _selectedTradeId = id;
+}
+
+export function selectedVdTradeId(): string | null {
+  return _selectedTradeId;
 }

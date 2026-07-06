@@ -57,7 +57,7 @@ export default function DashboardPage() {
   const [hydrated, setHydrated] = useState(false);
   const [activeIndicatorIds, setActiveIndicatorIds] = useState<string[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [tab, setTab] = useState<'signals' | 'trade'>('signals');
+  const [tab, setTab] = useState<'signals' | 'trade' | 'trades'>('signals');
   // Which right-rail panel is shown (null = collapsed). Driven by the far-right icon dock.
   const [rightPanel, setRightPanel] = useState<RightPanelId | null>('signals');
 
