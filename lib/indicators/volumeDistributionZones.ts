@@ -99,23 +99,34 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
 
   const { zones, sigs } = computeCached(candles, inp, tfs);
 
-  // MTF confirmation (Market Context Engine): candidates pass the Decision
-  // Engine when the gate is on. decide() degrades gracefully when no context
-  // has been published (tests, cold start): neutral 50s, HTF/bias gates off.
+  // MTF confirmation (Market Context Engine). The live context describes NOW,
+  // so it may only veto FRESH signals (trigger within the live window) —
+  // historical signals are judged by their own bar-time gates and NEVER
+  // disappear retroactively (non-repaint promise). Historical candidates get
+  // an informational grade (neutral context); failed gates become warnings.
+  const LIVE_WINDOW_BARS = 12;
   let decisions: Decision[] = [];
   let rejections: Rejection[] = [];
   let accepted: VdSignal[] = sigs;
   if (inp.useContextGate) {
     const atr = vdAtr(candles);
-    const out = decide(
-      sigs,
-      latestMarketContext(),
-      { ...DEFAULT_DECISION_CONFIG, minDecisionScore: inp.minDecisionScore },
-      (i) => atr[i],
-    );
-    decisions = out.decisions;
-    rejections = out.rejections;
-    accepted = decisions.map((d) => d.signal);
+    const atrAt = (i: number) => atr[i];
+    const dcfg = { ...DEFAULT_DECISION_CONFIG, minDecisionScore: inp.minDecisionScore };
+    const ctxNow = latestMarketContext();
+    const liveFrom = n - 2 - LIVE_WINDOW_BARS;
+    decisions = [];
+    accepted = [];
+    for (const s of sigs) {
+      if (s.index >= liveFrom) {
+        const out = decide([s], ctxNow, dcfg, atrAt); // full veto on fresh signals
+        if (out.decisions.length) { decisions.push(out.decisions[0]); accepted.push(s); }
+        else rejections.push(out.rejections[0]);
+      } else {
+        const out = decide([s], null, dcfg, atrAt, { enforceGates: false });
+        decisions.push(out.decisions[0]);
+        accepted.push(s);
+      }
+    }
   }
   publishVdDecisions({ decisions, rejections, gated: inp.useContextGate });
 

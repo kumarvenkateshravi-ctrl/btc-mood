@@ -166,6 +166,15 @@ describe('decisionEngine', () => {
     expect(decisions[0].warnings).toContain('Market context unavailable');
   });
 
+  it('enforceGates:false keeps failing candidates as informational decisions', () => {
+    const { decisions, rejections } = decide(
+      [sig({ side: 'sell' })], ctx, DEFAULT_DECISION_CONFIG, () => 2, { enforceGates: false },
+    );
+    expect(rejections).toHaveLength(0);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].warnings.join(' ')).toMatch(/bias is bullish/); // gate recorded, not vetoed
+  });
+
   it('grade boundaries', () => {
     expect(gradeOf(85)).toBe('A+');
     expect(gradeOf(75)).toBe('A');

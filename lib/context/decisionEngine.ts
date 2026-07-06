@@ -40,7 +40,9 @@ export function decide(
   ctx: MarketContext | null,
   cfg: DecisionConfig = DEFAULT_DECISION_CONFIG,
   atrAt?: (index: number) => number | null,
+  opts: { enforceGates?: boolean } = {},
 ): DecideResult {
+  const enforceGates = opts.enforceGates !== false;
   const decisions: Decision[] = [];
   const rejections: Rejection[] = [];
   const w = cfg.weights;
@@ -94,7 +96,7 @@ export function decide(
       }
     }
 
-    if (failedGates.length > 0) {
+    if (failedGates.length > 0 && enforceGates) {
       rejections.push({ signal: s, decisionScore, failedGates });
       continue;
     }
@@ -105,6 +107,7 @@ export function decide(
       ...(ctx ? ctx.confirmations.slice(0, 4) : []),
     ];
     const warnings = ctx ? [...ctx.warnings] : ['Market context unavailable'];
+    if (failedGates.length > 0) warnings.push(...failedGates); // informational mode
 
     decisions.push({
       signal: s,
