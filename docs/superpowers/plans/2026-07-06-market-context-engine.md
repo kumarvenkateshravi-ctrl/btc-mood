@@ -1,159 +1,201 @@
-# Market Context Engine — MTF Confirmation for Signals (Plan)
+# Market Context Engine — MTF Confirmation for Signals (Plan, rev. 2)
 
-> Status: DRAFT — awaiting user review. Source: MTFPlan.md (15 phases / 6 sprints),
-> scoped here to Sprints 1–5 + the chart widget; backtest/analytics = Phase 2 plan.
+> Status: APPROVED architecture (revisedMTF.md, 9.8/10) with 12 refinements applied.
+> Source: MTFPlan.md Sprints 1–5 + chart widget; backtest/analytics = next plan.
 
-**Goal:** Buy/Sell signals are confirmed by the Multi-Timeframe alignment (the MTF
-indicator × {5m,15m,30m,1h,4h,1d} table) via a pure **Market Context Engine**:
-`Zones → Market Context → Decision → BUY/SELL`, everything scored 0–100 and explainable.
-
----
-
-## 1. Assessment — is this the right move? (asked: "what do you think")
-
-**Yes — with three corrections to how the MTF table is used today.** MTF confirmation is
-the single highest-value gate available (the research docs estimated +25–35% win rate
-for HTF trend alignment alone), and the MTFPlan's architecture is the same Layer-2→3→4
-design the VD-zones work was built to feed. But the existing MTF page data **cannot be
-used as-is** for signal gating:
-
-1. **It's UI-layer, live-bar data.** `useMoodEngine` is a React hook computing on every
-   WebSocket tick over forming bars. A signal gated on live context repaints and can't
-   be reproduced in a backtest. → The engine must be a **pure lib** (`lib/context/`,
-   zero React — exactly MTFPlan Step 1) evaluating **closed bars only**, and the hook
-   later becomes a thin consumer of it (Phase 12, no duplicated calculation).
-2. **"Last non-neutral signal" has no recency bound.** `indicatorRows` shows a BUY from
-   300 bars ago as BUY forever — fine for a glance table, dangerous as a gate. → Scores
-   decay with age (a cross N bars ago scores lower than one 2 bars ago).
-3. **The table only covers indicators the user toggled on.** Gate quality must not
-   depend on chart toggles. → The context engine uses a **fixed roster** (EMA alignment,
-   Supertrend, MACD, RSI, ADX, OBV, Volume — all already implemented in `lib/`),
-   independent of `activeIndicatorIds`.
-
-Also honoring MTFPlan's final note: **indicator freeze** — this plan adds no new
-indicators, only combines the existing ones.
+**Goal:** Buy/Sell signals confirmed by the Multi-Timeframe alignment
+(indicators × {5m,15m,30m,1h,4h,1d}) via a pure **Market Context Engine**:
+`Zones → Market Context → Decision → BUY/SELL`, everything scored 0–100,
+explainable, and **configuration-driven end to end**.
 
 ---
 
-## 2. Architecture (`lib/context/` — pure, no UI/chart/store imports)
+## 1. Assessment (unchanged from rev. 1)
+
+MTF confirmation is the highest-value gate, but the existing MTF page data cannot be
+used as-is; the engine fixes three defects: (1) it is UI-layer live-bar data →
+**pure `lib/context/`, closed bars only** (non-repaint is the product promise:
+*"if we generate a signal, it will never disappear"*); (2) `indicatorRows`' "last
+non-neutral signal" never expires → **recency decay**; (3) the table only covers
+toggled-on indicators → **fixed 7-indicator roster** independent of chart state.
+No new indicators (indicator freeze); everything reuses the engines already built.
+
+## 2. Revisions applied (revisedMTF.md — all 12)
+
+1. **No hardcoded indicator weights** — typed `ContextWeights`, defaults only.
+2. **No hardcoded TF weights** — typed `TimeframeWeights`, defaults only.
+3. **No binary 4H+1D veto** — weighted **higher-TF agreement score** (0–100) with a
+   configurable floor; markets transition gradually.
+4. **Neutral is a first-class bias** — the engine may say "I don't know"
+   (neutral band around 50, configurable).
+5. **Conflict detection** — `conflictScore` 0–100 (indicator disagreement).
+6. **Confidence ≠ Context** — separate `confidence` (agreement × data sufficiency):
+   context can be bullish while confidence is low.
+7. **Dynamic zone weighting** — zone weight in the decision scales with zone
+   confidence (20% → 45%), other weights renormalize.
+8. **Signal quality grades** — A+ (Institutional) / A (Strong) / B (Moderate) /
+   C (Aggressive) / D (High Risk) from the decision score.
+9. **Risk profile per signal** — low/medium/high from SL distance, volatility,
+   trend alignment, conflict.
+10. **Explain WHY NOT** — rejected candidates return structured rejection reasons
+    ("❌ 1D trend bearish · ❌ weak volume · context 58 < 65").
+11. **Decision formula redesigned** — Trend/Momentum/Volume become independent
+    terms (no longer hidden inside Context):
+    Context 30 · Zone 25 · Trend 15 · Momentum 10 · Volume 10 · Risk 5 · Liquidity 5.
+12. **Future-proof registry** — indicator scorers are pluggable
+    `ContextScoreProducer`s; adding VWAP / funding / OI later changes zero
+    Decision-Engine code.
+
+---
+
+## 3. Architecture (`lib/context/` — pure, no UI/chart/store imports)
 
 ```
-types.ts            ContextIndicatorScore, TfContext, MarketContext, ContextConfig
-indicatorScores.ts  adapters: existing lib indicators → per-TF 0-100 scores (closed bars)
+types.ts            contracts + ALL config interfaces (weights, thresholds, bands)
+indicatorScores.ts  ContextScoreProducer registry: 7 adapters over existing lib code
 trendEngine.ts      EMA + Supertrend + HH/HL structure + ADX  → trendScore 0-100
 momentumEngine.ts   MACD + RSI + slope/acceleration           → momentumScore 0-100
 volumeEngine.ts     OBV + volume SMA + delta + spike          → volumeScore 0-100
-scoringEngine.ts    weights → per-TF contextScore + cross-TF alignment
-marketContext.ts    assembler: candlesByTf → MarketContext (cached per closed bar)
-decisionEngine.ts   VD signal candidates + MarketContext → final scored decisions
+scoringEngine.ts    ContextWeights blend, conflict, confidence, TF alignment
+marketContext.ts    assembler: candlesByTf → MarketContext (closed-bar cache)
+decisionEngine.ts   VD candidates + MarketContext → Decision[] + Rejection[]
 ```
 
-### Contracts (MTFPlan Steps 2–3; renamed to avoid the framework's `IndicatorResult`)
+### Contracts
 
 ```ts
 type ContextState = 'bullish' | 'bearish' | 'neutral';
 
+interface ContextWeights { ema: number; supertrend: number; macd: number; rsi: number; adx: number; obv: number; volume: number }
+interface TimeframeWeights { '5m': number; '15m': number; '30m': number; '1h': number; '4h': number; '1d': number }
+interface ContextConfig {
+  weights: ContextWeights;        // default 25/20/15/10/10/10/10
+  tfWeights: TimeframeWeights;    // default 5/10/10/20/25/30
+  neutralBand: number;            // default 8 → bias neutral within 50±8
+  recencyHalfLifeBars: number;    // default 10 (event-score decay)
+  htfTfs: Timeframe[];            // default ['4h','1d']
+  htfFloor: number;               // default 55 (weighted HTF agreement gate)
+}
+
+/** Pluggable scorer (refinement 12): new engines register here, nothing else changes. */
+type ContextScoreProducer = (candles: Candle[], tf: Timeframe) => ContextIndicatorScore;
+
 interface ContextIndicatorScore {
-  name: string;            // 'emaAlign' | 'supertrend' | 'macd' | 'rsi' | 'adx' | 'obv' | 'volume'
-  timeframe: Timeframe;
-  state: ContextState;
-  score: number;           // 0-100 directional strength (50 = neutral)
-  confidence: number;      // 0-1 data sufficiency (warm-up, bars available)
-  explanation: string;     // "EMA9 > EMA21 by 0.8×ATR, widening"
+  name: string; timeframe: Timeframe; state: ContextState;
+  score: number;        // 0-100 directional (50 = neutral)
+  confidence: number;   // 0-1 data sufficiency (warm-up, bars available)
+  explanation: string;
 }
 
 interface TfContext {
-  tf: Timeframe;
-  indicators: ContextIndicatorScore[];
+  tf: Timeframe; indicators: ContextIndicatorScore[];
   trendScore: number; momentumScore: number; volumeScore: number;
-  contextScore: number;    // weighted blend, 0-100 (>50 bullish, <50 bearish)
-  bias: ContextState;
+  contextScore: number; bias: ContextState;
+  conflictScore: number;  // 0-100 disagreement among indicators (refinement 5)
+  confidence: number;     // 0-100 = agreement × data sufficiency (refinement 6)
 }
 
 interface MarketContext {
   perTf: Record<Timeframe, TfContext | null>;
-  overallBias: ContextState;
-  contextScore: number;    // TF-weighted cross-TF alignment, 0-100
+  overallBias: ContextState;          // neutral when |score−50| ≤ neutralBand
+  contextScore: number;               // TF-weighted alignment 0-100
   trendScore: number; momentumScore: number; volumeScore: number;
-  confirmations: string[]; // "4h EMA bullish", "1d Supertrend bullish", …
-  warnings: string[];      // "15m RSI 78 (overbought)", "1h volume fading", …
-  asOfIndex: number;       // last CLOSED bar of the evaluation TF (non-repaint anchor)
+  htfAgreement: number;               // weighted 4h/1d score (refinement 3)
+  conflictScore: number; confidence: number;
+  confirmations: string[]; warnings: string[];
+  asOfIndex: number;                  // last CLOSED bar anchor (non-repaint)
+}
+
+interface DecisionWeights { context: number; zone: number; trend: number; momentum: number; volume: number; risk: number; liquidity: number }
+interface DecisionConfig {
+  weights: DecisionWeights;           // default 30/25/15/10/10/5/5
+  zoneWeightRange: [number, number];  // default [0.20, 0.45] — dynamic by zone confidence
+  minDecisionScore: number;           // default 65 (grade B)
+  htfFloor: number;                   // default 55
+}
+
+interface Decision {
+  signal: VdSignal;
+  decisionScore: number;
+  grade: 'A+' | 'A' | 'B' | 'C' | 'D';           // ≥85 / ≥75 / ≥65 / ≥55 / <55
+  riskProfile: 'low' | 'medium' | 'high';        // refinement 9
+  contextScore: number; htfAgreement: number; conflictScore: number;
+  reasons: string[]; warnings: string[];
+}
+interface Rejection {                              // refinement 10 — WHY NOT
+  signal: VdSignal; decisionScore: number;
+  failedGates: string[];                           // "1D trend bearish", "context 58 < 65", …
 }
 ```
 
-### Scoring (MTFPlan Phases 3–6; all weights configurable)
+### Scoring rules
 
-- **Indicator weights (per TF):** EMA 25 · Supertrend 20 · MACD 15 · RSI 10 · ADX 10 ·
-  OBV 10 · Volume 10. Each maps to 0–100 where 50 = neutral; **recency decay** —
-  event-type scores (MACD cross, Supertrend flip) decay toward 50 with bar age
-  (`×e^(−age/10)` on the deviation from 50).
-- **TF weights (cross-TF alignment):** 5m 5 · 15m 10 · 30m 10 · 1h 20 · 4h 25 · 1d 30 —
-  higher timeframes dominate confirmation (that's the point of MTF).
-- **Sub-engines:** trend = EMA(40%) + Supertrend(30%) + structure HH/HL(15%) + ADX(15%);
-  momentum = MACD(40%) + RSI(30%) + close-slope(20%) + acceleration(10%);
-  volume = OBV slope(40%) + vol vs SMA20(30%) + buy/sell delta(20%) + spike(10%).
-- **Explanations (Phase 7):** every score carries its reasons; `confirmations[]` /
-  `warnings[]` roll up the strongest agreeing/opposing facts.
+- **Per-indicator scores:** 0–100, 50 = neutral; event scores (MACD cross, Supertrend
+  flip) decay toward 50 with `×2^(−age/recencyHalfLifeBars)` on the deviation.
+- **Per-TF:** contextScore = ContextWeights blend; conflictScore = 100 × weighted mean
+  |score_i − contextScore| / 50; confidence = 100 × (1 − conflict/100) × mean(indicator
+  confidence). Sub-engines: trend = EMA 40 / ST 30 / structure 15 / ADX 15;
+  momentum = MACD 40 / RSI 30 / slope 20 / accel 10;
+  volume = OBV 40 / vol-vs-SMA20 30 / delta 20 / spike 10.
+- **Cross-TF:** contextScore = TimeframeWeights blend of per-TF scores;
+  htfAgreement = weighted blend over `htfTfs` only; overallBias neutral inside the band.
+- **Direction adjustment:** for sells every score s becomes 100 − s before gating.
 
-### Decision Engine (MTFPlan Phases 8–9)
-
-`decide(candidates: VdSignal[], ctx: MarketContext, cfg) → Decision[]`
+### Decision Engine
 
 ```
-decisionScore = 0.35 × zoneQuality      (VdZone confidence, bar-time)
-             + 0.35 × contextScore     (direction-adjusted: sell uses 100 − score)
-             + 0.15 × reactionScore    (zone bounce history)
-             + 0.10 × rrScore          (clamp(RR/3) × 100)
-             + 0.05 × sweepBonus       (100 if liquidity sweep, else 0)
+zoneW   = clamp(0.20 + 0.25 × zoneConfidence/100, 0.20, 0.45)   // refinement 7
+others  = remaining weights renormalized to (1 − zoneW)
+riskScore      = 100 − 100×clamp(slDistanceAtr/3, 0, 1) blended with (100−conflict)
+liquidityScore = sweep ? 100 : zone.clustered ? 60 : 30
+decisionScore  = zoneW×zoneConf + w.context×ctx + w.trend×trend + w.momentum×mom
+               + w.volume×vol + w.risk×riskScore + w.liquidity×liquidityScore
 ```
-Gates: `decisionScore ≥ 65` (configurable) AND direction agreement
-(`buy` needs `overallBias !== 'bearish'` AND 4h+1d contextScore ≥ 50; mirrored for sell).
-Output `Decision` = VdSignal + decisionScore + contextScore + `reasons[]`/`warnings[]`
-(Phase 10 explainability, same grammar as the SignalsPanel).
+Gates (each failure recorded as a `Rejection` reason, not silently dropped):
+`decisionScore ≥ minDecisionScore` · `htfAgreement ≥ htfFloor` (direction-adjusted) ·
+`overallBias` not opposing (neutral allowed). Grade + riskProfile attached to every
+accepted Decision.
 
-### Non-repaint + perf (hard requirements)
+### Non-repaint + perf (hard requirements, unchanged)
 
-- Context evaluates **closed bars per TF** (drop each TF's forming bar). Signals gate on
-  the context as of the signal bar's close → reproducible, backtestable.
-- All engine calls cached on closed-bar signatures (the `sd_signals` hang lesson);
-  `useMoodEngine` keeps working as today until Task 7 rewires it to consume this engine.
+Closed bars per TF (each TF's forming bar dropped); all engine calls cached on
+closed-bar signatures; `useMoodEngine` untouched until Task 7 rewires it.
 
 ---
 
-## 3. Step-by-step tasks (TDD; commit per task)
+## 4. Step-by-step tasks (TDD; commit per task)
 
-1. **`types.ts` + `scoringEngine.ts` skeleton** — contracts, weights, TF weights,
-   blend math. Tests: weight normalization, blend bounds, direction adjustment.
-2. **`indicatorScores.ts`** — the 7 adapters over existing lib functions (closed bars,
-   recency decay, explanations). Tests per adapter on crafted candles (bullish/bearish/
-   neutral/warm-up cases).
-3. **`trendEngine.ts` + `momentumEngine.ts` + `volumeEngine.ts`** — sub-scores with
-   structure/slope/delta components. Tests: hand-crafted trending/ranging fixtures.
-4. **`marketContext.ts`** — assembler over `candlesByTf`, per-TF context + cross-TF
-   alignment + confirmations/warnings + closed-bar cache. Tests: alignment math
-   (all-bullish → >80; split → ~50), cache identity, forming-bar exclusion.
-5. **`decisionEngine.ts`** — formula + gates + explanation merge. Tests: formula
-   arithmetic exact, direction gates, threshold behavior.
-6. **Wire into VD signals** — `volumeDistributionZones.ts` gains `useContextGate`
-   (default ON) + `minDecisionScore` inputs; candidates from `generateVdSignals` pass
-   through `decide()`; arrows/levels/labels show the decision score. `SignalsPanel`
-   explanation gains the context reasons/warnings. Golden fixture regen. Full suite.
-7. **Chart widget + dashboard reuse (Phases 11–12)** — compact `MarketContextWidget`
-   (top-right: bias, context score, trend/momentum/volume stars, risk from warnings
-   count) reading the SAME `MarketContext`; click → opens the MTF rail panel.
-   `useMoodEngine` rewired to consume `marketContext.ts` (no duplicate calc, existing
-   `SignalMatrix` UI unchanged). Live browser verification.
+1. **`types.ts` + `scoringEngine.ts`** — ALL config interfaces + defaults
+   (`DEFAULT_CONTEXT_CONFIG`, `DEFAULT_DECISION_CONFIG`), blend/conflict/confidence
+   math, direction adjustment, neutral band. Tests: weight normalization, conflict on
+   crafted score sets (agreeing → ~0; split → high), confidence composition, bounds.
+2. **`indicatorScores.ts`** — the 7 `ContextScoreProducer`s over existing lib functions
+   (closed bars, recency decay, explanations) + the producer registry. Tests per
+   producer: bullish/bearish/neutral/warm-up fixtures; decay halves at half-life.
+3. **Sub-engines** (`trendEngine` / `momentumEngine` / `volumeEngine`). Tests:
+   hand-crafted trending/ranging/diverging fixtures.
+4. **`marketContext.ts`** — assembler over candlesByTf: per-TF context, cross-TF +
+   htfAgreement, confirmations/warnings, closed-bar cache. Tests: alignment math,
+   htfAgreement (1d 55 + 4h 82 → 67 with default weights), neutral band, cache
+   identity, forming-bar exclusion.
+5. **`decisionEngine.ts`** — dynamic zone weighting, formula, gates, grades, risk
+   profile, Decisions + Rejections. Tests: formula arithmetic exact incl. zoneW
+   renormalization, grade boundaries, htf gate direction-adjusted, rejection reasons.
+6. **Wire into VD signals + UI** — `volumeDistributionZones.ts`: `useContextGate`
+   (default ON), `minDecisionScore` input; candidates → `decide()`; labels show
+   grade ("BUY · A · 87"); `SignalsPanel` shows decision reasons/warnings AND the
+   latest rejections ("No BUY — ❌ 1D trend bearish…"). Golden regen; full suite.
+7. **Chart widget + dashboard reuse** — compact `MarketContextWidget` (bias, context,
+   confidence, conflict, trend/momentum/volume stars, risk) consuming the SAME
+   `MarketContext`; `useMoodEngine` rewired to the engine (one calculation, two
+   views; `SignalMatrix` UI unchanged). Live browser verification.
 
-**Deferred (next plan):** MTFPlan Phases 13–14 (backtest by context tier, analytics)
-and 15 (AI layer) — the structured `MarketContext`/`Decision` outputs already make
-them possible without engine changes.
+**Deferred (next plan):** backtest by context/grade tier, analytics, weight tuning
+from backtests (the config-driven design is what makes that tuning code-free), AI layer.
 
----
+## 5. Locked decisions (rev. 2)
 
-## 4. Decisions locked in this plan (veto at review)
-
-1. Closed-bar context only (non-repaint > immediacy).
-2. Fixed 7-indicator roster, independent of chart toggles.
-3. TF weights favor 4h/1d; both must not oppose the trade direction.
-4. Decision formula + 65 threshold as MTFPlan defaults, all configurable.
-5. Scope = MTFPlan Sprints 1–5 + widget; backtest/analytics deferred.
+1. Closed-bar context only. 2. Fixed roster via pluggable registry. 3. Weighted HTF
+agreement with floor — **no binary veto**. 4. Everything configuration-driven; the
+numbers in this plan are DEFAULTS. 5. Context ≠ confidence; conflict exposed.
+6. Decisions graded A+…D with risk profile; rejections always explained.
