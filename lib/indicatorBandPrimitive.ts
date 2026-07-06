@@ -103,20 +103,35 @@ class BandRenderer implements IPrimitivePaneRenderer {
             ctx.lineWidth = Math.max(1, vpr);
             ctx.strokeRect(left, top, right - left, bot - top);
           }
-          const label = zoneStyle.flatLabels[run.start];
-          if (label) {
+          const chip = (text: string, cx: number, cy: number, textRgb: string) => {
             const fontPx = 9 * vpr;
             ctx.font = `500 ${fontPx}px Inter, ui-sans-serif, system-ui`;
             ctx.textBaseline = 'middle';
             const padX = 4 * hpr;
-            const w = ctx.measureText(label).width + padX * 2;
+            const w = ctx.measureText(text).width + padX * 2;
             const h = 13 * vpr;
-            const lx = Math.max(left, Math.min(right - w, scope.bitmapSize.width - w));
-            const ly = top - h / 2 - 2 * vpr; // just above the box
+            const lx = Math.max(0, Math.min(cx, scope.bitmapSize.width - w));
             ctx.fillStyle = 'rgba(8,12,20,0.78)';
-            ctx.fillRect(lx, ly - h / 2, w, h);
-            ctx.fillStyle = `rgba(${rgbF},0.95)`;
-            ctx.fillText(label, lx + padX, ly);
+            ctx.fillRect(lx, cy - h / 2, w, h);
+            ctx.fillStyle = `rgba(${textRgb},0.95)`;
+            ctx.fillText(text, lx + padX, cy);
+            return w;
+          };
+          const label = zoneStyle.flatLabels[run.start];
+          if (label) {
+            const fontPx = 9 * vpr;
+            ctx.font = `500 ${fontPx}px Inter, ui-sans-serif, system-ui`;
+            const w = ctx.measureText(label).width + 8 * hpr;
+            chip(label, right - w, top - 8.5 * vpr, rgbF); // outcome, above the box's right end
+          }
+          // Entry/TP price tags at the trade's start (left edge), each at its own price.
+          const tags = zoneStyle.priceTags?.[run.start];
+          if (tags) {
+            for (const tag of tags) {
+              const ty = series.priceToCoordinate(tag.price);
+              if (ty === null) continue;
+              chip(tag.text, left + 2 * hpr, ty * vpr, '210,220,235');
+            }
           }
         }
         return;

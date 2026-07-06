@@ -74,6 +74,9 @@ export interface BandZoneStyle {
   flatLabels?: Record<number, string>;
   /** Run (by start index) to emphasize — the trade selected in the panel. */
   emphasisRunStart?: number | null;
+  /** Small price-tagged chips drawn at the run's left edge (flat mode):
+   *  e.g. Entry/TP1/TP2 with distance-to-target in points. */
+  priceTags?: Record<number, Array<{ price: number; text: string }>>;
 }
 
 export interface IndicatorPlot {

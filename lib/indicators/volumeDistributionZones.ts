@@ -212,6 +212,7 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   const runnerBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
   const selId = selectedVdTradeId();
   const outcomeLabels: Record<number, string> = {};
+  const priceTags: Record<number, Array<{ price: number; text: string }>> = {};
   let emphasisRunStart: number | null = null;
   if (inp.showTradeSetups) {
     // Last 10 trades draw on the chart, PLUS the panel-selected trade (if older).
@@ -229,6 +230,14 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
         rewardBox[i] = { upper: Math.max(s.entry, s.tp1), lower: Math.min(s.entry, s.tp1) };
         runnerBox[i] = { upper: Math.max(s.tp1, s.tp3), lower: Math.min(s.tp1, s.tp3) };
       }
+      // Entry + TP references with signed distance-to-target in points
+      // (raw price difference, e.g. SELL: "TP1 62840 (−330 pts)").
+      const fmtPts = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(0)} pts`;
+      priceTags[t.entryIndex] = [
+        { price: s.entry, text: `Entry ${s.entry.toFixed(1)}` },
+        { price: s.tp1, text: `TP1 ${s.tp1.toFixed(1)} (${fmtPts(s.tp1 - s.entry)})` },
+        { price: s.tp2, text: `TP2 ${s.tp2.toFixed(1)} (${fmtPts(s.tp2 - s.entry)})` },
+      ];
       // Final outcome, readable directly on the chart (self-sufficiency).
       const dir = s.side === 'buy' ? 1 : -1;
       outcomeLabels[t.entryIndex] = t.exitPrice != null
@@ -241,7 +250,7 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
     }
   }
   plots.push({ id: 'Trade Risk', title: 'Trade Risk', color: 'rgba(242,54,69,0.07)', type: 'band', pane: 'overlay', data: riskBox, zoneStyle: { flatLabels: {}, emphasisRunStart } });
-  plots.push({ id: 'Trade Reward', title: 'Trade Reward', color: 'rgba(34,211,154,0.07)', type: 'band', pane: 'overlay', data: rewardBox, zoneStyle: { flatLabels: outcomeLabels, emphasisRunStart } });
+  plots.push({ id: 'Trade Reward', title: 'Trade Reward', color: 'rgba(34,211,154,0.07)', type: 'band', pane: 'overlay', data: rewardBox, zoneStyle: { flatLabels: outcomeLabels, emphasisRunStart, priceTags } });
   plots.push({ id: 'Trade Runner', title: 'Trade Runner', color: 'rgba(34,211,154,0.035)', type: 'band', pane: 'overlay', data: runnerBox, zoneStyle: { flatLabels: {}, emphasisRunStart } });
 
   // Arrows via the standard per-bar signal path (context-gated when enabled).
