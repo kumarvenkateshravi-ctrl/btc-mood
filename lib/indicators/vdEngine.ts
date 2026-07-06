@@ -658,7 +658,9 @@ export interface VdTrade {
   /** The stop as currently enforced (steps to break-even / trails in later phases). */
   slCurrent: number;
   entryIndex: number;
+  entryTime: number;            // unix seconds of the trigger bar
   resolvedIndex: number | null; // bar that ended the trade (stop/tp3/exit)
+  resolvedTime: number | null;
   exitPrice: number | null;
   barsHeld: number;
   mfeR: number; // max favorable excursion, in R
@@ -702,7 +704,8 @@ export function walkVdTrades(
     const risk = Math.abs(s.entry - s.stopLoss);
     const t: VdTrade = {
       signal: s, status: 'active', slCurrent: s.stopLoss,
-      entryIndex: s.index, resolvedIndex: null, exitPrice: null,
+      entryIndex: s.index, entryTime: candles[s.index]?.time ?? 0,
+      resolvedIndex: null, resolvedTime: null, exitPrice: null,
       barsHeld: 0, mfeR: 0, maeR: 0, realizedR: null,
     };
     if (risk <= 0) { out.push(t); continue; }
@@ -721,6 +724,7 @@ export function walkVdTrades(
       if (slHit) {
         t.status = 'stopped';
         t.resolvedIndex = i;
+        t.resolvedTime = c.time;
         t.exitPrice = t.slCurrent;
         t.realizedR = (dir * (t.slCurrent - s.entry)) / risk;
         break;
@@ -736,6 +740,7 @@ export function walkVdTrades(
       if (t.status === 'tp2' && hit(s.tp3)) {
         t.status = 'tp3';
         t.resolvedIndex = i;
+        t.resolvedTime = c.time;
         t.exitPrice = s.tp3;
         t.realizedR = (dir * (s.tp3 - s.entry)) / risk;
         break;
@@ -749,6 +754,7 @@ export function walkVdTrades(
           if (crossed) {
             t.status = 'exit';
             t.resolvedIndex = i;
+        t.resolvedTime = c.time;
             t.exitPrice = c.close;
             t.realizedR = (dir * (c.close - s.entry)) / risk;
             break;

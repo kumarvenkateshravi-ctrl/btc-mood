@@ -10,7 +10,8 @@ const trade = (over: Partial<VdTrade>): VdTrade => ({
     entry: 103, stopLoss: 100, tp1: 108, tp2: 110, tp3: 113,
     riskReward: 1.7, swept: false, confidence: 70,
   },
-  status: 'tp1', slCurrent: 100, entryIndex: 10, resolvedIndex: 15,
+  status: 'tp1', slCurrent: 100, entryIndex: 10, entryTime: 1_600_000_000,
+  resolvedIndex: 15, resolvedTime: 1_600_018_000,
   exitPrice: 108, barsHeld: 5, mfeR: 2, maeR: 0.4, realizedR: 1.67,
   ...over,
 });
@@ -32,13 +33,25 @@ describe('vdStats', () => {
 });
 
 describe('VdTradesPanel', () => {
-  it('renders exact entry/SL/TP numbers and status per trade', () => {
+  it('renders entry/SL/TP numbers, date/time, and profit in points', () => {
     publishVdTrades([trade({})]);
     const html = renderToStaticMarkup(<VdTradesPanel />);
-    expect(html).toContain('@103.0');
+    expect(html).toContain('Entry 103.0');
     expect(html).toContain('SL 100.0');
     expect(html).toContain('TP3 113.0');
     expect(html).toContain('TP1 ✓');
+    expect(html).toMatch(/Profit \+5\.0 pts/);   // exit 108 − entry 103
+    expect(html).toMatch(/Sep/);                  // entry date rendered
+  });
+  it('a stopped trade shows the loss in points with SL label', () => {
+    publishVdTrades([trade({ status: 'stopped', exitPrice: 100, realizedR: -1 })]);
+    const html = renderToStaticMarkup(<VdTradesPanel />);
+    expect(html).toMatch(/Loss \(SL hit\) -3\.0 pts/);
+  });
+  it('an open trade shows best excursion so far', () => {
+    publishVdTrades([trade({ status: 'active', exitPrice: null, resolvedIndex: null, resolvedTime: null, realizedR: null })]);
+    const html = renderToStaticMarkup(<VdTradesPanel />);
+    expect(html).toMatch(/Open · best \+6\.0 pts/); // mfeR 2 × risk 3
   });
   it('empty state explains where trades come from', () => {
     const html = renderToStaticMarkup(<VdTradesPanel />);

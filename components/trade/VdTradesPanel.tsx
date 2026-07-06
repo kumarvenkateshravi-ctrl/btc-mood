@@ -17,6 +17,19 @@ const STATUS_LABEL: Record<VdTrade['status'], string> = {
   active: 'Active', tp1: 'TP1 ✓', tp2: 'TP2 ✓', tp3: 'TP3 ✓', stopped: 'Stopped', exit: 'Exit',
 };
 
+const fmtTime = (unixSec: number): string =>
+  new Date(unixSec * 1000).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+
+/** Signed price points captured (or currently in favor for open trades). */
+export function tradePoints(t: VdTrade): { points: number; open: boolean } {
+  const dir = t.signal.side === 'buy' ? 1 : -1;
+  if (t.exitPrice != null) return { points: dir * (t.exitPrice - t.signal.entry), open: false };
+  const risk = Math.abs(t.signal.entry - t.signal.stopLoss);
+  return { points: t.mfeR * risk, open: true };
+}
+
 export interface VdStats {
   trades: number; resolved: number; winRate: number; avgR: number; profitFactor: number;
   byGrade: Partial<Record<SignalGrade, { n: number; winRate: number }>>;
@@ -100,21 +113,33 @@ export default function VdTradesPanel() {
                     <span className={s.side === 'buy' ? 'font-semibold text-bull-bright' : 'font-semibold text-bear-bright'}>
                       {s.side === 'buy' ? 'BUY' : 'SELL'}{d ? ` · ${d.grade}` : ''}
                     </span>
-                    <span className="font-mono tabular-nums text-ink">@{s.entry.toFixed(1)}</span>
+                    <span className="font-mono text-[10px] tabular-nums text-ink-muted">{fmtTime(t.entryTime)}</span>
                     <span className="text-ink-faint">{STATUS_LABEL[t.status]}</span>
-                    <span className="font-mono tabular-nums text-ink-muted">
-                      {t.realizedR != null ? `${t.realizedR >= 0 ? '+' : ''}${t.realizedR.toFixed(2)}R` : `${t.mfeR.toFixed(1)}R↑`}
-                    </span>
                   </div>
                   <div className="mt-0.5 grid grid-cols-2 gap-x-2 font-mono text-[10px] tabular-nums text-ink-faint">
-                    <span>SL {s.stopLoss.toFixed(1)} · TP1 {s.tp1.toFixed(1)}</span>
-                    <span>TP2 {s.tp2.toFixed(1)} · TP3 {s.tp3.toFixed(1)}</span>
+                    <span>Entry {s.entry.toFixed(1)} · SL {s.stopLoss.toFixed(1)}</span>
+                    <span>TP1 {s.tp1.toFixed(1)} · TP2 {s.tp2.toFixed(1)} · TP3 {s.tp3.toFixed(1)}</span>
                   </div>
-                  {d && (
-                    <div className="mt-0.5 text-[10px] text-ink-faint">
-                      ctx {Math.round(d.contextScore)} · {t.barsHeld} bars · {d.riskProfile} risk
-                    </div>
-                  )}
+                  {(() => {
+                    const { points, open } = tradePoints(t);
+                    if (open) {
+                      return (
+                        <div className="mt-0.5 text-[10px] text-ink-muted">
+                          Open · best +{points.toFixed(1)} pts so far
+                          {d ? ` · ctx ${Math.round(d.contextScore)} · ${d.riskProfile} risk` : ''}
+                        </div>
+                      );
+                    }
+                    const win = points >= 0;
+                    const label = win ? 'Profit' : t.status === 'exit' ? 'Loss (context exit)' : 'Loss (SL hit)';
+                    return (
+                      <div className={`mt-0.5 text-[10px] font-medium ${win ? 'text-bull-bright' : 'text-bear-bright'}`}>
+                        {label} {points >= 0 ? '+' : ''}{points.toFixed(1)} pts
+                        ({t.realizedR! >= 0 ? '+' : ''}{t.realizedR!.toFixed(2)}R)
+                        {t.resolvedTime ? ` · closed ${fmtTime(t.resolvedTime)}` : ''} · {t.barsHeld} bars
+                      </div>
+                    );
+                  })()}
                 </button>
               </li>
             );
