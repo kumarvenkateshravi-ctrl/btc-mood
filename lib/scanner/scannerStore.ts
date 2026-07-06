@@ -27,9 +27,25 @@ const write = (key: string, value: unknown): void => {
 };
 
 // ---- Strategies -------------------------------------------------------------
+// In-memory mirror so per-tick readers never re-parse localStorage; a revision
+// counter lets hooks/memos know when anything changed.
+
+let _mem: ScannerStrategy[] | null = null;
+let _revision = 0;
+
+export function scannerRevision(): number {
+  return _revision;
+}
+
+function writeStrategies(next: ScannerStrategy[]): void {
+  _mem = next;
+  _revision++;
+  write(K_STRATEGIES, next);
+}
 
 export function listStrategies(): ScannerStrategy[] {
-  return read<ScannerStrategy[]>(K_STRATEGIES, []);
+  if (_mem == null) _mem = read<ScannerStrategy[]>(K_STRATEGIES, []);
+  return _mem;
 }
 
 export function getStrategy(id: string): ScannerStrategy | undefined {
@@ -58,7 +74,7 @@ export function createStrategy(
   };
   const validation = validateStrategy(strategy);
   if (!validation.ok) return { strategy: null, validation };
-  write(K_STRATEGIES, [...listStrategies(), strategy]);
+  writeStrategies([...listStrategies(), strategy]);
   return { strategy, validation };
 }
 
@@ -87,22 +103,22 @@ export function saveNewVersion(
   };
   const validation = validateStrategy(candidate);
   if (!validation.ok) return { strategy: null, validation };
-  write(K_STRATEGIES, all.map((x) => (x.id === id ? candidate : x)));
+  writeStrategies(all.map((x) => (x.id === id ? candidate : x)));
   return { strategy: candidate, validation };
 }
 
 export function setStrategyEnabled(id: string, enabled: boolean): void {
-  write(K_STRATEGIES, listStrategies().map((s) => (s.id === id ? { ...s, enabled, updatedAt: Date.now() } : s)));
+  writeStrategies(listStrategies().map((s) => (s.id === id ? { ...s, enabled, updatedAt: Date.now() } : s)));
 }
 
 export function setActiveVersion(id: string, v: number): void {
-  write(K_STRATEGIES, listStrategies().map((s) =>
+  writeStrategies(listStrategies().map((s) =>
     s.id === id && s.versions.some((x) => x.v === v) ? { ...s, activeVersion: v, updatedAt: Date.now() } : s));
 }
 
 /** Rule 4: never delete — archive. */
 export function archiveStrategy(id: string): void {
-  write(K_STRATEGIES, listStrategies().map((s) => (s.id === id ? { ...s, archived: true, enabled: false, updatedAt: Date.now() } : s)));
+  writeStrategies(listStrategies().map((s) => (s.id === id ? { ...s, archived: true, enabled: false, updatedAt: Date.now() } : s)));
 }
 
 // ---- Signals + events (append-only) -----------------------------------------
@@ -135,8 +151,14 @@ export function recordEvents(events: ScannerEvent[]): number {
   return fresh.length;
 }
 
+export function setChartVisible(id: string, chartVisible: boolean): void {
+  writeStrategies(listStrategies().map((s) => (s.id === id ? { ...s, chartVisible, updatedAt: Date.now() } : s)));
+}
+
 /** Test-only. */
 export function __resetScannerStoreForTest(): void {
+  _mem = null;
+  _revision++;
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(K_STRATEGIES);
   window.localStorage.removeItem(K_SIGNALS);

@@ -19,6 +19,7 @@ import { computeSma } from './indicators/sma';
 import { computeSdZones } from './indicators/sdZones';
 import { computeSdSignals } from './indicators/sdSignals';
 import { computeVolumeDistributionZones } from './indicators/volumeDistributionZones';
+import { computeScannerSignals } from './indicators/scannerSignals';
 import { computeVolSpike } from './indicators/volSpike';
 import { computeMagicSr } from './indicators/magicSr';
 import { computeFibPivot } from './indicators/fibPivot';
@@ -545,6 +546,23 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'Trade Runner', name: 'Trade runner box (TP1→TP3)', color: 'rgba(34,211,154,0.035)', thickness: 1, lineStyle: 'solid', display: true },
     ]),
     compute: computeVolumeDistributionZones,
+  },
+  {
+    id: 'scanner_signals',
+    name: 'Technical Scanner Signals',
+    description: 'Renders your enabled Technical Scanner strategies on the chart: BUY/SELL arrows on strictly closed-bar signals, entry/SL/TP1-3 levels, R:R boxes and outcome chips per trade. Signals are immutable and non-repainting; build strategies in the Technical Scanner panel. Paper & educational — not financial advice.',
+    inputs: [
+      { id: 'showSignals', name: 'Show signals', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showTradeLevels', name: 'Show entry/SL/TP levels', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showRRBoxes', name: 'Show R:R boxes', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showOutcomeChips', name: 'Show outcome chips', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showHistorical', name: 'Show all historical signals', type: 'boolean', default: true, group: 'Display' },
+    ],
+    styles: [
+      { id: 'Scan Risk', name: 'Risk box', color: 'rgba(242,54,69,0.07)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'Scan Reward', name: 'Reward box', color: 'rgba(38,198,218,0.08)', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeScannerSignals,
   },
   {
     id: 'vol_spike',

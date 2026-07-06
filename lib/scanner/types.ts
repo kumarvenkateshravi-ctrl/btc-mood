@@ -47,6 +47,8 @@ export interface ScannerStrategy {
   activeVersion: number;
   enabled: boolean;
   archived: boolean; // never delete (Rule 4)
+  /** Per-strategy chart visibility (overlay toggle; enabled keeps generating). */
+  chartVisible?: boolean;
   exits: { slAtr: number; tp1R: number; tp2R: number; tp3R: number };
   // Marketplace-compatible now, unused until the community phase:
   ownerId: string | null;
