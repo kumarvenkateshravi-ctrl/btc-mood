@@ -18,6 +18,7 @@ import { computeWilliamsR } from './indicators/williamsR';
 import { computeSma } from './indicators/sma';
 import { computeSdZones } from './indicators/sdZones';
 import { computeSdSignals } from './indicators/sdSignals';
+import { computeVolumeDistributionZones } from './indicators/volumeDistributionZones';
 import { computeVolSpike } from './indicators/volSpike';
 import { computeMagicSr } from './indicators/magicSr';
 import { computeFibPivot } from './indicators/fibPivot';
@@ -497,6 +498,43 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'R:R Risk', name: 'R:R Risk box', color: 'rgba(242,54,69,0.05)', thickness: 1, lineStyle: 'solid', display: true },
     ]),
     compute: computeSdSignals,
+  },
+  {
+    id: 'volume_distribution_zones',
+    name: 'Volume Distribution Zones',
+    description: 'Original MyCryptoStack engine: per-period (4H/D/W/M) proportional range-volume histogram finds where volume actually concentrated — supply/demand zones with Upper/Weighted-Average/Midpoint/Lower, buy/sell delta, adaptive bins & threshold, and a full zone lifecycle (health, acceptance, sweep, reaction, classification, cross-TF clustering, confidence 0-100). Strictly non-repainting: zones freeze at period close, signals on closed bars only, with TP1 (opposite wavg) / TP2 (opposite boundary) / TP3 (measured move). Paper & educational — not financial advice.',
+    inputs: [
+      { id: 'tf1', name: 'Period 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf2', name: 'Period 2', type: 'select', default: '4H', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf3', name: 'Period 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'thrBase', name: 'Base threshold %', type: 'number', default: 10, min: 1, max: 50, step: 0.5 },
+      { id: 'volMult', name: 'Rejection volume ×', type: 'number', default: 1.2, min: 1, max: 5, step: 0.1, group: 'Signals' },
+      { id: 'maxRetests', name: 'Max retests', type: 'number', default: 3, min: 0, max: 10, step: 1, group: 'Signals' },
+      { id: 'minHealth', name: 'Min zone health', type: 'number', default: 40, min: 0, max: 100, step: 5, group: 'Signals' },
+      { id: 'confidenceFloor', name: 'Min confidence', type: 'number', default: 50, min: 0, max: 100, step: 1, group: 'Signals' },
+      { id: 'minRR', name: 'Min R:R', type: 'number', default: 1.2, min: 0, max: 10, step: 0.1, group: 'Signals' },
+      { id: 'slBufferAtr', name: 'Stop buffer (ATR ×)', type: 'number', default: 0.25, min: 0, max: 5, step: 0.05, group: 'Signals' },
+      { id: 'acceptanceBars', name: 'Acceptance bars', type: 'number', default: 3, min: 2, max: 20, step: 1, group: 'Signals' },
+      { id: 'trendFilter', name: 'Trend filter (EMA50)', type: 'boolean', default: true, group: 'Signals' },
+      { id: 'showSupply', name: 'Show supply zones', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showDemand', name: 'Show demand zones', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showWavg', name: 'Show weighted average', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showSignals', name: 'Show buy/sell signals', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showTradeLevels', name: 'Show trade levels', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showLabels', name: 'Show zone labels', type: 'boolean', default: true, group: 'Display' },
+    ],
+    // Ids must match the `${tf} Supply` / `${tf} Demand` (+ ` WAvg`) plot ids.
+    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => {
+      const su = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' }[tf];
+      const de = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' }[tf];
+      return [
+        { id: `${tf} Supply`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
+        { id: `${tf} Supply WAvg`, name: `${tf} Supply WAvg`, color: `rgba(${su},0.85)`, thickness: 1, lineStyle: 'dashed' as const, display: true },
+        { id: `${tf} Demand`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
+        { id: `${tf} Demand WAvg`, name: `${tf} Demand WAvg`, color: `rgba(${de},0.85)`, thickness: 1, lineStyle: 'dashed' as const, display: true },
+      ];
+    }),
+    compute: computeVolumeDistributionZones,
   },
   {
     id: 'vol_spike',
