@@ -99,6 +99,12 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
 
   const { zones, sigs } = computeCached(candles, inp, tfs);
 
+  // Only the CHART's compute call (which carries the config id) may publish to
+  // the shared store. useMoodEngine's signal-matrix calls run this compute for
+  // all 6 timeframes with no config — letting them publish made the Trades
+  // panel flicker between six different datasets every tick.
+  const isPublisher = config?.id === 'volume_distribution_zones';
+
   // MTF confirmation (Market Context Engine). The live context describes NOW,
   // so it may only veto FRESH signals (trigger within the live window) —
   // historical signals are judged by their own bar-time gates and NEVER
@@ -128,13 +134,13 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
       }
     }
   }
-  publishVdDecisions({ decisions, rejections, gated: inp.useContextGate });
+  if (isPublisher) publishVdDecisions({ decisions, rejections, gated: inp.useContextGate });
 
   // Trade lifecycle over CLOSED bars: every accepted signal becomes a tracked
   // trade (status, live stop, MFE/MAE, realized R). Published for the table.
   const closed = candles.slice(0, Math.max(0, n - 1));
   const trades: VdTrade[] = walkVdTrades(closed, accepted, { beAfterTp1: inp.beAfterTp1, trailAtr: inp.trailAtr, contextExit: inp.contextExit });
-  publishVdTrades(trades);
+  if (isPublisher) publishVdTrades(trades);
 
   const plots: IndicatorPlot[] = [];
   const levels: IndicatorLevel[] = [];
