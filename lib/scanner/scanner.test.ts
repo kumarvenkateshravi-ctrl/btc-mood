@@ -3,6 +3,7 @@ import { OPERATORS } from './operators';
 import { SCANNER_SOURCES, SCANNER_SOURCE_LIST, publishScannerLiveScores } from './registry';
 import { getSeries, __clearSeriesCacheForTest } from './seriesCache';
 import { evaluateCondition, evaluate, snapshotCondition, mapTfIndices, explainAt } from './evaluate';
+import { validateTree, validateStrategy, DEFAULT_LIMITS } from './validate';
 import type { Candle } from '../types';
 import type { Condition } from './types';
 
@@ -174,6 +175,77 @@ describe('S2: nested tree + Kleene logic', () => {
     expect(why).toHaveLength(2);
     expect(why[1].label).toContain('1h');
     expect(why[1].pass).toBe(true);
+  });
+});
+
+describe('S3: Validation Engine', () => {
+
+  const ok: Condition = { left: { source: 'rsi', output: 'rsi' }, op: 'gt', right: 60, tf: '15m' };
+  const g = (children: (Condition | { logic: 'AND' | 'OR'; children: never[] })[]) =>
+    ({ logic: 'AND' as const, children }) as never;
+
+  it('valid tree passes with a complexity report', () => {
+    const r = validateTree({ logic: 'AND', children: [ok] });
+    expect(r.ok).toBe(true);
+    expect(r.complexity).toMatchObject({ depth: 1, conditions: 1, groups: 1, cost: 'low' });
+    expect(r.complexity.sources).toContain('rsi');
+  });
+  it('catches unknown source/output/operator and unsupported values', () => {
+    const bad = validateTree({ logic: 'AND', children: [
+      { left: { source: 'nope', output: 'x' }, op: 'gt', right: 1, tf: '15m' },
+      { left: { source: 'rsi', output: 'wrong' }, op: 'gt', right: 1, tf: '15m' },
+      { left: { source: 'rsi', output: 'rsi' }, op: 'gt', right: 300, tf: '15m' },   // RSI > 300
+      { left: { source: 'rsi', output: 'rsi' }, op: 'between', right: 5, tf: '15m' }, // wrong operand kind
+    ] });
+    const codes = bad.errors.map((e) => e.code);
+    expect(codes).toContain('unknown-source');
+    expect(codes).toContain('unknown-output');
+    expect(codes).toContain('value-out-of-range');
+    expect(codes).toContain('operand-mismatch');
+    expect(bad.ok).toBe(false);
+  });
+  it('rejects empty groups and enforces complexity limits', () => {
+    expect(validateTree({ logic: 'AND', children: [] }).errors[0].code).toBe('empty-group');
+    const deep = (d: number): never => (d === 0 ? g([ok]) : ({ logic: 'AND', children: [deep(d - 1)] } as never));
+    const r = validateTree(deep(10) as never, { ...DEFAULT_LIMITS, maxDepth: 4 });
+    expect(r.errors.some((e) => e.code === 'max-depth')).toBe(true);
+    const many = validateTree(
+      { logic: 'AND', children: Array.from({ length: 5 }, () => ok) },
+      { ...DEFAULT_LIMITS, maxConditions: 3 },
+    );
+    expect(many.errors.some((e) => e.code === 'max-conditions')).toBe(true);
+  });
+  it('liveOnly sources warn about missing backtest coverage', () => {
+    const r = validateTree({ logic: 'AND', children: [
+      { left: { source: 'stackScore', output: 'score' }, op: 'gt', right: 85, tf: '15m' },
+    ] });
+    expect(r.ok).toBe(true);
+    expect(r.warnings.some((w) => w.code === 'live-only')).toBe(true);
+  });
+  it('cost estimation buckets by unique-series weights (cache-aware)', () => {
+    // vdZone (6) + intelligence (5) → 11 units → medium; duplicate refs count once.
+    const r = validateTree({ logic: 'AND', children: [
+      { left: { source: 'vdZone', output: 'confidence' }, op: 'gt', right: 60, tf: '15m' },
+      { left: { source: 'vdZone', output: 'confidence' }, op: 'lt', right: 100, tf: '15m' },
+      { left: { source: 'contextScore', output: 'score' }, op: 'gt', right: 60, tf: '15m' },
+    ] });
+    expect(r.complexity.uniqueSeries).toBe(2);
+    expect(r.complexity.costUnits).toBeCloseTo(11, 6);
+    expect(r.complexity.cost).toBe('medium');
+  });
+  it('strategy-level: name, direction, exits ordering', () => {
+    const s = {
+      id: 's1', name: '  ', direction: 'long' as const, schemaVersion: 1 as const,
+      versions: [{ v: 1, createdAt: 0, note: '', tree: { logic: 'AND' as const, children: [ok] } }],
+      activeVersion: 1, enabled: false, archived: false,
+      exits: { slAtr: 1, tp1R: 2, tp2R: 1.5, tp3R: 3 },
+      ownerId: null, visibility: 'private' as const, createdAt: 0, updatedAt: 0,
+      parentStrategy: null, forkCount: 0, likes: 0,
+    };
+    const r = validateStrategy(s);
+    const codes = r.errors.map((e) => e.code);
+    expect(codes).toContain('empty-name');
+    expect(codes).toContain('bad-tps'); // tp2R < tp1R
   });
 });
 

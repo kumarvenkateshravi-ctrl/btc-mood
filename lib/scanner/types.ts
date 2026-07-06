@@ -65,9 +65,11 @@ export interface ScannerSource {
   name: string;
   group: SourceGroup;
   params: IndicatorInputDef[];
-  outputs: Array<{ id: string; label: string }>;
+  outputs: Array<{ id: string; label: string; range?: [number, number] }>;
   operators: OperatorId[];
   tfs: Timeframe[];
+  /** Relative evaluation cost of producing one series (validator/Inspector). */
+  costWeight?: number;
   /** Cross-TF aggregates (Stack Score, Alignment) that only exist at the live
    *  edge in v1 — the validator warns they have no backtest coverage. */
   liveOnly?: boolean;

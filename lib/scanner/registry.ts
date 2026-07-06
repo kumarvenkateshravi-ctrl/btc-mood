@@ -51,24 +51,24 @@ const liveEdgeSeries = (pick: () => number | null) => (candles: Candle[]): Serie
 export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries([
   // ---- Standard -------------------------------------------------------------
   src({
-    id: 'price', name: 'Price', group: 'standard', params: [],
+    id: 'price', name: 'Price', group: 'standard', costWeight: 0.5, params: [],
     outputs: [{ id: 'close', label: 'Close' }, { id: 'high', label: 'High' }, { id: 'low', label: 'Low' }],
     operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, _p, out) => c.map((b) => (out === 'high' ? b.high : out === 'low' ? b.low : b.close)),
   }),
   src({
-    id: 'ema', name: 'EMA', group: 'standard', params: lengthParam(20),
+    id: 'ema', name: 'EMA', group: 'standard', costWeight: 1, params: lengthParam(20),
     outputs: [{ id: 'value', label: 'EMA' }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, p) => pm.ema(c.map((b) => b.close), num(p.length, 20)),
   }),
   src({
-    id: 'sma', name: 'SMA', group: 'standard', params: lengthParam(50),
+    id: 'sma', name: 'SMA', group: 'standard', costWeight: 1, params: lengthParam(50),
     outputs: [{ id: 'value', label: 'SMA' }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, p) => pm.sma(c.map((b) => b.close), num(p.length, 50)),
   }),
   src({
     id: 'rsi', name: 'RSI (14)', group: 'standard', params: [],
-    outputs: [{ id: 'rsi', label: 'RSI' }], operators: CMP_OPS, tfs: TIMEFRAMES,
+    outputs: [{ id: 'rsi', label: 'RSI', range: [0, 100] as [number, number] }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, _p, out) => plotSeries(computeRsi(c).plots, out),
   }),
   src({
@@ -88,13 +88,13 @@ export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries
     series: (c, _p, out) => plotSeries(computeSuperTrend(c).plots, out),
   }),
   src({
-    id: 'atr', name: 'ATR', group: 'standard', params: lengthParam(14),
+    id: 'atr', name: 'ATR', group: 'standard', costWeight: 1, params: lengthParam(14),
     outputs: [{ id: 'value', label: 'ATR' }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, p) => vdAtr(c, num(p.length, 14)),
   }),
   src({
     id: 'adx', name: 'ADX (14)', group: 'standard', params: [],
-    outputs: [{ id: 'adx', label: 'ADX' }, { id: 'plusDI', label: '+DI' }, { id: 'minusDI', label: '−DI' }],
+    outputs: [{ id: 'adx', label: 'ADX', range: [0, 100] as [number, number] }, { id: 'plusDI', label: '+DI' }, { id: 'minusDI', label: '−DI' }],
     operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, _p, out) => plotSeries(computeAdx(c).plots, out),
   }),
@@ -106,17 +106,17 @@ export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries
   }),
   src({
     id: 'stochastic', name: 'Stochastic (14)', group: 'standard', params: [],
-    outputs: [{ id: 'k', label: '%K' }, { id: 'd', label: '%D' }],
+    outputs: [{ id: 'k', label: '%K', range: [0, 100] as [number, number] }, { id: 'd', label: '%D', range: [0, 100] as [number, number] }],
     operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, _p, out) => plotSeries(computeStochastic(c).plots, out),
   }),
   src({
-    id: 'volume', name: 'Volume', group: 'standard', params: [],
+    id: 'volume', name: 'Volume', group: 'standard', costWeight: 0.5, params: [],
     outputs: [{ id: 'volume', label: 'Volume' }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c) => c.map((b) => b.volume),
   }),
   src({
-    id: 'volumeSma', name: 'Volume SMA', group: 'standard', params: lengthParam(20),
+    id: 'volumeSma', name: 'Volume SMA', group: 'standard', costWeight: 1, params: lengthParam(20),
     outputs: [{ id: 'value', label: 'Vol SMA' }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, p) => pm.sma(c.map((b) => b.volume), num(p.length, 20)),
   }),
@@ -128,17 +128,17 @@ export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries
 
   // ---- Structure --------------------------------------------------------------
   src({
-    id: 'structure', name: 'Market Structure', group: 'structure', params: [],
-    outputs: [{ id: 'score', label: 'Structure score (0-100)' }],
+    id: 'structure', name: 'Market Structure', group: 'structure', costWeight: 3, params: [],
+    outputs: [{ id: 'score', label: 'Structure score (0-100)', range: [0, 100] as [number, number] }],
     operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c) => structureScoreSeries(c),
   }),
   src({
-    id: 'vdZone', name: 'VD Zone', group: 'structure', params: [],
+    id: 'vdZone', name: 'VD Zone', group: 'structure', costWeight: 6, params: [],
     outputs: [
       { id: 'distanceAtr', label: 'Distance to nearest zone (ATRs)' },
-      { id: 'inside', label: 'Inside zone (0/1)' },
-      { id: 'confidence', label: 'Nearest zone confidence' },
+      { id: 'inside', label: 'Inside zone (0/1)', range: [0, 1] as [number, number] },
+      { id: 'confidence', label: 'Nearest zone confidence', range: [0, 100] as [number, number] },
     ],
     operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c, _p, out) => {
@@ -170,34 +170,34 @@ export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries
 
   // ---- Intelligence (the USP) --------------------------------------------------
   src({
-    id: 'trendScore', name: 'Trend Score', group: 'intelligence', params: [],
-    outputs: [{ id: 'score', label: 'Trend (0-100)' }], operators: CMP_OPS, tfs: TIMEFRAMES,
+    id: 'trendScore', name: 'Trend Score', group: 'intelligence', costWeight: 5, params: [],
+    outputs: [{ id: 'score', label: 'Trend (0-100)', range: [0, 100] as [number, number] }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c) => trendScoreSeries(c),
   }),
   src({
-    id: 'momentumScore', name: 'Momentum Score', group: 'intelligence', params: [],
-    outputs: [{ id: 'score', label: 'Momentum (0-100)' }], operators: CMP_OPS, tfs: TIMEFRAMES,
+    id: 'momentumScore', name: 'Momentum Score', group: 'intelligence', costWeight: 5, params: [],
+    outputs: [{ id: 'score', label: 'Momentum (0-100)', range: [0, 100] as [number, number] }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c) => momentumScoreSeries(c),
   }),
   src({
-    id: 'volumeScore', name: 'Volume Score', group: 'intelligence', params: [],
-    outputs: [{ id: 'score', label: 'Volume (0-100)' }], operators: CMP_OPS, tfs: TIMEFRAMES,
+    id: 'volumeScore', name: 'Volume Score', group: 'intelligence', costWeight: 5, params: [],
+    outputs: [{ id: 'score', label: 'Volume (0-100)', range: [0, 100] as [number, number] }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c) => volumeScoreSeries(c),
   }),
   src({
-    id: 'contextScore', name: 'Context Score', group: 'intelligence', params: [],
-    outputs: [{ id: 'score', label: 'Context (0-100)' }], operators: CMP_OPS, tfs: TIMEFRAMES,
+    id: 'contextScore', name: 'Context Score', group: 'intelligence', costWeight: 5, params: [],
+    outputs: [{ id: 'score', label: 'Context (0-100)', range: [0, 100] as [number, number] }], operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c) => contextScoreSeries(c),
   }),
   src({
-    id: 'stackScore', name: 'Stack Score', group: 'intelligence', params: [], liveOnly: true,
-    outputs: [{ id: 'score', label: 'Stack Score (0-100)' }],
+    id: 'stackScore', name: 'Stack Score', group: 'intelligence', costWeight: 0.5, params: [], liveOnly: true,
+    outputs: [{ id: 'score', label: 'Stack Score (0-100)', range: [0, 100] as [number, number] }],
     operators: ['gt', 'lt', 'gte', 'lte', 'between'], tfs: TIMEFRAMES,
     series: liveEdgeSeries(() => _liveScores.stackScore),
   }),
   src({
-    id: 'alignment', name: 'MTF Alignment', group: 'intelligence', params: [], liveOnly: true,
-    outputs: [{ id: 'score', label: 'Alignment (0-100)' }],
+    id: 'alignment', name: 'MTF Alignment', group: 'intelligence', costWeight: 0.5, params: [], liveOnly: true,
+    outputs: [{ id: 'score', label: 'Alignment (0-100)', range: [0, 100] as [number, number] }],
     operators: ['gt', 'lt', 'gte', 'lte', 'between'], tfs: TIMEFRAMES,
     series: liveEdgeSeries(() => _liveScores.alignment),
   }),
