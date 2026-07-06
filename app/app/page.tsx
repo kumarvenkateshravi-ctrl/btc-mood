@@ -338,7 +338,7 @@ export default function DashboardPage() {
               />
             )}
             {rightPanel === 'orderflow' && <OrderFlowPanel symbol={symbol} tf={selected} />}
-            {rightPanel === 'strategy' && <TechnicalScannerPanel />}
+            {rightPanel === 'strategy' && <TechnicalScannerPanel candlesByTf={candlesByTf} evalTf={selected} />}
           </aside>
         )}
 

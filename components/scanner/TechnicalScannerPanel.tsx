@@ -9,7 +9,8 @@
 
 import { useMemo, useState } from 'react';
 import { Panel } from '@/components/ui';
-import { TIMEFRAMES, type Timeframe } from '@/lib/types';
+import { TIMEFRAMES, type Timeframe, type Candle } from '@/lib/types';
+import { versionComparison } from '@/lib/scanner/analytics';
 import { SCANNER_SOURCE_LIST, SCANNER_SOURCES } from '@/lib/scanner/registry';
 import { OPERATORS } from '@/lib/scanner/operators';
 import { validateStrategy } from '@/lib/scanner/validate';
@@ -53,11 +54,19 @@ const draftToStrategy = (d: Draft): ScannerStrategy => ({
   parentStrategy: null, forkCount: 0, likes: 0,
 });
 
-export default function TechnicalScannerPanel() {
+export default function TechnicalScannerPanel({
+  candlesByTf,
+  evalTf = '15m',
+}: {
+  candlesByTf?: Partial<Record<Timeframe, Candle[]>>;
+  evalTf?: Timeframe;
+} = {}) {
   const [rev, setRev] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [statsFor, setStatsFor] = useState<string | null>(null);
   const bump = () => setRev((r) => r + 1);
   const strategies = useMemo(() => listStrategies().filter((s) => !s.archived), [rev]);
+  const statsStrategy = statsFor ? strategies.find((s) => s.id === statsFor) : undefined;
 
   const openNew = () => setDraft({
     id: null, name: '', direction: 'long',
@@ -80,22 +89,77 @@ export default function TechnicalScannerPanel() {
       </p>
       {draft ? (
         <StrategyEditor draft={draft} onChange={setDraft} onDone={() => { setDraft(null); bump(); }} />
+      ) : statsStrategy && candlesByTf ? (
+        <StrategyStats strategy={statsStrategy} candlesByTf={candlesByTf} evalTf={evalTf} onBack={() => setStatsFor(null)} />
       ) : (
-        <StrategyList strategies={strategies} onNew={openNew} onEdit={openEdit} onBump={bump} />
+        <StrategyList strategies={strategies} onNew={openNew} onEdit={openEdit} onBump={bump}
+          onStats={candlesByTf ? setStatsFor : undefined} />
       )}
     </Panel>
+  );
+}
+
+// ---- Analytics: per-version backtest comparison (Sprint 7) -------------------
+
+function StrategyStats({
+  strategy, candlesByTf, evalTf, onBack,
+}: {
+  strategy: ScannerStrategy;
+  candlesByTf: Partial<Record<Timeframe, Candle[]>>;
+  evalTf: Timeframe;
+  onBack: () => void;
+}) {
+  const rows = useMemo(
+    () => versionComparison(strategy, candlesByTf, evalTf),
+    [strategy, candlesByTf, evalTf],
+  );
+  const pf = (x: number) => (Number.isFinite(x) ? x.toFixed(2) : '∞');
+  return (
+    <div className="space-y-2 text-[11px]">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-ink">{strategy.name} — backtest ({evalTf}, loaded history)</span>
+        <button type="button" onClick={onBack} className="focus-ring text-[10px] text-ink-faint hover:text-ink">← back</button>
+      </div>
+      {rows.map((r) => (
+        <div key={r.version}
+          className={`rounded-md border px-2 py-1.5 font-mono text-[10px] tabular-nums ${r.version === strategy.activeVersion ? 'border-accent/50 bg-surface-2' : 'border-line bg-surface-2/50'}`}>
+          <p className="font-sans text-ink">
+            v{r.version}{r.version === strategy.activeVersion ? ' · active' : ''} <span className="text-ink-faint">— {r.note || 'no note'}</span>
+          </p>
+          {r.resolved === 0 ? (
+            <p className="text-ink-faint">{r.signals} signal{r.signals === 1 ? '' : 's'} · none resolved yet</p>
+          ) : (
+            <>
+              <p className="text-ink-muted">
+                {r.signals} sig · win {(r.winRate * 100).toFixed(0)}% ({r.wins}/{r.resolved}) · exp {r.expectancy.toFixed(2)}R · PF {pf(r.profitFactor)}
+              </p>
+              <p className="text-ink-faint">
+                TP1 {r.tp1Hits} · TP2 {r.tp2Hits} · TP3 {r.tp3Hits} · SL {r.stopped} · maxDD {r.maxDrawdownR.toFixed(1)}R
+              </p>
+              <p className="text-ink-faint">
+                streaks +{r.bestStreak}/−{r.worstStreak} · {r.avgBarsHeld.toFixed(0)} bars avg · MFE {r.avgMfeR.toFixed(1)}R · MAE {r.avgMaeR.toFixed(1)}R
+              </p>
+            </>
+          )}
+        </div>
+      ))}
+      <p className="text-[10px] text-ink-faint">
+        Deterministic closed-bar backtest — identical to live evaluation over the same bars.
+      </p>
+    </div>
   );
 }
 
 // ---- My Strategies -----------------------------------------------------------
 
 function StrategyList({
-  strategies, onNew, onEdit, onBump,
+  strategies, onNew, onEdit, onBump, onStats,
 }: {
   strategies: ScannerStrategy[];
   onNew: () => void;
   onEdit: (s: ScannerStrategy) => void;
   onBump: () => void;
+  onStats?: (id: string) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -124,7 +188,10 @@ function StrategyList({
                     onChange={(e) => { setChartVisible(s.id, e.target.checked); onBump(); }}
                     className="h-3 w-3 accent-accent" /> On chart
                 </label>
-                <button type="button" onClick={() => onEdit(s)} className="focus-ring ml-auto text-accent hover:underline">Edit</button>
+                {onStats && (
+                  <button type="button" onClick={() => onStats(s.id)} className="focus-ring ml-auto text-accent hover:underline">Stats</button>
+                )}
+                <button type="button" onClick={() => onEdit(s)} className={`focus-ring text-accent hover:underline${onStats ? '' : ' ml-auto'}`}>Edit</button>
                 <button type="button" onClick={() => { archiveStrategy(s.id); onBump(); }} className="focus-ring text-ink-faint hover:text-bear-bright">Archive</button>
               </div>
             </li>

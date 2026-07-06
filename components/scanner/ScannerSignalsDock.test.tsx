@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { computeScannerSnapshot } from '@/lib/scanner/engine';
+import { computeScannerSnapshot, takeFreshSignals, __resetAlertedForTest } from '@/lib/scanner/engine';
+import { statsFromTrades, versionComparison } from '@/lib/scanner/analytics';
+import { saveNewVersion, getStrategy } from '@/lib/scanner/scannerStore';
 import { publishScannerSnapshot, __resetScannerUiForTest } from '@/lib/scanner/scannerUiStore';
 import { createStrategy, setStrategyEnabled, __resetScannerStoreForTest } from '@/lib/scanner/scannerStore';
 import { computeScannerSignals } from '@/lib/indicators/scannerSignals';
@@ -79,6 +81,61 @@ describe('S5: scanner_signals overlay indicator', () => {
     const res = computeScannerSignals(candles, { id: 'scanner_signals' });
     expect(res.signals).toHaveLength(50);
     expect(res.plots).toHaveLength(2);
+  });
+});
+
+describe('S7: analytics + alerts-lite', () => {
+  const mkTrade = (realizedR: number | null, status = 'tp3') => ({
+    signal: {
+      id: `sig_${Math.random()}`, strategyId: 's', strategyVersionId: 's@v1',
+      direction: 'long', side: 'buy', tf: '15m', index: 1, barTime: 0, createdAt: 0,
+      entry: 100, stopLoss: 97, tp1: 103, tp2: 106, tp3: 109, confidence: 100, why: [],
+    },
+    status, slCurrent: 97, entryIndex: 1, entryTime: 0,
+    resolvedIndex: realizedR != null ? 5 : null, resolvedTime: null,
+    exitPrice: realizedR != null ? 100 + realizedR * 3 : null,
+    barsHeld: 4, mfeR: Math.max(0, realizedR ?? 1), maeR: 0.5, realizedR,
+    tp1Index: 2, tp2Index: realizedR != null && realizedR >= 2 ? 3 : undefined,
+  }) as never;
+
+  it('statsFromTrades: win rate, PF, streaks, drawdown, TP distribution', () => {
+    const s = statsFromTrades([
+      mkTrade(2), mkTrade(2), mkTrade(-1, 'stopped'), mkTrade(-1, 'stopped'), mkTrade(3),
+    ], 1, 'test');
+    expect(s.resolved).toBe(5);
+    expect(s.winRate).toBeCloseTo(3 / 5, 6);
+    expect(s.expectancy).toBeCloseTo(1, 6);       // (2+2−1−1+3)/5
+    expect(s.profitFactor).toBeCloseTo(7 / 2, 6);
+    expect(s.bestStreak).toBe(2);
+    expect(s.worstStreak).toBe(2);
+    expect(s.maxDrawdownR).toBeCloseTo(2, 6);
+    expect(s.stopped).toBe(2);
+    expect(s.tp1Hits).toBe(5);
+  });
+
+  it('versionComparison backtests every version deterministically', () => {
+    const id = seedStrategy();
+    saveNewVersion(id, { logic: 'AND', children: [{ ...cond, right: 60 }] }, 'Tighter RSI');
+    const strat = getStrategy(id)!;
+    const rows = versionComparison(strat, { '15m': ramp(201, 1) }, '15m');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].version).toBe(1);
+    expect(rows[1].note).toBe('Tighter RSI');
+    expect(rows[0].signals).toBeGreaterThanOrEqual(1);
+    expect(versionComparison(strat, { '15m': ramp(201, 1) }, '15m')).toEqual(rows);
+  });
+
+  it('takeFreshSignals alerts each live-edge signal exactly once', () => {
+    __resetAlertedForTest();
+    seedStrategy();
+    const candles = ramp(201, 1);
+    const snap = computeScannerSnapshot({ '15m': candles }, '15m');
+    const sigTime = snap.signals[0].barTime;
+    expect(takeFreshSignals(snap, sigTime, 900)).toHaveLength(1);
+    expect(takeFreshSignals(snap, sigTime, 900)).toHaveLength(0); // once only
+    __resetAlertedForTest();
+    const lastClosed = candles[candles.length - 2].time + 900;
+    expect(takeFreshSignals(snap, lastClosed + 999_999, 900)).toHaveLength(0); // stale never alerts
   });
 });
 

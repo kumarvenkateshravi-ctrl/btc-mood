@@ -64,3 +64,28 @@ export function computeScannerSnapshot(
   _cached = { evalTf, signals, trades, events, byStrategy };
   return _cached;
 }
+
+// ---- Alerts-lite: detect signals that just fired at the live edge -----------
+
+const _alerted = new Set<string>();
+
+/** Signals whose trigger bar closed within the last `windowBars` eval bars and
+ *  that have not been alerted yet in this session. Pure diff — the caller
+ *  decides how to notify. */
+export function takeFreshSignals(
+  snapshot: ScannerSnapshot,
+  lastClosedTime: number,
+  tfSeconds: number,
+  windowBars = 2,
+): ScannerSignal[] {
+  const cutoff = lastClosedTime - windowBars * tfSeconds;
+  const fresh = snapshot.signals.filter((s) => s.barTime > cutoff && !_alerted.has(s.id));
+  for (const s of fresh) _alerted.add(s.id);
+  if (_alerted.size > 1000) _alerted.clear();
+  return fresh;
+}
+
+/** Test-only. */
+export function __resetAlertedForTest(): void {
+  _alerted.clear();
+}
