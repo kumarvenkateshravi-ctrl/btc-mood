@@ -201,7 +201,7 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   const rewardBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
   const runnerBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
   if (inp.showTradeSetups) {
-    for (const t of trades) {
+    for (const t of trades.slice(-10)) { // only the last 10 trades draw on the chart
       const s = t.signal;
       const to = Math.min(t.resolvedIndex ?? n - 1, n - 1);
       for (let i = t.entryIndex; i <= to; i++) {
