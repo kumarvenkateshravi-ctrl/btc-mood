@@ -7,11 +7,11 @@ import type { CustomIndicatorConfig, IndicatorResult, IndicatorLevel, IndicatorP
 import type { HtfPeriod } from './htf';
 import { resolveInputs } from './itsTemplates';
 import {
-  buildVdZones, generateVdSignals, vdAtr, VD_DEFAULTS,
-  type VdZone, type VdSignal, type VdConfig,
+  buildVdZones, generateVdSignals, walkVdTrades, vdAtr, VD_DEFAULTS,
+  type VdZone, type VdSignal, type VdConfig, type VdTrade,
 } from './vdEngine';
 import { decide } from '../context/decisionEngine';
-import { latestMarketContext, publishVdDecisions } from '../context/contextStore';
+import { latestMarketContext, publishVdDecisions, publishVdTrades } from '../context/contextStore';
 import { DEFAULT_DECISION_CONFIG, type Decision, type Rejection } from '../context/types';
 
 interface VdInputs {
@@ -22,6 +22,7 @@ interface VdInputs {
   showSupply: boolean; showDemand: boolean; showWavg: boolean;
   showSignals: boolean; showTradeLevels: boolean; showLabels: boolean;
   useContextGate: boolean; minDecisionScore: number;
+  showTradeSetups: boolean;
 }
 
 const VDI_DEFAULTS: VdInputs = {
@@ -32,6 +33,7 @@ const VDI_DEFAULTS: VdInputs = {
   showSupply: true, showDemand: true, showWavg: true,
   showSignals: true, showTradeLevels: true, showLabels: true,
   useContextGate: true, minDecisionScore: 65,
+  showTradeSetups: true,
 };
 
 // Structure palette (matches the platform's zone colors: supply blue / demand
@@ -112,6 +114,12 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   }
   publishVdDecisions({ decisions, rejections, gated: inp.useContextGate });
 
+  // Trade lifecycle over CLOSED bars: every accepted signal becomes a tracked
+  // trade (status, live stop, MFE/MAE, realized R). Published for the table.
+  const closed = candles.slice(0, Math.max(0, n - 1));
+  const trades: VdTrade[] = walkVdTrades(closed, accepted);
+  publishVdTrades(trades);
+
   const plots: IndicatorPlot[] = [];
   const levels: IndicatorLevel[] = [];
   const lastClose = candles[n - 1].close;
@@ -169,6 +177,27 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
       plots.push({ id: `${bandId} WAvg`, title: `${bandId} WAvg`, color: `rgba(${rgb},0.85)`, type: 'line', pane: 'overlay', lineWidth: 1, data: wavg });
     }
   }
+
+  // Trade setup boxes on EVERY signal (TradingView-style R:R shading): risk
+  // box entry↔SL (red), reward box entry↔TP1 (green), runner TP1↔TP3 (faint).
+  // Band plots are run-based, so separate trades never bleed into each other.
+  const riskBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  const rewardBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  const runnerBox = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  if (inp.showTradeSetups) {
+    for (const t of trades) {
+      const s = t.signal;
+      const to = Math.min(t.resolvedIndex ?? n - 1, n - 1);
+      for (let i = t.entryIndex; i <= to; i++) {
+        riskBox[i] = { upper: Math.max(s.entry, t.slCurrent), lower: Math.min(s.entry, t.slCurrent) };
+        rewardBox[i] = { upper: Math.max(s.entry, s.tp1), lower: Math.min(s.entry, s.tp1) };
+        runnerBox[i] = { upper: Math.max(s.tp1, s.tp3), lower: Math.min(s.tp1, s.tp3) };
+      }
+    }
+  }
+  plots.push({ id: 'Trade Risk', title: 'Trade Risk', color: 'rgba(242,54,69,0.07)', type: 'band', pane: 'overlay', data: riskBox });
+  plots.push({ id: 'Trade Reward', title: 'Trade Reward', color: 'rgba(34,211,154,0.07)', type: 'band', pane: 'overlay', data: rewardBox });
+  plots.push({ id: 'Trade Runner', title: 'Trade Runner', color: 'rgba(34,211,154,0.035)', type: 'band', pane: 'overlay', data: runnerBox });
 
   // Arrows via the standard per-bar signal path (context-gated when enabled).
   if (inp.showSignals) {

@@ -5,6 +5,7 @@
 // reactivity already re-render on candle changes.
 
 import type { Decision, MarketContext, Rejection } from './types';
+import type { VdTrade } from '../indicators/vdEngine';
 
 let _latest: MarketContext | null = null;
 
@@ -39,4 +40,17 @@ export function publishVdDecisions(snap: VdDecisionSnapshot): void {
 
 export function latestVdDecisions(): VdDecisionSnapshot | null {
   return _decisions;
+}
+
+// ---- Latest tracked trades (VD indicator → trade table). -------------------
+
+
+let _trades: VdTrade[] | null = null;
+
+export function publishVdTrades(trades: VdTrade[]): void {
+  _trades = trades;
+}
+
+export function latestVdTrades(): VdTrade[] | null {
+  return _trades;
 }

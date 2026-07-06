@@ -181,6 +181,45 @@ describe('generateVdSignals (closed-bar)', () => {
   });
 });
 
+describe('walkVdTrades (trade lifecycle)', () => {
+  const buySig: import('./vdEngine').VdSignal = {
+    side: 'buy', zoneId: 'D:demand:0', tf: 'D', index: 2,
+    entry: 103, stopLoss: 100, tp1: 108, tp2: 110, tp3: 113,
+    riskReward: 1.7, swept: false, confidence: 70,
+  };
+  const b = (i: number, low: number, high: number): Candle =>
+    ({ time: i * 60, open: low + 0.1, high, low, close: (low + high) / 2, volume: 100 } as Candle);
+
+  it('progresses TP1 → TP2 → TP3 with exact MFE/realized R', async () => {
+    const { walkVdTrades } = await import('./vdEngine');
+    const candles = [b(0, 100, 104), b(1, 101, 104), b(2, 101, 104),
+      b(3, 102, 109), b(4, 104, 111), b(5, 105, 114)];
+    const [t] = walkVdTrades(candles, [buySig]);
+    expect(t.status).toBe('tp3');
+    expect(t.resolvedIndex).toBe(5);
+    expect(t.exitPrice).toBe(113);
+    expect(t.realizedR).toBeCloseTo(10 / 3, 6);
+    expect(t.mfeR).toBeGreaterThanOrEqual(10 / 3);
+    expect(t.barsHeld).toBe(3);
+  });
+  it('stop-first on a bar spanning both stop and target', async () => {
+    const { walkVdTrades } = await import('./vdEngine');
+    const candles = [b(0, 100, 104), b(1, 101, 104), b(2, 101, 104), b(3, 99.5, 109)];
+    const [t] = walkVdTrades(candles, [buySig]);
+    expect(t.status).toBe('stopped');
+    expect(t.exitPrice).toBe(100);
+    expect(t.realizedR).toBeCloseTo(-1, 6);
+  });
+  it('stays active while unresolved', async () => {
+    const { walkVdTrades } = await import('./vdEngine');
+    const candles = [b(0, 100, 104), b(1, 101, 104), b(2, 101, 104), b(3, 102, 106)];
+    const [t] = walkVdTrades(candles, [buySig]);
+    expect(t.status).toBe('active');
+    expect(t.resolvedIndex).toBeNull();
+    expect(t.realizedR).toBeNull();
+  });
+});
+
 describe('buildVdZones (end-to-end structural)', () => {
   it('produces valid zones over multi-day data', () => {
     const cs: Candle[] = [];

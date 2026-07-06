@@ -644,3 +644,74 @@ export function generateVdSignals(
 
   return out.sort((a, b) => a.index - b.index);
 }
+
+// ---------------------------------------------------------------------------
+// Trade lifecycle (closed bars): every signal becomes a tracked trade with an
+// exact entry, live stop, TP progression and measured outcome.
+// ---------------------------------------------------------------------------
+
+export type VdTradeStatus = 'active' | 'tp1' | 'tp2' | 'tp3' | 'stopped' | 'exit';
+
+export interface VdTrade {
+  signal: VdSignal;
+  status: VdTradeStatus;
+  /** The stop as currently enforced (steps to break-even / trails in later phases). */
+  slCurrent: number;
+  entryIndex: number;
+  resolvedIndex: number | null; // bar that ended the trade (stop/tp3/exit)
+  exitPrice: number | null;
+  barsHeld: number;
+  mfeR: number; // max favorable excursion, in R
+  maeR: number; // max adverse excursion, in R
+  realizedR: number | null; // null while unresolved
+}
+
+/**
+ * Walk each signal forward over CLOSED bars. Conservative ordering: when a bar
+ * spans both the stop and a target, the stop counts first.
+ */
+export function walkVdTrades(candles: Candle[], signals: VdSignal[]): VdTrade[] {
+  const lastClosed = candles.length - 1; // callers pass closed candles
+  const out: VdTrade[] = [];
+
+  for (const s of signals) {
+    const dir = s.side === 'buy' ? 1 : -1;
+    const risk = Math.abs(s.entry - s.stopLoss);
+    const t: VdTrade = {
+      signal: s, status: 'active', slCurrent: s.stopLoss,
+      entryIndex: s.index, resolvedIndex: null, exitPrice: null,
+      barsHeld: 0, mfeR: 0, maeR: 0, realizedR: null,
+    };
+    if (risk <= 0) { out.push(t); continue; }
+
+    for (let i = s.index + 1; i <= lastClosed; i++) {
+      const c = candles[i];
+      t.barsHeld = i - s.index;
+      const favorable = dir > 0 ? c.high - s.entry : s.entry - c.low;
+      const adverse = dir > 0 ? s.entry - c.low : c.high - s.entry;
+      t.mfeR = Math.max(t.mfeR, favorable / risk);
+      t.maeR = Math.max(t.maeR, adverse / risk);
+
+      const slHit = dir > 0 ? c.low <= t.slCurrent : c.high >= t.slCurrent;
+      if (slHit) {
+        t.status = 'stopped';
+        t.resolvedIndex = i;
+        t.exitPrice = t.slCurrent;
+        t.realizedR = (dir * (t.slCurrent - s.entry)) / risk;
+        break;
+      }
+      const hit = (tp: number) => (dir > 0 ? c.high >= tp : c.low <= tp);
+      if (t.status === 'active' && hit(s.tp1)) t.status = 'tp1';
+      if (t.status === 'tp1' && hit(s.tp2)) t.status = 'tp2';
+      if (t.status === 'tp2' && hit(s.tp3)) {
+        t.status = 'tp3';
+        t.resolvedIndex = i;
+        t.exitPrice = s.tp3;
+        t.realizedR = (dir * (s.tp3 - s.entry)) / risk;
+        break;
+      }
+    }
+    out.push(t);
+  }
+  return out;
+}

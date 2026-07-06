@@ -523,19 +523,24 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'showWavg', name: 'Show weighted average', type: 'boolean', default: true, group: 'Display' },
       { id: 'showSignals', name: 'Show buy/sell signals', type: 'boolean', default: true, group: 'Display' },
       { id: 'showTradeLevels', name: 'Show trade levels', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showTradeSetups', name: 'Show R:R boxes on signals', type: 'boolean', default: true, group: 'Display' },
       { id: 'showLabels', name: 'Show zone labels', type: 'boolean', default: true, group: 'Display' },
     ],
     // Ids must match the `${tf} Supply` / `${tf} Demand` (+ ` WAvg`) plot ids.
-    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => {
+    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf): IndicatorStyleDef[] => {
       const su = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' }[tf];
       const de = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' }[tf];
       return [
-        { id: `${tf} Supply`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
-        { id: `${tf} Supply WAvg`, name: `${tf} Supply WAvg`, color: `rgba(${su},0.85)`, thickness: 1, lineStyle: 'dashed' as const, display: true },
-        { id: `${tf} Demand`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
-        { id: `${tf} Demand WAvg`, name: `${tf} Demand WAvg`, color: `rgba(${de},0.85)`, thickness: 1, lineStyle: 'dashed' as const, display: true },
+        { id: `${tf} Supply`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
+        { id: `${tf} Supply WAvg`, name: `${tf} Supply WAvg`, color: `rgba(${su},0.85)`, thickness: 1, lineStyle: 'dashed', display: true },
+        { id: `${tf} Demand`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
+        { id: `${tf} Demand WAvg`, name: `${tf} Demand WAvg`, color: `rgba(${de},0.85)`, thickness: 1, lineStyle: 'dashed', display: true },
       ];
-    }),
+    }).concat([
+      { id: 'Trade Risk', name: 'Trade risk box', color: 'rgba(242,54,69,0.07)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'Trade Reward', name: 'Trade reward box', color: 'rgba(34,211,154,0.07)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'Trade Runner', name: 'Trade runner box (TP1→TP3)', color: 'rgba(34,211,154,0.035)', thickness: 1, lineStyle: 'solid', display: true },
+    ]),
     compute: computeVolumeDistributionZones,
   },
   {
