@@ -218,6 +218,50 @@ describe('walkVdTrades (trade lifecycle)', () => {
     expect(t.resolvedIndex).toBeNull();
     expect(t.realizedR).toBeNull();
   });
+
+  it('break-even after TP1: a pullback stops at entry for 0R, not −1R', async () => {
+    const { walkVdTrades } = await import('./vdEngine');
+    const candles = [b(0, 100, 104), b(1, 101, 104), b(2, 101, 104),
+      b(3, 104, 109),   // tp1 hit (109 ≥ 108), low 104 stays above sl → BE to 103
+      b(4, 102.5, 106)]; // low ≤ 103 → stopped at break-even
+    const [t] = walkVdTrades(candles, [buySig], { beAfterTp1: true, trailAtr: 0, contextExit: false });
+    expect(t.status).toBe('stopped');
+    expect(t.exitPrice).toBeCloseTo(103, 9);
+    expect(t.realizedR).toBeCloseTo(0, 6);
+  });
+
+  it('trailing after TP2 locks in profit above break-even', async () => {
+    const { walkVdTrades } = await import('./vdEngine');
+    // Constant TR=2 bars (flat 100-102) so Wilder ATR14 is exactly 2.
+    const flat: Candle[] = [];
+    for (let i = 0; i < 16; i++) flat.push({ time: i * 60, open: 101, high: 102, low: 100, close: 101, volume: 100 } as Candle);
+    const sig = { ...buySig, index: 15, tp3: 200 };
+    const candles = [
+      ...flat,
+      { time: 16 * 60, open: 104, high: 111, low: 104, close: 110, volume: 100 } as Candle, // tp1+tp2; trail → 110−2 = 108
+      { time: 17 * 60, open: 110, high: 112.5, low: 108.5, close: 112, volume: 100 } as Candle, // low > 108; trail → 110
+      { time: 18 * 60, open: 112, high: 112.5, low: 108.5, close: 110, volume: 100 } as Candle, // dips into the trail → stopped
+    ];
+    const [t] = walkVdTrades(candles, [sig], { beAfterTp1: true, trailAtr: 1, contextExit: false });
+    expect(t.status).toBe('stopped');
+    // Trail = close-watermark − 1×ATR (ATR ≈ 2.6 after the breakout bar's TR),
+    // well above break-even: profit locked, not just protected.
+    expect(t.exitPrice!).toBeGreaterThan(107);
+    expect(t.realizedR!).toBeGreaterThan(1);
+  });
+
+  it('context flip (EMA9/21 cross against the trade) exits before the stop', async () => {
+    const { walkVdTrades } = await import('./vdEngine');
+    const candles: Candle[] = [];
+    let p = 100;
+    for (let i = 0; i < 30; i++) { p += 1; candles.push({ time: i * 60, open: p - 1, high: p + 0.5, low: p - 1.5, close: p, volume: 100 } as Candle); } // rally to 130
+    for (let i = 30; i < 48; i++) { p -= 1.5; candles.push({ time: i * 60, open: p + 1.5, high: p + 2, low: p - 0.5, close: p, volume: 100 } as Candle); } // reversal
+    const sig = { ...buySig, index: 29, entry: 129, stopLoss: 90, tp1: 300, tp2: 310, tp3: 320 };
+    const [t] = walkVdTrades(candles, [sig], { beAfterTp1: false, trailAtr: 0, contextExit: true });
+    expect(t.status).toBe('exit');
+    expect(t.exitPrice).not.toBeNull();
+    expect(t.exitPrice!).toBeGreaterThan(sig.stopLoss); // saved from the full −1R stop
+  });
 });
 
 describe('buildVdZones (end-to-end structural)', () => {

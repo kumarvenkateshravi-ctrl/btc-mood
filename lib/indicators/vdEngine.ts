@@ -666,13 +666,36 @@ export interface VdTrade {
   realizedR: number | null; // null while unresolved
 }
 
+export interface VdExitOptions {
+  /** Move the stop to entry once TP1 is hit. */
+  beAfterTp1: boolean;
+  /** After TP2, trail the stop at close-watermark ∓ trailAtr × ATR14 (0 = off). */
+  trailAtr: number;
+  /** Exit when the chart-TF context flips against the trade (EMA9/21 cross
+   *  against it — a deterministic, closed-bar proxy for the MTF context flip;
+   *  full per-bar MTF snapshots arrive in the analytics phase). */
+  contextExit: boolean;
+}
+
+export const VD_EXIT_DEFAULTS: VdExitOptions = { beAfterTp1: true, trailAtr: 1.0, contextExit: true };
+
 /**
- * Walk each signal forward over CLOSED bars. Conservative ordering: when a bar
- * spans both the stop and a target, the stop counts first.
+ * Walk each signal forward over CLOSED bars. Conservative ordering per bar:
+ * 1) stop check (with the stop as it stood BEFORE this bar), 2) TP
+ * progression + break-even, 3) context-exit check, 4) trailing update.
  */
-export function walkVdTrades(candles: Candle[], signals: VdSignal[]): VdTrade[] {
+export function walkVdTrades(
+  candles: Candle[],
+  signals: VdSignal[],
+  exits: VdExitOptions = VD_EXIT_DEFAULTS,
+): VdTrade[] {
   const lastClosed = candles.length - 1; // callers pass closed candles
   const out: VdTrade[] = [];
+  if (signals.length === 0) return out;
+  const atr = vdAtr(candles);
+  const closes = candles.map((c) => c.close);
+  const e9 = exits.contextExit ? pm.ema(closes, 9) : [];
+  const e21 = exits.contextExit ? pm.ema(closes, 21) : [];
 
   for (const s of signals) {
     const dir = s.side === 'buy' ? 1 : -1;
@@ -683,6 +706,7 @@ export function walkVdTrades(candles: Candle[], signals: VdSignal[]): VdTrade[] 
       barsHeld: 0, mfeR: 0, maeR: 0, realizedR: null,
     };
     if (risk <= 0) { out.push(t); continue; }
+    let watermark: number | null = null; // close high-watermark once trailing
 
     for (let i = s.index + 1; i <= lastClosed; i++) {
       const c = candles[i];
@@ -692,6 +716,7 @@ export function walkVdTrades(candles: Candle[], signals: VdSignal[]): VdTrade[] 
       t.mfeR = Math.max(t.mfeR, favorable / risk);
       t.maeR = Math.max(t.maeR, adverse / risk);
 
+      // 1. Stop (as it stood before this bar).
       const slHit = dir > 0 ? c.low <= t.slCurrent : c.high >= t.slCurrent;
       if (slHit) {
         t.status = 'stopped';
@@ -700,8 +725,13 @@ export function walkVdTrades(candles: Candle[], signals: VdSignal[]): VdTrade[] 
         t.realizedR = (dir * (t.slCurrent - s.entry)) / risk;
         break;
       }
+
+      // 2. TP progression + break-even.
       const hit = (tp: number) => (dir > 0 ? c.high >= tp : c.low <= tp);
-      if (t.status === 'active' && hit(s.tp1)) t.status = 'tp1';
+      if (t.status === 'active' && hit(s.tp1)) {
+        t.status = 'tp1';
+        if (exits.beAfterTp1) t.slCurrent = dir > 0 ? Math.max(t.slCurrent, s.entry) : Math.min(t.slCurrent, s.entry);
+      }
       if (t.status === 'tp1' && hit(s.tp2)) t.status = 'tp2';
       if (t.status === 'tp2' && hit(s.tp3)) {
         t.status = 'tp3';
@@ -709,6 +739,31 @@ export function walkVdTrades(candles: Candle[], signals: VdSignal[]): VdTrade[] 
         t.exitPrice = s.tp3;
         t.realizedR = (dir * (s.tp3 - s.entry)) / risk;
         break;
+      }
+
+      // 3. Context-flip exit (closed-bar EMA9/21 cross against the trade).
+      if (exits.contextExit && i > 0) {
+        const a9 = e9[i], a21 = e21[i], p9 = e9[i - 1], p21 = e21[i - 1];
+        if (a9 != null && a21 != null && p9 != null && p21 != null) {
+          const crossed = dir > 0 ? a9 < a21 && p9 >= p21 : a9 > a21 && p9 <= p21;
+          if (crossed) {
+            t.status = 'exit';
+            t.resolvedIndex = i;
+            t.exitPrice = c.close;
+            t.realizedR = (dir * (c.close - s.entry)) / risk;
+            break;
+          }
+        }
+      }
+
+      // 4. Trailing after TP2 (updates take effect from the NEXT bar).
+      if (exits.trailAtr > 0 && (t.status === 'tp2' || t.status === 'tp3')) {
+        watermark = watermark == null ? c.close : dir > 0 ? Math.max(watermark, c.close) : Math.min(watermark, c.close);
+        const a = atr[i];
+        if (a != null && a > 0) {
+          const trail = dir > 0 ? watermark - exits.trailAtr * a : watermark + exits.trailAtr * a;
+          t.slCurrent = dir > 0 ? Math.max(t.slCurrent, trail) : Math.min(t.slCurrent, trail);
+        }
       }
     }
     out.push(t);

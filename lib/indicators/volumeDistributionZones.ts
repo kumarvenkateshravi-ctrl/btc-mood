@@ -26,6 +26,7 @@ interface VdInputs {
   showSignals: boolean; showTradeLevels: boolean; showLabels: boolean;
   useContextGate: boolean; minDecisionScore: number;
   showTradeSetups: boolean;
+  beAfterTp1: boolean; trailAtr: number; contextExit: boolean;
 }
 
 const VDI_DEFAULTS: VdInputs = {
@@ -37,6 +38,7 @@ const VDI_DEFAULTS: VdInputs = {
   showSignals: true, showTradeLevels: true, showLabels: true,
   useContextGate: true, minDecisionScore: 65,
   showTradeSetups: true,
+  beAfterTp1: true, trailAtr: 1.0, contextExit: true,
 };
 
 // Structure palette (matches the platform's zone colors: supply blue / demand
@@ -120,7 +122,7 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   // Trade lifecycle over CLOSED bars: every accepted signal becomes a tracked
   // trade (status, live stop, MFE/MAE, realized R). Published for the table.
   const closed = candles.slice(0, Math.max(0, n - 1));
-  const trades: VdTrade[] = walkVdTrades(closed, accepted);
+  const trades: VdTrade[] = walkVdTrades(closed, accepted, { beAfterTp1: inp.beAfterTp1, trailAtr: inp.trailAtr, contextExit: inp.contextExit });
   publishVdTrades(trades);
 
   const plots: IndicatorPlot[] = [];
