@@ -516,6 +516,8 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'slBufferAtr', name: 'Stop buffer (ATR ×)', type: 'number', default: 0.25, min: 0, max: 5, step: 0.05, group: 'Signals' },
       { id: 'acceptanceBars', name: 'Acceptance bars', type: 'number', default: 3, min: 2, max: 20, step: 1, group: 'Signals' },
       { id: 'trendFilter', name: 'Trend filter (EMA50)', type: 'boolean', default: true, group: 'Signals' },
+      { id: 'useContextGate', name: 'MTF context confirmation', type: 'boolean', default: true, group: 'Signals' },
+      { id: 'minDecisionScore', name: 'Min decision score', type: 'number', default: 65, min: 0, max: 100, step: 1, group: 'Signals' },
       { id: 'showSupply', name: 'Show supply zones', type: 'boolean', default: true, group: 'Display' },
       { id: 'showDemand', name: 'Show demand zones', type: 'boolean', default: true, group: 'Display' },
       { id: 'showWavg', name: 'Show weighted average', type: 'boolean', default: true, group: 'Display' },

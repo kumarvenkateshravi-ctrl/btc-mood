@@ -18,6 +18,8 @@ const BottomDock = dynamic(() => import('@/components/BottomDock'), {
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, type PanelImperativeHandle } from 'react-resizable-panels';
 import SymbolSearch from '@/components/SymbolSearch';
 import DashboardAside from '@/components/DashboardAside';
+import MarketContextWidget from '@/components/MarketContextWidget';
+import { useMarketContext } from '@/lib/hooks/useMarketContext';
 import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 import StrategyBuilderPanel from '@/components/StrategyBuilderPanel';
 import MoodStrip from '@/components/MoodStrip';
@@ -176,6 +178,9 @@ export default function DashboardPage() {
   // ---- Derived display values ----
   const currentCandles = candlesByTf[selected];
 
+  // One Market Context for the whole app (chart gate + widget + rail share it).
+  const marketContext = useMarketContext(candlesByTf);
+
   // Emission boundary: on each closed bar this yields the current SdSignal[].
   // Phase 2 alerts/webhooks subscribe by diffing newly-`triggered` ids here.
   const signalEvents = useMemo(
@@ -249,6 +254,17 @@ export default function DashboardPage() {
                     workspaceCurrent={{ chartType, symbol, tf: selected, indicatorIds: activeIndicatorIds }}
                     onWorkspaceApply={applyWorkspace}
                   />
+                )}
+
+                {/* Compact Market Context widget (Phase 11) — same MarketContext
+                    object as the signal gate; click opens the MTF rail. */}
+                {gridCount === 1 && (
+                  <div className="absolute right-[84px] top-[52px] z-20 hidden lg:block">
+                    <MarketContextWidget
+                      ctx={marketContext}
+                      onOpenDetails={() => { setTab('signals'); setRightPanel('signals'); }}
+                    />
+                  </div>
                 )}
 
               </div>

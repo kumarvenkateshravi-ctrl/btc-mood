@@ -7,9 +7,12 @@ import type { CustomIndicatorConfig, IndicatorResult, IndicatorLevel, IndicatorP
 import type { HtfPeriod } from './htf';
 import { resolveInputs } from './itsTemplates';
 import {
-  buildVdZones, generateVdSignals, VD_DEFAULTS,
+  buildVdZones, generateVdSignals, vdAtr, VD_DEFAULTS,
   type VdZone, type VdSignal, type VdConfig,
 } from './vdEngine';
+import { decide } from '../context/decisionEngine';
+import { latestMarketContext, publishVdDecisions } from '../context/contextStore';
+import { DEFAULT_DECISION_CONFIG, type Decision, type Rejection } from '../context/types';
 
 interface VdInputs {
   tf1: string; tf2: string; tf3: string;
@@ -18,6 +21,7 @@ interface VdInputs {
   slBufferAtr: number; acceptanceBars: number; trendFilter: boolean;
   showSupply: boolean; showDemand: boolean; showWavg: boolean;
   showSignals: boolean; showTradeLevels: boolean; showLabels: boolean;
+  useContextGate: boolean; minDecisionScore: number;
 }
 
 const VDI_DEFAULTS: VdInputs = {
@@ -27,6 +31,7 @@ const VDI_DEFAULTS: VdInputs = {
   slBufferAtr: 0.25, acceptanceBars: 3, trendFilter: true,
   showSupply: true, showDemand: true, showWavg: true,
   showSignals: true, showTradeLevels: true, showLabels: true,
+  useContextGate: true, minDecisionScore: 65,
 };
 
 // Structure palette (matches the platform's zone colors: supply blue / demand
@@ -86,6 +91,27 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
   if (n === 0 || tfs.length === 0) return { plots: [], signals };
 
   const { zones, sigs } = computeCached(candles, inp, tfs);
+
+  // MTF confirmation (Market Context Engine): candidates pass the Decision
+  // Engine when the gate is on. decide() degrades gracefully when no context
+  // has been published (tests, cold start): neutral 50s, HTF/bias gates off.
+  let decisions: Decision[] = [];
+  let rejections: Rejection[] = [];
+  let accepted: VdSignal[] = sigs;
+  if (inp.useContextGate) {
+    const atr = vdAtr(candles);
+    const out = decide(
+      sigs,
+      latestMarketContext(),
+      { ...DEFAULT_DECISION_CONFIG, minDecisionScore: inp.minDecisionScore },
+      (i) => atr[i],
+    );
+    decisions = out.decisions;
+    rejections = out.rejections;
+    accepted = decisions.map((d) => d.signal);
+  }
+  publishVdDecisions({ decisions, rejections, gated: inp.useContextGate });
+
   const plots: IndicatorPlot[] = [];
   const levels: IndicatorLevel[] = [];
   const lastClose = candles[n - 1].close;
@@ -134,7 +160,7 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
         zoneStyle.label = `${tf} ${kindTxt}${cls ? ` · ${cls}` : ''} · ${active.confidence}`;
       }
       if (inp.showSignals) {
-        const anchors = sigs.filter((s) => s.zoneId.startsWith(`${tf}:${kind}:`)).map((s) => s.index);
+        const anchors = accepted.filter((s) => s.zoneId.startsWith(`${tf}:${kind}:`)).map((s) => s.index);
         if (anchors.length) zoneStyle.anchors = anchors;
       }
 
@@ -144,16 +170,20 @@ export function computeVolumeDistributionZones(candles: Candle[], config?: Custo
     }
   }
 
-  // Arrows via the standard per-bar signal path.
+  // Arrows via the standard per-bar signal path (context-gated when enabled).
   if (inp.showSignals) {
-    for (const s of sigs) signals[s.index] = s.side;
+    for (const s of accepted) signals[s.index] = s.side;
   }
 
-  // Trade levels for the most recent signal.
-  const last = sigs[sigs.length - 1];
+  // Trade levels for the most recent accepted signal, labeled with its grade.
+  const last = accepted[accepted.length - 1];
   if (last && inp.showTradeLevels) {
     const sideTxt = last.side === 'buy' ? 'BUY' : 'SELL';
-    levels.push({ value: last.entry, color: '#26c6da', lineStyle: 'solid', lineWidth: 2, title: `${sideTxt} · ${Math.round(last.confidence)}${last.swept ? ' · sweep' : ''}` });
+    const d = decisions.find((x) => x.signal === last);
+    const title = d
+      ? `${sideTxt} · ${d.grade} · ${Math.round(d.decisionScore)}${last.swept ? ' · sweep' : ''}`
+      : `${sideTxt} · ${Math.round(last.confidence)}${last.swept ? ' · sweep' : ''}`;
+    levels.push({ value: last.entry, color: '#26c6da', lineStyle: 'solid', lineWidth: 2, title });
     levels.push({ value: last.stopLoss, color: '#f23645', lineStyle: 'solid', lineWidth: 1, title: `SL ${last.stopLoss.toFixed(1)}` });
     levels.push({ value: last.tp1, color: '#22d39a', lineStyle: 'dashed', lineWidth: 1, title: `TP1 ${last.tp1.toFixed(1)}` });
     levels.push({ value: last.tp2, color: '#22d39a', lineStyle: 'dashed', lineWidth: 1, title: `TP2 ${last.tp2.toFixed(1)}` });
