@@ -40,6 +40,8 @@ import { validateReplayData } from '@/lib/replay/validate';
 import { replayActions, useReplayState, isReplayActive, getReplayState } from '@/lib/replay/replayState';
 import { replayIndexForTime, TF_SECONDS } from '@/lib/replay/replaySlice';
 import { verifyReplayIntegrity, type IntegrityReport } from '@/lib/replay/verify';
+import { buildTrainingReport, type TrainingReport } from '@/lib/replay/trainingReport';
+import TrainingReportModal from '@/components/replay/TrainingReportModal';
 
 interface ChartPanelProps {
   candles: Candle[];
@@ -251,6 +253,33 @@ export default function ChartPanel({
 
   const stepReplay = (dir: 1 | -1) => replayActions.stepBy(dir, candles.length);
 
+  // ---- Phase 4: blind drill + training report ----
+  const [blindMode, setBlindMode] = useState(false);
+  const [trainingReport, setTrainingReport] = useState<TrainingReport | null>(null);
+
+  // Jump-to-datetime start (selection mode): pick the bar containing the moment.
+  const onPickTime = useCallback(
+    (ms: number) => {
+      const t = Math.floor(ms / 1000);
+      let idx = candles.length - 1;
+      while (idx > 1 && candles[idx].time > t) idx--;
+      onReplayPick(idx);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [candles],
+  );
+
+  // Blind drill: random hidden start with room to trade, dates masked.
+  const onDrill = useCallback(() => {
+    const len = candles.length;
+    if (len < 120) return;
+    const lo = Math.max(1, Math.floor(len * 0.2));
+    const hi = Math.max(lo + 1, len - 60);
+    setBlindMode(true);
+    onReplayPick(lo + Math.floor(Math.random() * (hi - lo)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candles.length]);
+
   // Replay Verification (developer mode): re-proves the Prime Invariant and
   // engine determinism at the current bar. Cleared whenever the head moves.
   const [verification, setVerification] = useState<IntegrityReport | null>(null);
@@ -262,6 +291,12 @@ export default function ChartPanel({
   useEffect(() => {
     setVerification(null);
   }, [playIndex, replayPhase]);
+
+  // Duration snapshot for the training report (indices reset on exit).
+  const replayDurationRef = useRef(0);
+  useEffect(() => {
+    if (replayActive) replayDurationRef.current = Math.max(0, playIndex - replayStartIndex);
+  }, [replayActive, playIndex, replayStartIndex]);
 
   const replayLast = replayCandles[replayCandles.length - 1];
   const displayPrice = replayActive && replayLast ? replayLast.close : price;
@@ -309,6 +344,21 @@ export default function ChartPanel({
   const LEVERAGE = 10;
   const paper = usePaperStore();
   const session = useReplaySession();
+
+  // Training report: whenever replay ends (Exit button, Esc, toolbar toggle,
+  // symbol change), grade the session if any trades were closed. The session
+  // store keeps its trades after endReplaySession, so reading here is safe.
+  const prevPhaseRef = useRef(replayPhase);
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = replayPhase;
+    if (prev !== 'idle' && replayPhase === 'idle') {
+      setBlindMode(false);
+      if (session.trades.length > 0) {
+        setTrainingReport(buildTrainingReport(session.trades, replayDurationRef.current));
+      }
+    }
+  }, [replayPhase, session.trades]);
   // During replay the chart reflects the ISOLATED session's position; otherwise
   // the live account's.
   const replayTrading = replayActive;
@@ -867,6 +917,7 @@ export default function ChartPanel({
             showSignals={showSignals}
             renko={renkoOptions}
             onReady={handleChartReady}
+            maskTimeAxis={blindMode}
             onLoadOlder={replayPhase === 'idle' ? onLoadOlder : undefined}
             tf={selected}
             showVolume={parentShowVolume}
@@ -958,6 +1009,10 @@ export default function ChartPanel({
             total={candles.length}
             onVerify={featureFlags.replayDebug ? runVerification : undefined}
             verification={verification}
+            onPickTime={onPickTime}
+            onDrill={onDrill}
+            blind={blindMode}
+            onToggleBlind={() => setBlindMode((v) => !v)}
             speed={replaySpeed}
             bookmarks={bookmarks}
             onExit={() => replayActions.exit()}
@@ -1000,6 +1055,10 @@ export default function ChartPanel({
             </span>
           ))}
         </div>
+      )}
+
+      {trainingReport && (
+        <TrainingReportModal report={trainingReport} onClose={() => setTrainingReport(null)} />
       )}
 
       {showRenkoSettings && (

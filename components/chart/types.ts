@@ -3,6 +3,7 @@ import type { RenkoOptions } from '@/lib/renko';
 import type { IndicatorResult, IndicatorSettings } from '@/lib/indicatorFramework';
 import type { Candle } from '@/lib/types';
 import type { OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
+import type { ChartSettingsState } from './useChartSettings';
 
 export type ChartType = 'candlestick' | 'heikinAshi' | 'renko';
 
@@ -57,6 +58,9 @@ export interface ChartProps {
   indicatorResults?: IndicatorRender[];
   priceScaleMode?: PriceScaleModeOption;
   onPriceScaleModeChange?: (mode: PriceScaleModeOption) => void;
+  /** TV-style chart settings popover state. Optional; when omitted, the chart
+   *  behaves as before (default price-scale mode = 'normal'). */
+  chartSettings?: ChartSettingsState;
   showSignals?: boolean;
   renko?: RenkoOptions;
   priceLines?: { id: string; price: number; color: string; title: string }[];
@@ -112,6 +116,21 @@ export interface ChartProps {
   onRemoveIndicator?: (id: string) => void;
   onUpdateIndicatorSettingsFor?: (id: string, settings: IndicatorSettings) => void;
   resetTick?: number;
+  /** Blind-drill mode: hide the time axis so dates can't reveal the moment. */
+  maskTimeAxis?: boolean;
+  /**
+   * Additional panes to render below the main candle pane. Each entry
+   * allocates a new LWC pane + a candlestick series rendered from
+   * `candles` at the entry's TF. Time scale and crosshair are shared
+   * with the main pane automatically (LWC default). Used by
+   * `MultiPaneChart` for the TV-style "4 panes stacked" view.
+   */
+  additionalPanes?: { key: string; candles: Candle[]; height?: number }[];
+  /**
+   * Total height in px shared across all `additionalPanes` (used for
+   * proportional height allocation when no per-pane `height` is given).
+   */
+  additionalPanesTotalHeight?: number;
 }
 
 /** Offsets a unix-seconds timestamp by the local timezone so lightweight-charts

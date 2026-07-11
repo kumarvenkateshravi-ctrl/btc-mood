@@ -125,6 +125,7 @@ export default function Chart({
   onRemoveIndicator,
   onUpdateIndicatorSettingsFor,
   resetTick,
+  maskTimeAxis = false,
   chartSettings,
   additionalPanes,
   additionalPanesTotalHeight = 0,
@@ -368,6 +369,13 @@ export default function Chart({
     try { candleSeriesRef.current?.applyOptions({ priceScaleId: id }); } catch {}
     try { dummySeriesRef.current?.applyOptions({ priceScaleId: id }); } catch {}
   }, [chartSettings?.activePriceScaleId, candleSeriesRef, dummySeriesRef]);
+
+  // ---- Blind-drill time-axis mask (dates would reveal the replay moment) ----
+  useEffect(() => {
+    try {
+      chartRef.current?.timeScale().applyOptions({ visible: !maskTimeAxis });
+    } catch {}
+  }, [maskTimeAxis, chartRef]);
 
   // ---- Crosshair snap (MagnetOHLC sticks to O/H/L/C, Normal is free) ----
   useEffect(() => {

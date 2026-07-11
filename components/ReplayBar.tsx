@@ -1,6 +1,6 @@
 'use client';
 
-import { Bookmark, CheckCircle2, Pause, Play, Scissors, ShieldCheck, SkipBack, SkipForward, X, XCircle } from 'lucide-react';
+import { Bookmark, CheckCircle2, Dices, EyeOff, Pause, Play, Scissors, ShieldCheck, SkipBack, SkipForward, X, XCircle } from 'lucide-react';
 import type { ReplayPhase } from '@/lib/replay/replayState';
 import type { IntegrityReport } from '@/lib/replay/verify';
 
@@ -25,6 +25,13 @@ interface ReplayBarProps {
   /** Replay Verification (developer mode). */
   onVerify?: () => void;
   verification?: IntegrityReport | null;
+  /** Jump-to-datetime replay start (selection mode). Epoch ms, local input. */
+  onPickTime?: (ms: number) => void;
+  /** Blind drill: random hidden start + masked axis (selection mode). */
+  onDrill?: () => void;
+  /** Blind mode: hide progress numbers and the scrubber (no future spoilers). */
+  blind?: boolean;
+  onToggleBlind?: () => void;
 }
 
 const PHASE_LABEL: Partial<Record<ReplayPhase, string>> = {
@@ -54,12 +61,40 @@ export default function ReplayBar({
   onRemoveBookmark,
   onVerify,
   verification,
+  onPickTime,
+  onDrill,
+  blind = false,
+  onToggleBlind,
 }: ReplayBarProps) {
   if (selecting) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-surface-1 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-surface-1 px-3 py-2 text-xs">
         <Scissors className="h-3.5 w-3.5 text-accent" />
         <span className="text-ink-muted">Click a candle on the chart to set the replay start.</span>
+        {onPickTime && (
+          <label className="inline-flex items-center gap-1.5 text-ink-faint">
+            or jump to
+            <input
+              type="datetime-local"
+              onChange={(e) => {
+                const ms = new Date(e.target.value).getTime();
+                if (Number.isFinite(ms)) onPickTime(ms);
+              }}
+              className="focus-ring rounded border border-line bg-base px-1.5 py-0.5 text-[11px] text-ink [color-scheme:dark]"
+              aria-label="Jump to date and time"
+            />
+          </label>
+        )}
+        {onDrill && (
+          <button
+            onClick={onDrill}
+            title="Blind drill: random hidden start, masked dates — trade it, then reveal your score"
+            className="focus-ring inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+          >
+            <Dices className="h-3.5 w-3.5" />
+            Blind drill
+          </button>
+        )}
         <button
           onClick={onExit}
           className="focus-ring ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-ink-faint transition hover:bg-surface-2 hover:text-ink"
@@ -93,21 +128,46 @@ export default function ReplayBar({
           </IconBtn>
         </div>
 
-        <input
-          type="range"
-          min={1}
-          max={Math.max(1, total - 1)}
-          value={Math.min(index, total - 1)}
-          onChange={(e) => onScrub(Number(e.target.value))}
-          className="h-1 flex-1 min-w-[120px] cursor-pointer accent-accent"
-          aria-label="Replay position"
-        />
+        {blind ? (
+          // Future-blind: no scrubber, no counts — the trader genuinely
+          // doesn't know how much history remains.
+          <span className="flex-1 text-center font-mono text-[11px] uppercase tracking-wider text-ink-faint">
+            {phase && PHASE_LABEL[phase] ? `${PHASE_LABEL[phase]} · ` : ''}blind drill
+          </span>
+        ) : (
+          <>
+            <input
+              type="range"
+              min={1}
+              max={Math.max(1, total - 1)}
+              value={Math.min(index, total - 1)}
+              onChange={(e) => onScrub(Number(e.target.value))}
+              className="h-1 flex-1 min-w-[120px] cursor-pointer accent-accent"
+              aria-label="Replay position"
+            />
 
-        <span className="font-mono text-[11px] tabular-nums text-ink-faint">
-          {phase && PHASE_LABEL[phase] && <span className="text-ink-muted">{PHASE_LABEL[phase]} · </span>}
-          {Math.min(index, total - 1)}/{total - 1}
-          <span className="text-ink-faint/70"> · {(total > 1 ? (Math.min(index, total - 1) / (total - 1)) * 100 : 0).toFixed(1)}%</span>
-        </span>
+            <span className="font-mono text-[11px] tabular-nums text-ink-faint">
+              {phase && PHASE_LABEL[phase] && <span className="text-ink-muted">{PHASE_LABEL[phase]} · </span>}
+              {Math.min(index, total - 1)}/{total - 1}
+              <span className="text-ink-faint/70"> · {(total > 1 ? (Math.min(index, total - 1) / (total - 1)) * 100 : 0).toFixed(1)}%</span>
+            </span>
+          </>
+        )}
+
+        {onToggleBlind && (
+          <button
+            onClick={onToggleBlind}
+            aria-pressed={blind}
+            title={blind ? 'Reveal position and dates' : 'Blind mode: hide progress and dates'}
+            className={[
+              'focus-ring inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition',
+              blind ? 'border-accent/40 bg-accent/10 text-accent' : 'border-line text-ink-faint hover:bg-surface-2 hover:text-ink',
+            ].join(' ')}
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+            Blind
+          </button>
+        )}
 
         <div className="inline-flex items-center rounded-md border border-line bg-base p-0.5 text-[11px] font-mono">
           {SPEEDS.map((s) => (
