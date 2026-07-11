@@ -53,6 +53,7 @@ import { DivergenceExplainer } from '@/components/DivergenceExplainer';
 import { buildSignalFlips } from '@/lib/signalMarkers';
 import { buildDivergenceMarkers } from '@/lib/divergenceMarkers';
 import { ChartFloatingControls } from './chart/ChartFloatingControls';
+import { ChartNavControls } from './chart/ChartNavControls';
 import { ChartLegend } from './chart/ChartLegend';
 import { useChartTheme } from './chart/useChartTheme';
 import { usePriceScaleLines } from './chart/usePriceScaleLines';
@@ -429,7 +430,7 @@ export default function Chart({
 
   // ---- Render ----
   return (
-    <div className="relative h-full w-full overflow-hidden" style={{ background: palette.chartBg }}>
+    <div className="group/chart relative h-full w-full overflow-hidden" style={{ background: palette.chartBg }}>
       <div
         ref={containerRef}
         className="absolute inset-0 z-0"
@@ -492,6 +493,8 @@ export default function Chart({
       {tooltipPos && <FloatingChartTooltip pos={tooltipPos} mode={type} />}
       {tooltipPos && <SignalExplainer pos={tooltipPos} flips={activeFlips} />}
       {tooltipPos && <DivergenceExplainer pos={tooltipPos} payloads={hasDivergenceIndicator ? divMarkersData.payloads : []} />}
+
+      <ChartNavControls chartRef={chartRef} onReset={applyDefaultView} />
 
       <ChartFloatingControls
         type={type}

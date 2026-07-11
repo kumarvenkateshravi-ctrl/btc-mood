@@ -28,6 +28,9 @@ import ChartToolbar from './ChartToolbar';
 import RenkoSettingsModal from './trade/RenkoSettingsModal';
 import OrderModal from '@/components/trade/OrderModal';
 import { FALLBACK_HEIGHT } from '@/lib/chartHeight';
+import { useChartSettings } from './chart/useChartSettings';
+import { CHART_SETTINGS_SHORTCUTS } from './chart/chartSettingsKeys';
+import { featureFlags } from '@/lib/featureFlags';
 import type { Candle, Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
@@ -61,6 +64,14 @@ interface ChartPanelProps {
   /** Grid layout controls forwarded to the toolbar. */
   gridCount: import('@/lib/gridLayout').GridCount;
   onGridChange: (n: import('@/lib/gridLayout').GridCount) => void;
+  /**
+   * Optional multi-pane mode. When > 1, the inner chart is rendered
+   * with `additionalPanes` (TV-style stacked panes). v1 supports 2 or 4.
+   */
+  paneCount?: import('@/lib/gridLayout').LayoutCount;
+  /** Full layout (mode + count + sync). Forwarded to the toolbar. */
+  layout?: import('@/lib/gridLayout').Layout;
+  onLayoutChange?: (next: import('@/lib/gridLayout').Layout) => void;
   /** Workspace controls forwarded to the toolbar. */
   workspaceCurrent: import('@/lib/workspaces').WorkspaceConfig;
   onWorkspaceApply: (cfg: import('@/lib/workspaces').WorkspaceConfig) => void;
@@ -115,6 +126,9 @@ export default function ChartPanel({
   onWorkspaceApply,
   isSidebarOpen,
   onToggleSidebar,
+  paneCount = 1,
+  layout,
+  onLayoutChange,
 }: ChartPanelProps) {
   const primaryId = activeIndicatorIds[0] ?? '';
 
@@ -130,8 +144,16 @@ export default function ChartPanel({
   const renkoOptions = useMemo(() => renkoConfigToOptions(renkoConfig), [renkoConfig]);
   const [showRenkoSettings, setShowRenkoSettings] = useState(false);
 
-  // Price-scale mode: linear / log / percentage.
-  const [priceScaleMode, setPriceScaleMode] = useState<PriceScaleModeOption>('normal');
+  // TV-style chart settings (gear popover). Source of truth for price-scale
+  // mode, invert, auto-scale, active price-scale id, etc. Some keys persist
+  // to localStorage (see useChartSettings.ts).
+  const {
+    settings: chartSettings,
+    patch: patchChartSettings,
+    reset: resetChartSettings,
+  } = useChartSettings();
+  const priceScaleMode = chartSettings.scaleMode;
+  const setPriceScaleMode = (m: PriceScaleModeOption) => patchChartSettings({ scaleMode: m });
 
   // ---- Drawing tools ----
   const [drawingTool, setDrawingTool] = useState<Tool>('cursor');
@@ -511,22 +533,77 @@ export default function ChartPanel({
     }
   }, []);
 
-  // Keyboard: `F` toggles fullscreen on this section, `Esc` exits.
+  // Keyboard: `F` toggles fullscreen; `Esc` exits fullscreen.
+  // Chart-settings shortcuts (Alt+R / Alt+I / Alt+P / Alt+L) when the feature
+  // flag is on. Skipped while the settings popover is open or focus is in
+  // an editable field.
   useEffect(() => {
+    const isEditable = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      if (
+        el.tagName === 'INPUT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.tagName === 'SELECT' ||
+        el.isContentEditable
+      ) {
+        return true;
+      }
+      return false;
+    };
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (target) {
-        const tag = target.tagName;
-        if (
-          tag === 'INPUT' ||
-          tag === 'TEXTAREA' ||
-          tag === 'SELECT' ||
-          target.isContentEditable
-        ) {
+      // Popover-open guard: the toolbar sets this dataset attr while the gear
+      // popover is mounted so user typing into the ratio input doesn't
+      // trigger chart resets.
+      if (document.body.dataset.chartSettingsOpen === '1') return;
+
+      if (isEditable(e.target)) return;
+
+      // Alt-modified shortcuts (chart settings popover).
+      if (
+        featureFlags.chartSettings &&
+        e.altKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.shiftKey
+      ) {
+        const k = e.key.toLowerCase();
+        if (k === CHART_SETTINGS_SHORTCUTS.reset.key) {
+          // Reset price scale.
+          patchChartSettings({
+            autoScale: true,
+            invertScale: false,
+            scaleMode: 'normal',
+            labelsStatusLine: true,
+          });
+          chartApiRef.current?.fitContent();
+          e.preventDefault();
+          return;
+        }
+        if (k === CHART_SETTINGS_SHORTCUTS.invert.key) {
+          patchChartSettings({ invertScale: !chartSettings.invertScale });
+          e.preventDefault();
+          return;
+        }
+        if (k === CHART_SETTINGS_SHORTCUTS.cycleMode.key) {
+          const order = ['normal', 'percent', 'log'] as const;
+          const cur = order.indexOf(chartSettings.scaleMode);
+          const next = order[(cur + 1) % order.length];
+          patchChartSettings({ scaleMode: next });
+          e.preventDefault();
+          return;
+        }
+        if (k === CHART_SETTINGS_SHORTCUTS.log.key) {
+          patchChartSettings({
+            scaleMode: chartSettings.scaleMode === 'log' ? 'normal' : 'log',
+          });
+          e.preventDefault();
           return;
         }
       }
+
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key.toLowerCase() === 'f') {
         toggleFullscreen();
         e.preventDefault();
@@ -536,7 +613,7 @@ export default function ChartPanel({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleFullscreen]);
+  }, [toggleFullscreen, patchChartSettings, chartSettings.invertScale, chartSettings.scaleMode]);
 
 
 
@@ -560,7 +637,28 @@ export default function ChartPanel({
 
   // Pre-calculate synthetic/smoothed candles (Renko/Heikin Ashi) so indicators
   // align with the actual visual bricks/smoothed prices rather than raw time-based candles.
-  const baseCandlesForIndicators = useBaseCandles(candles, type, renkoOptions);
+  // Fed from replayCandles so Bar Replay actually truncates the chart AND the
+  // indicator stack (no future data leaks into calculations during replay);
+  // outside replay, replayCandles === candles.
+  const baseCandlesForIndicators = useBaseCandles(replayCandles, type, renkoOptions);
+
+  // Multi-pane: the main candle pane counts as pane #1, so a "N panes
+  // stacked" layout needs N-1 additional panes. v1: all panes share the
+  // active TF. We compute this here so the inner chart's
+  // `useAdditionalPanes` hook has a stable prop.
+  const additionalPanes = useMemo(() => {
+    if (paneCount <= 1) return undefined;
+    return Array.from({ length: paneCount - 1 }, (_, i) => ({
+      key: `pane-${i}`,
+      candles: baseCandlesForIndicators,
+    }));
+  }, [paneCount, baseCandlesForIndicators]);
+
+  // Every pane (main + additional) gets an equal share of the chart height,
+  // so the additional panes together get (N-1)/N of it.
+  const additionalPanesTotalHeight =
+    paneCount > 1 ? Math.max(0, Math.round((chartHeight * (paneCount - 1)) / paneCount)) : 0;
+  console.log('[panes-debug] ChartPanel', { paneCount, panes: additionalPanes?.length, chartHeight, loading });
 
   // The whole indicator stack, computed once per candle/settings change.
   // We process sequentially so that indicators can use prior indicators as inputs.
@@ -651,10 +749,15 @@ export default function ChartPanel({
         onReturnToLive={onReturnToLive}
         gridCount={gridCount}
         onGridChange={onGridChange}
+        layout={layout}
+        onLayoutChange={onLayoutChange}
         workspaceCurrent={workspaceCurrent}
         onWorkspaceApply={onWorkspaceApply}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={onToggleSidebar}
+        chartSettings={featureFlags.chartSettings ? chartSettings : undefined}
+        onChartSettingsPatch={featureFlags.chartSettings ? patchChartSettings : undefined}
+        onChartSettingsReset={featureFlags.chartSettings ? resetChartSettings : undefined}
       />
       <div className="flex min-h-0 flex-1">
         <DrawingToolbar
@@ -679,10 +782,13 @@ export default function ChartPanel({
             candlesByTf={candlesByTf}
             type={type}
             height={chartHeight}
+            additionalPanes={additionalPanes}
+            additionalPanesTotalHeight={additionalPanesTotalHeight}
             indicatorResult={indicatorResult}
             indicatorResults={indicatorResults}
             priceScaleMode={priceScaleMode}
             onPriceScaleModeChange={setPriceScaleMode}
+            chartSettings={featureFlags.chartSettings ? chartSettings : undefined}
             showSignals={showSignals}
             renko={renkoOptions}
             onReady={handleChartReady}
