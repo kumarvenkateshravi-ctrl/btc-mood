@@ -66,6 +66,7 @@ import { useChartInit } from './chart/useChartInit';
 import { useChartEvents } from './chart/useChartEvents';
 import { useCountdownTimer } from './chart/useCountdownTimer';
 import { useChartApi } from './chart/useChartApi';
+import { useAdditionalPanes } from './chart/useAdditionalPanes';
 
 export type { ChartType, PriceScaleModeOption, ChartApi, ChartOverlay, OverlayKind, IndicatorRender } from './chart/types';
 
@@ -123,6 +124,9 @@ export default function Chart({
   onRemoveIndicator,
   onUpdateIndicatorSettingsFor,
   resetTick,
+  chartSettings,
+  additionalPanes,
+  additionalPanesTotalHeight = 0,
 }: ChartProps) {
   // Per-instance legend: which indicator's settings modal is open, and which
   // indicators are hidden (eye toggled off).
@@ -297,8 +301,11 @@ export default function Chart({
   // ---- Chart Creation & Events (Extracted hooks) ----
   useChartInit(refs, height, tf);
   useChartEvents(refs);
-  useCountdownTimer(refs, tf, palette);
+  useCountdownTimer(refs, tf, palette, chartSettings?.showCountdown !== false);
   useChartApi(refs, onReady);
+
+  // ---- Additional panes (TV-style multi-pane view) ----
+  useAdditionalPanes(chartRef, additionalPanes, additionalPanesTotalHeight);
 
   // ---- Theme re-skin (extracted) ----
   useChartTheme(chartRef, candleSeriesRef, paletteRef, palette);
@@ -338,7 +345,41 @@ export default function Chart({
   const isRenko = type === 'renko';
 
   // ---- Price-scale mode + alert price lines + renko time-scale (extracted) ----
-  usePriceScaleLines(chartRef, candleSeriesRef, priceLinesPrimitiveRef, isRenko, priceScaleMode, priceLines);
+  usePriceScaleLines(
+    chartRef,
+    candleSeriesRef,
+    priceLinesPrimitiveRef,
+    isRenko,
+    priceScaleMode,
+    priceLines,
+    chartSettings?.autoScale,
+    chartSettings?.invertScale,
+    chartSettings?.labelsStatusLine,
+    chartSettings?.activePriceScaleId,
+    chartSettings?.lockPriceToBarRatio,
+  );
+
+  // ---- "Move scale to left" — migrate the MAIN candle + dummy series to
+  // the new price scale on pane 0. Indicator panes keep their own default
+  // axes (RSI, MACD, etc. are not affected by this toggle).
+  useEffect(() => {
+    const id = chartSettings?.activePriceScaleId ?? 'right';
+    try { candleSeriesRef.current?.applyOptions({ priceScaleId: id }); } catch {}
+    try { dummySeriesRef.current?.applyOptions({ priceScaleId: id }); } catch {}
+  }, [chartSettings?.activePriceScaleId, candleSeriesRef, dummySeriesRef]);
+
+  // ---- Crosshair snap (MagnetOHLC sticks to O/H/L/C, Normal is free) ----
+  useEffect(() => {
+    try {
+      chartRef.current?.applyOptions({
+        crosshair: {
+          mode: chartSettings?.showCrosshairSnap
+            ? CrosshairMode.MagnetOHLC
+            : CrosshairMode.Normal,
+        },
+      });
+    } catch {}
+  }, [chartSettings?.showCrosshairSnap, chartRef]);
 
   // ---- Data push + indicator stack (extracted) ----
   useChartData(refs, candles, type, tf, isRenko, visibleResults, indicatorSettingsMap, hiddenKeys, applyDefaultView);
@@ -348,7 +389,7 @@ export default function Chart({
 
   // ---- Signal markers (extracted) ----
   const activeDivMarkers = hasDivergenceIndicator ? divMarkersData.markers : [];
-  useSignalMarkers(markersRef, candles, showSignals, isRenko, visibleResults, palette, activeFlips, activeDivMarkers);
+  useSignalMarkers(markersRef, candles, showSignals, isRenko, visibleResults, palette, activeDivMarkers);
 
   // ---- Order overlays sync (extracted) ----
   useOrderOverlays(

@@ -246,13 +246,21 @@ export function useChartData(
             const isHidden = hiddenKeys.has(key);
             const visible = isHidden ? false : (st?.display !== false);
             const labelsOnPriceScale = indicatorSettingsMap?.[key]?.labelsOnPriceScale ?? true;
-            // Annotation-style plots (plot.axisLabel === false) never label the
-            // price scale, regardless of the indicator-level setting.
-            const axisLabels = plot.axisLabel === false ? false : labelsOnPriceScale;
+            // Price-scale labels: only the indicator's PRIMARY plot labels the
+            // axis by default (TV-style; secondary lines like band edges or
+            // basis lines were stacking pills). Plots can force with
+            // axisLabel: true or suppress with axisLabel: false.
+            const isPrimaryPlot = plot === result.plots[0];
+            const axisLabels =
+              plot.axisLabel === false
+                ? false
+                : plot.axisLabel === true
+                  ? labelsOnPriceScale
+                  : labelsOnPriceScale && isPrimaryPlot;
             let series: ISeriesApi<'Line'> | ISeriesApi<'Histogram'> | undefined;
             // LWC renders `title` on the price scale even with lastValueVisible
-            // off, so annotation plots must blank it as well.
-            const seriesTitle = plot.axisLabel === false ? '' : plot.title;
+            // off, so non-labeled plots must blank it as well.
+            const seriesTitle = axisLabels ? plot.title : '';
             if (plot.type === 'histogram') {
               series = chart.addSeries(
                 HistogramSeries,

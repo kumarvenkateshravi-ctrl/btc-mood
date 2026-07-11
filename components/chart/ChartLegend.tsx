@@ -57,22 +57,31 @@ export function ChartLegend({
             .filter((inp) => inp.type === 'number')
             .map((inp) => inputs[inp.id] ?? inp.default)
             .slice(0, 4)
-            .join(' ');
+            .join(' · ');
 
-          let latestValue: number | null = null;
-          let valueColor = LEGEND_ACCENT;
-          const plot = result?.plots?.[0];
-          if (plot && plot.data.length) {
-            const last = plot.data[plot.data.length - 1];
-            if (typeof last === 'number') latestValue = last;
-            else if (last && typeof last === 'object' && 'value' in last) latestValue = last.value;
-            valueColor = settings?.styles?.[plot.id]?.color || plot.color || valueColor;
-          }
-          const displayValue =
-            latestValue != null
-              ? Number(latestValue).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })
-              : '';
+          // Per-plot live values, each in its own line color (TV status line).
           const showValuesInStatusLine = settings?.valuesInStatusLine ?? true;
+          const plotValues = (result?.plots ?? [])
+            .filter((p) => p.type !== 'band')
+            .slice(0, 4)
+            .map((p) => {
+              const st = settings?.styles?.[p.id];
+              if (st?.display === false) return null;
+              const last = p.data[p.data.length - 1];
+              const v =
+                typeof last === 'number'
+                  ? last
+                  : last && typeof last === 'object' && 'value' in last
+                    ? last.value
+                    : null;
+              if (v == null || !Number.isFinite(v)) return null;
+              return {
+                id: p.id,
+                color: st?.color || p.color || LEGEND_ACCENT,
+                text: Number(v).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 }),
+              };
+            })
+            .filter((v): v is NonNullable<typeof v> => v !== null);
 
           return (
             <div
@@ -81,30 +90,38 @@ export function ChartLegend({
             >
               <div className={`flex items-baseline gap-1.5 text-[13px] transition-opacity duration-200 ${hidden ? 'opacity-40' : 'opacity-100'}`}>
                 <span className="font-medium" style={{ color: isOpen ? LEGEND_ACCENT : undefined }}>{def.name}</span>
-                {paramText && <span className="text-ink-muted">{paramText}</span>}
-                {displayValue && showValuesInStatusLine && <span style={{ color: valueColor }}>{displayValue}</span>}
+                {paramText && (
+                  <span className="rounded bg-white/[0.06] px-1.5 py-px font-mono text-[11px] tabular-nums text-ink-muted">
+                    {paramText}
+                  </span>
+                )}
+                {showValuesInStatusLine && plotValues.map((pv) => (
+                  <span key={pv.id} className="font-mono text-[12px] tabular-nums" style={{ color: pv.color }}>
+                    {pv.text}
+                  </span>
+                ))}
               </div>
               <div className={`flex items-center transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 <button
-                  className="rounded p-1 text-ink/50 transition hover:bg-ink/10 hover:text-ink"
+                  className="rounded p-0.5 text-ink/50 transition hover:bg-ink/10 hover:text-ink"
                   title={hidden ? 'Show' : 'Hide'}
                   onClick={() => onToggleHidden(key)}
                 >
-                  {hidden ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
+                  {hidden ? <EyeOff size={14} strokeWidth={1.75} /> : <Eye size={14} strokeWidth={1.75} />}
                 </button>
                 <button
-                  className="rounded p-1 text-ink/50 transition hover:bg-ink/10 hover:text-ink"
+                  className="rounded p-0.5 text-ink/50 transition hover:bg-ink/10 hover:text-ink"
                   title="Settings"
                   onClick={() => onOpenSettings(key)}
                 >
-                  <TvSettingsIcon size={18} strokeWidth={1.5} />
+                  <TvSettingsIcon size={14} strokeWidth={1.75} />
                 </button>
                 <button
-                  className="rounded p-1 text-ink/50 transition hover:bg-ink/10 hover:text-ink"
+                  className="rounded p-0.5 text-ink/50 transition hover:bg-ink/10 hover:text-ink"
                   title="Remove"
                   onClick={() => onRemove(key)}
                 >
-                  <Trash2 size={18} strokeWidth={1.5} />
+                  <Trash2 size={14} strokeWidth={1.75} />
                 </button>
               </div>
             </div>
