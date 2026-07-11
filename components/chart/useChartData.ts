@@ -246,11 +246,17 @@ export function useChartData(
             const isHidden = hiddenKeys.has(key);
             const visible = isHidden ? false : (st?.display !== false);
             const labelsOnPriceScale = indicatorSettingsMap?.[key]?.labelsOnPriceScale ?? true;
+            // Annotation-style plots (plot.axisLabel === false) never label the
+            // price scale, regardless of the indicator-level setting.
+            const axisLabels = plot.axisLabel === false ? false : labelsOnPriceScale;
             let series: ISeriesApi<'Line'> | ISeriesApi<'Histogram'> | undefined;
+            // LWC renders `title` on the price scale even with lastValueVisible
+            // off, so annotation plots must blank it as well.
+            const seriesTitle = plot.axisLabel === false ? '' : plot.title;
             if (plot.type === 'histogram') {
               series = chart.addSeries(
                 HistogramSeries,
-                { color, visible, priceLineVisible: labelsOnPriceScale, lastValueVisible: labelsOnPriceScale, title: plot.title },
+                { color, visible, priceLineVisible: axisLabels, lastValueVisible: axisLabels, title: seriesTitle },
                 targetPane,
               );
             } else {
@@ -260,10 +266,10 @@ export function useChartData(
                   color,
                   lineWidth,
                   visible,
-                  priceLineVisible: labelsOnPriceScale,
-                  lastValueVisible: labelsOnPriceScale,
+                  priceLineVisible: axisLabels,
+                  lastValueVisible: axisLabels,
                   crosshairMarkerVisible: false,
-                  title: plot.title,
+                  title: seriesTitle,
                 },
                 targetPane,
               );
@@ -315,8 +321,18 @@ export function useChartData(
                 indicatorGradientRef.current.set(key, gp);
               } catch {}
             }
-            if (result.markers) {
-              try { indicatorMarkersRef.current.set(key, createSeriesMarkers(mainSeries, [])); } catch {}
+          }
+
+          // Pane markers. Anchor: separate-pane indicators pin markers to
+          // their own first series (e.g. divergence labels on the RSI line);
+          // overlay indicators pin to the CANDLE series — an overlay's first
+          // plot can be a band/annotation series with sparse data, and LWC
+          // silently drops markers that fall on whitespace.
+          if (result.markers) {
+            const hasSeparate = result.plots.some((p) => p.pane === 'separate');
+            const markerHost = hasSeparate && mainSeries ? mainSeries : candleSeriesRef.current;
+            if (markerHost) {
+              try { indicatorMarkersRef.current.set(key, createSeriesMarkers(markerHost, [])); } catch {}
             }
           }
         }

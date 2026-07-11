@@ -99,6 +99,13 @@ export interface IndicatorPlot {
   pane?: 'overlay' | 'separate';
   /** Premium zone rendering for band plots (see BandZoneStyle). */
   zoneStyle?: BandZoneStyle;
+  /**
+   * Set false to suppress this plot's price-scale label + price line even
+   * when the indicator's labelsOnPriceScale is on — for annotation-style
+   * plots (e.g. SMC structure segments) that would otherwise stack pills
+   * on the axis. Default: follow the indicator setting.
+   */
+  axisLabel?: boolean;
 }
 
 /** A horizontal reference line on the indicator's pane (PineScript `hline`). */

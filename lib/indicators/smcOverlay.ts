@@ -28,6 +28,11 @@ interface SmcOverlayInputs {
   showZones: boolean;
   showLabels: boolean;
   labelStyle: 'full' | 'compact';
+  /** BOS/CHoCH annotation: 'full' = "Bullish BOS", 'compact' = "BOS",
+   *  'hidden' = structure lines only, no text. */
+  structureLabels: 'full' | 'compact' | 'hidden';
+  /** HH / HL / LH / LL labels on swing pivots. */
+  showSwingLabels: boolean;
   debugMode: boolean;
   swingsLength: number;
   internalLength: number;
@@ -42,6 +47,8 @@ const DEFAULTS: SmcOverlayInputs = {
   showZones: false, // script default
   showLabels: true,
   labelStyle: 'full',
+  structureLabels: 'full', // no abbreviations for beginners
+  showSwingLabels: false, // script default (showSwingsInput = false)
   debugMode: false,
   swingsLength: 50,
   internalLength: 5,
@@ -82,6 +89,8 @@ function boxLabel(o: SmcObject, inputs: SmcOverlayInputs): string | undefined {
 // LuxAlgo default colors mapped to rgba.
 const GREEN = '#089981';
 const RED = '#F23645';
+const YELLOW = '#f5b93e'; // CHoCH — instantly distinguishable from BOS green/red
+const GRAY = '#878b94'; // HH/HL/LH/LL swing labels
 const OB_COLORS: Record<string, string> = {
   'internal:bullish': 'rgba(49,121,245,0.20)',
   'internal:bearish': 'rgba(247,124,128,0.20)',
@@ -163,18 +172,41 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
   const markers: IndicatorMarker[] = [];
   const debug = inputs.debugMode;
 
-  // ---- Structure + liquidity events → markers ----
+  // ---- BOS / CHoCH → structure line on the broken level + text label ----
+  // TradingView-style: a horizontal segment from the pivot bar to the break
+  // bar at the broken level, labelled "Bullish BOS" / "Bearish CHoCH".
+  // CHoCH is yellow (trend change warning); BOS is green/red (confirmation).
+  const levelById = new Map(snap.objects.structureLevels.map((l) => [l.id, l]));
   for (const e of snap.events) {
     if (e.type === 'BOS' || e.type === 'CHOCH') {
       if (e.scope === 'swing' && !inputs.showSwing) continue;
       if (e.scope === 'internal' && !inputs.showInternal) continue;
-      markers.push({
-        index: e.barIndex,
-        position: e.direction === 'bullish' ? 'belowBar' : 'aboveBar',
-        color: e.direction === 'bullish' ? GREEN : RED,
-        shape: e.scope === 'internal' ? 'circle' : e.direction === 'bullish' ? 'arrowUp' : 'arrowDown',
-        text: e.type === 'CHOCH' ? 'CHoCH' : 'BOS',
+      const lvl = e.objectId ? levelById.get(e.objectId) : undefined;
+      const from = lvl ? lvl.createdAtBar : Math.max(0, e.barIndex - 10);
+      const color = e.type === 'CHOCH' ? YELLOW : e.direction === 'bullish' ? GREEN : RED;
+      const lineData: IndicatorPlot['data'] = new Array(n).fill(null);
+      for (let j = Math.max(0, from); j <= Math.min(e.barIndex, n - 1); j++) lineData[j] = e.price;
+      plots.push({
+        id: `struct_${e.id}`,
+        title: e.type,
+        color,
+        type: 'line',
+        data: lineData,
+        lineWidth: e.scope === 'swing' ? 2 : 1,
+        pane: 'overlay',
+        axisLabel: false, // annotation segment — keep the price scale clean
       });
+      if (inputs.structureLabels !== 'hidden') {
+        const tag = e.type === 'CHOCH' ? 'CHoCH' : 'BOS';
+        const dir = e.direction === 'bullish' ? 'Bullish' : 'Bearish';
+        markers.push({
+          index: e.barIndex,
+          position: e.direction === 'bullish' ? 'belowBar' : 'aboveBar',
+          color,
+          shape: e.scope === 'internal' ? 'circle' : e.direction === 'bullish' ? 'arrowUp' : 'arrowDown',
+          text: inputs.structureLabels === 'full' ? `${dir} ${tag}` : tag,
+        });
+      }
     } else if ((e.type === 'EQH_FORMED' || e.type === 'EQL_FORMED') && inputs.showLiquidity) {
       markers.push({
         index: e.barIndex,
@@ -191,6 +223,26 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
         shape: 'square',
         text: 'SWEEP',
       });
+    }
+  }
+
+  // ---- HH / HL / LH / LL swing labels (derived render-side from the swing
+  // pivot sequence — presentation only, no engine change) ----
+  if (inputs.showSwingLabels) {
+    let prevHigh = NaN;
+    let prevLow = NaN;
+    for (const l of snap.objects.structureLevels) {
+      if (l.scope !== 'swing') continue;
+      if (l.direction === 'bearish') {
+        // swing HIGH pivot (price crossing UP through it would be bullish)
+        const text = !Number.isFinite(prevHigh) || l.top > prevHigh ? 'HH' : 'LH';
+        prevHigh = l.top;
+        markers.push({ index: l.createdAtBar, position: 'aboveBar', color: GRAY, shape: 'circle', text });
+      } else {
+        const text = !Number.isFinite(prevLow) || l.bottom < prevLow ? 'LL' : 'HL';
+        prevLow = l.bottom;
+        markers.push({ index: l.createdAtBar, position: 'belowBar', color: GRAY, shape: 'circle', text });
+      }
     }
   }
 

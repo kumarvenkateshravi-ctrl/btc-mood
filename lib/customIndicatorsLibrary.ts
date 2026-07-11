@@ -615,6 +615,8 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'showLiquidity', name: 'Equal Highs/Lows + Sweeps', type: 'boolean', default: true },
       { id: 'showZones', name: 'Premium/Discount Zones', type: 'boolean', default: false },
       { id: 'showLabels', name: 'Zone Labels', type: 'boolean', default: true },
+      { id: 'structureLabels', name: 'BOS/CHoCH Labels', type: 'select', default: 'full', options: [{ value: 'full', label: 'Full (Bullish BOS)' }, { value: 'compact', label: 'Compact (BOS)' }, { value: 'hidden', label: 'Hidden (lines only)' }] },
+      { id: 'showSwingLabels', name: 'Swing Labels (HH/HL/LH/LL)', type: 'boolean', default: false },
       { id: 'labelStyle', name: 'Label Style', type: 'select', default: 'full', options: [{ value: 'full', label: 'Full (name • strength · state)' }, { value: 'compact', label: 'Compact (OB 91)' }] },
       { id: 'debugMode', name: 'Debug Mode (all objects + scores)', type: 'boolean', default: false },
       { id: 'swingsLength', name: 'Swing Length', type: 'number', default: 50, min: 10, max: 200, step: 1 },
