@@ -26,6 +26,8 @@ interface SmcOverlayInputs {
   showFvg: boolean;
   showLiquidity: boolean;
   showZones: boolean;
+  showLabels: boolean;
+  labelStyle: 'full' | 'compact';
   debugMode: boolean;
   swingsLength: number;
   internalLength: number;
@@ -38,10 +40,44 @@ const DEFAULTS: SmcOverlayInputs = {
   showFvg: false, // script default
   showLiquidity: true,
   showZones: false, // script default
+  showLabels: true,
+  labelStyle: 'full',
   debugMode: false,
   swingsLength: 50,
   internalLength: 5,
 };
+
+// Human-readable lifecycle for zone labels ("Fresh" = untouched, per SMC lingo).
+const STATE_LABEL: Record<string, string> = {
+  active: 'Fresh',
+  tested: 'Tested',
+  partial: 'Partial',
+  mitigated: 'Mitigated',
+  invalidated: 'Invalidated',
+  archived: 'Old',
+};
+
+/**
+ * Label for an OB/FVG box so no rectangle is ever anonymous (a trader should
+ * never have to remember color coding). Full: "Bullish OB • 91 · Fresh";
+ * compact: "OB 91". Debug mode shows the raw state + all three metrics.
+ */
+function boxLabel(o: SmcObject, inputs: SmcOverlayInputs): string | undefined {
+  const kindName = o.kind === 'orderBlock' ? 'OB' : 'FVG';
+  if (inputs.debugMode) {
+    return `${kindName} ${o.state} ${o.strength}/${o.quality}/${o.confidence}`;
+  }
+  if (!inputs.showLabels) return undefined;
+  if (inputs.labelStyle === 'compact') {
+    return o.kind === 'orderBlock' ? `OB ${o.strength}` : 'FVG';
+  }
+  const dir = o.direction === 'bullish' ? 'Bullish' : 'Bearish';
+  if (o.kind === 'fvg') {
+    const fill = o.state === 'partial' && o.touches > 0 ? ` · ${o.touches}% filled` : '';
+    return `${dir} FVG${fill}`;
+  }
+  return `${dir} OB • ${o.strength} · ${STATE_LABEL[o.state] ?? o.state}`;
+}
 
 // LuxAlgo default colors mapped to rgba.
 const GREEN = '#089981';
@@ -171,7 +207,7 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
           ob.top,
           ob.bottom,
           n,
-          debug ? `OB ${ob.state} ${ob.strength}/${ob.quality}/${ob.confidence}` : undefined,
+          boxLabel(ob, inputs),
         ),
       );
     }
@@ -195,7 +231,7 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
           gap.top,
           gap.bottom,
           n,
-          debug ? `FVG ${gap.state} ${gap.touches}%` : undefined,
+          boxLabel(gap, inputs),
         ),
       );
     }
@@ -205,7 +241,10 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
   if (inputs.showZones) {
     for (const zone of snap.objects.zones) {
       const name = zone.id.split('_')[1] ?? 'equilibrium';
-      plots.push(bandPlot(`zone_${name}`, name, ZONE_COLORS[name] ?? ZONE_COLORS.equilibrium, zone.createdAtBar, zone.top, zone.bottom, n, name));
+      const label = inputs.showLabels || debug
+        ? name.charAt(0).toUpperCase() + name.slice(1) // "Premium" / "Equilibrium" / "Discount"
+        : undefined;
+      plots.push(bandPlot(`zone_${name}`, name, ZONE_COLORS[name] ?? ZONE_COLORS.equilibrium, zone.createdAtBar, zone.top, zone.bottom, n, label));
     }
   }
 
