@@ -1,101 +1,98 @@
-# Bar Replay Engine — Flagship Implementation Plan
+# Bar Replay Engine — Flagship Implementation Plan (rev 2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (this project forbids subagents). Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Elevate Bar Replay from a chart trick to a deterministic, leak-free replay *engine* — the single source of truth that chart, indicators, SMC, scanner, and paper trading all consume during replay.
 
-**Reference:** `~/Downloads/barReplay.md` (advisor roadmap, phases mirrored below).
-**Baseline (2026-07-11):** replay UI exists (selector, play/pause/step/scrub/speed/bookmarks, isolated paper session). Root-cause fix shipped: the chart now renders `replayCandles` (it previously rendered live data — replay was a no-op). Chart-level indicators now compute on the slice.
+**References:** `~/Downloads/barReplay.md` (advisor roadmap) + `~/Downloads/replayUpdaate.md` (advisor review of rev 1 — its revised priorities are folded in below).
+**Baseline (2026-07-11):** replay UI exists (selector, play/pause/step/scrub/speed 0.1–10x, bookmarks, isolated paper session). Root-cause fix shipped: the chart renders `replayCandles` (it previously rendered live data — replay was a no-op), which also slices the chart-level indicator stack.
+
+## The Prime Invariant (applies to every phase)
+
+> **No subsystem in replay mode may access candles beyond the current replay timestamp.**
+
+Universally: indicators, SMC engine, Technical Scanner, Mood Engine, divergence detection, and any future analytics module. Every phase below either enforces this invariant somewhere new or proves it holds. Trust in this rule is the foundation for every advanced replay feature.
+
+## Staging decision (advisor-directed)
+
+The replay engine is built in two stages, **correctness before architecture**:
+- **Stage 1 (Phases 1–2):** index-based replay on the eval timeframe — the current `playIndex` model, made correct and stable everywhere. No time-keyed store yet.
+- **Stage 2 (Phase 3):** move the cut to a wall-clock timestamp for cross-timeframe synchronization, only after every subsystem is replay-aware and verified.
 
 ## Current state — honest inventory
 
 | Piece | Status |
 |---|---|
-| Cut-point selector, ReplayBar (play/pause/step/scrub/speed 0.1–10x, bookmarks) | ✅ works |
-| Chart + indicator stack sliced to replay index | ✅ fixed today |
+| Cut-point selector, ReplayBar (play/pause/step/scrub/speed, bookmarks) | ✅ works |
+| Chart + eval-TF indicator stack sliced to replay index | ✅ fixed 2026-07-11 |
 | Isolated paper session (`replaySession`), TP/SL reconcile per revealed bar | ✅ works |
-| `candlesByTf` during replay (divergence markers, SMC screener, scanner, confluence) | ❌ **leaks future data** — full arrays |
-| Mood engine / RightDock / MoodStrip during replay | ❌ read live feed |
-| Replay across TF switch | ❌ resets replay entirely |
+| `candlesByTf` during replay (SMC, scanner, mood engine, divergence, MTF indicators) | ❌ **leaks future data** — a Daily EMA that already "knows" three days ahead makes replay untrustworthy |
+| Replay across TF switch | ❌ resets replay entirely (fixed in Phase 3) |
 | Keyboard shortcuts | ❌ none |
 | Data validation before replay | ❌ none |
-| Determinism tests | ❌ none |
+| Determinism / verification tests | ❌ none |
 
-## Architecture (Phase 1 target)
+---
 
-One store, everything subscribes. No module reads the live feed while replay is active.
+## Phase 1 — Replay Correctness (highest priority)
 
-```
-lib/replay/replayEngine.ts        ← NEW single source of truth
-  state: 'idle' | 'selecting' | 'ready' | 'playing' | 'paused' | 'finished'
-  cutTime: number | null           // WALL-CLOCK time of the cut, not an index
-  playIndex: number                // index within the eval TF
-  speed: number
-  api: start(tf, index) · play() · pause() · step(±n) · scrubTo(i) · exit()
-  selectors:
-    sliceCandles(tf): Candle[]     // candlesByTf[tf] truncated at cutTime
-    sliceByTf(): Record<Timeframe, Candle[]>  // ALL TFs truncated at cutTime
-```
+### Task 1.A: Replay-aware `candlesByTf` (Phase 1B in the advisor's words — do this first)
+- `lib/replay/replaySlice.ts`: pure helper `sliceCandlesByTf(candlesByTf, cutTime)` — binary search per TF, returns every array truncated at the replay bar's **close time** (a 15m cut at 10:15 keeps the 1h bar that OPENED at 10:00 — it is the forming bar — but recomputes nothing from 11:00 onward).
+- `app/app/page.tsx`: while replay is active, swap the `candlesByTf` fed to ChartPanel / RightDock / MoodStrip / scanner hooks / SMC screener with the sliced version (one memoized swap at the top; cut time derives from `replayCandles[playIndex].time`).
+- Kills the leak in: divergence markers, SMC overlay MTF uses, SMC screener, scanner engine, confluence dock, mood engine.
+- Tests: for a fixed cut, no returned candle in ANY tf has `time > cutTime`; forming-bar edge cases at TF boundaries.
 
-Keying the cut on **time** (not index) is what makes multi-TF replay possible: slicing `1h` at the same wall-clock moment as the `15m` cut is a binary search, and TF switching preserves the moment.
+### Task 1.B: Progressive rendering proof (no sudden objects)
+- With inputs sliced, SMC objects/BOS/CHoCH/FVGs appear exactly when their bar closes. Prove it: for the SMC golden fixture, `computeSmc(candles.slice(0, k))` events must be a **prefix** of the full run's events for every k (single test loop). This is the mechanical form of the Prime Invariant for SMC.
 
-`ChartPanel` keeps owning the UI (selector/ReplayBar) but delegates state + slicing to the engine. `useMarketData` consumers receive `sliceByTf()` when active.
+### Task 1.C: Cache-key audit
+- Module-scope caches keyed on closed-bar signatures must include the slice length/last-time so replay steps don't reuse live-data results: audit `smcOverlay` snapshot cache, SMC screener panel cache, any indicator memo keyed on `candles.length` alone. Add the replay index to keys where needed.
 
-## Phase 1 — True Replay Engine + leak elimination (highest priority)
+### Task 1.D: Replay data validation
+- `lib/replay/validate.ts`: gaps per TF interval, duplicate timestamps, broken OHLC. Selector shows "Replay cannot start — missing N candles" instead of replaying bad data. Tests on crafted broken fixtures.
 
-### Task 1: `lib/replay/replayEngine.ts` (headless store + tests)
-- Zustand-style external store (same pattern as `replaySession`/`paperStore`): state machine `idle → selecting → ready → playing ⇄ paused → finished → idle`, time-keyed cut, `sliceByTf` with binary search on candle time.
-- Tests: state transitions; `sliceByTf` never returns a candle with `time > cutTimeAt(playIndex)` for ANY tf; determinism (two runs of scripted play/step/scrub end in identical state).
+## Phase 2 — Replay Stability
 
-### Task 2: Wire `candlesByTf` consumers through the engine
-- `app/app/page.tsx`: when engine is active, pass `sliceByTf()` in place of `candlesByTf` to ChartPanel/RightDock/MoodStrip/scanner hooks (single memoized swap at the top).
-- Kills the future-data leak in: divergence markers, SMC overlay `candlesByTf` uses, SMC screener, scanner engine, confluence dock, mood engine.
-- Test: with replay active at bar N, `buildDivergenceMarkers` and `evaluateSmcScreener` inputs contain no candle newer than bar N's time (assert in a unit test with a fake engine state).
+### Task 2.A: Explicit state machine
+- Formalize `idle → selecting → ready → playing ⇄ paused → finished → exit` in a small store (`lib/replay/replayState.ts`) that ChartPanel consumes (today it's ad-hoc `'off' | 'selecting' | 'active'` + booleans). Index-based (Stage 1). Alerts/live side-effects check this store instead of scattered flags.
 
-### Task 3: Progressive object reveal (comes free once inputs are sliced)
-- SMC engine/overlay already recompute from the slice ⇒ OBs/BOS/CHoCH/FVGs appear exactly when their bar closes. Verify with the golden fixture: `projectSmcSnapshot(computeSmc(candles.slice(0, k)))` events are a **prefix** of the full run's events for every k (add as an engine test — this IS the determinism/no-leak proof).
+### Task 2.B: Determinism tests
+- Two scripted runs (same cut, same play/step/scrub sequence) produce identical indicator outputs, SMC snapshots, screener reports, and paper-session trades. Randomness ban enforced by test.
 
-### Task 4: Replay data validation
-- `lib/replay/validate.ts`: gaps (missing bars per TF interval), duplicate timestamps, broken OHLC (`high < low` etc.). On failure the selector shows "Replay cannot start — missing N candles" instead of replaying bad data.
-- Tests: crafted broken fixtures.
+### Task 2.C: Keyboard shortcuts
+- `Space` play/pause, `←/→` step, `Shift+←/→` jump 10, `Home` restart at cut, `Esc` exit — in the existing ChartPanel keydown handler (respects editable-field/popover guards). Status readout in ReplayBar: `Playing · 456/1000 · 45.6%`.
 
-## Phase 2 — Indicator & scanner synchronization
-- Per replay step, the pipeline is already reactive (slice → indicators → SMC → scanner → render). Add a step-sync test: at k, indicator outputs equal computing on `candles.slice(0, k)` directly (guards accidental caching leaks — esp. module-scope caches keyed on closed-bar signatures: **cache keys must include the slice length**; audit `smcOverlay` cache + screener cache).
-- Signal/alert replay: markers already derive from the slice. Alerts-lite: suppress LIVE alert side-effects while replay is active (guard in `useAlerts`); optionally log "would have fired" into the replay journal.
+### Task 2.D: Replay Verification (developer mode — promoted to v1 per advisor)
+- On replay finish (or on demand), compare replay-produced end state against direct historical computation at the same index: indicators ✓, scanner ✓, SMC ✓, signals ✓ → "Replay Integrity 100%" panel. Any mismatch lists the failing engine. Behind a debug toggle once green; invaluable while stabilizing — it is the Prime Invariant, continuously enforced.
 
-## Phase 3 — Chart behavior
-- Preserve user state on replay start (zoom/drawings/hidden indicators/TF) — don't call `applyDefaultView` on activation; only scroll so the cut is visible.
-- Smooth playback: `series.update()` per revealed bar instead of full `setData` (extend the additional-panes signature approach to `useChartData`'s main path; today each step re-slices → `setData`). Target: 10× speed with zero dropped frames on 5k candles.
-- Crosshair stays live during playback (already true; add to the manual QA checklist).
+## Phase 3 — Multi-Timeframe Replay (Stage 2: time-keyed engine)
 
-## Phase 4 — Multi-TF replay (our differentiator; TV can't do this well)
-- TF switch during replay **keeps the moment**: engine cut is time-keyed, so switching 15m → 1h re-derives `playIndex` by binary search instead of exiting replay (remove the `useEffect` that resets on `selected` change; keep reset on symbol change).
-- The multi-TF dashboard (Mood, confluence, SMC screener) replays the same moment across all six TFs — "what did the whole stack look like right then?"
+- Move the cut from index to wall-clock timestamp inside the replay store; `playIndex` becomes a derived value per TF (binary search).
+- TF switch during replay keeps the moment (remove the reset-on-`selected` effect; keep reset on symbol change).
+- Accurate synchronized replay across 5m/15m/30m/1h/4h/1d — the whole MTF dashboard (Mood, confluence, SMC screener) answers "what did the stack look like at that exact moment?" TradingView can't do this; it is our differentiator.
+- Verification suite from 2.D re-run across all TFs.
 
-## Phase 5 — Performance
-- Incremental reveal (`update()` not `setData`) from Phase 3.
-- Precompute-once: indicators that support it can compute full-history once and mask output to the slice ONLY where mathematically identical (SMA/EMA are NOT — they're fine to recompute; renko bricks are the expensive case). Profile first; don't optimize blind.
-- Budget: step latency < 16ms at 1× on 5k bars; measured in a perf test like the SMC one (best-of-3, generous hard bound).
+## Phase 4 — Trader Experience
 
-## Phase 6 — Polish
-- Keyboard: `Space` play/pause, `←/→` step, `Shift+→/←` jump 10, `Home` restart at cut, `Esc` exit. Registered in the existing ChartPanel keydown handler (respects the editable-field + popover guards).
-- Status readout in ReplayBar: `Playing · 456/1000 · 45.6%` (bar count exists; add state + %).
-- Loading progress when a long history must be fetched before the cut.
+- **Training report** ⭐⭐⭐⭐⭐ — on exit: trades, win rate, avg RR, max drawdown, duration, grade. Data already captured by `replaySession`. A signature feature: replay becomes deliberate practice with a score.
+- **Blind drill mode** ⭐⭐⭐⭐⭐ — random BTC day, masked date axis → trade → reveal → score. Pairs with the training report; a defining feature no retail platform offers.
+- **Jump to date AND time** ⭐⭐⭐⭐⭐ — set the replay start by datetime picker (reuse the Date chip flow inside selection mode); no scissors-hunting through months.
+- **Future-blind axis** ⭐⭐⭐⭐⭐ — whitespace past the replay edge so the axis never hints "700 candles remain"; genuine uncertainty makes practice realistic.
 
-## Beyond the advisor doc — recommended trader-essential additions
+## Phase 5 — Advanced Simulation (v2 — only after replay is rock solid)
 
-1. **Replay training report (highest value).** On exit, a session summary from the isolated paper session: trades, win rate, avg RR, max drawdown, best/worst trade — replay becomes deliberate practice with a score, not just a movie. (Data already captured by `replaySession`.)
-2. **Blind drill mode.** "Random symbol + random hidden date, date axis masked" — trade it, then reveal. Deliberate-practice mode no retail platform does well; pairs with the training report.
-3. **Jump-to-date replay start.** Type a date instead of hunting with the scissors (the Date chip already jumps history — reuse it inside selection mode).
-4. **Intrabar tick simulation (v2).** Optional O→H→L→C micro-stepping per bar so TP/SL fills inside a bar resolve realistically instead of on close (TV Premium feature; our `replayReconcileBar` already brackets — extend to 4 sub-steps).
-5. **Future-blind axis.** While replaying, extend the time axis with whitespace so the right edge doesn't betray "how much history is left" (the countdown of remaining bars is a spoiler).
-6. **Replay bookmarks with notes** (bookmarks exist): name the moment ("CHoCH here"), export with the session report.
+- Intrabar execution: O→H→L→C micro-stepping per bar so TP/SL fills resolve realistically (extend `replayReconcileBar` to 4 sub-steps).
+- Tick simulation and enhanced order-fill realism (slippage models) after that.
 
-## Suggested build order
+## Also in scope during Phase 2–3 (chart behavior polish)
 
-1. Phase 1 Tasks 1–2 (engine + leak fix) — the credibility core
-2. Phase 6 keyboard + status (cheap, daily-felt)
-3. Phase 4 multi-TF replay (differentiator)
-4. Phase 3 smooth playback + state preservation
-5. Training report + jump-to-date
-6. Phase 5 perf pass, then blind drill / intrabar as v2
+- Preserve user state on replay start (zoom/drawings/hidden indicators) — scroll to the cut, don't reset the view.
+- Smooth playback: `series.update()` per revealed bar instead of full `setData` per step (extend the additional-panes signature technique to `useChartData`); budget: step latency < 16ms at 1× on 5k bars, measured best-of-3.
+
+## Build order (advisor-approved)
+
+1. **Phase 1** — correctness: 1.A `candlesByTf` slice → 1.B progressive proof → 1.C cache audit → 1.D validation
+2. **Phase 2** — stability: state machine → determinism tests → keyboard → verification panel
+3. **Phase 3** — time-keyed multi-TF replay
+4. **Phase 4** — training report, blind drill, jump-to-datetime, future-blind axis
+5. **Phase 5** — intrabar/tick simulation
