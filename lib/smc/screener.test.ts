@@ -74,6 +74,15 @@ describe('evaluateSmcScreener', () => {
     expect(plan.quality).toBeGreaterThanOrEqual(1);
     expect(r.narrative.some((s) => s.includes('CHoCH'))).toBe(true);
     expect(r.score).toBeGreaterThan(50);
+    // Institutional Workflow: sweep→CHoCH→BOS→OB all done with timestamps
+    const byId = Object.fromEntries(r.workflow.map((s) => [s.id, s]));
+    expect(r.workflow.length).toBe(8);
+    for (const id of ['trend', 'liquidity_building', 'sweep', 'choch', 'bos', 'orderBlock'] as const) {
+      expect(byId[id].state).toBe('done');
+    }
+    expect(byId.bos.barsAgo).toBeGreaterThan(0);
+    expect(r.invalidation.length).toBeGreaterThanOrEqual(2);
+    expect(r.invalidation.some((s) => /Order Block is mitigated/.test(s))).toBe(true);
   });
 
   it('no sweep: NO_TRADE with the liquidity blocking reason, score still computed', () => {
@@ -83,6 +92,11 @@ describe('evaluateSmcScreener', () => {
     expect(r.missing.some((m) => /liquidity swept/i.test(m))).toBe(true);
     expect(r.score).toBeGreaterThan(0);
     expect(r.tradePlan).toBeNull();
+    // The journey pinpoints the sweep as the active stage (later stages may
+    // already be done — markets don't follow a strict script).
+    expect(r.workflow.find((s) => s.id === 'sweep')!.state).toBe('active');
+    expect(r.currentPhase).toMatch(/sell-side liquidity sweep/i);
+    expect(r.nextExpectedEvent).toMatch(/Sell-side Liquidity Sweep/);
   });
 
   it('status is independent of score: gates pass but price far from OB ⇒ WATCH', () => {
@@ -92,6 +106,9 @@ describe('evaluateSmcScreener', () => {
     expect(r.tradePlan).not.toBeNull();
     expect(r.missing[0]).toMatch(/revisit the Bullish Order Block/);
     expect(r.score).toBeGreaterThan(50);
+    expect(r.workflow.find((s) => s.id === 'retest')!.state).toBe('active');
+    expect(r.currentPhase).toBe('Waiting for Bullish Order Block Retest');
+    expect(r.nextExpectedEvent).toBe('Bullish Order Block Retest');
   });
 
   it('bearish higher timeframe: never long', () => {
@@ -104,7 +121,9 @@ describe('evaluateSmcScreener', () => {
     const r = evaluateSmcScreener({}, '15m');
     expect(r.status).toBe('NO_TRADE');
     expect(r.direction).toBeNull();
-    expect(r.progress).toBeGreaterThanOrEqual(0);
+    expect(r.workflow.length).toBe(8);
+    expect(r.currentPhase).toBe('Establishing higher-timeframe trend');
+    expect(r.invalidation).toEqual([]);
   });
 });
 

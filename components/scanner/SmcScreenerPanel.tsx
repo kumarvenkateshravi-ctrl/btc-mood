@@ -8,10 +8,13 @@
 import { useRef } from 'react';
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   Circle,
+  Clock,
   Minus,
   Radar,
+  ShieldAlert,
   Star,
   Target,
   XCircle,
@@ -117,7 +120,7 @@ export default function SmcScreenerPanel({
             )}
             <span className={`ml-auto rounded-md border px-2.5 py-1 text-[12px] font-bold ${st.cls}`}>{st.label}</span>
             <span className="rounded-md border border-line bg-base px-2.5 py-1 font-mono text-[12px] tabular-nums text-ink">
-              Score {r.score}<span className="text-ink-faint">/100</span>
+              Institutional Score {r.score}<span className="text-ink-faint">/100</span>
             </span>
           </div>
           <ul className="space-y-1">
@@ -125,12 +128,52 @@ export default function SmcScreenerPanel({
               <li key={i} className="text-[13px] leading-snug text-ink-muted">{line}</li>
             ))}
           </ul>
+          {/* Current Phase — the actionable headline. If the trader reads one
+              line, it's this one, not the status. */}
+          <div className="mt-3 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">Current Phase</p>
+            <p className="mt-0.5 text-[15px] font-semibold text-ink">{r.currentPhase}</p>
+            <p className="mt-1 text-[12px] text-ink-muted">
+              Next expected event: <span className="text-ink">{r.nextExpectedEvent}</span>
+            </p>
+          </div>
           {r.blockingReason && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-bear/30 bg-bear/10 px-3 py-2 text-[13px] text-bear-bright">
               <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
               {r.blockingReason}
             </div>
           )}
+        </div>
+
+        {/* Institutional Workflow — one journey instead of extra percentages */}
+        <div className="rounded-xl border border-line bg-surface-1 p-4">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+            Institutional Workflow
+          </p>
+          <ol className="grid grid-cols-4 gap-x-3 gap-y-3 xl:grid-cols-8">
+            {r.workflow.map((s) => (
+              <li key={s.id} className="flex flex-col items-start gap-1">
+                <span
+                  className={[
+                    'inline-flex h-6 w-6 items-center justify-center rounded-full border',
+                    s.state === 'done'
+                      ? 'border-bull/40 bg-bull/15 text-bull-bright'
+                      : s.state === 'active'
+                        ? 'border-regime-hot/50 bg-regime-hot/15 text-regime-hot'
+                        : 'border-line bg-surface-2 text-ink-faint',
+                  ].join(' ')}
+                >
+                  {s.state === 'done' ? <Check className="h-3.5 w-3.5" /> : s.state === 'active' ? <Clock className="h-3.5 w-3.5" /> : <Circle className="h-2 w-2" />}
+                </span>
+                <span className={`text-[11px] leading-tight ${s.state === 'pending' ? 'text-ink-faint' : 'text-ink'}`}>
+                  {s.label}
+                </span>
+                <span className="font-mono text-[9px] text-ink-faint">
+                  {s.state === 'done' ? (s.barsAgo != null ? `${s.barsAgo} bars ago` : 'in place') : s.state === 'active' ? 'pending…' : ''}
+                </span>
+              </li>
+            ))}
+          </ol>
         </div>
 
         {/* Hard gates */}
@@ -154,29 +197,38 @@ export default function SmcScreenerPanel({
         </div>
 
         <div className="grid gap-3 lg:grid-cols-2">
-          {/* Missing conditions */}
-          <div className="rounded-xl border border-line bg-surface-1 p-4">
-            <div className="mb-2 flex items-center justify-between">
+          {/* Missing conditions (list only — the workflow IS the progress) + invalidation */}
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl border border-line bg-surface-1 p-4">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Missing conditions</span>
-              <span className="font-mono text-[11px] tabular-nums text-ink-faint">{r.progress}% complete</span>
+              {r.missing.length === 0 ? (
+                <p className="mt-2 text-[13px] text-bull-bright">All tracked conditions are met.</p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {r.missing.map((m, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[13px] text-ink-muted">
+                      <Circle className="mt-1 h-2.5 w-2.5 shrink-0 text-ink-faint" />
+                      {m}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-            <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-surface-3">
-              <div
-                className={`h-full rounded-full ${r.progress >= 75 ? 'bg-bull' : r.progress >= 50 ? 'bg-regime-hot' : 'bg-bear'}`}
-                style={{ width: `${r.progress}%` }}
-              />
-            </div>
-            {r.missing.length === 0 ? (
-              <p className="text-[13px] text-bull-bright">All tracked conditions are met.</p>
-            ) : (
-              <ul className="space-y-1.5">
-                {r.missing.map((m, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[13px] text-ink-muted">
-                    <Circle className="mt-1 h-2.5 w-2.5 shrink-0 text-ink-faint" />
-                    {m}
-                  </li>
-                ))}
-              </ul>
+            {r.invalidation.length > 0 && (
+              <div className="rounded-xl border border-line bg-surface-1 p-4">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                  <ShieldAlert className="h-3.5 w-3.5 text-bear-bright" />
+                  Invalidation — what would make this idea wrong
+                </span>
+                <ul className="mt-2 space-y-1.5">
+                  {r.invalidation.map((m, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[13px] text-ink-muted">
+                      <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-bear-bright/70" />
+                      {m}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 

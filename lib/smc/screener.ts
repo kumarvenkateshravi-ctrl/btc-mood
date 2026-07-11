@@ -44,6 +44,16 @@ export interface TradePlan {
   quality: 1 | 2 | 3 | 4 | 5;
 }
 
+/** One step of the Institutional Workflow (the setup's lifecycle journey). */
+export interface WorkflowStage {
+  id: 'trend' | 'liquidity_building' | 'sweep' | 'choch' | 'bos' | 'orderBlock' | 'retest' | 'entry';
+  label: string;
+  /** done = ✓, active = ⏳ (first incomplete), pending = ○ */
+  state: 'done' | 'active' | 'pending';
+  /** Bars since completion (null for state-like stages or when pending). */
+  barsAgo: number | null;
+}
+
 export interface ScreenerReport {
   direction: 'long' | 'short' | null;
   status: ScreenerStatus;
@@ -57,8 +67,14 @@ export interface ScreenerReport {
   blockingReason: string | null;
   /** Actions the market must complete for the setup to advance. */
   missing: string[];
-  /** 0–100 across all evaluable items. */
-  progress: number;
+  /** The 8-stage Institutional Workflow — one journey, not another percentage. */
+  workflow: WorkflowStage[];
+  /** The actionable headline: what the setup is waiting for right now. */
+  currentPhase: string;
+  /** Predictive: the event to watch for on the chart next. */
+  nextExpectedEvent: string;
+  /** What would cancel the setup idea (risk-management coaching). */
+  invalidation: string[];
   tradePlan: TradePlan | null;
 }
 
@@ -495,9 +511,99 @@ export function evaluateSmcScreener(
   if (gatesPass && ob && (status === 'WATCH' || status === 'BUILDING')) {
     missing.unshift(`Price must revisit the ${dirWord} Order Block near ${(direction === 'long' ? ob.top : ob.bottom).toFixed(1)}`);
   }
-  const allItems = allGroups.flatMap((g) => g.items).filter((i) => i.status !== 'na');
-  const passed = allItems.filter((i) => i.status === 'pass').length;
-  const progress = allItems.length === 0 ? 0 : Math.round((passed / allItems.length) * 100);
+
+  // ---------- Institutional Workflow (the setup's journey) ----------
+  // Stages are marked independently (markets don't follow a strict script);
+  // the ACTIVE stage is the first incomplete one in institutional order.
+  const eqFormed = events.filter(
+    (e) => (direction === 'long' ? e.type === 'EQL_FORMED' : e.type === 'EQH_FORMED') && e.barIndex >= recentFrom,
+  ).pop();
+  const retested = Boolean(ob && (ob.touches > 0 || (last && last.close <= ob.top && last.close >= ob.bottom)));
+  const stageDefs: Array<{ id: WorkflowStage['id']; label: string; done: boolean; barsAgo: number | null }> = [
+    { id: 'trend', label: 'Trend Established', done: trendPass, barsAgo: null },
+    {
+      id: 'liquidity_building',
+      label: 'Liquidity Building',
+      done: Boolean(eqFormed),
+      barsAgo: eqFormed ? lastIdx - eqFormed.barIndex : null,
+    },
+    {
+      id: 'sweep',
+      label: `${sweepSide} Liquidity Sweep`,
+      done: Boolean(sweep),
+      barsAgo: sweep ? lastIdx - sweep.barIndex : null,
+    },
+    {
+      id: 'choch',
+      label: `${dirWord} CHoCH`,
+      done: Boolean(lastChoch),
+      barsAgo: lastChoch ? lastIdx - lastChoch.barIndex : null,
+    },
+    {
+      id: 'bos',
+      label: `${dirWord} BOS`,
+      done: Boolean(bosAfter),
+      barsAgo: bosAfter ? lastIdx - bosAfter.barIndex : null,
+    },
+    {
+      id: 'orderBlock',
+      label: `${dirWord} Order Block`,
+      done: Boolean(ob),
+      barsAgo: ob ? lastIdx - ob.createdAtBar : null,
+    },
+    { id: 'retest', label: 'Retest', done: retested, barsAgo: ob && retested ? lastIdx - ob.updatedAtBar : null },
+    { id: 'entry', label: 'Entry', done: status === 'CONFIRMED', barsAgo: null },
+  ];
+  const firstIncomplete = stageDefs.findIndex((s) => !s.done);
+  const workflow: WorkflowStage[] = stageDefs.map((s, i) => ({
+    id: s.id,
+    label: s.label,
+    state: s.done ? 'done' : i === firstIncomplete ? 'active' : 'pending',
+    barsAgo: s.done ? s.barsAgo : null,
+  }));
+
+  // ---------- Current phase + next expected event ----------
+  const PHASE: Record<WorkflowStage['id'], [phase: string, next: string]> = {
+    trend: ['Establishing higher-timeframe trend', 'Higher-timeframe trend alignment'],
+    liquidity_building: ['Waiting for liquidity to build (equal highs/lows)', `Equal ${direction === 'long' ? 'lows' : 'highs'} forming`],
+    sweep: [`Waiting for a ${sweepSide.toLowerCase()} liquidity sweep`, `${sweepSide} Liquidity Sweep`],
+    choch: [`Waiting for a ${dirWord.toLowerCase()} CHoCH`, `${dirWord} CHoCH`],
+    bos: [`Waiting for ${dirWord.toLowerCase()} BOS confirmation`, `${dirWord} BOS`],
+    orderBlock: [`Waiting for a qualifying ${dirWord.toLowerCase()} Order Block`, `${dirWord} Order Block formation`],
+    retest: [`Waiting for ${dirWord} Order Block Retest`, `${dirWord} Order Block Retest`],
+    entry: ['Waiting for entry confirmation at the Order Block', `Entry trigger (${dirWord.toLowerCase()} BOS, CHoCH or sweep at the block)`],
+  };
+  let currentPhase: string;
+  let nextExpectedEvent: string;
+  if (direction === null) {
+    currentPhase = 'Establishing higher-timeframe trend';
+    nextExpectedEvent = 'Higher-timeframe trend alignment';
+  } else if (firstIncomplete === -1) {
+    currentPhase = 'Setup complete — entry confirmed';
+    nextExpectedEvent = 'Manage the position toward the liquidity target';
+  } else {
+    [currentPhase, nextExpectedEvent] = PHASE[stageDefs[firstIncomplete].id];
+  }
+
+  // ---------- Invalidation (what would make this idea wrong) ----------
+  const invalidation: string[] = [];
+  if (direction !== null) {
+    if (ob) {
+      const edge = direction === 'long' ? ob.bottom : ob.top;
+      invalidation.push(`${dirWord} Order Block is mitigated (${direction === 'long' ? 'low breaks below' : 'high breaks above'} ${edge.toFixed(1)})`);
+    }
+    if (daily.ok !== null) {
+      invalidation.push(`Daily close crosses ${direction === 'long' ? 'below' : 'above'} its EMA200 (trend flip)`);
+    }
+    const opposingLevel = snap.objects.structureLevels
+      .filter((l) => l.state === 'active' && l.direction === smcDir)
+      .pop();
+    invalidation.push(
+      opposingLevel
+        ? `A ${direction === 'long' ? 'bearish' : 'bullish'} CHoCH forms (close ${direction === 'long' ? 'below' : 'above'} ${opposingLevel.top.toFixed(1)})`
+        : `A ${direction === 'long' ? 'bearish' : 'bullish'} CHoCH forms against the setup`,
+    );
+  }
 
   // ---------- Narrative ----------
   const narrative: string[] = [];
@@ -525,7 +631,10 @@ export function evaluateSmcScreener(
     contextChecks,
     blockingReason,
     missing,
-    progress,
+    workflow,
+    currentPhase,
+    nextExpectedEvent,
+    invalidation,
     tradePlan,
   };
 }
