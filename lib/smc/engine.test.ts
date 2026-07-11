@@ -50,6 +50,18 @@ describe('computeSmc', () => {
   });
 });
 
+describe('progressive reveal (replay Prime Invariant)', () => {
+  it('events on any prefix of the data are a prefix of the full run (no future influence)', () => {
+    const candles = makeDeterministicCandles(600, 7);
+    const full = projectSmcSnapshot(computeSmc(candles)).events;
+    for (let k = 100; k <= 600; k += 100) {
+      const partial = projectSmcSnapshot(computeSmc(candles.slice(0, k))).events;
+      expect(partial.length).toBeLessThanOrEqual(full.length);
+      expect(full.slice(0, partial.length)).toEqual(partial);
+    }
+  });
+});
+
 describe('regressions', () => {
   const dir = join(__dirname, '__fixtures__', 'regressions');
   const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')) : [];

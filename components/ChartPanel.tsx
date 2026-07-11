@@ -35,6 +35,8 @@ import type { Candle, Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { useBaseCandles } from '@/lib/chartHelpers';
+import { setReplayCut, clearReplayCut } from '@/lib/replay/replayCut';
+import { validateReplayData } from '@/lib/replay/validate';
 
 interface ChartPanelProps {
   candles: Candle[];
@@ -205,9 +207,18 @@ export default function ChartPanel({
     return candles.slice(0, end);
   }, [replayMode, playIndex, candles]);
 
+  // Data problems surface instead of silently replaying corrupt history.
+  const [replayDataError, setReplayDataError] = useState<string | null>(null);
+
   const onReplayToggle = () =>
     setReplayMode((m) => {
       if (m === 'off') {
+        const v = validateReplayData(candles, selected);
+        if (!v.ok) {
+          setReplayDataError(`Replay cannot start — ${v.problems.join(' ')}`);
+          return 'off';
+        }
+        setReplayDataError(null);
         setReplayPlaying(false);
         return 'selecting';
       }
@@ -250,6 +261,15 @@ export default function ChartPanel({
     }
     return () => endReplaySession();
   }, [replayMode]);
+
+  // Publish the replay moment so app-level analytics (mood engine, scanner,
+  // SMC, market context) can enforce the Prime Invariant: no consumer sees
+  // candles beyond the current replay bar.
+  useEffect(() => {
+    if (replayMode === 'active' && replayLast) setReplayCut(selected, replayLast);
+    else clearReplayCut();
+  }, [replayMode, replayLast, selected]);
+  useEffect(() => () => clearReplayCut(), []);
 
   // As replay reveals new bars (forward only), reconcile the SESSION's position
   // so a TP/SL hit auto-closes and logs a trade at the replay bar's time.
@@ -859,6 +879,19 @@ export default function ChartPanel({
         )}
         </div>
       </div>
+
+      {replayDataError && (
+        <div className="flex items-center justify-between gap-2 border-t border-bear/30 bg-bear/10 px-3 py-2 text-[12px] text-bear-bright">
+          <span>{replayDataError}</span>
+          <button
+            onClick={() => setReplayDataError(null)}
+            className="focus-ring shrink-0 rounded p-0.5 transition hover:text-ink"
+            aria-label="Dismiss replay data error"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {replayMode !== 'off' && (
         <div className="border-t border-line bg-surface-2/40 px-3 py-2">

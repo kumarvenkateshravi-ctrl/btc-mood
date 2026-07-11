@@ -22,8 +22,8 @@ import MarketContextWidget from '@/components/MarketContextWidget';
 import { useMarketContext } from '@/lib/hooks/useMarketContext';
 import { useScannerEngine } from '@/lib/hooks/useScannerEngine';
 import ScannerSignalsDock from '@/components/scanner/ScannerSignalsDock';
-import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 import TechnicalScannerPanel from '@/components/scanner/TechnicalScannerPanel';
+import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
@@ -48,6 +48,9 @@ import { useMoodEngine } from '@/lib/hooks/useMoodEngine';
 import { useHistoryWindow } from '@/lib/hooks/useHistoryWindow';
 import { useAlerts } from '@/lib/hooks/useAlerts';
 import { useGridState } from '@/lib/hooks/useGridState';
+import { useReplayCut } from '@/lib/replay/replayCut';
+import { sliceCandlesByTf } from '@/lib/replay/replaySlice';
+import { useLayoutMigrationToast } from '@/components/useLayoutMigrationToast';
 import { useKeyboardShortcuts } from '@/lib/hooks/useKeyboardShortcuts';
 import { useMarketState } from '@/lib/hooks/useMarketState';
 
@@ -75,7 +78,8 @@ export default function DashboardPage() {
   }, []);
   const clearIndicators = useCallback(() => setActiveIndicatorIds([]), []);
 
-  const { gridCount, gridTfs, handleGridCountChange } = useGridState(selected);
+  const { gridCount, gridTfs, layout: gridLayout, setLayout: setGridLayout, handleGridCountChange, migrated: layoutMigrated, previousCount: layoutPreviousCount } = useGridState(selected);
+  useLayoutMigrationToast({ migrated: layoutMigrated, previousCount: layoutPreviousCount });
 
   const applyWorkspace = useCallback((cfg: WorkspaceConfig) => {
     if (cfg.chartType === 'candlestick' || cfg.chartType === 'heikinAshi' || cfg.chartType === 'renko') {
@@ -114,7 +118,7 @@ export default function DashboardPage() {
     }
     try {
       const rp = localStorage.getItem('rightPanel');
-      if (rp === 'mood' || rp === 'signals' || rp === 'orderflow') setRightPanel(rp);
+      if (rp === 'mood' || rp === 'signals' || rp === 'orderflow' || rp === 'scanner') setRightPanel(rp);
       else if (rp === 'none') setRightPanel(null);
     } catch {}
 
@@ -159,12 +163,27 @@ export default function DashboardPage() {
   // ---- Market data pipeline ----
   const { candlesByTf, status, bookTicker, ticker24h, loadOlder, wsStatus, lastUpdateMs } =
     useMarketData(symbol);
-  
+
   const dataState = useMarketState({ wsStatus, lastUpdateMs, hasData: true });
+
+  // ---- Replay Prime Invariant ----
+  // While Bar Replay is active, every ANALYTICS consumer (mood engine, market
+  // context, scanner, SMC, divergence) sees candles only up to the replay
+  // moment — higher-TF forming bars are synthesized, never leaked from the
+  // stored (fully formed) history. The chart itself keeps the full eval-TF
+  // array: the replay machinery (selector, scrubber) needs it.
+  const replayCut = useReplayCut();
+  const analyticsCandlesByTf = useMemo(
+    () =>
+      replayCut.active && replayCut.cutBar
+        ? sliceCandlesByTf(candlesByTf, replayCut.evalTf, replayCut.cutBar)
+        : candlesByTf,
+    [candlesByTf, replayCut],
+  );
 
   // ---- Mood engine ----
   const { prices, changes, snapshots, mood, indicatorRows } = useMoodEngine(
-    candlesByTf,
+    analyticsCandlesByTf,
     activeIndicatorIds,
   );
 
@@ -181,13 +200,13 @@ export default function DashboardPage() {
   const currentCandles = candlesByTf[selected];
 
   // One Market Context for the whole app (chart gate + widget + rail share it).
-  const marketContext = useMarketContext(candlesByTf);
-  const scannerSnapshot = useScannerEngine(candlesByTf, selected);
+  const marketContext = useMarketContext(analyticsCandlesByTf);
+  const scannerSnapshot = useScannerEngine(analyticsCandlesByTf, selected);
 
   // Emission boundary: on each closed bar this yields the current SdSignal[].
   // Phase 2 alerts/webhooks subscribe by diffing newly-`triggered` ids here.
   const signalEvents = useMemo(
-    () => computeSdSignalEvents(currentCandles ?? [], { id: 'sd_signals' }, { symbol, timeframe: selected }),
+    () => computeSdSignalEvents(analyticsCandlesByTf[selected] ?? [], { id: 'sd_signals' }, { symbol, timeframe: selected }),
     [currentCandles, symbol, selected],
   );
 
@@ -218,20 +237,21 @@ export default function DashboardPage() {
             <Panel defaultSize={75} minSize={20}>
               <div className="flex-1 flex flex-col h-full relative">
 
-                {gridCount > 1 ? (
+                {gridLayout.mode === 'multi-chart' ? (
                   <MultiChartGrid
-                    count={gridCount}
+                    count={gridLayout.count}
                     tfs={gridTfs}
-                    candlesByTf={candlesByTf}
+                    candlesByTf={analyticsCandlesByTf}
                     chartType={chartType}
                     activeIndicatorIds={activeIndicatorIds}
                     selected={selected}
                     onSelectTf={setSelected}
+                    sync={gridLayout.sync}
                   />
                 ) : (
                   <ChartPanel
                     candles={historyCandles ?? currentCandles}
-                    candlesByTf={candlesByTf}
+                    candlesByTf={analyticsCandlesByTf}
                     type={chartType}
                     onTypeChange={setChartType}
                     selected={selected}
@@ -254,18 +274,21 @@ export default function DashboardPage() {
                     fitSignal={fitSignal}
                     gridCount={gridCount}
                     onGridChange={handleGridCountChange}
+                    layout={gridLayout}
+                    onLayoutChange={setGridLayout}
+                    paneCount={gridLayout.mode === 'multi-pane' ? gridLayout.count : 1}
                     workspaceCurrent={{ chartType, symbol, tf: selected, indicatorIds: activeIndicatorIds }}
                     onWorkspaceApply={applyWorkspace}
                   />
                 )}
 
-                {gridCount === 1 && (
+                {gridLayout.mode === 'single' && (
                   <ScannerSignalsDock snapshot={scannerSnapshot} midPrice={currentPrice ?? undefined} />
                 )}
 
                 {/* Compact Market Context widget (Phase 11) — same MarketContext
                     object as the signal gate; click opens the MTF rail. */}
-                {gridCount === 1 && (
+                {gridLayout.mode === 'single' && (
                   <div className="absolute right-[84px] top-[52px] z-20 hidden lg:block">
                     <MarketContextWidget
                       ctx={marketContext}
@@ -289,7 +312,7 @@ export default function DashboardPage() {
                 onRemoveIndicator={handleRemoveIndicator}
                 showVolume={showVolume}
                 onToggleVolume={toggleVolume}
-                candlesByTf={candlesByTf}
+                candlesByTf={analyticsCandlesByTf}
                 snapshots={snapshots}
                 selected={selected}
                 onSelectTf={setSelected}
@@ -338,7 +361,7 @@ export default function DashboardPage() {
               />
             )}
             {rightPanel === 'orderflow' && <OrderFlowPanel symbol={symbol} tf={selected} />}
-            {rightPanel === 'strategy' && <TechnicalScannerPanel candlesByTf={candlesByTf} evalTf={selected} />}
+            {rightPanel === 'scanner' && <TechnicalScannerPanel candlesByTf={analyticsCandlesByTf} evalTf={selected} />}
           </aside>
         )}
 
@@ -360,3 +383,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+
