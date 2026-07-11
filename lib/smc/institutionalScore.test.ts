@@ -25,7 +25,7 @@ describe('computeModuleScores', () => {
   it('returns zeros with no objects', () => {
     const m = computeModuleScores({
       structureLevels: [], pools: [], blocks: [], gaps: [],
-      swingTrend: 0, internalTrend: 0, zone: 'equilibrium', recentEvents: [],
+      swingTrend: 0, internalTrend: 0, zone: 'equilibrium', hasRecentTrendBreak: false,
     });
     expect(m).toEqual({ structure: 0, liquidity: 0, orderBlocks: 0, fvg: 0, premiumDiscount: 50 });
   });

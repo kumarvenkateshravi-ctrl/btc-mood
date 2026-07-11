@@ -10,7 +10,6 @@ import {
   BULLISH,
   BEARISH,
   type Bias,
-  type SmcEvent,
   type SmcObject,
   type ZoneName,
 } from './types';
@@ -23,16 +22,32 @@ export interface ModuleScores {
   premiumDiscount: number;
 }
 
-const LIVE = new Set(['active', 'tested', 'partial']);
-
+/** Mean of the top-3 live objects' blended metric — single pass, no allocs
+ *  (this runs once per kind per bar over ever-growing object lists). */
 function topObjectsScore(objects: SmcObject[]): number {
-  const live = objects
-    .filter((o) => LIVE.has(o.state))
-    .map((o) => (o.strength + o.quality + o.confidence) / 3)
-    .sort((a, b) => b - a)
-    .slice(0, 3);
-  if (live.length === 0) return 0;
-  return clampScore(live.reduce((s, v) => s + v, 0) / live.length);
+  let a = -1;
+  let b = -1;
+  let c = -1;
+  let count = 0;
+  for (const o of objects) {
+    const st = o.state;
+    if (st !== 'active' && st !== 'tested' && st !== 'partial') continue;
+    const v = (o.strength + o.quality + o.confidence) / 3;
+    count++;
+    if (v > a) {
+      c = b;
+      b = a;
+      a = v;
+    } else if (v > b) {
+      c = b;
+      b = v;
+    } else if (v > c) {
+      c = v;
+    }
+  }
+  if (count === 0) return 0;
+  const n = Math.min(3, count);
+  return clampScore((a + (n > 1 ? b : 0) + (n > 2 ? c : 0)) / n);
 }
 
 export function computeModuleScores(input: {
@@ -43,15 +58,11 @@ export function computeModuleScores(input: {
   swingTrend: Bias;
   internalTrend: Bias;
   zone: ZoneName;
-  /** Events within the recency window (engine passes the last 20 bars). */
-  recentEvents: SmcEvent[];
+  /** A BOS/CHoCH agreeing with the swing trend fired within the recency window. */
+  hasRecentTrendBreak: boolean;
 }): ModuleScores {
   let structure = topObjectsScore(input.structureLevels);
-  const trendDir = input.swingTrend === BULLISH ? 'bullish' : input.swingTrend === BEARISH ? 'bearish' : null;
-  if (
-    trendDir &&
-    input.recentEvents.some((e) => (e.type === 'BOS' || e.type === 'CHOCH') && e.direction === trendDir)
-  ) {
+  if (input.swingTrend !== 0 && input.hasRecentTrendBreak) {
     structure = clampScore(structure + 15);
   }
 
