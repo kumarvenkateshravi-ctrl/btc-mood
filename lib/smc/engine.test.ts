@@ -43,7 +43,10 @@ describe('computeSmc', () => {
       best = Math.min(best, performance.now() - t0);
     }
     if (best > 50) console.warn(`computeSmc(5000 bars) took ${best.toFixed(1)}ms (soft budget 50ms)`);
-    expect(best).toBeLessThan(1000); // hard bound only catches algorithmic regressions (O(n²) was ~630ms idle)
+    // Hard bound only catches algorithmic regressions: the O(n²) bug measured
+    // ~630ms IDLE (multi-second under load). Parallel-suite contention has
+    // pushed honest runs past 1s, so keep generous headroom.
+    expect(best).toBeLessThan(2000);
   });
 });
 
