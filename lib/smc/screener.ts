@@ -92,6 +92,12 @@ export interface ScreenerWeights {
 
 export interface ScreenerConfig {
   weights: ScreenerWeights;
+  /**
+   * Evaluate a specific direction regardless of the MTF trend vote — used by
+   * the Institutional Long/Short Workflow reference tabs. The trend gate
+   * still fails when the Daily opposes the forced direction.
+   */
+  forceDirection?: 'long' | 'short';
   minObStrength: number;
   maxObAgeBars: number;
   minRR: number;
@@ -303,7 +309,8 @@ export function evaluateSmcScreener(
     trendChecks.push({ tf, label, vote: vote ?? 0, weight, ok: vote === null ? null : vote > 0 });
   }
   const trendSum = trendChecks.reduce((s, c) => s + c.vote * c.weight, 0);
-  const direction: 'long' | 'short' | null = trendSum > 0 ? 'long' : trendSum < 0 ? 'short' : null;
+  const direction: 'long' | 'short' | null =
+    cfg.forceDirection ?? (trendSum > 0 ? 'long' : trendSum < 0 ? 'short' : null);
   const dirWord = direction === 'long' ? 'Bullish' : 'Bearish';
   const smcDir = direction === 'long' ? 'bullish' : 'bearish';
 

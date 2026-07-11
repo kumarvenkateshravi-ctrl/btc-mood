@@ -117,6 +117,16 @@ describe('evaluateSmcScreener', () => {
     expect(r.status).toBe('NO_TRADE'); // bullish LTF structure can't support a short
   });
 
+  it('forceDirection evaluates the short case against a bullish market', () => {
+    const r = evaluateSmcScreener(byTf(evalCandles()), '15m', { forceDirection: 'short' });
+    expect(r.direction).toBe('short');
+    // Bullish HTF opposes the forced short: trend gate must fail.
+    expect(r.hardGates.find((g) => g.id === 'trend')!.pass).toBe(false);
+    expect(r.status).toBe('NO_TRADE');
+    // Labels flip to the forced direction.
+    expect(r.workflow.find((s) => s.id === 'choch')!.label).toBe('Bearish CHoCH');
+  });
+
   it('empty input: NO_TRADE without throwing', () => {
     const r = evaluateSmcScreener({}, '15m');
     expect(r.status).toBe('NO_TRADE');
