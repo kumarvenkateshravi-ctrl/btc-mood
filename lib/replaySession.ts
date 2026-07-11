@@ -18,6 +18,7 @@ import {
   type Side,
 } from './paper';
 import type { Candle } from './types';
+import { intrabarSubBars } from './replay/intrabar';
 
 export interface ReplaySessionState {
   active: boolean;
@@ -120,15 +121,27 @@ export function replayClose(mark: number, ts: number) {
   });
 }
 
-/** Run one revealed replay bar against the session's open position. */
+/**
+ * Run one revealed replay bar against the session's open position, simulating
+ * the intrabar tick path (O→L→H→C up / O→H→L→C down) so a bar containing both
+ * TP and SL fills at the level touched FIRST — deterministic and realistic
+ * instead of engine-block-order dependent.
+ */
 export function replayReconcileBar(bar: Candle) {
   if (!state.active || !state.position || state.position.side === 'flat') return;
-  const r = reconcile(state.position, bar, [], bar.time);
-  if (r.trades.length === 0 && r.position === state.position) return;
+  let position: PaperPosition | null = state.position;
+  const newTrades: PaperTrade[] = [];
+  for (const sub of intrabarSubBars(bar)) {
+    if (!position || position.side === 'flat') break;
+    const r = reconcile(position, sub, [], bar.time);
+    position = r.position && r.position.side !== 'flat' ? r.position : null;
+    if (r.trades.length > 0) newTrades.push(...r.trades);
+  }
+  if (newTrades.length === 0 && position === state.position) return;
   set({
     ...state,
-    position: r.position && r.position.side !== 'flat' ? r.position : null,
-    trades: r.trades.length > 0 ? [...r.trades, ...state.trades] : state.trades,
+    position,
+    trades: newTrades.length > 0 ? [...newTrades.reverse(), ...state.trades] : state.trades,
   });
 }
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   CandlestickSeries,
   HistogramSeries,
@@ -62,6 +62,11 @@ export function useChartData(
     lastCandleTimeRef,
   } = refs;
 
+  // Previous bar count + first time, for append-by-one detection (smooth
+  // replay playback / live bar close: series.update instead of full setData).
+  const prevCountRef = useRef(0);
+  const prevFirstTimeRef = useRef<number | null>(null);
+
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
     if (!candleSeries) return;
@@ -112,6 +117,16 @@ export function useChartData(
 
     const lastTime = baseCandles[baseCandles.length - 1].time;
     const isIncremental = lastBarTimeRef.current === lastTime;
+    // Append-by-one: one new bar at the tail, history untouched — a replay
+    // step or a live bar close. LWC's update() appends in O(1); a multi-bar
+    // jump or backward scrub falls through to the full setData path.
+    const isAppendOne =
+      !isNewContext &&
+      !isIncremental &&
+      prevFirstTimeRef.current === newFirstTime &&
+      baseCandles.length === prevCountRef.current + 1 &&
+      lastBarTimeRef.current != null &&
+      (lastTime as number) > lastBarTimeRef.current;
 
     if (baseCandles.length > 0) {
       const last = baseCandles[baseCandles.length - 1];
@@ -119,8 +134,10 @@ export function useChartData(
       prevCloseRef.current = last.close;
       lastCandleTimeRef.current = last.time as number;
     }
+    prevCountRef.current = baseCandles.length;
+    prevFirstTimeRef.current = newFirstTime;
 
-    if (isIncremental) {
+    if (isIncremental || isAppendOne) {
       const last = baseCandles[baseCandles.length - 1];
       candleSeries.update({
         time: shiftTime(last.time as number),
@@ -129,31 +146,39 @@ export function useChartData(
         low: last.low,
         close: last.close,
       });
-      // Fall through — indicator plots still need sync on incremental
-      // ticks (e.g. settings change without candle update).
-    }
-
-    const candleData: CandlestickData<Time>[] = baseCandles.map((c) => ({
-      time: shiftTime(c.time as number),
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-
-    const futureData: WhitespaceData<Time>[] = [];
-    if (tf && baseCandles.length > 0 && !isRenko) {
-      const lastTime = baseCandles[baseCandles.length - 1].time as number;
-      const minutes = getTfMinutes(tf);
-      let t = lastTime;
-      for (let i = 1; i <= 300; i++) {
-        t += minutes * 60;
-        futureData.push({ time: shiftTime(t) });
+      if (isAppendOne && dummySeriesRef.current && tf && !isRenko) {
+        // Whitespace shifts by one bar; a single update extends it.
+        try {
+          dummySeriesRef.current.update({
+            time: shiftTime((lastTime as number) + getTfMinutes(tf) * 60 * 300),
+          });
+        } catch {}
       }
-    }
+      // Fall through — indicator plots still need sync (they recompute on
+      // the appended bar), but the candle + whitespace series are done.
+    } else {
+      const candleData: CandlestickData<Time>[] = baseCandles.map((c) => ({
+        time: shiftTime(c.time as number),
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }));
 
-    candleSeries.setData(candleData);
-    if (dummySeriesRef.current) dummySeriesRef.current.setData(futureData);
+      const futureData: WhitespaceData<Time>[] = [];
+      if (tf && baseCandles.length > 0 && !isRenko) {
+        const lastT = baseCandles[baseCandles.length - 1].time as number;
+        const minutes = getTfMinutes(tf);
+        let t = lastT;
+        for (let i = 1; i <= 300; i++) {
+          t += minutes * 60;
+          futureData.push({ time: shiftTime(t) });
+        }
+      }
+
+      candleSeries.setData(candleData);
+      if (dummySeriesRef.current) dummySeriesRef.current.setData(futureData);
+    }
 
     // Re-anchor the view after a prepend so the chart doesn't jump.
     if (prependedBars > 0 && visRangeBefore) {

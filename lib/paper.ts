@@ -253,8 +253,9 @@ export function reconcile(
 
   // 1. SL on the open position (intrabar — assume worst case for trader).
   if (position && position.side !== 'flat' && position.sl != null) {
+    // Long SL is below (hit by the low); short SL is above (hit by the high).
     const slHit =
-      position.side === 'long' ? bar.low <= position.sl : bar.low >= position.sl;
+      position.side === 'long' ? bar.low <= position.sl : bar.high >= position.sl;
     if (slHit) {
       const fillPrice = position.sl;
       const fill: PaperFill = {
@@ -275,8 +276,9 @@ export function reconcile(
 
   // 2. TP on the open position.
   if (position && position.side !== 'flat' && position.tp != null) {
+    // Long TP is above (hit by the high); short TP is below (hit by the low).
     const tpHit =
-      position.side === 'long' ? bar.high >= position.tp : bar.high <= position.tp;
+      position.side === 'long' ? bar.high >= position.tp : bar.low <= position.tp;
     if (tpHit) {
       const fillPrice = position.tp;
       const fill: PaperFill = {
