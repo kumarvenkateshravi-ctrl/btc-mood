@@ -222,7 +222,7 @@ export default function DashboardPage() {
   const bottomPanelRef = useRef<PanelImperativeHandle>(null);
 
   // ---- Alerts ----
-  useAlerts(symbol, snapshots, bid, ask, currentPrice);
+  useAlerts(symbol, snapshots, bid, ask, currentPrice, replayCut.active);
 
   // ---- Render ----
   return (

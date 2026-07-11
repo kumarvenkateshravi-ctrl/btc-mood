@@ -1,11 +1,15 @@
 'use client';
 
-import { Bookmark, Pause, Play, Scissors, SkipBack, SkipForward, X } from 'lucide-react';
+import { Bookmark, CheckCircle2, Pause, Play, Scissors, ShieldCheck, SkipBack, SkipForward, X, XCircle } from 'lucide-react';
+import type { ReplayPhase } from '@/lib/replay/replayState';
+import type { IntegrityReport } from '@/lib/replay/verify';
 
 interface ReplayBarProps {
   /** True while the user is still picking the cut point (no controls yet). */
   selecting: boolean;
   playing: boolean;
+  /** Machine phase — drives the status readout. */
+  phase?: ReplayPhase;
   index: number;
   total: number;
   speed: number;
@@ -18,13 +22,24 @@ interface ReplayBarProps {
   onBookmark: () => void;
   onJumpBookmark: (index: number) => void;
   onRemoveBookmark: (index: number) => void;
+  /** Replay Verification (developer mode). */
+  onVerify?: () => void;
+  verification?: IntegrityReport | null;
 }
+
+const PHASE_LABEL: Partial<Record<ReplayPhase, string>> = {
+  ready: 'Ready',
+  playing: 'Playing',
+  paused: 'Paused',
+  finished: 'Finished',
+};
 
 const SPEEDS = [0.1, 0.3, 0.5, 1, 3, 10];
 
 export default function ReplayBar({
   selecting,
   playing,
+  phase,
   index,
   total,
   speed,
@@ -37,6 +52,8 @@ export default function ReplayBar({
   onBookmark,
   onJumpBookmark,
   onRemoveBookmark,
+  onVerify,
+  verification,
 }: ReplayBarProps) {
   if (selecting) {
     return (
@@ -87,7 +104,9 @@ export default function ReplayBar({
         />
 
         <span className="font-mono text-[11px] tabular-nums text-ink-faint">
+          {phase && PHASE_LABEL[phase] && <span className="text-ink-muted">{PHASE_LABEL[phase]} · </span>}
           {Math.min(index, total - 1)}/{total - 1}
+          <span className="text-ink-faint/70"> · {(total > 1 ? (Math.min(index, total - 1) / (total - 1)) * 100 : 0).toFixed(1)}%</span>
         </span>
 
         <div className="inline-flex items-center rounded-md border border-line bg-base p-0.5 text-[11px] font-mono">
@@ -106,6 +125,17 @@ export default function ReplayBar({
           ))}
         </div>
 
+        {onVerify && (
+          <button
+            onClick={onVerify}
+            title="Verify replay integrity (developer)"
+            className="focus-ring inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-faint transition hover:bg-surface-2 hover:text-ink"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Verify
+          </button>
+        )}
+
         <button
           onClick={onExit}
           className="focus-ring ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-faint transition hover:bg-surface-2 hover:text-ink"
@@ -114,6 +144,33 @@ export default function ReplayBar({
           Exit
         </button>
       </div>
+
+      {verification && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Replay Verification</span>
+          {verification.checks.map((c) => (
+            <span
+              key={c.name}
+              title={c.detail}
+              className={[
+                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]',
+                c.ok ? 'border-bull/30 text-bull-bright' : 'border-bear/40 text-bear-bright',
+              ].join(' ')}
+            >
+              {c.ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+              {c.name}
+            </span>
+          ))}
+          <span
+            className={[
+              'ml-auto font-mono text-[12px] font-semibold tabular-nums',
+              verification.integrity === 100 ? 'text-bull-bright' : 'text-bear-bright',
+            ].join(' ')}
+          >
+            Integrity {verification.integrity}%
+          </span>
+        </div>
+      )}
 
       {bookmarks.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2">

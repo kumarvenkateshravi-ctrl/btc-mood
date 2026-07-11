@@ -37,6 +37,8 @@ import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { useBaseCandles } from '@/lib/chartHelpers';
 import { setReplayCut, clearReplayCut } from '@/lib/replay/replayCut';
 import { validateReplayData } from '@/lib/replay/validate';
+import { replayActions, useReplayState, isReplayActive } from '@/lib/replay/replayState';
+import { verifyReplayIntegrity, type IntegrityReport } from '@/lib/replay/verify';
 
 interface ChartPanelProps {
   candles: Candle[];
@@ -168,118 +170,116 @@ export default function ChartPanel({
   const chartBoxRef = useRef<HTMLDivElement>(null);
   const drawingsForSymbol = useDrawings(symbol);
 
-  // ---- Bar Replay ----
-  type ReplayMode = 'off' | 'selecting' | 'active';
-  const [replayMode, setReplayMode] = useState<ReplayMode>('off');
-  const [playIndex, setPlayIndex] = useState(0);
-  const [replayPlaying, setReplayPlaying] = useState(false);
+  // ---- Bar Replay (state machine: lib/replay/replayState.ts) ----
+  const { phase: replayPhase, playIndex, startIndex: replayStartIndex } = useReplayState();
+  const replayActive = isReplayActive(replayPhase);
+  const replayPlaying = replayPhase === 'playing';
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [bookmarks, setBookmarks] = useState<number[]>([]);
 
   // Reset replay when the timeframe or symbol changes (candle array differs).
   useEffect(() => {
-    setReplayMode('off');
-    setReplayPlaying(false);
+    replayActions.exit();
     setBookmarks([]);
   }, [selected, symbol]);
 
-  // Advance one candle per tick while playing.
+  // Advance one candle per tick while playing; the machine flips to
+  // 'finished' when the head reaches the last bar.
   useEffect(() => {
-    if (replayMode !== 'active' || !replayPlaying) return;
+    if (!replayPlaying) return;
     const interval = Math.max(40, 600 / replaySpeed);
-    const id = setInterval(() => {
-      setPlayIndex((i) => Math.min(candles.length - 1, i + 1));
-    }, interval);
+    const id = setInterval(() => replayActions.stepBy(1, candles.length), interval);
     return () => clearInterval(id);
-  }, [replayMode, replayPlaying, replaySpeed, candles.length]);
+  }, [replayPlaying, replaySpeed, candles.length]);
 
-  // Stop at the last candle.
-  useEffect(() => {
-    if (replayMode === 'active' && replayPlaying && playIndex >= candles.length - 1) {
-      setReplayPlaying(false);
-    }
-  }, [replayMode, replayPlaying, playIndex, candles.length]);
-
-  // Candles fed to the chart: full unless actively replaying (then sliced).
+  // Candles fed to the chart: full unless replay is armed (then sliced).
   const replayCandles = useMemo(() => {
-    if (replayMode !== 'active') return candles;
+    if (!replayActive) return candles;
     const end = Math.max(2, Math.min(playIndex + 1, candles.length));
     return candles.slice(0, end);
-  }, [replayMode, playIndex, candles]);
+  }, [replayActive, playIndex, candles]);
 
   // Data problems surface instead of silently replaying corrupt history.
   const [replayDataError, setReplayDataError] = useState<string | null>(null);
 
-  const onReplayToggle = () =>
-    setReplayMode((m) => {
-      if (m === 'off') {
-        const v = validateReplayData(candles, selected);
-        if (!v.ok) {
-          setReplayDataError(`Replay cannot start — ${v.problems.join(' ')}`);
-          return 'off';
-        }
-        setReplayDataError(null);
-        setReplayPlaying(false);
-        return 'selecting';
+  const onReplayToggle = () => {
+    if (replayPhase === 'idle') {
+      const v = validateReplayData(candles, selected);
+      if (!v.ok) {
+        setReplayDataError(`Replay cannot start — ${v.problems.join(' ')}`);
+        return;
       }
-      return 'off';
-    });
+      setReplayDataError(null);
+      replayActions.enterSelecting();
+    } else {
+      replayActions.exit();
+    }
+  };
 
   const lastReconciledRef = useRef(-1);
   const onReplayPick = (index: number) => {
     const start = Math.max(1, Math.min(index, candles.length - 1));
     lastReconciledRef.current = start; // don't reconcile bars before the cut
     startReplaySession(symbol); // fresh isolated account for this replay
-    setPlayIndex(start);
     setBookmarks([]);
-    setReplayPlaying(false);
-    setReplayMode('active');
+    replayActions.startAt(start);
   };
 
-  const stepReplay = (dir: 1 | -1) =>
-    setPlayIndex((i) => Math.max(1, Math.min(candles.length - 1, i + dir)));
+  const stepReplay = (dir: 1 | -1) => replayActions.stepBy(dir, candles.length);
+
+  // Replay Verification (developer mode): re-proves the Prime Invariant and
+  // engine determinism at the current bar. Cleared whenever the head moves.
+  const [verification, setVerification] = useState<IntegrityReport | null>(null);
+  const runVerification = useCallback(() => {
+    setVerification(
+      verifyReplayIntegrity({ candles, playIndex, evalTf: selected, candlesByTf: candlesByTf ?? {} }),
+    );
+  }, [candles, playIndex, selected, candlesByTf]);
+  useEffect(() => {
+    setVerification(null);
+  }, [playIndex, replayPhase]);
 
   const replayLast = replayCandles[replayCandles.length - 1];
-  const displayPrice = replayMode === 'active' && replayLast ? replayLast.close : price;
+  const displayPrice = replayActive && replayLast ? replayLast.close : price;
 
   // Publish the current mark (replay bar's close during replay, else live).
   useEffect(() => {
-    if (replayMode === 'active' && replayLast) {
+    if (replayActive && replayLast) {
       setMarkPrice(symbol, replayLast.close, replayLast.time);
     } else if (price != null && Number.isFinite(price)) {
       const liveLast = candles[candles.length - 1];
       setMarkPrice(symbol, price, liveLast ? liveLast.time : Math.floor(Date.now() / 1000));
     }
-  }, [replayMode, replayLast, price, symbol, candles]);
+  }, [replayActive, replayLast, price, symbol, candles]);
 
   // End the isolated session when leaving replay (the live account is never
   // touched during replay — they run independently).
   useEffect(() => {
-    if (replayMode !== 'active') {
+    if (!replayActive) {
       endReplaySession();
       lastReconciledRef.current = -1;
     }
     return () => endReplaySession();
-  }, [replayMode]);
+  }, [replayActive]);
 
   // Publish the replay moment so app-level analytics (mood engine, scanner,
   // SMC, market context) can enforce the Prime Invariant: no consumer sees
   // candles beyond the current replay bar.
   useEffect(() => {
-    if (replayMode === 'active' && replayLast) setReplayCut(selected, replayLast);
+    if (replayActive && replayLast) setReplayCut(selected, replayLast);
     else clearReplayCut();
-  }, [replayMode, replayLast, selected]);
+  }, [replayActive, replayLast, selected]);
   useEffect(() => () => clearReplayCut(), []);
 
   // As replay reveals new bars (forward only), reconcile the SESSION's position
   // so a TP/SL hit auto-closes and logs a trade at the replay bar's time.
   useEffect(() => {
-    if (replayMode !== 'active') return;
+    if (!replayActive) return;
     for (let i = Math.max(1, lastReconciledRef.current + 1); i <= playIndex && i < candles.length; i++) {
       replayReconcileBar(candles[i]);
     }
     if (playIndex > lastReconciledRef.current) lastReconciledRef.current = playIndex;
-  }, [replayMode, playIndex, candles]);
+  }, [replayActive, playIndex, candles]);
 
   // ---- Chart → trade wiring ----
   const LEVERAGE = 10;
@@ -287,7 +287,7 @@ export default function ChartPanel({
   const session = useReplaySession();
   // During replay the chart reflects the ISOLATED session's position; otherwise
   // the live account's.
-  const replayTrading = replayMode === 'active';
+  const replayTrading = replayActive;
   const pos = replayTrading ? session.position : paper.positions[symbol] ?? null;
   const hasPosition = !!(pos && pos.side !== 'flat' && pos.units > 0);
   const mid = price ?? (candles.length > 0 ? candles[candles.length - 1].close : 0);
@@ -624,6 +624,37 @@ export default function ChartPanel({
       }
 
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // ---- Replay shortcuts (Phase 2.C): Space, ←/→, Shift+←/→, Home, Esc ----
+      if (replayActive) {
+        if (e.key === ' ') {
+          if (replayPlaying) replayActions.pause();
+          else replayActions.play();
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          replayActions.stepBy(e.shiftKey ? 10 : 1, candles.length);
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'ArrowLeft') {
+          replayActions.stepBy(e.shiftKey ? -10 : -1, candles.length);
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'Home') {
+          replayActions.scrubTo(replayStartIndex, candles.length);
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'Escape') {
+          replayActions.exit();
+          e.preventDefault();
+          return;
+        }
+      }
+
       if (e.key.toLowerCase() === 'f') {
         toggleFullscreen();
         e.preventDefault();
@@ -633,7 +664,7 @@ export default function ChartPanel({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleFullscreen, patchChartSettings, chartSettings.invertScale, chartSettings.scaleMode]);
+  }, [toggleFullscreen, patchChartSettings, chartSettings.invertScale, chartSettings.scaleMode, replayActive, replayPlaying, replayStartIndex, candles.length]);
 
 
 
@@ -762,7 +793,7 @@ export default function ChartPanel({
         activeIndicatorIds={activeIndicatorIds}
         onToggleIndicator={onToggleIndicator}
         onClearIndicators={onClearIndicators}
-        replayActive={replayMode !== 'off'}
+        replayActive={replayPhase !== 'idle'}
         onReplayToggle={onReplayToggle}
         historyActive={historyActive}
         onJumpToDate={onJumpToDate}
@@ -812,7 +843,7 @@ export default function ChartPanel({
             showSignals={showSignals}
             renko={renkoOptions}
             onReady={handleChartReady}
-            onLoadOlder={replayMode === 'off' ? onLoadOlder : undefined}
+            onLoadOlder={replayPhase === 'idle' ? onLoadOlder : undefined}
             tf={selected}
             showVolume={parentShowVolume}
             onQuickTrade={handleQuickTrade}
@@ -868,13 +899,13 @@ export default function ChartPanel({
             onToolUsed={() => setDrawingTool('cursor')}
           />
         )}
-        {!loading && replayMode === 'selecting' && (
+        {!loading && replayPhase === 'selecting' && (
           <ReplaySelector
             api={chartApi}
             width={chartWidth}
             height={chartHeight}
             onPick={onReplayPick}
-            onCancel={() => setReplayMode('off')}
+            onCancel={() => replayActions.exit()}
           />
         )}
         </div>
@@ -893,25 +924,25 @@ export default function ChartPanel({
         </div>
       )}
 
-      {replayMode !== 'off' && (
+      {replayPhase !== 'idle' && (
         <div className="border-t border-line bg-surface-2/40 px-3 py-2">
           <ReplayBar
-            selecting={replayMode === 'selecting'}
+            selecting={replayPhase === 'selecting'}
             playing={replayPlaying}
+            phase={replayPhase}
             index={playIndex}
             total={candles.length}
+            onVerify={featureFlags.replayDebug ? runVerification : undefined}
+            verification={verification}
             speed={replaySpeed}
             bookmarks={bookmarks}
-            onExit={() => {
-              setReplayMode('off');
-              setReplayPlaying(false);
-            }}
-            onTogglePlay={() => setReplayPlaying((p) => !p)}
+            onExit={() => replayActions.exit()}
+            onTogglePlay={() => (replayPlaying ? replayActions.pause() : replayActions.play())}
             onStep={stepReplay}
-            onScrub={(i) => setPlayIndex(i)}
+            onScrub={(i) => replayActions.scrubTo(i, candles.length)}
             onSpeed={setReplaySpeed}
             onBookmark={() => setBookmarks((b) => (b.includes(playIndex) ? b : [...b, playIndex].sort((x, y) => x - y)))}
-            onJumpBookmark={(i) => setPlayIndex(i)}
+            onJumpBookmark={(i) => replayActions.scrubTo(i, candles.length)}
             onRemoveBookmark={(i) => setBookmarks((b) => b.filter((x) => x !== i))}
           />
         </div>

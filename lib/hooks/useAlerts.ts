@@ -36,10 +36,19 @@ export function useAlerts(
   bid: number | null,
   ask: number | null,
   currentPrice: number | null,
+  /**
+   * Suppress SIGNAL alerts (e.g. during Bar Replay, when snapshots are
+   * computed on historical slices — a scrub would otherwise fire browser
+   * notifications for years-old flips). Refs stay frozen while muted, so
+   * unmuting compares against the pre-mute state and never bursts.
+   * Price alerts keep firing: they track the LIVE book, not history.
+   */
+  muted = false,
 ): void {
   // ---- Signal-alert firing ----
   const lastFiredSideRef = useRef<Record<string, AlertSide | null>>({});
   useEffect(() => {
+    if (muted) return;
     const rules = loadRules();
     if (rules.length === 0) return;
     const sigMap = Object.fromEntries(
@@ -59,7 +68,7 @@ export function useAlerts(
     const next: Record<string, AlertSide | null> = { ...lastFiredSideRef.current };
     for (const r of toFire) next[r.id] = r.side;
     lastFiredSideRef.current = next;
-  }, [snapshots, symbol]);
+  }, [snapshots, symbol, muted]);
 
   // ---- Price-alert firing ----
   const prevPriceRef = useRef<number | null>(null);
