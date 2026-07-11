@@ -23,6 +23,7 @@ import { computeScannerSignals } from './indicators/scannerSignals';
 import { computeVolSpike } from './indicators/volSpike';
 import { computeMagicSr } from './indicators/magicSr';
 import { computeFibPivot } from './indicators/fibPivot';
+import { computeSmcOverlay } from './indicators/smcOverlay';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -600,5 +601,24 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     ],
     styles: [],
     compute: computeFibPivot,
+  },
+  {
+    id: 'smc',
+    name: 'Smart Money Concepts (SMC)',
+    description:
+      'SMC Intelligence Engine: market structure (BOS/CHoCH), order blocks, EQH/EQL + sweeps, fair value gaps, premium/discount zones — scored and lifecycle-tracked.',
+    inputs: [
+      { id: 'showSwing', name: 'Swing Structure', type: 'boolean', default: true },
+      { id: 'showInternal', name: 'Internal Structure', type: 'boolean', default: true },
+      { id: 'showOrderBlocks', name: 'Order Blocks', type: 'boolean', default: true },
+      { id: 'showFvg', name: 'Fair Value Gaps', type: 'boolean', default: false },
+      { id: 'showLiquidity', name: 'Equal Highs/Lows + Sweeps', type: 'boolean', default: true },
+      { id: 'showZones', name: 'Premium/Discount Zones', type: 'boolean', default: false },
+      { id: 'debugMode', name: 'Debug Mode (all objects + scores)', type: 'boolean', default: false },
+      { id: 'swingsLength', name: 'Swing Length', type: 'number', default: 50, min: 10, max: 200, step: 1 },
+      { id: 'internalLength', name: 'Internal Length', type: 'number', default: 5, min: 2, max: 50, step: 1 },
+    ],
+    styles: [],
+    compute: computeSmcOverlay,
   },
 ];
