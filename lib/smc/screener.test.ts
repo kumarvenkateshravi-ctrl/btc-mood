@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateSmcScreener, ema, sma, rsi, adx, atrSeries } from './screener';
+import { evaluateSmcScreener, ema, sma, rsi, adx, atrSeries, supertrendDir, cci, mfi, obvSeries } from './screener';
 import type { Candle, Timeframe } from '@/lib/types';
 
 // ---------------------------------------------------------------- fixtures
@@ -127,6 +127,29 @@ describe('evaluateSmcScreener', () => {
     expect(r.workflow.find((s) => s.id === 'choch')!.label).toBe('Bearish CHoCH');
   });
 
+  it('technical filters are configurable without touching the SMC methodology', () => {
+    // Supertrend trend + CCI momentum + Donchian volatility + MFI volume:
+    // the LOCKED gates (structure/liquidity/OB) must evaluate identically.
+    const r = evaluateSmcScreener(byTf(evalCandles()), '15m', {
+      filters: {
+        trend: { indicator: 'supertrend', atrPeriod: 10, multiplier: 3, minAlignment: 3 },
+        momentum: { indicator: 'cci', cciLength: 20, adxEnabled: false },
+        volatility: { indicator: 'donchian', length: 20 },
+        volume: { indicator: 'mfi', mfiLength: 14 },
+      },
+    });
+    expect(r.direction).toBe('long');
+    expect(r.hardGates.find((g) => g.id === 'trend')!.items[0].label).toContain('Supertrend');
+    expect(r.contextChecks.find((g) => g.id === 'momentum')!.items[0].label).toContain('CCI');
+    expect(r.contextChecks.find((g) => g.id === 'volatility')!.items[0].label).toContain('Donchian');
+    expect(r.contextChecks.find((g) => g.id === 'volume')!.items[0].label).toContain('MFI');
+    // Locked gates unchanged vs the default-filter run:
+    const base = evaluateSmcScreener(byTf(evalCandles()), '15m');
+    for (const id of ['structure', 'liquidity', 'orderBlock']) {
+      expect(r.hardGates.find((g) => g.id === id)!.pass).toBe(base.hardGates.find((g) => g.id === id)!.pass);
+    }
+  });
+
   it('empty input: NO_TRADE without throwing', () => {
     const r = evaluateSmcScreener({}, '15m');
     expect(r.status).toBe('NO_TRADE');
@@ -159,6 +182,18 @@ describe('screener indicator helpers', () => {
     const v = adx(trend);
     expect(Number.isFinite(v)).toBe(true);
     expect(v).toBeGreaterThan(20);
+  });
+
+  it('supertrend follows the trend direction', () => {
+    expect(supertrendDir(htf(120, 1))).toBe(1);
+    expect(supertrendDir(htf(120, -1))).toBe(-1);
+  });
+
+  it('cci is strongly positive on an uptrend, mfi saturates on all-up flow, obv accumulates', () => {
+    expect(cci(htf(60, 1))).toBeGreaterThan(0);
+    expect(mfi(htf(60, 1))).toBe(100);
+    const obv = obvSeries(htf(10, 1));
+    expect(obv[9]).toBeGreaterThan(obv[1]);
   });
 
   it('atrSeries converges to the constant bar range', () => {

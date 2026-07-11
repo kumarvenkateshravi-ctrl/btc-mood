@@ -90,8 +90,56 @@ export interface ScreenerWeights {
   volume: number;
 }
 
+/**
+ * Layer 2 — customizable technical confirmation filters. The Institutional
+ * Workflow itself (structure, liquidity, order blocks, FVG, premium/discount,
+ * trade-plan logic) is LOCKED: two traders using the SMC Screener always run
+ * the same methodology; only these confirmations are personal preference.
+ */
+export interface TechnicalFilters {
+  trend: {
+    indicator: 'ema' | 'sma' | 'supertrend';
+    fast: number;
+    slow: number;
+    long: number;
+    /** Supertrend params (used when indicator === 'supertrend'). */
+    atrPeriod: number;
+    multiplier: number;
+    /** How many of the 4 TF checks must agree with the direction. */
+    minAlignment: 1 | 2 | 3 | 4;
+  };
+  momentum: {
+    indicator: 'rsi' | 'macd' | 'cci';
+    rsiLength: number;
+    bullThreshold: number;
+    bearThreshold: number;
+    cciLength: number;
+    adxEnabled: boolean;
+    adxMin: number;
+  };
+  volatility: {
+    indicator: 'atr' | 'bollinger' | 'donchian';
+    length: number;
+    volSpikeMult: number;
+  };
+  volume: {
+    indicator: 'volSma' | 'obv' | 'mfi';
+    smaLength: number;
+    mfiLength: number;
+  };
+}
+
+export const DEFAULT_FILTERS: TechnicalFilters = {
+  trend: { indicator: 'ema', fast: 20, slow: 50, long: 200, atrPeriod: 10, multiplier: 3, minAlignment: 3 },
+  momentum: { indicator: 'rsi', rsiLength: 14, bullThreshold: 55, bearThreshold: 45, cciLength: 20, adxEnabled: true, adxMin: 25 },
+  volatility: { indicator: 'atr', length: 14, volSpikeMult: 1.5 },
+  volume: { indicator: 'volSma', smaLength: 20, mfiLength: 14 },
+};
+
 export interface ScreenerConfig {
   weights: ScreenerWeights;
+  /** Layer 2 technical filters (user preference). */
+  filters: TechnicalFilters;
   /**
    * Evaluate a specific direction regardless of the MTF trend vote — used by
    * the Institutional Long/Short Workflow reference tabs. The trend gate
@@ -102,9 +150,6 @@ export interface ScreenerConfig {
   maxObAgeBars: number;
   minRR: number;
   maxStopPct: number;
-  rsiBull: number;
-  adxMin: number;
-  volSpikeMult: number;
   approachAtrMult: number;
   lookbackBars: number;
 }
@@ -114,16 +159,23 @@ export const DEFAULT_SCREENER_CONFIG: ScreenerConfig = {
     trend: 20, structure: 20, liquidity: 15, orderBlock: 10,
     momentum: 10, volatility: 10, fvg: 5, zone: 5, volume: 5,
   },
+  filters: DEFAULT_FILTERS,
   minObStrength: 80,
   maxObAgeBars: 50,
   minRR: 3,
   maxStopPct: 2,
-  rsiBull: 55,
-  adxMin: 25,
-  volSpikeMult: 1.5,
   approachAtrMult: 2,
   lookbackBars: 100,
 };
+
+export interface ScreenerFilterInput extends Omit<Partial<ScreenerConfig>, 'filters'> {
+  filters?: {
+    trend?: Partial<TechnicalFilters['trend']>;
+    momentum?: Partial<TechnicalFilters['momentum']>;
+    volatility?: Partial<TechnicalFilters['volatility']>;
+    volume?: Partial<TechnicalFilters['volume']>;
+  };
+}
 
 // ---------------------------------------------------------------- indicator math
 // Local Wilder-style helpers (pure, unit-tested) — deliberately independent of
@@ -240,6 +292,82 @@ export function adx(candles: Candle[], len = 14): number {
   return adxVal;
 }
 
+/** Standard Supertrend direction at the last bar: +1 bullish, -1 bearish. */
+export function supertrendDir(candles: Candle[], period = 10, multiplier = 3): 1 | -1 | null {
+  if (candles.length < period + 2) return null;
+  const atr = atrSeries(candles, period);
+  let finalUpper = NaN;
+  let finalLower = NaN;
+  let trend: 1 | -1 = 1;
+  for (let i = period; i < candles.length; i++) {
+    const c = candles[i];
+    const mid = (c.high + c.low) / 2;
+    const basicUpper = mid + multiplier * atr[i];
+    const basicLower = mid - multiplier * atr[i];
+    const prevClose = candles[i - 1].close;
+    finalUpper = Number.isNaN(finalUpper) || basicUpper < finalUpper || prevClose > finalUpper ? basicUpper : finalUpper;
+    finalLower = Number.isNaN(finalLower) || basicLower > finalLower || prevClose < finalLower ? basicLower : finalLower;
+    if (trend === 1 && c.close < finalLower) trend = -1;
+    else if (trend === -1 && c.close > finalUpper) trend = 1;
+  }
+  return trend;
+}
+
+/** CCI at the last bar: (tp − SMA(tp)) / (0.015 × mean deviation). */
+export function cci(candles: Candle[], len = 20): number {
+  if (candles.length < len) return NaN;
+  const tps = candles.map((c) => (c.high + c.low + c.close) / 3);
+  const from = tps.length - len;
+  let mean = 0;
+  for (let i = from; i < tps.length; i++) mean += tps[i];
+  mean /= len;
+  let dev = 0;
+  for (let i = from; i < tps.length; i++) dev += Math.abs(tps[i] - mean);
+  dev /= len;
+  return dev === 0 ? 0 : (tps[tps.length - 1] - mean) / (0.015 * dev);
+}
+
+/** Money Flow Index at the last bar (0–100). */
+export function mfi(candles: Candle[], len = 14): number {
+  if (candles.length < len + 1) return NaN;
+  let pos = 0;
+  let neg = 0;
+  for (let i = candles.length - len; i < candles.length; i++) {
+    const tp = (candles[i].high + candles[i].low + candles[i].close) / 3;
+    const prevTp = (candles[i - 1].high + candles[i - 1].low + candles[i - 1].close) / 3;
+    const flow = tp * candles[i].volume;
+    if (tp > prevTp) pos += flow;
+    else if (tp < prevTp) neg += flow;
+  }
+  if (neg === 0) return 100;
+  return 100 - 100 / (1 + pos / neg);
+}
+
+/** On-balance volume series. */
+export function obvSeries(candles: Candle[]): number[] {
+  const out = new Array<number>(candles.length).fill(0);
+  for (let i = 1; i < candles.length; i++) {
+    const d = candles[i].close - candles[i - 1].close;
+    out[i] = out[i - 1] + (d > 0 ? candles[i].volume : d < 0 ? -candles[i].volume : 0);
+  }
+  return out;
+}
+
+/** Donchian channel width (len) expanding vs 5 bars ago. */
+function donchianExpanding(candles: Candle[], len = 20): boolean | null {
+  if (candles.length < len + 6) return null;
+  const width = (end: number): number => {
+    let hi = -Infinity;
+    let lo = Infinity;
+    for (let i = end - len + 1; i <= end; i++) {
+      if (candles[i].high > hi) hi = candles[i].high;
+      if (candles[i].low < lo) lo = candles[i].low;
+    }
+    return hi - lo;
+  };
+  return width(candles.length - 1) > width(candles.length - 6);
+}
+
 function bbWidthSeries(closes: number[], len = 20, mult = 2): number[] {
   const mid = sma(closes, len);
   const out = new Array<number>(closes.length).fill(NaN);
@@ -271,42 +399,61 @@ const LIVE = new Set(['active', 'tested', 'partial']);
 export function evaluateSmcScreener(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   evalTf: Timeframe,
-  config?: Partial<ScreenerConfig>,
+  config?: ScreenerFilterInput,
 ): ScreenerReport {
   const cfg: ScreenerConfig = {
     ...DEFAULT_SCREENER_CONFIG,
     ...config,
     weights: { ...DEFAULT_SCREENER_CONFIG.weights, ...config?.weights },
+    filters: {
+      trend: { ...DEFAULT_FILTERS.trend, ...config?.filters?.trend },
+      momentum: { ...DEFAULT_FILTERS.momentum, ...config?.filters?.momentum },
+      volatility: { ...DEFAULT_FILTERS.volatility, ...config?.filters?.volatility },
+      volume: { ...DEFAULT_FILTERS.volume, ...config?.filters?.volume },
+    },
   };
+  const F = cfg.filters;
   const candles = candlesByTf[evalTf] ?? [];
   const n = candles.length;
   const last = candles[n - 1];
 
   // ---------- Gate 1: Trend (also determines direction) ----------
+  // Indicator is user-configurable (Layer 2); the GATE itself — MTF alignment
+  // with a Daily veto — is the locked institutional rule.
+  const ft = F.trend;
+  const ma = ft.indicator === 'sma' ? sma : ema;
+  const maName = ft.indicator.toUpperCase();
   const trendChecks: Array<{ tf: Timeframe; label: string; vote: number; weight: number; ok: boolean | null }> = [];
-  const trendDef: Array<[Timeframe, 'ema200' | 'ema50v200' | 'ema20v50', string, number]> = [
-    ['1d', 'ema200', 'Daily close vs EMA200', 2],
-    ['4h', 'ema200', '4H close vs EMA200', 1],
-    ['1h', 'ema50v200', '1H EMA50 vs EMA200', 1],
-    ['15m', 'ema20v50', '15m EMA20 vs EMA50', 1],
+  const trendDef: Array<[Timeframe, 'longMa' | 'slowVsLong' | 'fastVsSlow', string, number]> = [
+    ['1d', 'longMa', `Daily close vs ${maName}${ft.long}`, 2],
+    ['4h', 'longMa', `4H close vs ${maName}${ft.long}`, 1],
+    ['1h', 'slowVsLong', `1H ${maName}${ft.slow} vs ${maName}${ft.long}`, 1],
+    ['15m', 'fastVsSlow', `15m ${maName}${ft.fast} vs ${maName}${ft.slow}`, 1],
   ];
   for (const [tf, kind, label, weight] of trendDef) {
     const series = candlesByTf[tf];
-    const closes = series?.map((c) => c.close) ?? [];
     let vote: number | null = null;
-    if (kind === 'ema200' && closes.length >= 200) {
-      const e = ema(closes, 200);
-      vote = closes[closes.length - 1] > e[e.length - 1] ? 1 : -1;
-    } else if (kind === 'ema50v200' && closes.length >= 200) {
-      const e50 = ema(closes, 50);
-      const e200 = ema(closes, 200);
-      vote = e50[e50.length - 1] > e200[e200.length - 1] ? 1 : -1;
-    } else if (kind === 'ema20v50' && closes.length >= 50) {
-      const e20 = ema(closes, 20);
-      const e50 = ema(closes, 50);
-      vote = e20[e20.length - 1] > e50[e50.length - 1] ? 1 : -1;
+    let rowLabel = label;
+    if (ft.indicator === 'supertrend') {
+      rowLabel = `${tf === '1d' ? 'Daily' : tf} Supertrend(${ft.atrPeriod}, ${ft.multiplier})`;
+      const dir = series ? supertrendDir(series, ft.atrPeriod, ft.multiplier) : null;
+      vote = dir;
+    } else {
+      const closes = series?.map((c) => c.close) ?? [];
+      if (kind === 'longMa' && closes.length >= ft.long) {
+        const e = ma(closes, ft.long);
+        vote = closes[closes.length - 1] > e[e.length - 1] ? 1 : -1;
+      } else if (kind === 'slowVsLong' && closes.length >= ft.long) {
+        const eSlow = ma(closes, ft.slow);
+        const eLong = ma(closes, ft.long);
+        vote = eSlow[eSlow.length - 1] > eLong[eLong.length - 1] ? 1 : -1;
+      } else if (kind === 'fastVsSlow' && closes.length >= ft.slow) {
+        const eFast = ma(closes, ft.fast);
+        const eSlow = ma(closes, ft.slow);
+        vote = eFast[eFast.length - 1] > eSlow[eSlow.length - 1] ? 1 : -1;
+      }
     }
-    trendChecks.push({ tf, label, vote: vote ?? 0, weight, ok: vote === null ? null : vote > 0 });
+    trendChecks.push({ tf, label: rowLabel, vote: vote ?? 0, weight, ok: vote === null ? null : vote > 0 });
   }
   const trendSum = trendChecks.reduce((s, c) => s + c.vote * c.weight, 0);
   const direction: 'long' | 'short' | null =
@@ -324,7 +471,10 @@ export function evaluateSmcScreener(
       c.ok === null ? 'insufficient history' : c.ok ? 'bullish' : 'bearish',
     ),
   );
-  const trendPass = direction !== null && !dailyAgainst;
+  const agreeCount = trendChecks.filter(
+    (c) => c.ok !== null && direction !== null && (c.ok ? 'long' : 'short') === direction,
+  ).length;
+  const trendPass = direction !== null && !dailyAgainst && agreeCount >= ft.minAlignment;
   const trendGate = group('trend', 'Trend (MTF)', cfg.weights.trend, trendItems, trendPass);
 
   // ---------- SMC snapshot on the eval timeframe ----------
@@ -397,33 +547,62 @@ export function evaluateSmcScreener(
 
   const hardGates = [trendGate, structureGate, liquidityGate, obGate];
 
-  // ---------- Context layer ----------
+  // ---------- Context layer (Layer 2 — configurable confirmations) ----------
   const closes = candles.map((c) => c.close);
-  const rsiNow = rsi(closes, 14);
-  const macdNow = macdLastRelation(closes);
-  const adxNow = adx(candles, 14);
-  const rsiOk = direction === 'long' ? rsiNow > cfg.rsiBull : rsiNow < 100 - cfg.rsiBull;
-  const macdOk = direction === 'long' ? macdNow.line > macdNow.signal : macdNow.line < macdNow.signal;
-  const momentum = group('momentum', 'Momentum', cfg.weights.momentum, [
-    item('rsi', direction === 'long' ? `RSI > ${cfg.rsiBull}` : `RSI < ${100 - cfg.rsiBull}`,
-      Number.isFinite(rsiNow) ? (rsiOk ? 'pass' : 'fail') : 'na', Number.isFinite(rsiNow) ? rsiNow.toFixed(1) : undefined),
-    item('macd', `MACD ${direction === 'long' ? 'bullish' : 'bearish'}`,
-      Number.isFinite(macdNow.line) ? (macdOk ? 'pass' : 'fail') : 'na'),
-    item('adx', `ADX > ${cfg.adxMin}`, Number.isFinite(adxNow) ? (adxNow > cfg.adxMin ? 'pass' : 'fail') : 'na',
-      Number.isFinite(adxNow) ? adxNow.toFixed(1) : undefined),
-  ], true);
+  const long = direction === 'long';
 
-  const atrSma = sma(atr14.map((v) => (Number.isFinite(v) ? v : 0)), 10);
-  const atrRising = Number.isFinite(atr14[lastIdx]) && atr14[lastIdx] > atrSma[lastIdx];
-  const bbw = bbWidthSeries(closes, 20, 2);
-  const bbExpanding = Number.isFinite(bbw[lastIdx]) && Number.isFinite(bbw[lastIdx - 5]) && bbw[lastIdx] > bbw[lastIdx - 5];
+  // Momentum — chosen indicator + optional ADX strength check.
+  const fm = F.momentum;
+  const momentumItems: ScreenerItem[] = [];
+  if (fm.indicator === 'rsi') {
+    const rsiNow = rsi(closes, fm.rsiLength);
+    const rsiOk = long ? rsiNow > fm.bullThreshold : rsiNow < fm.bearThreshold;
+    momentumItems.push(item('momentum_main',
+      long ? `RSI(${fm.rsiLength}) > ${fm.bullThreshold}` : `RSI(${fm.rsiLength}) < ${fm.bearThreshold}`,
+      Number.isFinite(rsiNow) ? (rsiOk ? 'pass' : 'fail') : 'na',
+      Number.isFinite(rsiNow) ? rsiNow.toFixed(1) : undefined));
+  } else if (fm.indicator === 'macd') {
+    const macdNow = macdLastRelation(closes);
+    const macdOk = long ? macdNow.line > macdNow.signal : macdNow.line < macdNow.signal;
+    momentumItems.push(item('momentum_main', `MACD ${long ? 'bullish' : 'bearish'}`,
+      Number.isFinite(macdNow.line) ? (macdOk ? 'pass' : 'fail') : 'na'));
+  } else {
+    const cciNow = cci(candles, fm.cciLength);
+    const cciOk = long ? cciNow > 100 : cciNow < -100;
+    momentumItems.push(item('momentum_main', long ? `CCI(${fm.cciLength}) > +100` : `CCI(${fm.cciLength}) < -100`,
+      Number.isFinite(cciNow) ? (cciOk ? 'pass' : 'fail') : 'na',
+      Number.isFinite(cciNow) ? cciNow.toFixed(0) : undefined));
+  }
+  if (fm.adxEnabled) {
+    const adxNow = adx(candles, 14);
+    momentumItems.push(item('adx', `ADX > ${fm.adxMin}`,
+      Number.isFinite(adxNow) ? (adxNow > fm.adxMin ? 'pass' : 'fail') : 'na',
+      Number.isFinite(adxNow) ? adxNow.toFixed(1) : undefined));
+  }
+  const momentum = group('momentum', 'Momentum', cfg.weights.momentum, momentumItems, true);
+
+  // Volatility — chosen expansion measure + the volume-spike context check.
+  const fv = F.volatility;
   const vols = candles.map((c) => c.volume);
-  const volSma = sma(vols, 20);
-  const volSpike = last && Number.isFinite(volSma[lastIdx]) && last.volume > cfg.volSpikeMult * volSma[lastIdx];
+  const volSma = sma(vols, F.volume.smaLength);
+  let volaItem: ScreenerItem;
+  if (fv.indicator === 'atr') {
+    const atrF = atrSeries(candles, fv.length);
+    const atrSma = sma(atrF.map((v) => (Number.isFinite(v) ? v : 0)), 10);
+    const rising = Number.isFinite(atrF[lastIdx]) && atrF[lastIdx] > atrSma[lastIdx];
+    volaItem = item('vola_main', `ATR(${fv.length}) rising`, n > fv.length + 11 ? (rising ? 'pass' : 'fail') : 'na');
+  } else if (fv.indicator === 'bollinger') {
+    const bbw = bbWidthSeries(closes, fv.length, 2);
+    const expanding = Number.isFinite(bbw[lastIdx]) && Number.isFinite(bbw[lastIdx - 5]) && bbw[lastIdx] > bbw[lastIdx - 5];
+    volaItem = item('vola_main', `Bollinger(${fv.length}) width expanding`, n > fv.length + 6 ? (expanding ? 'pass' : 'fail') : 'na');
+  } else {
+    const expanding = donchianExpanding(candles, fv.length);
+    volaItem = item('vola_main', `Donchian(${fv.length}) width expanding`, expanding === null ? 'na' : expanding ? 'pass' : 'fail');
+  }
+  const volSpike = last && Number.isFinite(volSma[lastIdx]) && last.volume > fv.volSpikeMult * volSma[lastIdx];
   const volatility = group('volatility', 'Volatility', cfg.weights.volatility, [
-    item('atr_rising', 'ATR rising', n > 25 ? (atrRising ? 'pass' : 'fail') : 'na'),
-    item('bb_expanding', 'Bollinger width expanding', n > 25 ? (bbExpanding ? 'pass' : 'fail') : 'na'),
-    item('vol_spike', `Volume > ${cfg.volSpikeMult}× SMA20`, n > 20 ? (volSpike ? 'pass' : 'warn') : 'na'),
+    volaItem,
+    item('vol_spike', `Volume > ${fv.volSpikeMult}× SMA${F.volume.smaLength}`, n > F.volume.smaLength ? (volSpike ? 'pass' : 'warn') : 'na'),
   ], true);
 
   const alignedGaps = snap.objects.fvgs.filter((g) => g.direction === smcDir && LIVE.has(g.state));
@@ -443,11 +622,30 @@ export function evaluateSmcScreener(
     item('zone', `Price in ${wantZone} zone`, zoneStatus, snap.state.zone),
   ], true);
 
-  const pressureOk = last ? (direction === 'long' ? last.close > last.open : last.close < last.open) : false;
+  // Volume — chosen participation measure.
+  const fvol = F.volume;
+  let volItem: ScreenerItem;
+  if (fvol.indicator === 'volSma') {
+    volItem = item('vol_main', `Volume > SMA${fvol.smaLength}`,
+      last && Number.isFinite(volSma[lastIdx]) ? (last.volume > volSma[lastIdx] ? 'pass' : 'fail') : 'na',
+      last && Number.isFinite(volSma[lastIdx]) ? `${last.volume.toFixed(1)} vs ${volSma[lastIdx].toFixed(1)}` : undefined);
+  } else if (fvol.indicator === 'obv') {
+    const obv = obvSeries(candles);
+    const obvSma = sma(obv, fvol.smaLength);
+    const rising = Number.isFinite(obvSma[lastIdx]) && (long ? obv[lastIdx] > obvSma[lastIdx] : obv[lastIdx] < obvSma[lastIdx]);
+    volItem = item('vol_main', `OBV ${long ? 'rising' : 'falling'} (vs SMA${fvol.smaLength})`,
+      n > fvol.smaLength ? (rising ? 'pass' : 'fail') : 'na');
+  } else {
+    const mfiNow = mfi(candles, fvol.mfiLength);
+    const mfiOk = long ? mfiNow > 50 : mfiNow < 50;
+    volItem = item('vol_main', `MFI(${fvol.mfiLength}) ${long ? '> 50' : '< 50'}`,
+      Number.isFinite(mfiNow) ? (mfiOk ? 'pass' : 'fail') : 'na',
+      Number.isFinite(mfiNow) ? mfiNow.toFixed(1) : undefined);
+  }
+  const pressureOk = last ? (long ? last.close > last.open : last.close < last.open) : false;
   const volume = group('volume', 'Volume', cfg.weights.volume, [
-    item('vol_above', 'Volume > SMA20', last && Number.isFinite(volSma[lastIdx]) ? (last.volume > volSma[lastIdx] ? 'pass' : 'fail') : 'na',
-      last && Number.isFinite(volSma[lastIdx]) ? `${last.volume.toFixed(1)} vs ${volSma[lastIdx].toFixed(1)}` : undefined),
-    item('pressure', `${direction === 'long' ? 'Buying' : 'Selling'} pressure`, last ? (pressureOk ? 'pass' : 'warn') : 'na'),
+    volItem,
+    item('pressure', `${long ? 'Buying' : 'Selling'} pressure`, last ? (pressureOk ? 'pass' : 'warn') : 'na'),
     item('delta', 'Positive delta', 'na', 'order-flow delta — future'),
   ], true);
 

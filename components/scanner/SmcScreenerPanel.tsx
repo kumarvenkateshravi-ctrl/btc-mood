@@ -12,7 +12,7 @@
 // The panel computes nothing itself; reports are cached per closed-bar
 // signature + tab (indicator tick-perf rule).
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BookOpenText,
@@ -20,8 +20,10 @@ import {
   CheckCircle2,
   Circle,
   Clock,
+  Lock,
   Minus,
   Radar,
+  Settings2,
   ShieldAlert,
   Star,
   Target,
@@ -30,12 +32,20 @@ import {
 import type { Candle, Timeframe } from '@/lib/types';
 import {
   evaluateSmcScreener,
+  DEFAULT_FILTERS,
   type ScreenerGroup,
   type ScreenerItem,
   type ScreenerItemStatus,
   type ScreenerReport,
   type ScreenerStatus,
+  type TechnicalFilters,
 } from '@/lib/smc/screener';
+import {
+  BUILT_IN_PRESETS,
+  loadScreenerFilters,
+  saveScreenerFilters,
+  type ScreenerPreset,
+} from '@/lib/smc/screenerPresets';
 
 const SIG_TFS: Timeframe[] = ['1d', '4h', '1h', '15m'];
 
@@ -62,14 +72,17 @@ function ItemIcon({ status }: { status: ScreenerItemStatus }) {
   return <Minus className="h-3.5 w-3.5 shrink-0 text-ink-faint" />;
 }
 
-function GroupCard({ group, hard }: { group: ScreenerGroup; hard?: boolean }) {
+function GroupCard({ group, hard, locked }: { group: ScreenerGroup; hard?: boolean; locked?: boolean }) {
   return (
     <div className={[
       'rounded-lg border bg-surface-1 p-3',
       hard ? (group.pass ? 'border-bull/25' : 'border-bear/30') : 'border-line',
     ].join(' ')}>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">{group.name}</span>
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+          {group.name}
+          {locked && <Lock className="h-3 w-3 text-ink-faint" aria-label="Institutional rule — locked" />}
+        </span>
         {hard ? (
           <span className={[
             'rounded px-1.5 py-0.5 text-[10px] font-bold',
@@ -179,7 +192,7 @@ function LiveScreenerView({ r, symbol, evalTf }: { r: ScreenerReport; symbol: st
           Hard gates — all must pass
         </p>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          {r.hardGates.map((g) => <GroupCard key={g.id} group={g} hard />)}
+          {r.hardGates.map((g) => <GroupCard key={g.id} group={g} hard locked={g.id !== 'trend'} />)}
         </div>
       </div>
 
@@ -189,7 +202,7 @@ function LiveScreenerView({ r, symbol, evalTf }: { r: ScreenerReport; symbol: st
           Context layer — confidence, not eligibility
         </p>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          {r.contextChecks.map((g) => <GroupCard key={g.id} group={g} />)}
+          {r.contextChecks.map((g) => <GroupCard key={g.id} group={g} locked={g.id === 'fvg' || g.id === 'zone'} />)}
         </div>
       </div>
 
@@ -290,23 +303,22 @@ function buildChecklist(r: ScreenerReport, dir: 'long' | 'short'): ChecklistSect
   const long = dir === 'long';
   const D = long ? 'Bullish' : 'Bearish';
   const side = long ? 'Sell-side' : 'Buy-side';
+  // Configurable sections render their live items as-is, so the checklist
+  // follows whatever technical filters the trader selected.
+  const groupRows = (id: string): ChecklistRow[] => {
+    const g = [...r.hardGates, ...r.contextChecks].find((x) => x.id === id);
+    return (g?.items ?? []).map((row) => ({ label: row.label, status: row.status }));
+  };
 
   return [
     { title: 'Trend', rows: [
       it('trend_1d', `Daily Trend ${D}`),
       it('trend_4h', `4H Trend ${D}`),
       it('trend_1h', `1H Trend ${D}`),
-      it('trend_15m', 'EMA Alignment (15m EMA20 vs EMA50)'),
+      it('trend_15m', undefined),
     ]},
-    { title: 'Momentum', rows: [
-      it('rsi', long ? 'RSI > 55' : 'RSI < 45'),
-      it('macd', `MACD ${D}`),
-      it('adx', 'ADX > 25'),
-    ]},
-    { title: 'Volatility', rows: [
-      it('atr_rising', 'ATR Rising'),
-      it('bb_expanding', 'Bollinger Width Expanding'),
-    ]},
+    { title: 'Momentum', rows: groupRows('momentum') },
+    { title: 'Volatility', rows: groupRows('volatility').filter((row) => !row.label.startsWith('Volume')) },
     { title: 'Market Structure', rows: [
       stageRow('liquidity_building', `${side} Liquidity Built`),
       it('sweep', `${side} Liquidity Swept`),
@@ -326,10 +338,7 @@ function buildChecklist(r: ScreenerReport, dir: 'long' | 'short'): ChecklistSect
     { title: 'Premium / Discount', rows: [
       it('zone', long ? 'Price in Discount Zone' : 'Price in Premium Zone'),
     ]},
-    { title: 'Volume', rows: [
-      it('vol_above', 'Volume > SMA20'),
-      it('pressure', long ? 'Buying Pressure Increasing' : 'Selling Pressure Increasing'),
-    ]},
+    { title: 'Volume', rows: groupRows('volume').filter((row) => !row.label.startsWith('Positive delta')) },
     { title: 'Trade Entry', rows: [
       stageRow('retest', `Price retests ${D} OB`),
       { label: 'Risk Reward > 3', status: r.tradePlan ? (r.tradePlan.rr >= 3 ? 'pass' : 'fail') : 'fail' },
@@ -398,6 +407,203 @@ function WorkflowChecklistView({ r, dir }: { r: ScreenerReport; dir: 'long' | 's
   );
 }
 
+// -------------------------------------------------- technical filter controls
+
+type FilterSection = 'trend' | 'momentum' | 'volatility' | 'volume';
+
+function Num({ label, value, onChange, min = 1, max = 500, step = 1 }: {
+  label: string; value: number; onChange: (n: number) => void; min?: number; max?: number; step?: number;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-2 text-[12px] text-ink-muted">
+      {label}
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v)) onChange(v);
+        }}
+        className="focus-ring w-20 rounded border border-line bg-base px-1.5 py-1 text-right font-mono text-[12px] text-ink"
+      />
+    </label>
+  );
+}
+
+function Sel<T extends string>({ label, value, options, onChange }: {
+  label: string; value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-2 text-[12px] text-ink-muted">
+      {label}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        className="focus-ring rounded border border-line bg-base px-1.5 py-1 text-[12px] text-ink"
+      >
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/** ⚙ drawer for one configurable section (Layer 2). */
+function SectionDrawer({ section, filters, onChange }: {
+  section: FilterSection;
+  filters: TechnicalFilters;
+  onChange: (next: TechnicalFilters) => void;
+}) {
+  const set = <K extends FilterSection>(key: K, patch: Partial<TechnicalFilters[K]>) =>
+    onChange({ ...filters, [key]: { ...filters[key], ...patch } });
+
+  if (section === 'trend') {
+    const t = filters.trend;
+    return (
+      <div className="flex flex-col gap-2">
+        <Sel label="Indicator" value={t.indicator} onChange={(v) => set('trend', { indicator: v })}
+          options={[{ value: 'ema', label: 'EMA' }, { value: 'sma', label: 'SMA' }, { value: 'supertrend', label: 'Supertrend' }]} />
+        {t.indicator === 'supertrend' ? (
+          <>
+            <Num label="ATR Period" value={t.atrPeriod} onChange={(n) => set('trend', { atrPeriod: n })} min={2} max={100} />
+            <Num label="Multiplier" value={t.multiplier} onChange={(n) => set('trend', { multiplier: n })} min={1} max={10} step={0.5} />
+          </>
+        ) : (
+          <>
+            <Num label="Fast" value={t.fast} onChange={(n) => set('trend', { fast: n })} />
+            <Num label="Slow" value={t.slow} onChange={(n) => set('trend', { slow: n })} />
+            <Num label="Long" value={t.long} onChange={(n) => set('trend', { long: n })} />
+          </>
+        )}
+        <Sel label="Minimum Alignment" value={String(t.minAlignment) as '1' | '2' | '3' | '4'}
+          onChange={(v) => set('trend', { minAlignment: Number(v) as 1 | 2 | 3 | 4 })}
+          options={[{ value: '1', label: '1 TF' }, { value: '2', label: '2 TFs' }, { value: '3', label: '3 TFs' }, { value: '4', label: '4 TFs' }]} />
+      </div>
+    );
+  }
+  if (section === 'momentum') {
+    const m = filters.momentum;
+    return (
+      <div className="flex flex-col gap-2">
+        <Sel label="Indicator" value={m.indicator} onChange={(v) => set('momentum', { indicator: v })}
+          options={[{ value: 'rsi', label: 'RSI' }, { value: 'macd', label: 'MACD' }, { value: 'cci', label: 'CCI' }]} />
+        {m.indicator === 'rsi' && (
+          <>
+            <Num label="Length" value={m.rsiLength} onChange={(n) => set('momentum', { rsiLength: n })} min={2} max={100} />
+            <Num label="Bullish Threshold" value={m.bullThreshold} onChange={(n) => set('momentum', { bullThreshold: n })} min={50} max={90} />
+            <Num label="Bearish Threshold" value={m.bearThreshold} onChange={(n) => set('momentum', { bearThreshold: n })} min={10} max={50} />
+          </>
+        )}
+        {m.indicator === 'cci' && (
+          <Num label="Length" value={m.cciLength} onChange={(n) => set('momentum', { cciLength: n })} min={5} max={100} />
+        )}
+        <label className="flex items-center justify-between gap-2 text-[12px] text-ink-muted">
+          ADX strength check
+          <input type="checkbox" checked={m.adxEnabled} onChange={(e) => set('momentum', { adxEnabled: e.target.checked })} className="h-3.5 w-3.5 accent-accent" />
+        </label>
+        {m.adxEnabled && <Num label="ADX Minimum" value={m.adxMin} onChange={(n) => set('momentum', { adxMin: n })} min={10} max={60} />}
+      </div>
+    );
+  }
+  if (section === 'volatility') {
+    const v = filters.volatility;
+    return (
+      <div className="flex flex-col gap-2">
+        <Sel label="Indicator" value={v.indicator} onChange={(x) => set('volatility', { indicator: x })}
+          options={[{ value: 'atr', label: 'ATR' }, { value: 'bollinger', label: 'Bollinger Width' }, { value: 'donchian', label: 'Donchian Width' }]} />
+        <Num label="Length" value={v.length} onChange={(n) => set('volatility', { length: n })} min={5} max={100} />
+        <Num label="Volume Spike ×" value={v.volSpikeMult} onChange={(n) => set('volatility', { volSpikeMult: n })} min={1} max={5} step={0.1} />
+      </div>
+    );
+  }
+  const vol = filters.volume;
+  return (
+    <div className="flex flex-col gap-2">
+      <Sel label="Indicator" value={vol.indicator} onChange={(v) => set('volume', { indicator: v })}
+        options={[{ value: 'volSma', label: 'Volume vs SMA' }, { value: 'obv', label: 'OBV' }, { value: 'mfi', label: 'MFI' }]} />
+      {vol.indicator === 'mfi'
+        ? <Num label="MFI Length" value={vol.mfiLength} onChange={(n) => set('volume', { mfiLength: n })} min={5} max={100} />
+        : <Num label="SMA Length" value={vol.smaLength} onChange={(n) => set('volume', { smaLength: n })} min={5} max={200} />}
+    </div>
+  );
+}
+
+const SECTION_LABEL: Record<FilterSection, string> = {
+  trend: 'Trend', momentum: 'Momentum', volatility: 'Volatility', volume: 'Volume',
+};
+
+function FiltersBar({ filters, custom, onFilters, onCustom }: {
+  filters: TechnicalFilters;
+  custom: ScreenerPreset[];
+  onFilters: (f: TechnicalFilters) => void;
+  onCustom: (c: ScreenerPreset[]) => void;
+}) {
+  const [openSection, setOpenSection] = useState<FilterSection | null>(null);
+  const presets = [...BUILT_IN_PRESETS, ...custom];
+  const activePreset = presets.find((p) => JSON.stringify(p.filters) === JSON.stringify(filters));
+
+  return (
+    <div className="mx-auto mb-4 max-w-5xl rounded-xl border border-line bg-surface-1 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Technical filters</span>
+        <select
+          value={activePreset?.id ?? '__custom__'}
+          onChange={(e) => {
+            const p = presets.find((x) => x.id === e.target.value);
+            if (p) onFilters(p.filters);
+          }}
+          className="focus-ring h-7 rounded-lg border border-line bg-base px-2 text-[12px] text-ink"
+        >
+          {!activePreset && <option value="__custom__">Custom (unsaved)</option>}
+          {presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        {!activePreset && (
+          <button
+            type="button"
+            onClick={() => {
+              const name = window.prompt('Preset name');
+              if (!name?.trim()) return;
+              onCustom([...custom, { id: `custom_${Date.now()}`, name: name.trim(), builtIn: false, filters }]);
+            }}
+            className="focus-ring h-7 rounded-lg border border-line bg-base px-2 text-[12px] text-ink-muted hover:text-ink"
+          >
+            Save as preset
+          </button>
+        )}
+        <span className="mx-1 h-4 w-px bg-line" aria-hidden />
+        {(Object.keys(SECTION_LABEL) as FilterSection[]).map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setOpenSection((cur) => (cur === s ? null : s))}
+            className={[
+              'focus-ring inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[12px] transition',
+              openSection === s ? 'border-accent/40 bg-accent/10 text-accent' : 'border-line bg-base text-ink-muted hover:text-ink',
+            ].join(' ')}
+          >
+            {SECTION_LABEL[s]}
+            <Settings2 className="h-3 w-3" />
+          </button>
+        ))}
+        <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-ink-faint">
+          <Lock className="h-3 w-3" />
+          Structure · Liquidity · Order Block · FVG · Zones · Trade Plan — locked
+        </span>
+      </div>
+      {openSection && (
+        <div className="mt-3 max-w-xs rounded-lg border border-line bg-base p-3">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+            {SECTION_LABEL[openSection]} Settings
+          </p>
+          <SectionDrawer section={openSection} filters={filters} onChange={onFilters} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------- panel
 
 export default function SmcScreenerPanel({
@@ -410,20 +616,27 @@ export default function SmcScreenerPanel({
   symbol: string;
 }) {
   const [tab, setTab] = useState<TabId>('live');
+  const [{ current: initialFilters, custom: initialCustom }] = useState(loadScreenerFilters);
+  const [filters, setFilters] = useState<TechnicalFilters>(initialFilters ?? DEFAULT_FILTERS);
+  const [custom, setCustom] = useState<ScreenerPreset[]>(initialCustom);
 
-  // Closed-bar cache per tab: in-bar ticks reuse the reports.
-  const sig = `${evalTf}:${SIG_TFS.map((tf) => {
+  useEffect(() => {
+    saveScreenerFilters(filters, custom);
+  }, [filters, custom]);
+
+  // Closed-bar cache per tab + filters: in-bar ticks reuse the reports.
+  const filtersSig = JSON.stringify(filters);
+  const sig = `${evalTf}:${filtersSig}:${SIG_TFS.map((tf) => {
     const s = candlesByTf[tf];
     return s && s.length ? `${s.length}.${s[s.length - 1].time}` : '0';
   }).join('|')}`;
   const cacheRef = useRef<{ sig: string; reports: Partial<Record<TabId, ScreenerReport>> }>({ sig: '', reports: {} });
   if (cacheRef.current.sig !== sig) cacheRef.current = { sig, reports: {} };
   if (!cacheRef.current.reports[tab]) {
-    cacheRef.current.reports[tab] = evaluateSmcScreener(
-      candlesByTf,
-      evalTf,
-      tab === 'live' ? undefined : { forceDirection: tab },
-    );
+    cacheRef.current.reports[tab] = evaluateSmcScreener(candlesByTf, evalTf, {
+      filters,
+      ...(tab === 'live' ? {} : { forceDirection: tab }),
+    });
   }
   const r = cacheRef.current.reports[tab]!;
 
@@ -446,6 +659,7 @@ export default function SmcScreenerPanel({
           </button>
         ))}
       </div>
+      <FiltersBar filters={filters} custom={custom} onFilters={setFilters} onCustom={setCustom} />
       {tab === 'live' ? (
         <LiveScreenerView r={r} symbol={symbol} evalTf={evalTf} />
       ) : (
