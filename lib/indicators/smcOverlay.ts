@@ -129,7 +129,15 @@ function bandPlot(
   top: number,
   bottom: number,
   n: number,
-  label?: string,
+  zoneStyle: {
+    label?: string;
+    /** Price-facing edge. REQUIRED for visibility: bands without a boundary
+     *  render as "subtle context" (0.03 fill alpha, no borders). */
+    boundary?: 'upper' | 'lower';
+    /** 0..1 — drives border weight. */
+    emphasis?: number;
+    lineStyle?: 'solid' | 'dashed';
+  } = {},
 ): IndicatorPlot {
   const data: IndicatorPlot['data'] = new Array(n).fill(null);
   for (let j = Math.max(0, from); j < n; j++) data[j] = { upper: top, lower: bottom };
@@ -140,7 +148,7 @@ function bandPlot(
     type: 'band',
     data,
     pane: 'overlay',
-    zoneStyle: label ? { label } : undefined,
+    zoneStyle,
   };
 }
 
@@ -207,7 +215,13 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
           ob.top,
           ob.bottom,
           n,
-          boxLabel(ob, inputs),
+          {
+            label: boxLabel(ob, inputs),
+            // Bullish OBs sit below price (price approaches the top edge).
+            boundary: ob.direction === 'bullish' ? 'upper' : 'lower',
+            emphasis: ob.strength / 100,
+            lineStyle: scope === 'internal' ? 'dashed' : 'solid',
+          },
         ),
       );
     }
@@ -231,7 +245,12 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
           gap.top,
           gap.bottom,
           n,
-          boxLabel(gap, inputs),
+          {
+            label: boxLabel(gap, inputs),
+            boundary: gap.direction === 'bullish' ? 'upper' : 'lower',
+            emphasis: gap.strength / 100,
+            lineStyle: 'dashed',
+          },
         ),
       );
     }
@@ -244,7 +263,14 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
       const label = inputs.showLabels || debug
         ? name.charAt(0).toUpperCase() + name.slice(1) // "Premium" / "Equilibrium" / "Discount"
         : undefined;
-      plots.push(bandPlot(`zone_${name}`, name, ZONE_COLORS[name] ?? ZONE_COLORS.equilibrium, zone.createdAtBar, zone.top, zone.bottom, n, label));
+      plots.push(
+        bandPlot(`zone_${name}`, name, ZONE_COLORS[name] ?? ZONE_COLORS.equilibrium, zone.createdAtBar, zone.top, zone.bottom, n, {
+          label,
+          boundary: name === 'premium' ? 'lower' : 'upper',
+          emphasis: 0.4,
+          lineStyle: 'dashed',
+        }),
+      );
     }
   }
 
