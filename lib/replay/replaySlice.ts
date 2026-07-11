@@ -43,6 +43,18 @@ export function sliceAtTime(candles: Candle[], t: number): Candle[] {
 }
 
 /**
+ * The replay head on `tf` at wall-clock moment `now`: the last bar fully
+ * CLOSED by `now` (a forming bar would leak its own future). Clamped to ≥1
+ * so replay controls stay usable. Used to keep the moment across TF
+ * switches (Phase 3 multi-TF replay).
+ */
+export function replayIndexForTime(candles: Candle[], tf: Timeframe, now: number): number {
+  const interval = TF_SECONDS[tf];
+  const idx = searchRightmost(candles, now - interval);
+  return Math.max(1, idx);
+}
+
+/**
  * Slice every timeframe at the replay moment. `cutBar` is the current replay
  * bar on `evalTf`; now = cutBar.time + interval(evalTf).
  */

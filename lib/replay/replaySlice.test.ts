@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sliceAtTime, sliceCandlesByTf, TF_SECONDS } from './replaySlice';
+import { sliceAtTime, sliceCandlesByTf, replayIndexForTime, TF_SECONDS } from './replaySlice';
 import { validateReplayData } from './validate';
 import type { Candle, Timeframe } from '@/lib/types';
 
@@ -74,6 +74,15 @@ describe('sliceCandlesByTf (Prime Invariant)', () => {
     expect(days.length).toBe(1); // day 0 forming (opened T0, closes T0+86400 > now)
     expect(days[0].time).toBe(T0);
     expect(days[0].close).toBe(cutBar.close);
+  });
+
+  it('replayIndexForTime keeps the moment across TF switches (round-trips on the eval TF)', () => {
+    // now = close of 15m bar #21
+    expect(replayIndexForTime(byTf['15m']!, '15m', now)).toBe(21); // round-trip
+    expect(replayIndexForTime(byTf['5m']!, '5m', now)).toBe(65); // 66 closed 5m bars → head 65
+    expect(replayIndexForTime(byTf['1h']!, '1h', now)).toBe(4); // 5 closed hours → head 4
+    // clamps to 1 when the moment predates the series
+    expect(replayIndexForTime(byTf['1h']!, '1h', T0 - 100)).toBe(1);
   });
 
   it('sliceAtTime handles edges', () => {

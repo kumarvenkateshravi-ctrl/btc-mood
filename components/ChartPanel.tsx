@@ -37,7 +37,8 @@ import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { useBaseCandles } from '@/lib/chartHelpers';
 import { setReplayCut, clearReplayCut } from '@/lib/replay/replayCut';
 import { validateReplayData } from '@/lib/replay/validate';
-import { replayActions, useReplayState, isReplayActive } from '@/lib/replay/replayState';
+import { replayActions, useReplayState, isReplayActive, getReplayState } from '@/lib/replay/replayState';
+import { replayIndexForTime, TF_SECONDS } from '@/lib/replay/replaySlice';
 import { verifyReplayIntegrity, type IntegrityReport } from '@/lib/replay/verify';
 
 interface ChartPanelProps {
@@ -177,11 +178,34 @@ export default function ChartPanel({
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [bookmarks, setBookmarks] = useState<number[]>([]);
 
-  // Reset replay when the timeframe or symbol changes (candle array differs).
+  // Reset replay only when the SYMBOL changes. A timeframe change REBASES
+  // instead (Phase 3 multi-TF replay): the wall-clock moment is preserved
+  // and the head indices are re-derived on the new TF's candles.
   useEffect(() => {
     replayActions.exit();
     setBookmarks([]);
-  }, [selected, symbol]);
+  }, [symbol]);
+
+  const lastTfRef = useRef(selected);
+  useEffect(() => {
+    if (lastTfRef.current === selected) return;
+    lastTfRef.current = selected;
+    setBookmarks([]); // bookmark indices are TF-specific
+    const st = getReplayState();
+    if (!isReplayActive(st.phase) || st.cutTime == null || candles.length === 0) return;
+    const head = replayIndexForTime(candles, selected, st.cutTime);
+    // TP/SL reconciliation is index-based per TF: resume from the new head
+    // instead of replaying bars that were already reconciled on the old TF.
+    lastReconciledRef.current = head;
+    replayActions.rebase(head, replayIndexForTime(candles, selected, st.startTime ?? st.cutTime));
+  }, [selected, candles]);
+
+  // Keep the wall-clock moment in sync as the head moves on the eval TF.
+  useEffect(() => {
+    if (!replayActive) return;
+    const bar = candles[playIndex];
+    if (bar) replayActions.syncCutTime(bar.time + TF_SECONDS[selected]);
+  }, [replayActive, playIndex, candles, selected]);
 
   // Advance one candle per tick while playing; the machine flips to
   // 'finished' when the head reaches the last bar.
@@ -222,7 +246,7 @@ export default function ChartPanel({
     lastReconciledRef.current = start; // don't reconcile bars before the cut
     startReplaySession(symbol); // fresh isolated account for this replay
     setBookmarks([]);
-    replayActions.startAt(start);
+    replayActions.startAt(start, candles[start] ? candles[start].time + TF_SECONDS[selected] : null);
   };
 
   const stepReplay = (dir: 1 | -1) => replayActions.stepBy(dir, candles.length);

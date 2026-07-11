@@ -53,6 +53,18 @@ describe('replay state machine', () => {
     expect(isReplayActive('finished')).toBe(true);
   });
 
+  it('carries the wall-clock moment and rebases across timeframes without losing phase', () => {
+    replayActions.enterSelecting();
+    replayActions.startAt(120, 5000);
+    expect(getReplayState()).toMatchObject({ cutTime: 5000, startTime: 5000 });
+    replayActions.play();
+    replayActions.syncCutTime(6800);
+    expect(getReplayState().cutTime).toBe(6800);
+    expect(getReplayState().startTime).toBe(5000); // Home target unchanged
+    replayActions.rebase(37, 30); // TF switch re-derives indices
+    expect(getReplayState()).toMatchObject({ phase: 'playing', playIndex: 37, startIndex: 30, cutTime: 6800 });
+  });
+
   it('is deterministic: identical action scripts produce identical states', () => {
     const script = () => {
       replayActions.exit();

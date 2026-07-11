@@ -17,6 +17,14 @@ export interface ReplayStateSnapshot {
   playIndex: number;
   /** The cut point picked by the user — `Home` restarts here. */
   startIndex: number;
+  /**
+   * Wall-clock "now" of the replay moment (close of the current bar).
+   * TIME is the real key (Phase 3): switching timeframes re-derives the
+   * indices from these instead of exiting replay.
+   */
+  cutTime: number | null;
+  /** Wall-clock moment of the original cut (Home target across TFs). */
+  startTime: number | null;
 }
 
 const TRANSITIONS: Record<ReplayPhase, ReplayPhase[]> = {
@@ -28,8 +36,10 @@ const TRANSITIONS: Record<ReplayPhase, ReplayPhase[]> = {
   finished: ['playing', 'paused', 'idle'],
 };
 
+const IDLE: ReplayStateSnapshot = { phase: 'idle', playIndex: 0, startIndex: 0, cutTime: null, startTime: null };
+
 const listeners = new Set<() => void>();
-let state: ReplayStateSnapshot = { phase: 'idle', playIndex: 0, startIndex: 0 };
+let state: ReplayStateSnapshot = IDLE;
 
 function emit() {
   for (const fn of listeners) fn();
@@ -63,9 +73,26 @@ export const replayActions = {
   enterSelecting(): boolean {
     return transition('selecting');
   },
-  /** Cut picked: replay is armed at `index` (paused until Play). */
-  startAt(index: number): boolean {
-    return transition('ready', { playIndex: index, startIndex: index });
+  /** Cut picked: replay is armed at `index`; `now` = close time of that bar. */
+  startAt(index: number, now: number | null = null): boolean {
+    return transition('ready', { playIndex: index, startIndex: index, cutTime: now, startTime: now });
+  },
+  /** Keep the wall-clock moment in sync as the head moves (no transition). */
+  syncCutTime(now: number): void {
+    if (state.phase === 'idle' || state.phase === 'selecting') return;
+    if (state.cutTime === now) return;
+    state = { ...state, cutTime: now };
+    emit();
+  },
+  /**
+   * Re-derive the indices for a NEW timeframe from the preserved wall-clock
+   * moment — the multi-TF switch. Phase is preserved (playing keeps playing).
+   */
+  rebase(playIndex: number, startIndex: number): void {
+    if (state.phase === 'idle' || state.phase === 'selecting') return;
+    if (state.playIndex === playIndex && state.startIndex === startIndex) return;
+    state = { ...state, playIndex, startIndex };
+    emit();
   },
   play(): boolean {
     return transition('playing');
@@ -78,7 +105,7 @@ export const replayActions = {
   },
   exit(): boolean {
     if (state.phase === 'idle') return false;
-    state = { phase: 'idle', playIndex: 0, startIndex: 0 };
+    state = IDLE;
     emit();
     return true;
   },
