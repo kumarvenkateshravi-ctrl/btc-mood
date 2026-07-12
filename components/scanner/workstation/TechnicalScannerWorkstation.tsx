@@ -23,6 +23,7 @@ import { generateScannerSignals } from '@/lib/scanner/signals';
 import { versionComparison, type StrategyVersionStats } from '@/lib/scanner/analytics';
 import { OPERATORS } from '@/lib/scanner/operators';
 import { SCANNER_SOURCE_LIST, SCANNER_SOURCES } from '@/lib/scanner/registry';
+import { TRADER_STYLES, type TraderStyleId, type TraderStyleProfile } from '@/lib/scanner/styleProfiles';
 import {
   archiveStrategy, createStrategy, listStrategies, saveNewVersion, setStrategyEnabled,
 } from '@/lib/scanner/scannerStore';
@@ -54,6 +55,8 @@ interface Draft {
   exits: ScannerStrategy['exits'];
   tree: GroupNode;
   note: string;
+  /** Trading-style profile driving builder defaults (M2; persisted with DNA in M6). */
+  style?: TraderStyleId;
 }
 
 interface Template {
@@ -385,6 +388,34 @@ export default function TechnicalScannerWorkstation() {
     setRevision((r) => r + 1);
   }, [activeSaved]);
 
+  // One chart instance, docked differently per mode (monitor grid cell vs
+  // build-mode proof panel).
+  const chartPanel = (
+    <ChartPanel
+      candles={currentCandles}
+      candlesByTf={candlesByTf}
+      type={chartType}
+      onTypeChange={setChartType}
+      selected={selectedTf}
+      onSelectTf={setSelectedTf}
+      symbol={symbol}
+      price={currentPrice}
+      change={currentChange}
+      status={status}
+      showVolume
+      bid={bid}
+      ask={ask}
+      activeIndicatorIds={['scanner_signals']}
+      onToggleIndicator={() => {}}
+      onClearIndicators={() => {}}
+      onLoadOlder={() => { void loadOlder(selectedTf); }}
+      gridCount={1}
+      onGridChange={() => {}}
+      workspaceCurrent={{ chartType, symbol, tf: selectedTf, indicatorIds: ['scanner_signals'] }}
+      onWorkspaceApply={() => {}}
+    />
+  );
+
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-base text-ink">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface-1 px-4">
@@ -443,7 +474,25 @@ export default function TechnicalScannerWorkstation() {
 
       {showSmcScreener ? (
         <SmcScreenerPanel candlesByTf={candlesByTf} evalTf={selectedTf} symbol={symbol} />
-      ) : !activeStrategy && !draft ? (
+      ) : draft ? (
+        /* BUILD MODE — the builder takes the stage; the chart docks right as
+           the strategy's live proof. */
+        <BuildMode
+          draft={draft}
+          onDraft={setDraft}
+          validation={validation}
+          stats={activeStats}
+          preview={previewSnapshot}
+          mode={mode}
+          onMode={setMode}
+          onSave={saveDraft}
+          onCancel={() => setDraft(null)}
+          onSelectTf={setSelectedTf}
+          candlesByTf={candlesByTf}
+          evalTf={selectedTf}
+          chart={chartPanel}
+        />
+      ) : !activeStrategy ? (
         <ScannerHome
           strategies={strategies}
           templates={TEMPLATES}
@@ -454,6 +503,7 @@ export default function TechnicalScannerWorkstation() {
           onEdit={editStrategy}
         />
       ) : (
+        /* MONITOR MODE — running strategies: chart-dominant grid. */
         <main className="grid min-h-0 flex-1 grid-cols-[230px_minmax(330px,0.9fr)_minmax(420px,1.25fr)_320px] grid-rows-[minmax(0,1fr)_240px] overflow-hidden">
           <StrategySidebar
             strategies={strategies}
@@ -465,7 +515,7 @@ export default function TechnicalScannerWorkstation() {
           />
 
           <StrategyCanvas
-            draft={draft}
+            draft={null}
             strategy={activeSaved}
             validation={validation}
             mode={mode}
@@ -476,31 +526,7 @@ export default function TechnicalScannerWorkstation() {
             candlesByTf={candlesByTf}
           />
 
-          <section className="min-h-0 border-r border-line bg-chart-bg">
-            <ChartPanel
-              candles={currentCandles}
-              candlesByTf={candlesByTf}
-              type={chartType}
-              onTypeChange={setChartType}
-              selected={selectedTf}
-              onSelectTf={setSelectedTf}
-              symbol={symbol}
-              price={currentPrice}
-              change={currentChange}
-              status={status}
-              showVolume
-              bid={bid}
-              ask={ask}
-              activeIndicatorIds={['scanner_signals']}
-              onToggleIndicator={() => {}}
-              onClearIndicators={() => {}}
-              onLoadOlder={() => { void loadOlder(selectedTf); }}
-              gridCount={1}
-              onGridChange={() => {}}
-              workspaceCurrent={{ chartType, symbol, tf: selectedTf, indicatorIds: ['scanner_signals'] }}
-              onWorkspaceApply={() => {}}
-            />
-          </section>
+          <section className="min-h-0 border-r border-line bg-chart-bg">{chartPanel}</section>
 
           <StrategyInspector
             strategy={activeStrategy}
@@ -524,6 +550,309 @@ export default function TechnicalScannerWorkstation() {
           />
         </main>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BUILD MODE (Strategy Studio M2) — the builder takes ~65% of the screen as
+// five sections that each answer a trading question; the chart docks right
+// as live proof. Beginner mode walks the sections as a stepper; intermediate
+// and advanced see one scrollable canvas.
+// ─────────────────────────────────────────────────────────────────────────
+
+const BUILD_STEPS = [
+  { id: 'style', n: 1, title: 'Style & Market', ask: 'Which trader are you? Your style sets the timeframes, suggested tools and risk defaults.' },
+  { id: 'conditions', n: 2, title: 'Conditions', ask: 'When should this strategy fire? Stack the conditions that must be true together.' },
+  { id: 'exits', n: 3, title: 'Exits & Risk', ask: 'Where do you take profit, and where do you admit the idea failed?' },
+  { id: 'preview', n: 4, title: 'Preview & Validate', ask: 'Can you trust it? How it validates and how it would have performed.' },
+  { id: 'save', n: 5, title: 'Save & Activate', ask: 'Name it, pick the direction, and keep a note of what this version changes.' },
+] as const;
+
+function BuildMode({
+  draft,
+  onDraft,
+  validation,
+  stats,
+  preview,
+  mode,
+  onMode,
+  onSave,
+  onCancel,
+  onSelectTf,
+  candlesByTf,
+  evalTf,
+  chart,
+}: {
+  draft: Draft;
+  onDraft: (draft: Draft) => void;
+  validation: ValidationResult;
+  stats?: StrategyVersionStats;
+  preview: ScannerSnapshot;
+  mode: 'beginner' | 'intermediate' | 'advanced';
+  onMode: (mode: 'beginner' | 'intermediate' | 'advanced') => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onSelectTf: (tf: Timeframe) => void;
+  candlesByTf: Partial<Record<Timeframe, Candle[]>>;
+  evalTf: Timeframe;
+  chart: React.ReactNode;
+}) {
+  const [step, setStep] = useState(0);
+  const stepper = mode === 'beginner';
+  const visible = (i: number) => !stepper || step === i;
+
+  const applyStyle = (p: TraderStyleProfile) => {
+    onDraft({ ...draft, style: p.id, exits: { ...p.exits } });
+    onSelectTf(p.ladder.primary);
+  };
+
+  return (
+    <main className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-w-0 flex-[13] flex-col overflow-y-auto">
+        <div className="flex items-center gap-3 border-b border-line bg-surface-1 px-5 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">Strategy Builder</p>
+          {stepper && (
+            <nav className="flex items-center gap-1">
+              {BUILD_STEPS.map((s, i) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setStep(i)}
+                  className={cx(
+                    'focus-ring rounded-full px-2.5 py-1 text-[11px] transition',
+                    i === step ? 'bg-accent/15 text-accent' : i < step ? 'text-ink' : 'text-ink-faint hover:text-ink',
+                  )}
+                >
+                  {s.n}. {s.title}
+                </button>
+              ))}
+            </nav>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            {(['beginner', 'intermediate', 'advanced'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onMode(m)}
+                className={cx(
+                  'focus-ring rounded-md px-2 py-1 text-[10px] font-medium capitalize transition',
+                  mode === m ? 'bg-accent/15 text-accent' : 'text-ink-faint hover:bg-surface-2 hover:text-ink',
+                )}
+              >
+                {m}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={onCancel}
+              className="focus-ring ml-2 rounded-md px-2 py-1 text-[11px] text-ink-faint transition hover:bg-surface-2 hover:text-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4 p-5">
+          {visible(0) && (
+            <BuilderSection step={BUILD_STEPS[0]} stepper={stepper}>
+              <StyleCards value={draft.style} onPick={applyStyle} />
+            </BuilderSection>
+          )}
+
+          {visible(1) && (
+            <BuilderSection step={BUILD_STEPS[1]} stepper={stepper}>
+              <div className="rounded-xl border border-line bg-surface-1 p-3">
+                <GroupCanvas
+                  node={draft.tree}
+                  editable
+                  depth={0}
+                  mode={mode}
+                  candlesByTf={candlesByTf}
+                  onChange={(next) => onDraft({ ...draft, tree: next })}
+                />
+              </div>
+            </BuilderSection>
+          )}
+
+          {visible(2) && (
+            <BuilderSection step={BUILD_STEPS[2]} stepper={stepper}>
+              <ExitEditor draft={draft} onDraft={onDraft} />
+              {draft.style && (
+                <p className="mt-2 text-[11px] text-ink-faint">
+                  {TRADER_STYLES.find((s) => s.id === draft.style)?.name} default cadence:{' '}
+                  <span className="text-ink-muted">{TRADER_STYLES.find((s) => s.id === draft.style)?.cadence.label}</span>
+                </p>
+              )}
+            </BuilderSection>
+          )}
+
+          {visible(3) && (
+            <BuilderSection step={BUILD_STEPS[3]} stepper={stepper}>
+              <PreviewValidate draft={draft} validation={validation} stats={stats} preview={preview} candlesByTf={candlesByTf} evalTf={evalTf} />
+            </BuilderSection>
+          )}
+
+          {visible(4) && (
+            <BuilderSection step={BUILD_STEPS[4]} stepper={stepper}>
+              <div className="grid max-w-xl grid-cols-2 gap-3">
+                <label className="col-span-2 block">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Strategy name</span>
+                  <input
+                    value={draft.name}
+                    onChange={(e) => onDraft({ ...draft, name: e.target.value })}
+                    placeholder="Name your strategy"
+                    className="focus-ring mt-1 w-full rounded-lg border border-line bg-surface-1 px-2 py-1.5 text-sm font-semibold text-ink"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Direction</span>
+                  <select
+                    value={draft.direction}
+                    onChange={(e) => onDraft({ ...draft, direction: e.target.value as 'long' | 'short' })}
+                    className="focus-ring mt-1 h-8 w-full rounded-lg border border-line bg-surface-1 px-2 text-xs text-ink"
+                  >
+                    <option value="long">Long</option>
+                    <option value="short">Short</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Version note</span>
+                  <input
+                    value={draft.note}
+                    onChange={(e) => onDraft({ ...draft, note: e.target.value })}
+                    className="focus-ring mt-1 h-8 w-full rounded-lg border border-line bg-surface-1 px-2 text-xs text-ink"
+                  />
+                </label>
+                <div className="col-span-2 flex items-center gap-2">
+                  <Button variant="solid" icon={<Save className="h-3.5 w-3.5" />} onClick={onSave} disabled={!validation.ok}>
+                    {draft.id ? 'Save Version' : 'Save Strategy'}
+                  </Button>
+                  <span className={cx('text-xs', validation.ok ? 'text-bull-bright' : 'text-bear-bright')}>
+                    {validation.ok ? 'Valid strategy' : validation.errors[0]?.message ?? 'Invalid strategy'}
+                  </span>
+                </div>
+              </div>
+            </BuilderSection>
+          )}
+
+          {stepper && (
+            <div className="flex items-center justify-between border-t border-line pt-3">
+              <Button variant="ghost" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
+                ← Back
+              </Button>
+              <span className="text-[11px] text-ink-faint">Step {step + 1} of {BUILD_STEPS.length}</span>
+              <Button
+                variant="solid"
+                disabled={step === BUILD_STEPS.length - 1}
+                onClick={() => setStep((s) => Math.min(BUILD_STEPS.length - 1, s + 1))}
+              >
+                Next →
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <section className="min-h-0 min-w-0 flex-[7] border-l border-line bg-chart-bg">{chart}</section>
+    </main>
+  );
+}
+
+function BuilderSection({
+  step,
+  stepper,
+  children,
+}: {
+  step: (typeof BUILD_STEPS)[number];
+  stepper: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-2">
+        <h3 className="text-[13px] font-semibold text-ink">
+          <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent/15 text-[11px] text-accent">{step.n}</span>
+          {step.title}
+        </h3>
+        <p className="mt-0.5 text-[12px] text-ink-faint">{step.ask}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function StyleCards({ value, onPick }: { value?: TraderStyleId; onPick: (p: TraderStyleProfile) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+      {TRADER_STYLES.map((p) => {
+        const active = value === p.id;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onPick(p)}
+            aria-pressed={active}
+            className={cx(
+              'focus-ring rounded-xl border p-3 text-left transition',
+              active ? 'border-accent/50 bg-accent/10' : 'border-line bg-surface-1 hover:border-line-strong hover:bg-surface-2',
+            )}
+          >
+            <p className={cx('text-[13px] font-semibold', active ? 'text-accent' : 'text-ink')}>{p.name}</p>
+            <p className="mt-1 text-[11px] leading-snug text-ink-muted">{p.blurb}</p>
+            <p className="mt-2 font-mono text-[10px] text-ink-faint">
+              {p.ladder.primary} → {p.ladder.confirmation} → {p.ladder.higherTrend} · {p.cadence.label}
+            </p>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PreviewValidate({
+  draft,
+  validation,
+  stats,
+  preview,
+  candlesByTf,
+  evalTf,
+}: {
+  draft: Draft;
+  validation: ValidationResult;
+  stats?: StrategyVersionStats;
+  preview: ScannerSnapshot;
+  candlesByTf: Partial<Record<Timeframe, Candle[]>>;
+  evalTf: Timeframe;
+}) {
+  const wouldTrigger = useMemo(() => {
+    const matches = evaluate(draft.tree, candlesByTf, evalTf);
+    return matches[matches.length - 1] === true;
+  }, [draft.tree, candlesByTf, evalTf]);
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <InspectorBlock title="Validation" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
+        <KV label="Status" value={validation.ok ? 'Valid' : 'Invalid'} tone={validation.ok ? 'bull' : 'bear'} />
+        <KV label="Complexity" value={validation.complexity.cost} />
+        <KV label="Conditions" value={String(validation.complexity.conditions)} />
+        <KV label="Groups" value={String(validation.complexity.groups)} />
+        <KV label="Coverage" value={validation.warnings.length ? 'Partial' : '100%'} tone={validation.warnings.length ? 'warn' : 'bull'} />
+        {validation.errors.slice(0, 3).map((e, i) => (
+          <p key={i} className="mt-1 text-[11px] text-bear-bright">{e.message}</p>
+        ))}
+        {validation.warnings.slice(0, 3).map((w, i) => (
+          <p key={i} className="mt-1 text-[11px] text-regime-hot">{w.message}</p>
+        ))}
+      </InspectorBlock>
+
+      <InspectorBlock title="How it would have performed" icon={<LineChart className="h-3.5 w-3.5" />}>
+        <KV label="Historical matches" valueNode={<Num.Compact value={stats?.signals ?? preview.signals.length} />} />
+        <KV label="Win rate" valueNode={<Num.Pct value={stats?.winRate ?? 0} signed={false} precision={0} />} />
+        <KV label="Profit factor" valueNode={<Num value={stats?.profitFactor ?? 0} precision={2} />} />
+        <KV label="Avg R" valueNode={<Num value={stats?.avgR ?? 0} precision={2} tone />} />
+        <KV label="Would trigger today" value={wouldTrigger ? 'Yes' : 'No'} tone={wouldTrigger ? 'bull' : undefined} />
+      </InspectorBlock>
     </div>
   );
 }
