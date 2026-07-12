@@ -26,6 +26,8 @@ import { OPERATORS } from '@/lib/scanner/operators';
 import { SCANNER_SOURCE_LIST, SCANNER_SOURCES } from '@/lib/scanner/registry';
 import { TRADER_STYLES, type TraderStyleId, type TraderStyleProfile } from '@/lib/scanner/styleProfiles';
 import { CATEGORY_ORDER, categoryOf } from '@/lib/scanner/sourceCategories';
+import { DEFAULT_RISK, estimateCadencePerWeek, lintStrategy, resolveRisk } from '@/lib/scanner/lint';
+import type { StrategyRisk } from '@/lib/scanner/types';
 import {
   archiveStrategy, createStrategy, listStrategies, saveNewVersion, setStrategyEnabled,
 } from '@/lib/scanner/scannerStore';
@@ -61,6 +63,8 @@ interface Draft {
   style?: TraderStyleId;
   /** Global timeframe ladder — new conditions inherit `primary` (M3). */
   ladder?: { primary: Timeframe; confirmation: Timeframe; higherTrend: Timeframe };
+  /** Risk Studio block (M4). */
+  risk: StrategyRisk;
 }
 
 interface Template {
@@ -345,19 +349,21 @@ export default function TechnicalScannerWorkstation() {
       exits: { ...strategy.exits },
       tree: cloneTree(version.tree),
       note: '',
+      risk: resolveRisk(strategy.risk),
     });
   }, []);
 
   const saveDraft = useCallback(() => {
     if (!draft) return;
     const result = draft.id
-      ? saveNewVersion(draft.id, draft.tree, draft.note || 'Updated from Strategy Canvas')
+      ? saveNewVersion(draft.id, draft.tree, draft.note || 'Updated from Strategy Canvas', Date.now(), draft.risk)
       : createStrategy({
           name: draft.name || 'Untitled Strategy',
           direction: draft.direction,
           tree: draft.tree,
           note: draft.note || 'Initial version',
           exits: draft.exits,
+          risk: draft.risk,
         });
     if (result.strategy) {
       setActiveStrategyId(result.strategy.id);
@@ -378,6 +384,7 @@ export default function TechnicalScannerWorkstation() {
       exits: { ...activeStrategy.exits },
       tree: cloneTree(getActiveTree(activeStrategy)),
       note: 'Cloned strategy',
+      risk: resolveRisk(activeStrategy.risk),
     });
     setActiveStrategyId(null);
   }, [activeStrategy, openNew]);
@@ -840,13 +847,51 @@ function PreviewValidate({
   candlesByTf: Partial<Record<Timeframe, Candle[]>>;
   evalTf: Timeframe;
 }) {
-  const wouldTrigger = useMemo(() => {
+  const { wouldTrigger, lint, cadence } = useMemo(() => {
     const matches = evaluate(draft.tree, candlesByTf, evalTf);
-    return matches[matches.length - 1] === true;
-  }, [draft.tree, candlesByTf, evalTf]);
+    const candles = candlesByTf[evalTf] ?? [];
+    const cadencePerWeek = estimateCadencePerWeek(matches.map(Boolean), candles);
+    return {
+      wouldTrigger: matches[matches.length - 1] === true,
+      cadence: cadencePerWeek,
+      lint: lintStrategy({ tree: draft.tree, style: draft.style, ladder: draft.ladder, cadencePerWeek }),
+    };
+  }, [draft.tree, draft.style, draft.ladder, candlesByTf, evalTf]);
 
   return (
     <div className="grid gap-3 lg:grid-cols-2">
+      {/* Strategy Grade — Grammarly for strategies, updating while you build. */}
+      <div className="rounded-xl border border-line bg-surface-1 p-3 lg:col-span-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Strategy Grade</span>
+          <span className={cx(
+            'font-mono text-xl font-bold tabular-nums',
+            lint.grade >= 85 ? 'text-bull-bright' : lint.grade >= 60 ? 'text-regime-hot' : 'text-bear-bright',
+          )}>
+            {lint.grade}
+          </span>
+          {cadence != null && (
+            <span className="text-[11px] text-ink-faint">
+              fires ~<span className="font-mono text-ink-muted">{cadence < 10 ? cadence.toFixed(1) : cadence.toFixed(0)}</span>x/week historically
+            </span>
+          )}
+          {lint.findings.length === 0 && <span className="text-[11px] text-bull-bright">No issues found.</span>}
+        </div>
+        {lint.findings.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {lint.findings.map((f, i) => (
+              <li key={`${f.id}_${i}`} className="flex items-start gap-2 text-[12px]">
+                <span className={cx(
+                  'mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                  f.severity === 'warn' ? 'bg-regime-hot' : 'bg-ink-faint',
+                )} />
+                <span className="text-ink-muted">{f.message}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <InspectorBlock title="Validation" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
         <KV label="Status" value={validation.ok ? 'Valid' : 'Invalid'} tone={validation.ok ? 'bull' : 'bear'} />
         <KV label="Complexity" value={validation.complexity.cost} />
@@ -880,6 +925,7 @@ function newDraft(template?: Template): Draft {
     exits: { slAtr: 1.5, tp1R: 1, tp2R: 2, tp3R: 3 },
     tree: cloneTree(template?.tree ?? emptyTree()),
     note: template ? `Cloned from ${template.name}` : 'Initial version',
+    risk: { ...DEFAULT_RISK },
   };
 }
 
@@ -1493,22 +1539,89 @@ function ConditionControls({ condition, ladder, onChange }: { condition: Conditi
 }
 
 function ExitEditor({ draft, onDraft }: { draft: Draft; onDraft: (draft: Draft) => void }) {
+  const riskField = 'focus-ring mt-1 h-8 w-full rounded-lg border border-line bg-base px-2 font-mono text-xs text-ink';
+  const setRisk = (patch: Partial<StrategyRisk>) => onDraft({ ...draft, risk: { ...draft.risk, ...patch } });
+
   return (
-    <div className="mt-3 grid grid-cols-4 gap-2 rounded-xl border border-line bg-surface-1 p-3">
-      {(['slAtr', 'tp1R', 'tp2R', 'tp3R'] as const).map((key) => (
-        <label key={key} className="block">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
-            {key === 'slAtr' ? 'SL ATR' : key.toUpperCase()}
-          </span>
+    <div className="mt-3 space-y-3">
+      {/* Exits: where profit is taken, where the idea is declared wrong. */}
+      <div className="grid grid-cols-4 gap-2 rounded-xl border border-line bg-surface-1 p-3">
+        {(['slAtr', 'tp1R', 'tp2R', 'tp3R'] as const).map((key) => (
+          <label key={key} className="block">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+              {key === 'slAtr' ? 'Stop (ATR ×)' : `${key.slice(0, 3).toUpperCase()} (R)`}
+            </span>
+            <input
+              type="number"
+              step={0.1}
+              value={draft.exits[key]}
+              onChange={(e) => onDraft({ ...draft, exits: { ...draft.exits, [key]: Number(e.target.value) } })}
+              className={riskField}
+            />
+          </label>
+        ))}
+      </div>
+
+      {/* Risk Studio: how much can this strategy hurt you on a bad day? */}
+      <div className="grid grid-cols-2 items-end gap-2 rounded-xl border border-line bg-surface-1 p-3 sm:grid-cols-5">
+        <label className="flex h-8 items-center gap-2">
+          <input
+            type="checkbox"
+            checked={draft.risk.breakEven}
+            onChange={(e) => setRisk({ breakEven: e.target.checked })}
+            className="h-3.5 w-3.5 accent-accent"
+          />
+          <span className="text-[11px] text-ink">Break even at TP1</span>
+        </label>
+        <label className="block">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Trailing (ATR ×)</span>
           <input
             type="number"
             step={0.1}
-            value={draft.exits[key]}
-            onChange={(e) => onDraft({ ...draft, exits: { ...draft.exits, [key]: Number(e.target.value) } })}
-            className="focus-ring mt-1 h-8 w-full rounded-lg border border-line bg-base px-2 font-mono text-xs text-ink"
+            min={0}
+            value={draft.risk.trailingAtr ?? 0}
+            onChange={(e) => setRisk({ trailingAtr: Number(e.target.value) > 0 ? Number(e.target.value) : null })}
+            title="0 = off"
+            className={riskField}
           />
         </label>
-      ))}
+        <label className="block">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Risk / trade %</span>
+          <input
+            type="number"
+            step={0.25}
+            min={0.1}
+            max={10}
+            value={draft.risk.positionRiskPct}
+            onChange={(e) => setRisk({ positionRiskPct: Number(e.target.value) })}
+            className={riskField}
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Max daily loss %</span>
+          <input
+            type="number"
+            step={0.5}
+            min={0.5}
+            max={20}
+            value={draft.risk.maxDailyLossPct}
+            onChange={(e) => setRisk({ maxDailyLossPct: Number(e.target.value) })}
+            className={riskField}
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Max trades / day</span>
+          <input
+            type="number"
+            step={1}
+            min={1}
+            max={100}
+            value={draft.risk.maxTradesPerDay}
+            onChange={(e) => setRisk({ maxTradesPerDay: Number(e.target.value) })}
+            className={riskField}
+          />
+        </label>
+      </div>
     </div>
   );
 }

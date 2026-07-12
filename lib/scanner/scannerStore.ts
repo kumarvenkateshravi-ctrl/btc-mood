@@ -55,7 +55,7 @@ export function getStrategy(id: string): ScannerStrategy | undefined {
 /** Create with version 1. REFUSES invalid strategies (validation before persistence). */
 export function createStrategy(
   input: { name: string; direction: 'long' | 'short'; tree: GroupNode; note?: string;
-           exits?: ScannerStrategy['exits'] },
+           exits?: ScannerStrategy['exits']; risk?: ScannerStrategy['risk'] },
   now: number = Date.now(),
 ): { strategy: ScannerStrategy | null; validation: ValidationResult } {
   const strategy: ScannerStrategy = {
@@ -85,6 +85,7 @@ export function saveNewVersion(
   tree: GroupNode,
   note: string,
   now: number = Date.now(),
+  risk?: ScannerStrategy['risk'],
 ): { strategy: ScannerStrategy | null; validation: ValidationResult } {
   const all = listStrategies();
   const s = all.find((x) => x.id === id);
@@ -99,6 +100,7 @@ export function saveNewVersion(
     ...s,
     versions: [...s.versions, { v, createdAt: now, note, tree }],
     activeVersion: v,
+    risk: risk ?? s.risk,
     updatedAt: now,
   };
   const validation = validateStrategy(candidate);

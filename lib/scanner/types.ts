@@ -29,6 +29,19 @@ export interface Condition {
 }
 
 export type GroupNode = { logic: 'AND' | 'OR'; children: Array<GroupNode | Condition> };
+
+/** Risk Studio settings (Strategy Studio M4). */
+export interface StrategyRisk {
+  /** Move SL to entry once TP1 fills. */
+  breakEven: boolean;
+  /** Trailing stop distance in ATR multiples; null = off. */
+  trailingAtr: number | null;
+  /** % of account risked per trade. */
+  positionRiskPct: number;
+  /** Daily circuit breaker, % of account. */
+  maxDailyLossPct: number;
+  maxTradesPerDay: number;
+}
 export const isCondition = (n: GroupNode | Condition): n is Condition => 'op' in n;
 
 /** Versioned, marketplace-ready strategy (immutable versions — Rule 4). */
@@ -50,6 +63,9 @@ export interface ScannerStrategy {
   /** Per-strategy chart visibility (overlay toggle; enabled keeps generating). */
   chartVisible?: boolean;
   exits: { slAtr: number; tp1R: number; tp2R: number; tp3R: number };
+  /** Risk Studio block (M4, additive): advisory in v1 — documents the plan,
+   *  feeds lint + Strategy DNA. Absent on pre-M4 strategies. */
+  risk?: StrategyRisk;
   // Marketplace-compatible now, unused until the community phase:
   ownerId: string | null;
   visibility: 'private' | 'public' | 'invite';
