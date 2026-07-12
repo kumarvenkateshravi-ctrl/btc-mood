@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import SmcScreenerPanel from '@/components/scanner/SmcScreenerPanel';
+import IntelligenceHome from '@/components/scanner/workstation/IntelligenceHome';
 import { walkVdTrades } from '@/lib/indicators/vdEngine';
 import { DEFAULT_COMPARE_SYMBOL, type CompareSymbol } from '@/lib/compare';
 import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
@@ -289,7 +290,11 @@ export default function TechnicalScannerWorkstation() {
   const { candlesByTf, status, bookTicker, ticker24h, loadOlder } = useMarketData(symbol);
   const marketContext = useMarketContext(candlesByTf);
 
-  const strategies = listStrategies().filter((s) => !s.archived);
+  // Saved strategies live in localStorage; render them only after mount so
+  // the server and client first paint agree (hydration safety).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const strategies = mounted ? listStrategies().filter((s) => !s.archived) : [];
   const activeSaved = activeStrategyId ? strategies.find((s) => s.id === activeStrategyId) ?? null : null;
   const activeStrategy = draft ? draftToStrategy(draft) : activeSaved;
   const validation = useMemo(
@@ -421,7 +426,7 @@ export default function TechnicalScannerWorkstation() {
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface-1 px-4">
         <Link href="/mycryptostack" className="focus-ring inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-ink">
           <ScanLine className="h-4 w-4 text-accent" />
-          Technical Scanner
+          BTC Strategy Studio
         </Link>
         <span className="rounded-md border border-line bg-base px-2 py-1 font-mono text-[11px] text-ink-muted">{symbol}</span>
         <select
@@ -498,9 +503,15 @@ export default function TechnicalScannerWorkstation() {
           templates={TEMPLATES}
           candlesByTf={candlesByTf}
           evalTf={selectedTf}
+          marketContext={marketContext}
           onNew={openNew}
           onOpen={openStrategy}
           onEdit={editStrategy}
+          onBuildForMarket={(bias) => {
+            const d = newDraft();
+            setDraft({ ...d, direction: bias ?? d.direction });
+            setActiveStrategyId(null);
+          }}
         />
       ) : (
         /* MONITOR MODE — running strategies: chart-dominant grid. */
@@ -873,20 +884,30 @@ function ScannerHome({
   templates,
   candlesByTf,
   evalTf,
+  marketContext,
   onNew,
   onOpen,
   onEdit,
+  onBuildForMarket,
 }: {
   strategies: ScannerStrategy[];
   templates: Template[];
   candlesByTf: Partial<Record<Timeframe, Candle[]>>;
   evalTf: Timeframe;
+  marketContext: MarketContext;
   onNew: (template?: Template) => void;
   onOpen: (s: ScannerStrategy) => void;
   onEdit: (s: ScannerStrategy) => void;
+  onBuildForMarket: (bias: 'long' | 'short' | null) => void;
 }) {
   return (
     <main className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      <IntelligenceHome
+        candlesByTf={candlesByTf}
+        evalTf={evalTf}
+        marketContext={marketContext}
+        onBuildForMarket={onBuildForMarket}
+      />
       <div className="mx-auto flex max-w-[1500px] flex-col gap-5">
         <div className="flex items-end justify-between gap-4">
           <div>
