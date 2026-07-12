@@ -79,12 +79,18 @@ export function statsFromTrades(
 }
 
 /** Deterministic backtest of ONE version over the loaded history. */
-export function backtestStrategyVersion(
+/**
+ * The per-trade records for a version's deterministic backtest — the raw
+ * material behind the aggregate stats. Powers the visual backtest (equity
+ * curve, R-distribution, MFE/MAE) and, later, chart markers. Returns the
+ * closed candles the trades index into so callers can place markers.
+ */
+export function tradesForStrategyVersion(
   strategy: ScannerStrategy,
   version: number,
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   evalTf: Timeframe,
-): StrategyVersionStats {
+): { trades: Array<VdTrade<ScannerSignal>>; candles: Candle[] } {
   const v = strategy.versions.find((x) => x.v === version);
   const candles = candlesByTf[evalTf] ?? [];
   const closed = candles.length > 1 ? candles.slice(0, candles.length - 1) : [];
@@ -92,10 +98,20 @@ export function backtestStrategyVersion(
   for (const [tf, arr] of Object.entries(candlesByTf) as Array<[Timeframe, Candle[]]>) {
     if (arr && arr.length > 1) closedByTf[tf] = arr.slice(0, arr.length - 1);
   }
-  if (!v || closed.length === 0) return statsFromTrades([], version, v?.note ?? '');
+  if (!v || closed.length === 0) return { trades: [], candles: closed };
   const sigs = generateScannerSignals({ ...strategy, activeVersion: version }, closedByTf, evalTf, 0);
-  const trades = walkVdTrades(closed, sigs);
-  return statsFromTrades(trades, version, v.note);
+  return { trades: walkVdTrades(closed, sigs), candles: closed };
+}
+
+export function backtestStrategyVersion(
+  strategy: ScannerStrategy,
+  version: number,
+  candlesByTf: Partial<Record<Timeframe, Candle[]>>,
+  evalTf: Timeframe,
+): StrategyVersionStats {
+  const v = strategy.versions.find((x) => x.v === version);
+  const { trades } = tradesForStrategyVersion(strategy, version, candlesByTf, evalTf);
+  return statsFromTrades(trades, version, v?.note ?? '');
 }
 
 /** All versions side by side — the payoff of immutable versioning. */

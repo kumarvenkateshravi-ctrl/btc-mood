@@ -27,6 +27,8 @@ import { SCANNER_SOURCE_LIST, SCANNER_SOURCES } from '@/lib/scanner/registry';
 import { TRADER_STYLES, type TraderStyleId, type TraderStyleProfile } from '@/lib/scanner/styleProfiles';
 import { CATEGORY_ORDER, categoryOf } from '@/lib/scanner/sourceCategories';
 import { DEFAULT_RISK, estimateCadencePerWeek, lintStrategy, resolveRisk } from '@/lib/scanner/lint';
+import { tradesForStrategyVersion } from '@/lib/scanner/analytics';
+import BacktestVisual from '@/components/scanner/workstation/BacktestVisual';
 import type { StrategyRisk } from '@/lib/scanner/types';
 import {
   archiveStrategy, createStrategy, listStrategies, saveNewVersion, setStrategyEnabled,
@@ -567,6 +569,8 @@ export default function TechnicalScannerWorkstation() {
             stats={stats}
             preview={previewSnapshot}
             validation={validation}
+            candlesByTf={candlesByTf}
+            evalTf={selectedTf}
             onArchive={archiveActive}
           />
         </main>
@@ -1694,6 +1698,8 @@ function BottomWorkspace({
   stats,
   preview,
   validation,
+  candlesByTf,
+  evalTf,
   onArchive,
 }: {
   tab: BottomTab;
@@ -1702,6 +1708,8 @@ function BottomWorkspace({
   stats: StrategyVersionStats[];
   preview: ScannerSnapshot;
   validation: ValidationResult;
+  candlesByTf: Partial<Record<Timeframe, Candle[]>>;
+  evalTf: Timeframe;
   onArchive: () => void;
 }) {
   return (
@@ -1716,7 +1724,7 @@ function BottomWorkspace({
         <div className="min-h-0 flex-1 overflow-auto p-3">
           {tab === 'signals' && <SignalsTab preview={preview} />}
           {tab === 'trades' && <TradesTab preview={preview} />}
-          {tab === 'backtest' && <BacktestTab stats={stats} />}
+          {tab === 'backtest' && <BacktestTab strategy={strategy} stats={stats} candlesByTf={candlesByTf} evalTf={evalTf} />}
           {tab === 'versions' && <VersionsTab stats={stats} strategy={strategy} />}
           {tab === 'timeline' && <TimelineTab preview={preview} strategy={strategy} />}
           {tab === 'why' && <WhyTab preview={preview} validation={validation} />}
@@ -1770,21 +1778,24 @@ function TradesTab({ preview }: { preview: ScannerSnapshot }) {
   );
 }
 
-function BacktestTab({ stats }: { stats: StrategyVersionStats[] }) {
+function BacktestTab({
+  strategy,
+  stats,
+  candlesByTf,
+  evalTf,
+}: {
+  strategy: ScannerStrategy | null;
+  stats: StrategyVersionStats[];
+  candlesByTf: Partial<Record<Timeframe, Candle[]>>;
+  evalTf: Timeframe;
+}) {
   const stat = latestStats(stats);
-  if (!stat) return <EmptyLine text="Select or create a strategy to run a deterministic backtest." />;
-  return (
-    <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
-      <MetricTile label="Signals" value={<Num.Compact value={stat.signals} />} />
-      <MetricTile label="Resolved" value={<Num.Compact value={stat.resolved} />} />
-      <MetricTile label="Win Rate" value={<Num.Pct value={stat.winRate} signed={false} precision={0} />} />
-      <MetricTile label="Expectancy" value={<Num value={stat.expectancy} precision={2} tone />} />
-      <MetricTile label="Profit Factor" value={<Num value={stat.profitFactor} precision={2} />} />
-      <MetricTile label="Max DD" value={<Num value={stat.maxDrawdownR} precision={1} />} />
-      <MetricTile label="TP3 Hits" value={<Num.Compact value={stat.tp3Hits} />} />
-      <MetricTile label="Avg Bars" value={<Num value={stat.avgBarsHeld} precision={0} />} />
-    </div>
+  const trades = useMemo(
+    () => (strategy ? tradesForStrategyVersion(strategy, strategy.activeVersion, candlesByTf, evalTf).trades : []),
+    [strategy, candlesByTf, evalTf],
   );
+  if (!stat) return <EmptyLine text="Select or create a strategy to run a deterministic backtest." />;
+  return <BacktestVisual trades={trades} stat={stat} />;
 }
 
 function VersionsTab({ stats, strategy }: { stats: StrategyVersionStats[]; strategy: ScannerStrategy | null }) {
