@@ -29,6 +29,8 @@ import { CATEGORY_ORDER, categoryOf } from '@/lib/scanner/sourceCategories';
 import { DEFAULT_RISK, estimateCadencePerWeek, lintStrategy, resolveRisk } from '@/lib/scanner/lint';
 import { tradesForStrategyVersion } from '@/lib/scanner/analytics';
 import BacktestVisual from '@/components/scanner/workstation/BacktestVisual';
+import { computeStrategyDna } from '@/lib/scanner/dna';
+import { parseCondition } from '@/lib/scanner/dsl';
 import type { StrategyRisk } from '@/lib/scanner/types';
 import {
   archiveStrategy, createStrategy, listStrategies, saveNewVersion, setStrategyEnabled,
@@ -687,7 +689,11 @@ function BuildMode({
 
           {visible(1) && (
             <BuilderSection step={BUILD_STEPS[1]} stepper={stepper}>
-              <div className="rounded-xl border border-line bg-surface-1 p-3">
+              <QuickAdd
+                defaultTf={draft.ladder?.primary ?? '15m'}
+                onAdd={(condition) => onDraft({ ...draft, tree: { ...draft.tree, children: [...draft.tree.children, condition] } })}
+              />
+              <div className="mt-2 rounded-xl border border-line bg-surface-1 p-3">
                 <GroupCanvas
                   node={draft.tree}
                   editable
@@ -921,6 +927,62 @@ function PreviewValidate({
   );
 }
 
+function DnaChip({ children, tone }: { children: React.ReactNode; tone?: 'accent' | 'bull' | 'bear' }) {
+  return (
+    <span className={cx(
+      'rounded-md border px-1.5 py-0.5 text-[9px] font-medium capitalize',
+      tone === 'accent' ? 'border-accent/30 text-accent'
+        : tone === 'bull' ? 'border-bull/30 text-bull-bright'
+          : tone === 'bear' ? 'border-bear/30 text-bear-bright'
+            : 'border-line text-ink-muted',
+    )}>
+      {children}
+    </span>
+  );
+}
+
+/** Quick-Add DSL command bar — type a condition in trader shorthand. */
+function QuickAdd({ defaultTf, onAdd }: { defaultTf: Timeframe; onAdd: (c: Condition) => void }) {
+  const [text, setText] = useState('');
+  const [err, setErr] = useState<{ error: string; hint?: string } | null>(null);
+
+  const submit = () => {
+    if (!text.trim()) return;
+    const r = parseCondition(text, defaultTf);
+    if (r.ok) {
+      onAdd(r.condition);
+      setText('');
+      setErr(null);
+    } else {
+      setErr({ error: r.error, hint: r.hint });
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Wand2 className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint" />
+          <input
+            value={text}
+            onChange={(e) => { setText(e.target.value); if (err) setErr(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+            placeholder="Quick add: RSI(14) > 55 on 15m  ·  EMA20 crosses above EMA50  ·  smc stage >= ready"
+            className="focus-ring h-9 w-full rounded-lg border border-line bg-base pl-8 pr-2 text-[12px] text-ink placeholder:text-ink-faint"
+            aria-label="Quick add condition"
+          />
+        </div>
+        <Button size="sm" variant="solid" onClick={submit} disabled={!text.trim()}>Add</Button>
+      </div>
+      {err && (
+        <p className="mt-1 text-[11px] text-bear-bright">
+          {err.error}{err.hint && <span className="text-ink-faint"> {err.hint}</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function newDraft(template?: Template): Draft {
   return {
     id: null,
@@ -1047,6 +1109,10 @@ function StrategyCard({
   onEdit: () => void;
 }) {
   const lifecycle = strategy.enabled ? 'LIVE' : stats && stats.signals > 0 ? 'BACKTESTED' : 'DRAFT';
+  const dna = useMemo(
+    () => computeStrategyDna({ tree: getActiveTree(strategy), direction: strategy.direction, risk: strategy.risk }),
+    [strategy],
+  );
   return (
     <div className="rounded-xl border border-line bg-surface-2 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1061,7 +1127,18 @@ function StrategyCard({
           {lifecycle}
         </span>
       </div>
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      {/* Strategy DNA — the automatic identity card. */}
+      <div className="mt-3 flex flex-wrap items-center gap-1">
+        <DnaChip tone="accent">{dna.style}{dna.styleInferred ? '?' : ''}</DnaChip>
+        {dna.emphasis.slice(0, 2).map((e) => <DnaChip key={e}>{e}</DnaChip>)}
+        <DnaChip tone={dna.riskProfile === 'high' ? 'bear' : dna.riskProfile === 'low' ? 'bull' : undefined}>{dna.riskProfile} risk</DnaChip>
+        <DnaChip>{dna.complexity}</DnaChip>
+        <span className="ml-auto font-mono text-[11px] tabular-nums" title="Institutional grade">
+          <span className={cx(dna.grade >= 85 ? 'text-bull-bright' : dna.grade >= 60 ? 'text-regime-hot' : 'text-bear-bright')}>{dna.grade}</span>
+        </span>
+      </div>
+      <p className="mt-1 text-[10px] text-ink-faint">Holds {dna.holding} · {dna.expectedFrequency}</p>
+      <div className="mt-3 grid grid-cols-3 gap-2">
         <Metric label="Win" value={<Num.Pct value={stats?.winRate ?? 0} signed={false} precision={0} />} />
         <Metric label="Signals" value={<Num.Compact value={stats?.signals ?? 0} />} />
         <Metric label="PF" value={<Num value={stats?.profitFactor ?? 0} precision={2} />} />
