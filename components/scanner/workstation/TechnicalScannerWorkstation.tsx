@@ -25,6 +25,7 @@ import { versionComparison, type StrategyVersionStats } from '@/lib/scanner/anal
 import { OPERATORS } from '@/lib/scanner/operators';
 import { SCANNER_SOURCE_LIST, SCANNER_SOURCES } from '@/lib/scanner/registry';
 import { TRADER_STYLES, type TraderStyleId, type TraderStyleProfile } from '@/lib/scanner/styleProfiles';
+import { CATEGORY_ORDER, categoryOf } from '@/lib/scanner/sourceCategories';
 import {
   archiveStrategy, createStrategy, listStrategies, saveNewVersion, setStrategyEnabled,
 } from '@/lib/scanner/scannerStore';
@@ -58,6 +59,8 @@ interface Draft {
   note: string;
   /** Trading-style profile driving builder defaults (M2; persisted with DNA in M6). */
   style?: TraderStyleId;
+  /** Global timeframe ladder — new conditions inherit `primary` (M3). */
+  ladder?: { primary: Timeframe; confirmation: Timeframe; higherTrend: Timeframe };
 }
 
 interface Template {
@@ -614,7 +617,7 @@ function BuildMode({
   const visible = (i: number) => !stepper || step === i;
 
   const applyStyle = (p: TraderStyleProfile) => {
-    onDraft({ ...draft, style: p.id, exits: { ...p.exits } });
+    onDraft({ ...draft, style: p.id, exits: { ...p.exits }, ladder: { ...p.ladder } });
     onSelectTf(p.ladder.primary);
   };
 
@@ -680,6 +683,7 @@ function BuildMode({
                   depth={0}
                   mode={mode}
                   candlesByTf={candlesByTf}
+                  ladder={draft.ladder}
                   onChange={(next) => onDraft({ ...draft, tree: next })}
                 />
               </div>
@@ -1219,6 +1223,7 @@ function GroupCanvas({
   depth,
   mode,
   candlesByTf,
+  ladder,
   onChange,
 }: {
   node: GroupNode;
@@ -1226,6 +1231,7 @@ function GroupCanvas({
   depth: number;
   mode: 'beginner' | 'intermediate' | 'advanced';
   candlesByTf: Partial<Record<Timeframe, Candle[]>>;
+  ladder?: Draft['ladder'];
   onChange: (node: GroupNode) => void;
 }) {
   const setChild = (index: number, child: GroupNode | Condition) =>
@@ -1252,11 +1258,11 @@ function GroupCanvas({
         )}
         {editable && (
           <>
-            <Button size="sm" variant="ghost" icon={<Plus className="h-3 w-3" />} onClick={() => onChange({ ...node, children: [...node.children, cond('rsi', 'gt', 55)] })}>
+            <Button size="sm" variant="ghost" icon={<Plus className="h-3 w-3" />} onClick={() => onChange({ ...node, children: [...node.children, cond('rsi', 'gt', 55, ladder?.primary ?? '15m')] })}>
               Condition
             </Button>
             {mode !== 'beginner' && (
-              <Button size="sm" variant="ghost" icon={<Layers className="h-3 w-3" />} onClick={() => onChange({ ...node, children: [...node.children, { logic: 'AND', children: [cond('rsi', 'gt', 55)] }] })}>
+              <Button size="sm" variant="ghost" icon={<Layers className="h-3 w-3" />} onClick={() => onChange({ ...node, children: [...node.children, { logic: 'AND', children: [cond('rsi', 'gt', 55, ladder?.primary ?? '15m')] }] })}>
                 Group
               </Button>
             )}
@@ -1272,6 +1278,7 @@ function GroupCanvas({
                 editable={editable}
                 mode={mode}
                 candlesByTf={candlesByTf}
+                ladder={ladder}
                 onChange={(next) => setChild(index, next)}
                 onRemove={() => removeChild(index)}
               />
@@ -1282,6 +1289,7 @@ function GroupCanvas({
                 depth={depth + 1}
                 mode={mode}
                 candlesByTf={candlesByTf}
+                ladder={ladder}
                 onChange={(next) => setChild(index, next)}
               />
             )}
@@ -1302,6 +1310,7 @@ function ConditionCard({
   editable,
   mode,
   candlesByTf,
+  ladder,
   onChange,
   onRemove,
 }: {
@@ -1309,6 +1318,7 @@ function ConditionCard({
   editable: boolean;
   mode: 'beginner' | 'intermediate' | 'advanced';
   candlesByTf: Partial<Record<Timeframe, Candle[]>>;
+  ladder?: Draft['ladder'];
   onChange: (condition: Condition) => void;
   onRemove: () => void;
 }) {
@@ -1363,7 +1373,7 @@ function ConditionCard({
       )}
 
       {editable && mode !== 'beginner' && (
-        <ConditionControls condition={condition} onChange={onChange} />
+        <ConditionControls condition={condition} ladder={ladder} onChange={onChange} />
       )}
     </div>
   );
@@ -1378,7 +1388,7 @@ function RulePill({ label, sub }: { label: string; sub?: string }) {
   );
 }
 
-function ConditionControls({ condition, onChange }: { condition: Condition; onChange: (condition: Condition) => void }) {
+function ConditionControls({ condition, ladder, onChange }: { condition: Condition; ladder?: Draft['ladder']; onChange: (condition: Condition) => void }) {
   const source = SCANNER_SOURCES[condition.left.source];
   const op = OPERATORS[condition.op];
   const rhsIsSeries = typeof condition.right === 'object' && !Array.isArray(condition.right);
@@ -1408,13 +1418,17 @@ function ConditionControls({ condition, onChange }: { condition: Condition; onCh
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line/60 pt-3">
       <select value={condition.left.source} onChange={(e) => setSource(e.target.value)} className={control} aria-label="Source">
-        {(['standard', 'structure', 'intelligence'] as SourceGroup[]).map((group) => (
-          <optgroup key={group} label={GROUP_LABEL[group]}>
-            {SCANNER_SOURCE_LIST.filter((s) => s.group === group).map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </optgroup>
-        ))}
+        {CATEGORY_ORDER.map((cat) => {
+          const sources = SCANNER_SOURCE_LIST.filter((s) => categoryOf(s) === cat.id);
+          if (sources.length === 0) return null;
+          return (
+            <optgroup key={cat.id} label={cat.label}>
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </optgroup>
+          );
+        })}
       </select>
       {source?.outputs.length > 1 && (
         <select
@@ -1451,6 +1465,25 @@ function ConditionControls({ condition, onChange }: { condition: Condition; onCh
           className="focus-ring h-8 w-20 rounded-lg border border-line bg-base px-2 font-mono text-[11px] text-ink"
           aria-label="Value"
         />
+      )}
+      {ladder && (
+        <span className="inline-flex items-center gap-0.5" title="Timeframe ladder: Primary / Confirmation / Higher trend">
+          {([['P', ladder.primary], ['C', ladder.confirmation], ['H', ladder.higherTrend]] as const).map(([tag, tf]) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => onChange({ ...condition, tf })}
+              aria-pressed={condition.tf === tf}
+              title={`${tag === 'P' ? 'Primary' : tag === 'C' ? 'Confirmation' : 'Higher trend'} · ${tf}`}
+              className={cx(
+                'focus-ring h-8 rounded-lg border px-1.5 font-mono text-[10px] transition',
+                condition.tf === tf ? 'border-accent/50 bg-accent/10 text-accent' : 'border-line bg-base text-ink-faint hover:text-ink',
+              )}
+            >
+              {tag}·{tf}
+            </button>
+          ))}
+        </span>
       )}
       <select value={condition.tf} onChange={(e) => onChange({ ...condition, tf: e.target.value as Timeframe })} className={control} aria-label="Timeframe">
         {(source?.tfs ?? TIMEFRAMES).map((tf) => <option key={tf} value={tf}>{tf}</option>)}
