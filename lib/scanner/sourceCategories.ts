@@ -32,8 +32,6 @@ const EXPLICIT: Record<string, SourceCategory> = {
   atr: 'volatility',
   bollinger: 'volatility',
   structure: 'structure',
-  dsmart_signal: 'trend',
-  dsmart_state: 'trend',
   smc_structure: 'smc',
   smc_liquidity: 'smc',
   smc_orderblock: 'smc',
