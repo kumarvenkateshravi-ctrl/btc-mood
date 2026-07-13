@@ -27,6 +27,8 @@ interface ReplayBarProps {
   verification?: IntegrityReport | null;
   /** Jump-to-datetime replay start (selection mode). Epoch ms, local input. */
   onPickTime?: (ms: number) => void;
+  /** Non-null while deep history is backfilling for a far-back practice date. */
+  deepLoading?: { tf: string; pages: number; oldestMs: number } | null;
   /** Blind drill: random hidden start + masked axis (selection mode). */
   onDrill?: () => void;
   /** Blind mode: hide progress numbers and the scrubber (no future spoilers). */
@@ -62,6 +64,7 @@ export default function ReplayBar({
   onVerify,
   verification,
   onPickTime,
+  deepLoading,
   onDrill,
   blind = false,
   onToggleBlind,
@@ -71,6 +74,13 @@ export default function ReplayBar({
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-surface-1 px-3 py-2 text-xs">
         <Scissors className="h-3.5 w-3.5 text-accent" />
         <span className="text-ink-muted">Click a candle on the chart to set the replay start.</span>
+        {deepLoading && (
+          <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-accent">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+            Loading {deepLoading.tf} history… page {deepLoading.pages} · reached{' '}
+            {new Date(deepLoading.oldestMs).toLocaleDateString()}
+          </span>
+        )}
         {onPickTime && (
           <label className="inline-flex items-center gap-1.5 text-ink-faint">
             or jump to

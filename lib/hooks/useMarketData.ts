@@ -41,6 +41,12 @@ export interface MarketData {
   lastUpdateMs: number;
   /** Lazy-load older history for a TF (scroll-to-left-edge). */
   loadOlder: (tf: Timeframe) => Promise<void>;
+  loadHistoryUntil: (
+    tf: Timeframe,
+    untilMs: number,
+    maxPages: number,
+    onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void,
+  ) => Promise<void>;
 }
 
 /**
@@ -194,6 +200,34 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
   const loadingOlderRef = useRef<Record<string, boolean>>({});
   const noMoreOlderRef = useRef<Record<string, boolean>>({});
 
+  // Fetch ONE page older than `beforeMs`, prepend it, and return the new
+  // oldest ms (or null when history is exhausted). The `before` cursor is
+  // tracked locally by callers — state updates are async, so reading
+  // candlesByTf inside a loop would see stale values.
+  const fetchAndPrependPage = async (tf: Timeframe, beforeMs: number): Promise<number | null> => {
+    const key = `${symbol}:${tf}`;
+    const older = await fetchKlinesBefore(tf, symbol, beforeMs, 1000);
+    if (older.length === 0) {
+      noMoreOlderRef.current[key] = true;
+      return null;
+    }
+    setCandlesByTf((prev) => {
+      const cur = prev[tf];
+      if (!cur || cur.length === 0) return prev;
+      const cutoff = cur[0].time;
+      const merged = older.filter((c) => c.time < cutoff);
+      if (merged.length === 0) return prev;
+      return { ...prev, [tf]: [...merged, ...cur] };
+    });
+    if (older.length < 1000) {
+      noMoreOlderRef.current[key] = true;
+      return null;
+    }
+    return older[0].time * 1000;
+  };
+
+  // Scroll-triggered lazy load: chase up to 3 pages per trigger so browsing
+  // left feels bottomless instead of one 1000-bar hop per gesture.
   const loadOlder = async (tf: Timeframe) => {
     const key = `${symbol}:${tf}`;
     if (loadingOlderRef.current[key] || noMoreOlderRef.current[key]) return;
@@ -201,26 +235,43 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     if (!arr || arr.length === 0) return;
     loadingOlderRef.current[key] = true;
     try {
-      const beforeMs = arr[0].time * 1000;
-      const older = await fetchKlinesBefore(tf, symbol, beforeMs, 1000);
-      if (older.length === 0) {
-        noMoreOlderRef.current[key] = true;
-        return;
+      let before: number | null = arr[0].time * 1000;
+      for (let page = 0; page < 3 && before != null; page++) {
+        before = await fetchAndPrependPage(tf, before);
       }
-      setCandlesByTf((prev) => {
-        const cur = prev[tf];
-        if (!cur || cur.length === 0) return prev;
-        const cutoff = cur[0].time;
-        const merged = older.filter((c) => c.time < cutoff);
-        if (merged.length === 0) {
-          noMoreOlderRef.current[key] = true;
-          return prev;
-        }
-        return { ...prev, [tf]: [...merged, ...cur] };
-      });
-      if (older.length < 1000) noMoreOlderRef.current[key] = true;
     } catch {
       // Leave the guard cleared so a later scroll can retry.
+    } finally {
+      loadingOlderRef.current[key] = false;
+    }
+  };
+
+  /**
+   * Deep backfill for Bar Replay practice: page history until it covers
+   * `untilMs` (or maxPages / exhaustion). Throttled to stay far below the
+   * API rate limit. Reports progress after every page.
+   */
+  const loadHistoryUntil = async (
+    tf: Timeframe,
+    untilMs: number,
+    maxPages: number,
+    onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void,
+  ) => {
+    const key = `${symbol}:${tf}`;
+    if (loadingOlderRef.current[key]) return;
+    const arr = candlesByTf[tf];
+    if (!arr || arr.length === 0) return;
+    loadingOlderRef.current[key] = true;
+    try {
+      let before: number | null = arr[0].time * 1000;
+      for (let page = 0; page < maxPages; page++) {
+        if (before == null || before <= untilMs || noMoreOlderRef.current[key]) break;
+        before = await fetchAndPrependPage(tf, before);
+        if (before != null) onProgress?.({ tf, pages: page + 1, oldestMs: before });
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } catch {
+      // Partial history is still useful; the caller proceeds with whatever loaded.
     } finally {
       loadingOlderRef.current[key] = false;
     }
@@ -274,5 +325,6 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     wsBarCount: wsBarCountRef.current,
     lastUpdateMs,
     loadOlder,
+    loadHistoryUntil,
   };
 }

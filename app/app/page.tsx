@@ -49,6 +49,7 @@ import { useHistoryWindow } from '@/lib/hooks/useHistoryWindow';
 import { useAlerts } from '@/lib/hooks/useAlerts';
 import { useGridState } from '@/lib/hooks/useGridState';
 import { useReplayCut } from '@/lib/replay/replayCut';
+import { planDeepLoad } from '@/lib/replay/deepLoad';
 import { sliceCandlesByTf } from '@/lib/replay/replaySlice';
 import { useLayoutMigrationToast } from '@/components/useLayoutMigrationToast';
 import { useKeyboardShortcuts } from '@/lib/hooks/useKeyboardShortcuts';
@@ -161,8 +162,24 @@ export default function DashboardPage() {
   });
 
   // ---- Market data pipeline ----
-  const { candlesByTf, status, bookTicker, ticker24h, loadOlder, wsStatus, lastUpdateMs } =
+  const { candlesByTf, status, bookTicker, ticker24h, loadOlder, loadHistoryUntil, wsStatus, lastUpdateMs } =
     useMarketData(symbol);
+
+  // Deep backfill for replay practice: load the selected TF (and everything
+  // above it) back to the requested date, sequentially, reporting progress.
+  const deepLoadHistory = useCallback(
+    async (
+      targetMs: number,
+      onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void,
+    ) => {
+      const steps = planDeepLoad(selected, targetMs, Date.now());
+      for (const step of steps) {
+        await loadHistoryUntil(step.tf, step.untilMs, step.maxPages, onProgress);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected, loadHistoryUntil],
+  );
 
   const dataState = useMarketState({ wsStatus, lastUpdateMs, hasData: true });
 
@@ -250,6 +267,7 @@ export default function DashboardPage() {
                   />
                 ) : (
                   <ChartPanel
+                    onDeepLoadHistory={deepLoadHistory}
                     candles={historyCandles ?? currentCandles}
                     candlesByTf={analyticsCandlesByTf}
                     type={chartType}

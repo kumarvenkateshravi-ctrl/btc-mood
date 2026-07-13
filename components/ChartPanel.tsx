@@ -63,6 +63,8 @@ interface ChartPanelProps {
   onClearIndicators: () => void;
   /** Lazy-load older history for the selected timeframe. */
   onLoadOlder?: () => void;
+  /** Deep-backfill history to a target date (replay practice from years back). */
+  onDeepLoadHistory?: (targetMs: number, onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void) => Promise<void>;
   /** Jump-to-date: a focused historical window is being shown. */
   historyActive?: boolean;
   onJumpToDate?: (ms: number) => void;
@@ -124,6 +126,7 @@ export default function ChartPanel({
   onToggleIndicator,
   onClearIndicators,
   onLoadOlder,
+  onDeepLoadHistory,
   historyActive = false,
   onJumpToDate,
   onReturnToLive,
@@ -258,16 +261,31 @@ export default function ChartPanel({
   const [blindMode, setBlindMode] = useState(false);
   const [trainingReport, setTrainingReport] = useState<TrainingReport | null>(null);
 
-  // Jump-to-datetime start (selection mode): pick the bar containing the moment.
+  // Jump-to-datetime start (selection mode): pick the bar containing the
+  // moment. If the date is older than loaded history, deep-backfill first
+  // (5-year practice) with live progress, then pick against the FRESH data
+  // via ref — the closure's `candles` is stale after the awaits.
+  const [deepLoading, setDeepLoading] = useState<{ tf: Timeframe; pages: number; oldestMs: number } | null>(null);
+  const candlesForPickRef = useRef(candles);
+  candlesForPickRef.current = candles;
   const onPickTime = useCallback(
-    (ms: number) => {
+    async (ms: number) => {
       const t = Math.floor(ms / 1000);
-      let idx = candles.length - 1;
-      while (idx > 1 && candles[idx].time > t) idx--;
+      if (onDeepLoadHistory && candlesForPickRef.current[0] && t < candlesForPickRef.current[0].time) {
+        setDeepLoading({ tf: selected, pages: 0, oldestMs: Date.now() });
+        try {
+          await onDeepLoadHistory(ms, (p) => setDeepLoading(p));
+        } finally {
+          setDeepLoading(null);
+        }
+      }
+      const cur = candlesForPickRef.current;
+      let idx = cur.length - 1;
+      while (idx > 1 && cur[idx].time > t) idx--;
       onReplayPick(idx);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [candles],
+    [onDeepLoadHistory, selected],
   );
 
   // Blind drill: random hidden start with room to trade, dates masked.
@@ -1014,6 +1032,7 @@ export default function ChartPanel({
             onVerify={featureFlags.replayDebug ? runVerification : undefined}
             verification={verification}
             onPickTime={onPickTime}
+            deepLoading={deepLoading}
             onDrill={onDrill}
             blind={blindMode}
             onToggleBlind={() => setBlindMode((v) => !v)}
