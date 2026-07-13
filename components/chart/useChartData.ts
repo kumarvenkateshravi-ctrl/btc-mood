@@ -18,7 +18,7 @@ import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
 import { IndicatorBandPrimitive } from '@/lib/indicatorBandPrimitive';
 import type { Candle } from '@/lib/types';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
-import { shiftTime, getTfMinutes, type ChartType, type IndicatorRender } from './types';
+import { shiftTime, getTfMinutes, ensureCleanSeries, type ChartType, type IndicatorRender } from './types';
 import type { ChartRefs } from './refs';
 
 /**
@@ -94,8 +94,9 @@ export function useChartData(
     prevTypeRef.current = type;
     prevTfRef.current = tf ?? null;
 
-    const baseCandles = candles;
-    hoverInputsRef.current = { src: candles, base: baseCandles, isRenko };
+    // LWC #2044 guard 1: strictly ascending, unique timestamps only.
+    const baseCandles = ensureCleanSeries(candles);
+    hoverInputsRef.current = { src: baseCandles, base: baseCandles, isRenko };
 
     if (baseCandles.length === 0) return;
 
@@ -160,7 +161,12 @@ export function useChartData(
     // which crashes the whole page. Drop such bars; and if LWC still throws
     // (e.g. a just-disposed series surviving in a ref for one frame), reset
     // the tracking refs and skip this frame — the next tick repaints fully.
-    const isRenderable = (c: { time: number | Time; open: number; high: number; low: number; close: number }) =>
+    //
+    // IMPORTANT: `c` itself may be null if the history-prepend merge produced
+    // a sparse array. The null check must come FIRST before any field access,
+    // otherwise `.filter(isRenderable)` itself throws "Value is null at Array.map".
+    const isRenderable = (c: { time: number | Time; open: number; high: number; low: number; close: number } | null | undefined): c is { time: number | Time; open: number; high: number; low: number; close: number } =>
+      c != null &&
       Number.isFinite(c.time as number) &&
       Number.isFinite(c.open) && Number.isFinite(c.high) &&
       Number.isFinite(c.low) && Number.isFinite(c.close);
@@ -221,6 +227,12 @@ export function useChartData(
         }
       }
 
+      // LWC #2044 guard 2: clear the crosshair before repainting a reshaped
+      // dataset — its saved hover index points into the OLD bars; remapping
+      // it during the prepend/reload throws 'Value is null' inside LWC's
+      // own callbacks (uncatchable by React). It repaints on the next
+      // mouse move, so the user never notices.
+      try { chartRef.current?.clearCrosshairPosition(); } catch {}
       try {
         candleSeries.setData(candleData);
         if (dummySeriesRef.current) dummySeriesRef.current.setData(futureData);
@@ -262,6 +274,7 @@ export function useChartData(
 
       if (signature !== indicatorSigRef.current) {
         indicatorSigRef.current = signature;
+        try { chart.clearCrosshairPosition(); } catch {}
 
         // Teardown: drop all indicator series, then all oscillator panes.
         // Removing a series detaches its primitives + price-lines + markers.
@@ -465,7 +478,13 @@ export function useChartData(
               lower.push(null);
             }
           }
-          const times = candles.map((c) => shiftTime(c.time as number) as number);
+          // Guard: `candles` is the RAW prop array; when old history is
+          // prepended it can momentarily contain null entries before React
+          // re-renders the full deduplicated list. A null here would throw
+          // "Value is null at Array.map" — uncaught — and crash the page.
+          const times = candles
+            .filter((c) => c != null && Number.isFinite(c.time as number))
+            .map((c) => shiftTime(c.time as number) as number);
           const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
           const visible = hiddenKeys.has(key) ? false : st?.display !== false;
           try { bp.setData(upper, lower, times, st?.color || plot.color, visible, plot.zoneStyle); } catch {}
@@ -481,7 +500,9 @@ export function useChartData(
               const n = v == null ? null : typeof v === 'object' && 'value' in v ? v.value : (v as number);
               return n != null && Number.isFinite(n) ? n : null;
             });
-            const times = candles.map((c) => shiftTime(c.time as number) as number);
+            const times = candles
+              .filter((c) => c != null && Number.isFinite(c.time as number))
+              .map((c) => shiftTime(c.time as number) as number);
             try { gp.setData(vals, times, result.gradientFills); } catch {}
           }
         }
@@ -490,7 +511,10 @@ export function useChartData(
         const mk = indicatorMarkersRef.current.get(key);
         if (mk && result.markers) {
           const markers = result.markers
-            .filter((m) => candles[m.index])
+            .filter((m) => {
+              const c = candles[m.index];
+              return c != null && Number.isFinite(c.time as number);
+            })
             .map((m) => ({
               time: shiftTime(candles[m.index].time as number),
               position: m.position,

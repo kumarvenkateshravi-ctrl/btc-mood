@@ -53,7 +53,7 @@ export interface ChartProps {
   candlesByTf?: Record<string, Candle[]>;
   type: ChartType;
   tf?: string;
-  height: number;
+  height?: number;
   indicatorResult?: IndicatorResult | null;
   indicatorResults?: IndicatorRender[];
   priceScaleMode?: PriceScaleModeOption;
@@ -131,6 +131,24 @@ export interface ChartProps {
    * proportional height allocation when no per-pane `height` is given).
    */
   additionalPanesTotalHeight?: number;
+}
+
+/**
+ * Strict time-series guard (lightweight-charts throws 'Value is null' on
+ * duplicate or out-of-order timestamps — overlapping lazy-load pages are the
+ * classic producer). One O(n) validation pass; the common clean case returns
+ * the SAME array (no allocation). Dirty input is deduped (last bar wins) and
+ * sorted strictly ascending.
+ */
+export function ensureCleanSeries(candles: Candle[]): Candle[] {
+  let dirty = false;
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i].time <= candles[i - 1].time) { dirty = true; break; }
+  }
+  if (!dirty) return candles;
+  const byTime = new Map<number, Candle>();
+  for (const c of candles) byTime.set(c.time as number, c);
+  return [...byTime.values()].sort((a, b) => (a.time as number) - (b.time as number));
 }
 
 /** Offsets a unix-seconds timestamp by the local timezone so lightweight-charts
