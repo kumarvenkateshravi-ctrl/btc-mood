@@ -19,7 +19,7 @@ import type { OperatorId, ScannerSource, Series } from './types';
 // ---- one snapshot per candle array (closed-bar keyed, small LRU) ----------
 const snapCache = new Map<string, SmcSnapshot>();
 function snapFor(candles: Candle[]): SmcSnapshot {
-  const key = `${candles.length}:${candles[0]?.time ?? 0}:${candles[candles.length - 1]?.time ?? 0}`;
+  const key = `${candles.length}:${candles[0]?.time ?? 0}:${candles[candles.length - 1]?.time ?? 0}:${candles[0]?.open ?? 0}:${candles.length > 1 ? candles[candles.length - 2].close : 0}`;
   const hit = snapCache.get(key);
   if (hit) return hit;
   const snap = computeSmc(candles);

@@ -120,7 +120,10 @@ let cache: { key: string; snap: SmcSnapshot } | null = null;
 
 function getSnapshot(candles: Candle[], inputs: SmcOverlayInputs): SmcSnapshot {
   const last = candles[candles.length - 1];
-  const key = `${candles.length}:${last ? last.time : 0}:${inputs.swingsLength}:${inputs.internalLength}`;
+  // Include a value fingerprint: raw vs Heikin Ashi arrays share length +
+  // last-bar time; the last CLOSED close + first open stay stable intra-bar.
+  const closed = candles.length > 1 ? candles[candles.length - 2].close : 0;
+  const key = `${candles.length}:${last ? last.time : 0}:${candles[0]?.open ?? 0}:${closed}:${inputs.swingsLength}:${inputs.internalLength}`;
   if (cache && cache.key === key) return cache.snap;
   const snap = computeSmc(candles, {
     swingsLength: inputs.swingsLength,

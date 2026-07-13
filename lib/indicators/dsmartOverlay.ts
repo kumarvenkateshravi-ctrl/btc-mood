@@ -52,7 +52,12 @@ let cache: { key: string; result: DsmartResult } | null = null;
 
 function getResult(candles: Candle[], cfg: DsmartConfig): DsmartResult {
   const last = candles[candles.length - 1];
-  const key = `${candles.length}:${last ? last.time : 0}:${cfg.donchianLen}:${cfg.dispLen}:${cfg.dispThreshold}:${cfg.maxPullbackLen}`;
+  // Fingerprint the ARRAY, not just its shape: raw and Heikin Ashi candles
+  // share length + last-bar time but differ in values, and the key must stay
+  // stable within a bar (the whole point of the closed-bar cache) — so use
+  // the last CLOSED bar's close + the first bar's open.
+  const closed = candles.length > 1 ? candles[candles.length - 2].close : 0;
+  const key = `${candles.length}:${last ? last.time : 0}:${candles[0]?.open ?? 0}:${closed}:${cfg.donchianLen}:${cfg.dispLen}:${cfg.dispThreshold}:${cfg.maxPullbackLen}`;
   if (cache && cache.key === key) return cache.result;
   const result = computeDsmart(candles, cfg);
   cache = { key, result };

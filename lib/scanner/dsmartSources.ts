@@ -10,7 +10,7 @@ import type { OperatorId, ScannerSource, Series } from './types';
 
 const cache = new Map<string, DsmartResult>();
 function resultFor(candles: Candle[]): DsmartResult {
-  const key = `${candles.length}:${candles[0]?.time ?? 0}:${candles[candles.length - 1]?.time ?? 0}`;
+  const key = `${candles.length}:${candles[0]?.time ?? 0}:${candles[candles.length - 1]?.time ?? 0}:${candles[0]?.open ?? 0}:${candles.length > 1 ? candles[candles.length - 2].close : 0}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const r = computeDsmart(candles, DSMART_DEFAULTS);

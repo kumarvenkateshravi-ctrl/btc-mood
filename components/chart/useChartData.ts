@@ -75,11 +75,21 @@ export function useChartData(
     const isNewContext = prevTfRef.current !== tf || prevTypeRef.current !== type;
 
     if (prevTypeRef.current !== null && prevTypeRef.current !== type) {
+      // Full reset when chart type changes: clear series data AND all
+      // tracking refs so stale Renko brick timestamps don't corrupt the
+      // incremental update logic (isIncremental / isAppendOne) for the
+      // new type. Without this reset, candleSeries.update() may be called
+      // on an empty series, causing LWC to silently freeze the chart.
       candleSeries.setData([]);
       markersRef.current?.setMarkers([]);
       indicatorSeriesRef.current.forEach((s) => {
         try { s.setData([]); } catch {}
       });
+      // Reset all state-tracking refs so the next render does a clean setData.
+      lastBarTimeRef.current = null;
+      firstBarTimeRef.current = null;
+      prevCountRef.current = 0;
+      prevFirstTimeRef.current = null;
     }
     prevTypeRef.current = type;
     prevTfRef.current = tf ?? null;
@@ -116,7 +126,15 @@ export function useChartData(
       prependedBars > 0 ? chartRef.current?.timeScale().getVisibleLogicalRange() ?? null : null;
 
     const lastTime = baseCandles[baseCandles.length - 1].time;
-    const isIncremental = lastBarTimeRef.current === lastTime;
+    // In-bar tick: same last-bar time AND same bar count. The count check is
+    // load-bearing for Renko: the forming (ghost) brick keeps the last-bar
+    // time pinned to the source candle's time, so when price crosses a brick
+    // boundary the array grows while lastTime stays constant — without the
+    // count check the completed bricks would never be drawn (update() only
+    // patches the final bar) and the chart falls further below live price
+    // with every crossing.
+    const isIncremental =
+      lastBarTimeRef.current === lastTime && baseCandles.length === prevCountRef.current;
     // Append-by-one: one new bar at the tail, history untouched — a replay
     // step or a live bar close. LWC's update() appends in O(1); a multi-bar
     // jump or backward scrub falls through to the full setData path.
