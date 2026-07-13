@@ -75,6 +75,41 @@ export type { ChartType, PriceScaleModeOption, ChartApi, ChartOverlay, OverlayKi
 // retrigger when there's no multi-TF data.
 const EMPTY_DIV_MARKERS: ReturnType<typeof buildDivergenceMarkers> = { markers: [], payloads: [] };
 
+type TooltipHandle = {
+  setPos: (pos: { x: number; y: number; time?: number; hover: HoverPayload } | null) => void;
+};
+
+function TooltipContainer({
+  handle,
+  mode,
+  activeFlips,
+  hasDivergenceIndicator,
+  divMarkersPayloads,
+}: {
+  handle: React.MutableRefObject<TooltipHandle>;
+  mode: ChartType;
+  activeFlips: any;
+  hasDivergenceIndicator: boolean;
+  divMarkersPayloads: any;
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number; time?: number; hover: HoverPayload } | null>(null);
+  // Register the imperative handle inside an effect — mutating a ref during
+  // the render phase is unsafe under concurrent rendering (double-invoked /
+  // discarded renders can leave the handle pointing at a setState for a tree
+  // React threw away, which then throws on use).
+  useEffect(() => {
+    handle.current = { setPos };
+  }, [handle]);
+  if (!pos) return null;
+  return (
+    <>
+      <FloatingChartTooltip pos={pos} mode={mode} />
+      <SignalExplainer pos={pos} flips={activeFlips} />
+      <DivergenceExplainer pos={pos} payloads={hasDivergenceIndicator ? divMarkersPayloads : []} />
+    </>
+  );
+}
+
 export default function Chart({
   candles,
   candlesByTf,
@@ -214,7 +249,12 @@ export default function Chart({
   
   // Local cursor position for the Phase D floating tooltip.
   // The data payload (OHLC) is passed directly so it persists when clicked.
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number; time?: number; hover: HoverPayload } | null>(null);
+  // Using a plain mutable ref object instead of forwardRef to avoid the
+  // Turbopack "Value is null" error during strict-mode double-invocation.
+  const tooltipHandle = useRef<TooltipHandle>({ setPos: () => {} });
+  const setTooltipPos = useCallback((pos: { x: number; y: number; time?: number; hover: HoverPayload } | null) => {
+    tooltipHandle.current.setPos(pos);
+  }, []);
 
   const onOverlayDragRef = useRef<typeof onOverlayDrag>(onOverlayDrag);
   const onOverlayChipClickRef = useRef<typeof onOverlayChipClick>(onOverlayChipClick);
@@ -438,7 +478,10 @@ export default function Chart({
 
   // ---- Render ----
   return (
-    <div className="group/chart relative h-full w-full overflow-hidden" style={{ background: palette.chartBg }}>
+    <div
+      className="group/chart relative w-full overflow-hidden"
+      style={{ height: height ? `${height}px` : '100%', background: palette.chartBg }}
+    >
       <div
         ref={containerRef}
         className="absolute inset-0 z-0"
@@ -496,11 +539,14 @@ export default function Chart({
         />
       )}
 
-      {/* Crosshair OHLC tooltip — follows the cursor; reads the hover
-          store internally, so it renders nothing between candles. */}
-      {tooltipPos && <FloatingChartTooltip pos={tooltipPos} mode={type} />}
-      {tooltipPos && <SignalExplainer pos={tooltipPos} flips={activeFlips} />}
-      {tooltipPos && <DivergenceExplainer pos={tooltipPos} payloads={hasDivergenceIndicator ? divMarkersData.payloads : []} />}
+      {/* --- Overlay UI --- */}
+      <TooltipContainer 
+        handle={tooltipHandle}
+        mode={type} 
+        activeFlips={activeFlips}
+        hasDivergenceIndicator={hasDivergenceIndicator}
+        divMarkersPayloads={divMarkersData.payloads}
+      />
 
       <ChartNavControls chartRef={chartRef} onReset={applyDefaultView} />
 

@@ -405,6 +405,18 @@ export function useChartEvents(refs: ChartRefs) {
     window.addEventListener('pointerup', onBodyPanUp);
     window.addEventListener('pointercancel', onBodyPanUp);
 
+    // Focus-loss release: minimizing (Win+Down), alt-tabbing, or releasing the
+    // mouse outside the window swallows pointerup, leaving the drag state
+    // locked (frozen panning, erratic crosshair). Any focus change resets it.
+    const onFocusLost = () => {
+      isPointerDownRef.current = false;
+      isCandlePointerDown = false;
+      bodyPanPointerId = null;
+      bodyPanStartRange = null;
+    };
+    window.addEventListener('blur', onFocusLost);
+    document.addEventListener('visibilitychange', onFocusLost);
+
     const onHover = (e: PointerEvent) => {
       if (dragKind !== null) return;
       const prim = overlayPrimitiveRef.current;
@@ -470,6 +482,8 @@ export function useChartEvents(refs: ChartRefs) {
     container.addEventListener('contextmenu', onContextMenu, { capture: true });
 
     return () => {
+      window.removeEventListener('blur', onFocusLost);
+      document.removeEventListener('visibilitychange', onFocusLost);
       container.removeEventListener('wheel', onAxisWheel, { capture: true });
       container.removeEventListener('pointerdown', onPointerDown, { capture: true });
       container.removeEventListener('pointermove', onOverlayMove, { capture: true });

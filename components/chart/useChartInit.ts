@@ -30,6 +30,26 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
         fontSize: 13,
         attributionLogo: false,
       },
+      localization: {
+        timeFormatter: (time: any) => {
+          let date;
+          if (typeof time === 'number') {
+            date = new Date(time * 1000);
+          } else if (time.year && time.month && time.day) {
+            date = new Date(Date.UTC(time.year, time.month - 1, time.day));
+          } else {
+            return String(time);
+          }
+          return new Intl.DateTimeFormat('en-US', {
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            timeZone: 'UTC',
+            ...(typeof time === 'number' ? { hour: '2-digit', minute: '2-digit', hour12: false } : {})
+          }).format(date);
+        },
+      },
       grid: {
         vertLines: { color: P.grid, style: LineStyle.Solid },
         horzLines: { color: P.grid, style: LineStyle.Solid },
@@ -40,6 +60,30 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
         borderVisible: false,
       },
       timeScale: {
+        // Tick marks on the x-axis: show date labels (day / month / year)
+        // rather than time-of-day. This matches TradingView's Renko axis
+        // where dates scroll continuously regardless of brick density.
+        tickMarkFormatter: (time: any, tickType: number) => {
+          // tickType: 0=year, 1=month, 2=day, 3=time, 4=seconds
+          let date: Date;
+          if (typeof time === 'number') {
+            date = new Date(time * 1000);
+          } else if (time.year && time.month && time.day) {
+            date = new Date(Date.UTC(time.year, time.month - 1, time.day));
+          } else {
+            return String(time);
+          }
+          // Year boundary: show full year
+          if (tickType === 0) {
+            return date.getUTCFullYear().toString();
+          }
+          // Month boundary: show abbreviated month name
+          if (tickType === 1) {
+            return date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+          }
+          // Day (and finer): just show the day number, like TradingView
+          return date.getUTCDate().toString();
+        },
         borderColor: P.border,
         timeVisible: true,
         secondsVisible: false,
@@ -107,8 +151,17 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
 
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
-      if (rect && chartRef.current) {
-        chartRef.current.applyOptions({ width: rect.width, height: rect.height });
+      // Minimize/restore (Win+Down, taskbar) reports 0x0 for a frame. Feeding
+      // zero sizes into lightweight-charts' canvas math crashes deep inside
+      // ('Value is null'). Skip the frame — the restore emits a real-size
+      // entry right after, so nothing is lost.
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      if (chartRef.current) {
+        try {
+          chartRef.current.applyOptions({ width: rect.width, height: rect.height });
+        } catch (err) {
+          console.warn('[chart] resize failed — will recover on next layout:', err);
+        }
       }
     });
     ro.observe(container);
@@ -122,7 +175,7 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
       markersRef.current = null;
       overlayPrimitiveRef.current = null;
       fxPrimitiveRef.current = null;
-      
+
       refs.indicatorSeriesRef.current.clear();
       refs.indicatorPanesRef.current.clear();
       refs.indicatorGradientRef.current.clear();
