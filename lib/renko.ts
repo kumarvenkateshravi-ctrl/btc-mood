@@ -70,24 +70,60 @@ type Dir = 1 | -1;
 export function toRenko(candles: Candle[], opts: RenkoOptions = {}): Candle[] {
   if (candles.length === 0) return [];
 
-  const brick = computeBrickSize(candles, opts);
+  // Drop any malformed bars (null/NaN fields from bad WS frames or
+  // an incomplete live candle). A single bad bar would propagate NaN
+  // through all subsequent bricks and crash LWC with "Value is null".
+  const valid = candles.filter(
+    (c) =>
+      c != null &&
+      Number.isFinite(c.time as number) &&
+      Number.isFinite(c.open) &&
+      Number.isFinite(c.high) &&
+      Number.isFinite(c.low) &&
+      Number.isFinite(c.close),
+  );
+  if (valid.length === 0) return [];
+
+  const brick = computeBrickSize(valid, opts);
   if (!Number.isFinite(brick) || brick <= 0) return [];
 
   const out: Candle[] = [];
-  let lastClose = candles[0].close;
-  let timeBase = candles[0].time;
 
-  // Anchor: a degenerate zero-width brick at the first close so the
-  // chart has at least one bar to render. Subsequent bricks move
-  // strictly by `brick`.
-  pushBrick(out, lastClose, lastClose, timeBase++);
+  // ── Grid-align the anchor (Traditional Renko) ─────────────────────────────
+  // TradingView's Traditional Renko snaps the starting price to the nearest
+  // multiple of `brick` *below* the first close, creating a price grid where
+  // all brick boundaries are exact multiples of the brick size.
+  //
+  // Without this, bricks float from the raw close (e.g. $64,932.53) and all
+  // subsequent boundaries are fractional — causing the entire pattern to
+  // diverge from TradingView even with identical settings.
+  const rawStart = valid[0].close;
+  const gridStart = Math.floor(rawStart / brick) * brick;
+  let lastClose = gridStart;
 
-  for (let i = 1; i < candles.length; i++) {
-    const c = candles[i];
+
+  const firstTime = valid[0].time;
+  // Anchor: a zero-width brick at the grid-aligned start so the chart always
+  // has at least one bar. Placed 1 second before the first candle so all
+  // subsequent bricks have strictly greater timestamps.
+  pushBrick(out, lastClose, lastClose, firstTime - 1);
+
+  // Estimate the typical interval between source candles so we can
+  // spread multiple bricks generated from the same candle across a
+  // realistic time window. Falls back to 60 seconds if indeterminate.
+  const candleInterval =
+    valid.length >= 2 ? (valid[1].time as number) - (valid[0].time as number) : 60;
+
+  for (let i = 1; i < valid.length; i++) {
+    const c = valid[i];
     const price = c.close;
-    // Each source bar can produce multiple Renko bricks if it spans
-    // more than one brick boundary. Use the bar's high/low to extract
-    // as many discrete bricks as the move contains.
+    const srcTime = c.time as number;
+
+    // Collect all the bricks generated from this source candle first,
+    // then assign them evenly-spaced timestamps within the candle's
+    // time slot so the axis shows the candle's real date.
+    const pendingBricks: { open: number; close: number }[] = [];
+
     let safety = 0;
     while (safety++ < 10_000) {
       const diff = price - lastClose;
@@ -96,23 +132,59 @@ export function toRenko(candles: Candle[], opts: RenkoOptions = {}): Candle[] {
         for (let k = 0; k < n; k++) {
           const prev = lastClose;
           lastClose = prev + brick;
-          pushBrick(out, prev, lastClose, timeBase++);
+          pendingBricks.push({ open: prev, close: lastClose });
         }
       } else if (diff <= -brick) {
         const n = Math.floor(-diff / brick);
         for (let k = 0; k < n; k++) {
           const prev = lastClose;
           lastClose = prev - brick;
-          pushBrick(out, prev, lastClose, timeBase++);
+          pendingBricks.push({ open: prev, close: lastClose });
         }
       } else {
         break;
       }
     }
+
+    // Distribute the bricks across this candle's time window.
+    // spacing = candleInterval / (count + 1) keeps them within the
+    // slot and guarantees they are strictly greater than the previous
+    // brick's time (which was at srcTime - candleInterval at the latest).
+    const count = pendingBricks.length;
+    for (let j = 0; j < count; j++) {
+      // Map bricks across (prevSrcTime, srcTime] so the LAST brick from
+      // this candle always lands exactly at srcTime. This guarantees the
+      // most-recent candle's date (today) always appears on the x-axis.
+      // fraction goes from 1/count ... count/count (= 1.0)
+      const frac = (j + 1) / count;
+      const t = Math.round(srcTime - candleInterval + frac * candleInterval);
+      const lastOutTime = out.length > 0 ? out[out.length - 1].time : 0;
+      // Guarantee strict monotonicity (fallback: last + 1)
+      const finalTime = t > lastOutTime ? t : lastOutTime + 1;
+      pushBrick(out, pendingBricks[j].open, pendingBricks[j].close, finalTime);
+    }
   }
+
+  // ── Forming (ghost) brick ──────────────────────────────────────────────────
+  // Forming (ghost) brick — always represents today's incomplete movement.
+  const lastCandle = valid[valid.length - 1];
+  const formingClose = lastCandle.close;
+  const lastOutTime = out.length > 0 ? out[out.length - 1].time : firstTime;
+  // Use the last candle's actual timestamp so the axis shows the real date.
+  // Add 1 to guarantee strict monotonicity if the timestamp is already used.
+  const formingTime = lastCandle.time > lastOutTime ? lastCandle.time : lastOutTime + 1;
+  out.push({
+    time: formingTime,
+    open: lastClose,
+    close: formingClose,
+    high: Math.max(lastClose, formingClose),
+    low: Math.min(lastClose, formingClose),
+    volume: 0,
+  });
 
   return out;
 }
+
 
 function pushBrick(out: Candle[], open: number, close: number, time: number) {
   out.push({
@@ -126,9 +198,11 @@ function pushBrick(out: Candle[], open: number, close: number, time: number) {
 }
 
 function atrBrick(candles: Candle[], length: number): number | null {
-  const highs = candles.map((c) => c.high);
-  const lows = candles.map((c) => c.low);
-  const closes = candles.map((c) => c.close);
+  // Guard: filter out any nullish/non-finite values that could propagate
+  // NaN through the ATR calculation and produce a zero brick size.
+  const highs = candles.map((c) => (Number.isFinite(c.high) ? c.high : 0));
+  const lows = candles.map((c) => (Number.isFinite(c.low) ? c.low : 0));
+  const closes = candles.map((c) => (Number.isFinite(c.close) ? c.close : 0));
   const a = its.atr(highs, lows, closes, { period: Math.max(1, length) }).atrLine;
   const last = a[a.length - 1];
   return last != null && last > 0 ? last : null;
