@@ -85,13 +85,21 @@ export default function ReplayBar({
           <label className="inline-flex items-center gap-1.5 text-ink-faint">
             or jump to
             <input
-              type="datetime-local"
+              type="date"
               onChange={(e) => {
-                const ms = new Date(e.target.value).getTime();
+                // Jump to the DAY OPEN of the picked date. Crypto's trading
+                // day opens at 00:00 UTC — one instant worldwide, shown in
+                // each user's local wall-clock by the chart (05:30 in
+                // India, 01:00 in Berlin, ...). Date.UTC keeps the pick
+                // timezone-proof; parsing via new Date(value) would drift
+                // by the browser's offset in some engines.
+                const [y, m, d] = e.target.value.split('-').map(Number);
+                if (!y || !m || !d) return;
+                const ms = Date.UTC(y, m - 1, d);
                 if (Number.isFinite(ms)) onPickTime(ms);
               }}
               className="focus-ring rounded border border-line bg-base px-1.5 py-0.5 text-[11px] text-ink [color-scheme:dark]"
-              aria-label="Jump to date and time"
+              aria-label="Jump to date (replay starts at the day open)"
             />
           </label>
         )}
