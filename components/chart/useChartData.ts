@@ -431,10 +431,10 @@ export function useChartData(
             .map((v, i) => {
               if (v == null) return null;
               if (typeof v === 'object' && 'value' in v) {
-                if (Number.isNaN(v.value)) return null;
+                if (!Number.isFinite(v.value)) return null; // NaN AND ±Infinity (div-by-zero)
                 return { time: shiftTime((candles[i]?.time ?? 0) as number), value: v.value, color: v.color };
               }
-              if (Number.isNaN(v as number)) return null;
+              if (!Number.isFinite(v as number)) return null;
               return { time: shiftTime((candles[i]?.time ?? 0) as number), value: v as number };
             })
             .filter((d): d is { time: Time; value: number; color?: string } => d !== null);
@@ -456,7 +456,8 @@ export function useChartData(
           const upper: (number | null)[] = [];
           const lower: (number | null)[] = [];
           for (const v of plot.data) {
-            if (v != null && typeof v === 'object' && 'upper' in v && 'lower' in v) {
+            if (v != null && typeof v === 'object' && 'upper' in v && 'lower' in v
+                && Number.isFinite(v.upper) && Number.isFinite(v.lower)) {
               upper.push(v.upper);
               lower.push(v.lower);
             } else {
@@ -467,7 +468,7 @@ export function useChartData(
           const times = candles.map((c) => shiftTime(c.time as number) as number);
           const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
           const visible = hiddenKeys.has(key) ? false : st?.display !== false;
-          bp.setData(upper, lower, times, st?.color || plot.color, visible, plot.zoneStyle);
+          try { bp.setData(upper, lower, times, st?.color || plot.color, visible, plot.zoneStyle); } catch {}
         }
 
         // Gradient zones: feed the source plot's per-bar values + bar times.
@@ -476,11 +477,12 @@ export function useChartData(
           const srcId = result.gradientFills[0].plotId;
           const srcPlot = result.plots.find((p) => p.id === srcId);
           if (srcPlot) {
-            const vals = srcPlot.data.map((v) =>
-              v == null ? null : typeof v === 'object' && 'value' in v ? v.value : (v as number),
-            );
+            const vals = srcPlot.data.map((v) => {
+              const n = v == null ? null : typeof v === 'object' && 'value' in v ? v.value : (v as number);
+              return n != null && Number.isFinite(n) ? n : null;
+            });
             const times = candles.map((c) => shiftTime(c.time as number) as number);
-            gp.setData(vals, times, result.gradientFills);
+            try { gp.setData(vals, times, result.gradientFills); } catch {}
           }
         }
 

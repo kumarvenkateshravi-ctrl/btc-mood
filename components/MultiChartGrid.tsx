@@ -2,12 +2,13 @@
 
 import { useMemo, useRef } from 'react';
 import Chart, { type ChartType } from './Chart';
+import ChartErrorBoundary from '@/components/chart/ChartErrorBoundary';
 import type { ChartApi } from './chart/types';
 import { useBaseCandles } from '@/lib/chartHelpers';
 import { DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { Candle, Timeframe } from '@/lib/types';
-import { GRID_COLS_CLASS, type GridCount } from '@/lib/gridLayout';
+import { GRID_COLS_CLASS, type GridCount, type LayoutSync } from '@/lib/gridLayout';
 
 interface MultiChartGridProps {
   /** Number of panes to render. Drives both the cell list and the
@@ -22,7 +23,12 @@ interface MultiChartGridProps {
   onSelectTf: (tf: Timeframe) => void;
   /** Height of each cell's chart in px. */
   cellHeight?: number;
+  /** Sync flags. crosshair / time / dateRange default false in v1
+   *  to match TV; the user can toggle them on in the layout switcher. */
+  sync?: LayoutSync;
 }
+
+const EMPTY_ARRAY: any[] = [];
 
 /**
  * Multi-chart grid — the "see more of the market in one glance" view.
@@ -43,6 +49,7 @@ export default function MultiChartGrid({
   selected,
   onSelectTf,
   cellHeight = 240,
+  sync,
 }: MultiChartGridProps) {
   const colsClass = GRID_COLS_CLASS[count];
   const chartApis = useRef(new Map<Timeframe, ChartApi>());
@@ -52,27 +59,37 @@ export default function MultiChartGrid({
   const handleReady = (tf: Timeframe, api: ChartApi) => {
     chartApis.current.set(tf, api);
 
-    api.subscribeLogicalRange((range) => {
-      if (syncingRange.current || !range) return;
-      syncingRange.current = true;
-      chartApis.current.forEach((otherApi, otherTf) => {
-        if (otherTf !== tf) {
-          try { otherApi.setVisibleLogicalRange(range); } catch {}
-        }
-      });
-      syncingRange.current = false;
-    });
+    // Back-compat: when no sync prop is passed, keep the legacy always-on
+    // behavior. When passed, follow the layout's sync flags (defaults
+    // inside the layout follow the TV default — OFF).
+    const syncTime = sync ? sync.time : true;
+    const syncCrosshair = sync ? sync.crosshair : true;
 
-    api.subscribeCrosshairTime((time) => {
-      if (syncingCrosshair.current) return;
-      syncingCrosshair.current = true;
-      chartApis.current.forEach((otherApi, otherTf) => {
-        if (otherTf !== tf) {
-          try { otherApi.setCrosshairTime(time); } catch {}
-        }
+    if (syncTime) {
+      api.subscribeLogicalRange((range) => {
+        if (syncingRange.current || !range) return;
+        syncingRange.current = true;
+        chartApis.current.forEach((otherApi, otherTf) => {
+          if (otherTf !== tf) {
+            try { otherApi.setVisibleLogicalRange(range); } catch {}
+          }
+        });
+        syncingRange.current = false;
       });
-      syncingCrosshair.current = false;
-    });
+    }
+
+    if (syncCrosshair) {
+      api.subscribeCrosshairTime((time) => {
+        if (syncingCrosshair.current) return;
+        syncingCrosshair.current = true;
+        chartApis.current.forEach((otherApi, otherTf) => {
+          if (otherTf !== tf) {
+            try { otherApi.setCrosshairTime(time); } catch {}
+          }
+        });
+        syncingCrosshair.current = false;
+      });
+    }
   };
 
   return (
@@ -80,13 +97,13 @@ export default function MultiChartGrid({
       role="grid"
       aria-label={`${count}-pane chart grid`}
       data-count={count}
-      className={['grid gap-3', colsClass].join(' ')}
+      className={['grid gap-3 w-full h-full flex-1', colsClass, count > 2 ? 'grid-rows-2' : 'grid-rows-1'].join(' ')}
     >
       {tfs.map((tf) => (
         <GridCell
           key={tf}
           tf={tf}
-          candles={candlesByTf[tf] ?? []}
+          candles={candlesByTf[tf] ?? EMPTY_ARRAY}
           candlesByTf={candlesByTf}
           type={chartType}
           activeIndicatorIds={activeIndicatorIds}
@@ -141,7 +158,13 @@ function GridCell({
         savedSettings = JSON.parse(defaultsStr)[id];
       } catch {}
       
-      const result = def.compute(baseCandlesForIndicators, { id, settings: savedSettings }, computedSources);
+      let result;
+      try {
+        result = def.compute(baseCandlesForIndicators, { id, settings: savedSettings }, computedSources);
+      } catch (err) {
+        console.error(`Indicator "${id}" failed to compute in GridCell:`, err);
+        result = { plots: [], signals: Array.from({ length: baseCandlesForIndicators.length }, () => 'neutral' as const) };
+      }
       
       // Feed line/histogram plot outputs into the computed sources for downstream indicators
       result.plots.forEach((plot) => {
@@ -166,7 +189,7 @@ function GridCell({
     <div
       role="gridcell"
       className={[
-        'panel relative overflow-hidden rounded-xl border transition-colors',
+        'panel relative overflow-hidden rounded-xl border transition-colors h-full min-h-0',
         active ? 'border-accent/50' : 'border-line',
       ].join(' ')}
     >
@@ -185,19 +208,20 @@ function GridCell({
           Loading {tf}…
         </div>
       ) : (
-        <Chart
-          candles={baseCandlesForIndicators}
-          candlesByTf={candlesByTf}
-          type={type}
-          height={height}
-          tf={tf}
-          indicatorResults={indicatorResults}
-          renko={renkoOptions}
-          showSignals={false}
-          activeIndicatorId=""
-          onIndicatorChange={() => {}}
-          onReady={onReady}
-        />
+        <ChartErrorBoundary>
+          <Chart
+            candles={baseCandlesForIndicators}
+            candlesByTf={candlesByTf}
+            type={type}
+            tf={tf}
+            indicatorResults={indicatorResults}
+            renko={renkoOptions}
+            showSignals={false}
+            activeIndicatorId=""
+            onIndicatorChange={() => {}}
+            onReady={onReady}
+          />
+        </ChartErrorBoundary>
       )}
     </div>
   );

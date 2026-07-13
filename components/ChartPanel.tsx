@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Chart, { type ChartType, type PriceScaleModeOption, type ChartOverlay, type OverlayKind, type ChartApi } from './Chart';
+import ChartErrorBoundary from '@/components/chart/ChartErrorBoundary';
 import { type RenkoConfig, DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import ChartContextMenu from './trade/ChartContextMenu';
 import { usePaperStore, setPositionOverlay } from '@/lib/paperStore';
@@ -783,7 +784,8 @@ export default function ChartPanel({
   // so the additional panes together get (N-1)/N of it.
   const additionalPanesTotalHeight =
     paneCount > 1 ? Math.max(0, Math.round((chartHeight * (paneCount - 1)) / paneCount)) : 0;
-  console.log('[panes-debug] ChartPanel', { paneCount, panes: additionalPanes?.length, chartHeight, loading });
+
+
 
   // The whole indicator stack, computed once per candle/settings change.
   // We process sequentially so that indicators can use prior indicators as inputs.
@@ -902,62 +904,64 @@ export default function ChartPanel({
         <div ref={chartBoxRef} className="relative min-h-0 min-w-0 flex-1">
         {loading && <ChartSkeleton height={chartHeight} />}
         {!loading && (
-          <Chart
-            candles={baseCandlesForIndicators}
-            candlesByTf={candlesByTf}
-            type={type}
-            height={chartHeight}
-            additionalPanes={additionalPanes}
-            additionalPanesTotalHeight={additionalPanesTotalHeight}
-            indicatorResult={indicatorResult}
-            indicatorResults={indicatorResults}
-            priceScaleMode={priceScaleMode}
-            onPriceScaleModeChange={setPriceScaleMode}
-            chartSettings={featureFlags.chartSettings ? chartSettings : undefined}
-            showSignals={showSignals}
-            renko={renkoOptions}
-            onReady={handleChartReady}
-            maskTimeAxis={blindMode}
-            onLoadOlder={replayPhase === 'idle' ? onLoadOlder : undefined}
-            tf={selected}
-            showVolume={parentShowVolume}
-            onQuickTrade={handleQuickTrade}
-            onOpenRenkoSettings={() => setShowRenkoSettings(true)}
-            bid={bid}
-            ask={ask}
-            overlays={overlays}
-            onOverlayDrag={handleOverlayDrag}
-            onOverlayChipClick={handleOverlayChipClick}
-            overlaySide={overlaySide}
-            overlayTypeLabel={overlayTypeLabel}
-            overlayEntryPrice={overlayEntryPrice}
-            overlayTpPrice={overlayTpPrice}
-            overlaySlPrice={overlaySlPrice}
-            overlayHasTp={overlayHasTp}
-            overlayHasSl={overlayHasSl}
-            overlayUnitsLabel={overlayUnitsLabel}
-            overlayLeverage={overlayLeverage}
-            overlayBadges={overlayBadges}
-            tradeOverlay={tradeOverlay}
-            onOverlayDiscard={onOverlayDiscard}
-            onOverlayConfirm={onOverlayConfirm}
-            onOverlayToggleTp={onToggleTp}
-            onOverlayToggleSl={onToggleSl}
-            onOverlayReverse={() => setShowReverseConfirm(true)}
-            onOverlayClose={() => setShowCloseConfirm(true)}
-            priceLines={priceLines}
-            onPriceLineDrag={handlePriceAlertDrag}
-            onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}
-            activeIndicatorId={primaryId}
-            onIndicatorChange={handleChartIndicatorChange}
-            indicatorSettings={indicatorSettings[primaryId]}
-            onUpdateIndicatorSettings={(settings) => handleUpdateIndicatorSettings(primaryId, settings)}
-            activeIndicatorIds={activeIndicatorIds}
-            indicatorSettingsMap={indicatorSettings}
-            onRemoveIndicator={onToggleIndicator}
-            onUpdateIndicatorSettingsFor={handleUpdateIndicatorSettings}
-            resetTick={resetTick}
-          />
+          <ChartErrorBoundary>
+            <Chart
+              candles={baseCandlesForIndicators}
+              candlesByTf={candlesByTf}
+              type={type}
+              height={chartHeight}
+              additionalPanes={additionalPanes}
+              additionalPanesTotalHeight={additionalPanesTotalHeight}
+              indicatorResult={indicatorResult}
+              indicatorResults={indicatorResults}
+              priceScaleMode={priceScaleMode}
+              onPriceScaleModeChange={setPriceScaleMode}
+              chartSettings={featureFlags.chartSettings ? chartSettings : undefined}
+              showSignals={showSignals}
+              renko={renkoOptions}
+              onReady={handleChartReady}
+              maskTimeAxis={blindMode}
+              onLoadOlder={replayPhase === 'idle' ? onLoadOlder : undefined}
+              tf={selected}
+              showVolume={parentShowVolume}
+              onQuickTrade={handleQuickTrade}
+              onOpenRenkoSettings={() => setShowRenkoSettings(true)}
+              bid={bid}
+              ask={ask}
+              overlays={overlays}
+              onOverlayDrag={handleOverlayDrag}
+              onOverlayChipClick={handleOverlayChipClick}
+              overlaySide={overlaySide}
+              overlayTypeLabel={overlayTypeLabel}
+              overlayEntryPrice={overlayEntryPrice}
+              overlayTpPrice={overlayTpPrice}
+              overlaySlPrice={overlaySlPrice}
+              overlayHasTp={overlayHasTp}
+              overlayHasSl={overlayHasSl}
+              overlayUnitsLabel={overlayUnitsLabel}
+              overlayLeverage={overlayLeverage}
+              overlayBadges={overlayBadges}
+              tradeOverlay={tradeOverlay}
+              onOverlayDiscard={onOverlayDiscard}
+              onOverlayConfirm={onOverlayConfirm}
+              onOverlayToggleTp={onToggleTp}
+              onOverlayToggleSl={onToggleSl}
+              onOverlayReverse={() => setShowReverseConfirm(true)}
+              onOverlayClose={() => setShowCloseConfirm(true)}
+              priceLines={priceLines}
+              onPriceLineDrag={handlePriceAlertDrag}
+              onChartContextMenu={(p, x, y) => setCtxMenu({ price: p, x, y })}
+              activeIndicatorId={primaryId}
+              onIndicatorChange={handleChartIndicatorChange}
+              indicatorSettings={indicatorSettings[primaryId]}
+              onUpdateIndicatorSettings={(settings) => handleUpdateIndicatorSettings(primaryId, settings)}
+              activeIndicatorIds={activeIndicatorIds}
+              indicatorSettingsMap={indicatorSettings}
+              onRemoveIndicator={onToggleIndicator}
+              onUpdateIndicatorSettingsFor={handleUpdateIndicatorSettings}
+              resetTick={resetTick}
+            />
+          </ChartErrorBoundary>
         )}
         {!loading && (
           <DrawingLayer
