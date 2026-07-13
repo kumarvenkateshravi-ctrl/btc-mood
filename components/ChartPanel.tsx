@@ -12,6 +12,8 @@ import CloseConfirmDialog from '@/components/trade/CloseConfirmDialog';
 import type { OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
 import { setMarkPrice } from '@/lib/markPriceStore';
 import {
+  configureReplaySession,
+  getLastSessionConfig,
   useReplaySession,
   startReplaySession,
   endReplaySession,
@@ -43,6 +45,12 @@ import { replayIndexForTime, TF_SECONDS } from '@/lib/replay/replaySlice';
 import { verifyReplayIntegrity, type IntegrityReport } from '@/lib/replay/verify';
 import { buildTrainingReport, type TrainingReport } from '@/lib/replay/trainingReport';
 import TrainingReportModal from '@/components/replay/TrainingReportModal';
+import SessionSetupCard from '@/components/replay/SessionSetupCard';
+import SessionHud from '@/components/replay/SessionHud';
+import SessionReportModal from '@/components/replay/SessionReportModal';
+import { vdAtr } from '@/lib/indicators/vdEngine';
+import type { SessionConfig, TradeBehavior } from '@/lib/replay/sessionSim';
+import type { PaperTrade } from '@/lib/paper';
 
 interface ChartPanelProps {
   candles: Candle[];
@@ -251,6 +259,7 @@ export default function ChartPanel({
     const start = Math.max(1, Math.min(index, candles.length - 1));
     lastReconciledRef.current = start; // don't reconcile bars before the cut
     startReplaySession(symbol); // fresh isolated account for this replay
+    setSessionSkipped(false);
     setBookmarks([]);
     replayActions.startAt(start, candles[start] ? candles[start].time + TF_SECONDS[selected] : null);
   };
@@ -259,6 +268,13 @@ export default function ChartPanel({
 
   // ---- Phase 4: blind drill + training report ----
   const [blindMode, setBlindMode] = useState(false);
+  // Trading-session simulator (replayBar.md): setup -> HUD -> end report.
+  const [sessionSkipped, setSessionSkipped] = useState(false);
+  const [sessionReport, setSessionReport] = useState<{
+    config: SessionConfig;
+    trades: PaperTrade[];
+    behaviors: TradeBehavior[];
+  } | null>(null);
   const [trainingReport, setTrainingReport] = useState<TrainingReport | null>(null);
 
   // Jump-to-datetime start (selection mode): pick the bar containing the
@@ -318,6 +334,14 @@ export default function ChartPanel({
   }, [replayActive, playIndex, replayStartIndex]);
 
   const replayLast = replayCandles[replayCandles.length - 1];
+  // ATR(14) of the replay-visible candles for HUD stop prefill; keyed on the
+  // closed-bar signature so playback ticks reuse it.
+  const hudAtr = useMemo(() => {
+    if (replayCandles.length < 20) return 0;
+    const a = vdAtr(replayCandles);
+    return a[a.length - 1] ?? 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayCandles.length, replayCandles[replayCandles.length - 1]?.time]);
   const displayPrice = replayActive && replayLast ? replayLast.close : price;
 
   // Publish the current mark (replay bar's close during replay, else live).
@@ -331,14 +355,17 @@ export default function ChartPanel({
   }, [replayActive, replayLast, price, symbol, candles]);
 
   // End the isolated session when leaving replay (the live account is never
-  // touched during replay — they run independently).
+  // touched during replay — they run independently). NOTE: the unmount
+  // cleanup lives in its own []-effect — returning it from THIS effect made
+  // React run it on every replayActive flip, including false→true, which
+  // disarmed the session store immediately after startReplaySession().
   useEffect(() => {
     if (!replayActive) {
       endReplaySession();
       lastReconciledRef.current = -1;
     }
-    return () => endReplaySession();
   }, [replayActive]);
+  useEffect(() => () => endReplaySession(), []);
 
   // Publish the replay moment so app-level analytics (mood engine, scanner,
   // SMC, market context) can enforce the Prime Invariant: no consumer sees
@@ -373,7 +400,9 @@ export default function ChartPanel({
     prevPhaseRef.current = replayPhase;
     if (prev !== 'idle' && replayPhase === 'idle') {
       setBlindMode(false);
-      if (session.trades.length > 0) {
+      if (session.config && session.trades.length > 0) {
+        setSessionReport({ config: session.config, trades: session.trades, behaviors: session.behaviors });
+      } else if (session.trades.length > 0) {
         setTrainingReport(buildTrainingReport(session.trades, replayDurationRef.current));
       }
     }
@@ -1021,6 +1050,25 @@ export default function ChartPanel({
         </div>
       )}
 
+      {replayActive && !session.config && !sessionSkipped && !blindMode && (
+        <div className="border-t border-line bg-surface-2/40 px-3 py-2">
+          <SessionSetupCard
+            initial={getLastSessionConfig()}
+            onStart={(cfg) => configureReplaySession(cfg)}
+            onSkip={() => setSessionSkipped(true)}
+          />
+        </div>
+      )}
+      {replayActive && session.config && replayLast && (
+        <div className="border-t border-line bg-surface-2/40 px-3 py-2">
+          <SessionHud
+            session={session}
+            lastClose={replayLast.close}
+            lastTime={replayLast.time}
+            atr={hudAtr}
+          />
+        </div>
+      )}
       {replayPhase !== 'idle' && (
         <div className="border-t border-line bg-surface-2/40 px-3 py-2">
           <ReplayBar
@@ -1082,6 +1130,14 @@ export default function ChartPanel({
 
       {trainingReport && (
         <TrainingReportModal report={trainingReport} onClose={() => setTrainingReport(null)} />
+      )}
+      {sessionReport && (
+        <SessionReportModal
+          config={sessionReport.config}
+          trades={sessionReport.trades}
+          behaviors={sessionReport.behaviors}
+          onClose={() => setSessionReport(null)}
+        />
       )}
 
       {showRenkoSettings && (
