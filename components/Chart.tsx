@@ -93,13 +93,16 @@ function TooltipContainer({
   divMarkersPayloads: any;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number; time?: number; hover: HoverPayload } | null>(null);
-  // Register the imperative handle inside an effect — mutating a ref during
-  // the render phase is unsafe under concurrent rendering (double-invoked /
-  // discarded renders can leave the handle pointing at a setState for a tree
-  // React threw away, which then throws on use).
+
+  // Safely assign and unassign the handle. If this component is unmounted,
+  // we clean up the reference to prevent executing state changes on dead components.
   useEffect(() => {
     handle.current = { setPos };
+    return () => {
+      handle.current = { setPos: () => { } };
+    };
   }, [handle]);
+
   if (!pos) return null;
   return (
     <>
@@ -191,21 +194,33 @@ export default function Chart({
   // existing series without a structural rebuild. Series are keyed
   // `${instanceKey}::${plotId}`; styles live in indicatorSettingsMap[instanceKey].
   useEffect(() => {
+    const activeKeys = new Set(visibleResults.map((r) => r.key));
+
     indicatorSeriesRef.current.forEach((series, seriesKey) => {
       const sep = seriesKey.indexOf('::');
       const instKey = sep >= 0 ? seriesKey.slice(0, sep) : seriesKey;
+
+      // Skip indicators that just left the stack — but do NOT delete their
+      // map entries: useChartData owns this map and iterates it on the next
+      // pass to chart.removeSeries() each one. Deleting here would orphan
+      // the series on the chart (ghost plots that never disappear).
+      if (!activeKeys.has(instKey)) return;
+
       const plotId = sep >= 0 ? seriesKey.slice(sep + 2) : seriesKey;
       const st = indicatorSettingsMap?.[instKey]?.styles?.[plotId];
       // If the entire indicator is hidden via the eye toggle, hide all its plots
       const isHidden = hiddenKeys.has(instKey);
-      
+
       try {
         series.applyOptions({
           color: st?.color || undefined,
           lineWidth: (st?.thickness as 1 | 2 | 3 | 4) || undefined,
           visible: isHidden ? false : (st?.display !== false),
         });
-      } catch {}
+      } catch (err) {
+        // Recover gracefully if method call on series fails
+        console.warn(`Safe recovery: Style options could not be applied to series key "${seriesKey}":`, err);
+      }
     });
   }, [indicatorSettingsMap, visibleResults, hiddenKeys]);
 
@@ -246,12 +261,12 @@ export default function Chart({
     price: number;
     y: number;
   } | null>(null);
-  
+
   // Local cursor position for the Phase D floating tooltip.
   // The data payload (OHLC) is passed directly so it persists when clicked.
   // Using a plain mutable ref object instead of forwardRef to avoid the
   // Turbopack "Value is null" error during strict-mode double-invocation.
-  const tooltipHandle = useRef<TooltipHandle>({ setPos: () => {} });
+  const tooltipHandle = useRef<TooltipHandle>({ setPos: () => { } });
   const setTooltipPos = useCallback((pos: { x: number; y: number; time?: number; hover: HoverPayload } | null) => {
     tooltipHandle.current.setPos(pos);
   }, []);
@@ -293,17 +308,24 @@ export default function Chart({
     if (!chart) return;
     const timeScale = chart.timeScale();
     const src = hoverInputsRef.current;
-    const totalBars = src.base.length;
+    const totalBars = src?.base?.length ?? 0;
     if (totalBars === 0) return;
-    const barSpacing = timeScale.options().barSpacing ?? 6;
-    const visibleBars = Math.max(50, Math.round(timeScale.width() / barSpacing));
-    const rightGap = 10; // bars of empty space to the right of the last candle
-    const toIndex = totalBars - 1 + rightGap;
-    const fromIndex = toIndex - visibleBars;
+
     try {
+      const barSpacing = timeScale.options().barSpacing ?? 6;
+      const scaleWidth = timeScale.width();
+
+      // Fallback to 150 bars if container width is reported as 0 (hidden/minimized)
+      const visibleBars = scaleWidth > 0 ? Math.max(50, Math.round(scaleWidth / barSpacing)) : 150;
+      const rightGap = 10; // bars of empty space to the right of the last candle
+      const toIndex = totalBars - 1 + rightGap;
+      const fromIndex = toIndex - visibleBars;
+
       timeScale.setVisibleLogicalRange({ from: fromIndex, to: toIndex });
-    } catch {}
-    try { chart.priceScale('right').applyOptions({ autoScale: true }); } catch {}
+      chart.priceScale('right').applyOptions({ autoScale: true });
+    } catch (err) {
+      console.warn('Fail-safe recovery in applyDefaultView:', err);
+    }
   }, []);
 
   const prevOpenRef = useRef<number | null>(null);
@@ -372,9 +394,12 @@ export default function Chart({
   // lazy-loads, not when the live bar's close wiggles.
   const divCacheRef = useRef<{ key: string; data: ReturnType<typeof buildDivergenceMarkers> } | null>(null);
   const baseTfCandles = candlesByTf && tf ? candlesByTf[tf as Timeframe] : undefined;
-  const divKey = baseTfCandles?.length
+
+  // Safe validation check before building cache key string
+  const divKey = baseTfCandles?.length && baseTfCandles[baseTfCandles.length - 1]?.time !== undefined
     ? `${tf}:${baseTfCandles.length}:${baseTfCandles[baseTfCandles.length - 1].time}`
     : '';
+
   if (!divKey) {
     divCacheRef.current = null;
   } else if (divCacheRef.current?.key !== divKey) {
@@ -406,15 +431,15 @@ export default function Chart({
   // axes (RSI, MACD, etc. are not affected by this toggle).
   useEffect(() => {
     const id = chartSettings?.activePriceScaleId ?? 'right';
-    try { candleSeriesRef.current?.applyOptions({ priceScaleId: id }); } catch {}
-    try { dummySeriesRef.current?.applyOptions({ priceScaleId: id }); } catch {}
+    try { candleSeriesRef.current?.applyOptions({ priceScaleId: id }); } catch { }
+    try { dummySeriesRef.current?.applyOptions({ priceScaleId: id }); } catch { }
   }, [chartSettings?.activePriceScaleId, candleSeriesRef, dummySeriesRef]);
 
   // ---- Blind-drill time-axis mask (dates would reveal the replay moment) ----
   useEffect(() => {
     try {
       chartRef.current?.timeScale().applyOptions({ visible: !maskTimeAxis });
-    } catch {}
+    } catch { }
   }, [maskTimeAxis, chartRef]);
 
   // ---- Crosshair snap (MagnetOHLC sticks to O/H/L/C, Normal is free) ----
@@ -427,7 +452,7 @@ export default function Chart({
             : CrosshairMode.Normal,
         },
       });
-    } catch {}
+    } catch { }
   }, [chartSettings?.showCrosshairSnap, chartRef]);
 
   // ---- Data push + indicator stack (extracted) ----
@@ -475,6 +500,42 @@ export default function Chart({
     isRenko,
     palette,
   );
+
+  // ==========================================
+  // 2. WINDOW FOCUS LOSS RECOVERY (PREVENTS DRAG LOCKS)
+  // ==========================================
+  useEffect(() => {
+    const resetDragState = () => {
+      isPointerDownRef.current = false;
+    };
+
+    // Safe global events to release dragging lock if focus is lost (Alt-Tabs, minimizations)
+    window.addEventListener('mouseup', resetDragState);
+    window.addEventListener('pointerup', resetDragState);
+    window.addEventListener('mouseleave', resetDragState);
+    window.addEventListener('blur', resetDragState);
+    document.addEventListener('visibilitychange', resetDragState);
+
+    return () => {
+      window.removeEventListener('mouseup', resetDragState);
+      window.removeEventListener('pointerup', resetDragState);
+      window.removeEventListener('mouseleave', resetDragState);
+      window.removeEventListener('blur', resetDragState);
+      document.removeEventListener('visibilitychange', resetDragState);
+    };
+  }, []);
+
+  // ==========================================
+  // 3. UNMOUNT & RAF CLEANUP SAFETY
+  // ==========================================
+  useEffect(() => {
+    return () => {
+      // Force cancel any scheduled rendering frames upon unmounting to avoid context-lost errors
+      if (daySepRafRef.current) {
+        cancelAnimationFrame(daySepRafRef.current);
+      }
+    };
+  }, []);
 
   // ---- Render ----
   return (
@@ -540,9 +601,9 @@ export default function Chart({
       )}
 
       {/* --- Overlay UI --- */}
-      <TooltipContainer 
+      <TooltipContainer
         handle={tooltipHandle}
-        mode={type} 
+        mode={type}
         activeFlips={activeFlips}
         hasDivergenceIndicator={hasDivergenceIndicator}
         divMarkersPayloads={divMarkersData.payloads}
