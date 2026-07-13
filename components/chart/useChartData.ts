@@ -80,8 +80,8 @@ export function useChartData(
       // incremental update logic (isIncremental / isAppendOne) for the
       // new type. Without this reset, candleSeries.update() may be called
       // on an empty series, causing LWC to silently freeze the chart.
-      candleSeries.setData([]);
-      markersRef.current?.setMarkers([]);
+      try { candleSeries.setData([]); } catch {}
+      try { markersRef.current?.setMarkers([]); } catch {}
       indicatorSeriesRef.current.forEach((s) => {
         try { s.setData([]); } catch {}
       });
@@ -155,15 +155,38 @@ export function useChartData(
     prevCountRef.current = baseCandles.length;
     prevFirstTimeRef.current = newFirstTime;
 
+    // A malformed bar (NaN/null OHLC or time — a half-formed synthetic brick,
+    // a bad ws frame) makes LWC throw "Value is null" INSIDE setData/update,
+    // which crashes the whole page. Drop such bars; and if LWC still throws
+    // (e.g. a just-disposed series surviving in a ref for one frame), reset
+    // the tracking refs and skip this frame — the next tick repaints fully.
+    const isRenderable = (c: { time: number | Time; open: number; high: number; low: number; close: number }) =>
+      Number.isFinite(c.time as number) &&
+      Number.isFinite(c.open) && Number.isFinite(c.high) &&
+      Number.isFinite(c.low) && Number.isFinite(c.close);
+    const recoverNextFrame = (err: unknown) => {
+      console.warn('[chart] series write failed — skipping frame, full repaint next tick:', err);
+      lastBarTimeRef.current = null;
+      prevCountRef.current = 0;
+      prevFirstTimeRef.current = null;
+    };
+
     if (isIncremental || isAppendOne) {
       const last = baseCandles[baseCandles.length - 1];
-      candleSeries.update({
-        time: shiftTime(last.time as number),
-        open: last.open,
-        high: last.high,
-        low: last.low,
-        close: last.close,
-      });
+      if (isRenderable(last)) {
+        try {
+          candleSeries.update({
+            time: shiftTime(last.time as number),
+            open: last.open,
+            high: last.high,
+            low: last.low,
+            close: last.close,
+          });
+        } catch (err) {
+          recoverNextFrame(err);
+          return;
+        }
+      }
       if (isAppendOne && dummySeriesRef.current && tf && !isRenko) {
         // Whitespace shifts by one bar; a single update extends it.
         try {
@@ -175,27 +198,36 @@ export function useChartData(
       // Fall through — indicator plots still need sync (they recompute on
       // the appended bar), but the candle + whitespace series are done.
     } else {
-      const candleData: CandlestickData<Time>[] = baseCandles.map((c) => ({
-        time: shiftTime(c.time as number),
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      }));
+      const candleData: CandlestickData<Time>[] = baseCandles
+        .filter(isRenderable)
+        .map((c) => ({
+          time: shiftTime(c.time as number),
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        }));
 
       const futureData: WhitespaceData<Time>[] = [];
       if (tf && baseCandles.length > 0 && !isRenko) {
         const lastT = baseCandles[baseCandles.length - 1].time as number;
         const minutes = getTfMinutes(tf);
-        let t = lastT;
-        for (let i = 1; i <= 300; i++) {
-          t += minutes * 60;
-          futureData.push({ time: shiftTime(t) });
+        if (Number.isFinite(lastT) && Number.isFinite(minutes)) {
+          let t = lastT;
+          for (let i = 1; i <= 300; i++) {
+            t += minutes * 60;
+            futureData.push({ time: shiftTime(t) });
+          }
         }
       }
 
-      candleSeries.setData(candleData);
-      if (dummySeriesRef.current) dummySeriesRef.current.setData(futureData);
+      try {
+        candleSeries.setData(candleData);
+        if (dummySeriesRef.current) dummySeriesRef.current.setData(futureData);
+      } catch (err) {
+        recoverNextFrame(err);
+        return;
+      }
     }
 
     // Re-anchor the view after a prepend so the chart doesn't jump.
