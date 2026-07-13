@@ -60,9 +60,10 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
         borderVisible: false,
       },
       timeScale: {
-        // Tick marks on the x-axis: show date labels (day / month / year)
-        // rather than time-of-day. This matches TradingView's Renko axis
-        // where dates scroll continuously regardless of brick density.
+        // TradingView-style tick marks: year at year boundaries, month name
+        // at month boundaries, day number at day boundaries — and REAL
+        // time-of-day for intraday ticks. (Times are pre-shifted by
+        // shiftTime(), so UTC getters render the intended wall-clock.)
         tickMarkFormatter: (time: any, tickType: number) => {
           // tickType: 0=year, 1=month, 2=day, 3=time, 4=seconds
           let date: Date;
@@ -73,16 +74,20 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
           } else {
             return String(time);
           }
-          // Year boundary: show full year
           if (tickType === 0) {
             return date.getUTCFullYear().toString();
           }
-          // Month boundary: show abbreviated month name
           if (tickType === 1) {
             return date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
           }
-          // Day (and finer): just show the day number, like TradingView
-          return date.getUTCDate().toString();
+          if (tickType === 2) {
+            return date.getUTCDate().toString();
+          }
+          // Intraday (and seconds) ticks: HH:MM — collapsing these to the
+          // day number is what wiped time-of-day off the axis.
+          const hh = date.getUTCHours().toString().padStart(2, '0');
+          const mm = date.getUTCMinutes().toString().padStart(2, '0');
+          return `${hh}:${mm}`;
         },
         borderColor: P.border,
         timeVisible: true,
