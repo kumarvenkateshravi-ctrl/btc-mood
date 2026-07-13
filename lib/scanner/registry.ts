@@ -22,6 +22,7 @@ import {
 } from './intelligenceSeries';
 import { CMP_OPS } from './operators';
 import { SMC_SCANNER_SOURCES } from './smcSources';
+import { DSMART_SCANNER_SOURCES } from './dsmartSources';
 import type { ScannerSource, Series } from './types';
 
 const num = (v: number | string | undefined, d: number): number => {
@@ -202,6 +203,9 @@ export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries
     operators: ['gt', 'lt', 'gte', 'lte', 'between'], tfs: TIMEFRAMES,
     series: liveEdgeSeries(() => _liveScores.alignment),
   }),
-].map((s) => [s.id, s]).concat(SMC_SCANNER_SOURCES.map((s) => [s.id, s])));
+].map((s) => [s.id, s]).concat(
+  SMC_SCANNER_SOURCES.map((s) => [s.id, s]),
+  DSMART_SCANNER_SOURCES.map((s) => [s.id, s]),
+));
 
 export const SCANNER_SOURCE_LIST: ScannerSource[] = Object.values(SCANNER_SOURCES);

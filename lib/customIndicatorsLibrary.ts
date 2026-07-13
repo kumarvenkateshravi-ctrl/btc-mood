@@ -24,6 +24,7 @@ import { computeVolSpike } from './indicators/volSpike';
 import { computeMagicSr } from './indicators/magicSr';
 import { computeFibPivot } from './indicators/fibPivot';
 import { computeSmcOverlay } from './indicators/smcOverlay';
+import { computeDsmartOverlay } from './indicators/dsmartOverlay';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -624,5 +625,23 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     ],
     styles: [],
     compute: computeSmcOverlay,
+  },
+  {
+    id: 'dsmart',
+    name: 'D Smart Line (Adaptive Cloud)',
+    description:
+      'D Smart-style adaptive cloud: a steady Walking Line (trend + stop-loss) and an aggressive Running Line form a regime cloud; continuation arrows, P pullbacks and exhaustion stars. Computes on bricks when the chart type is Renko.',
+    inputs: [
+      { id: 'mode', name: 'Display', type: 'select', default: 'cloud', options: [{ value: 'cloud', label: 'Cloud (Walking + Running)' }, { value: 'single', label: 'Single line (Walking only)' }] },
+      { id: 'showArrows', name: 'Continuation Arrows', type: 'boolean', default: true },
+      { id: 'showPullbacks', name: 'Pullback (P) Signals', type: 'boolean', default: true },
+      { id: 'showStars', name: 'Exhaustion Stars', type: 'boolean', default: true },
+      { id: 'donchianLen', name: 'Breakout Lookback', type: 'number', default: 10, min: 3, max: 100, step: 1 },
+      { id: 'dispLen', name: 'Disparity MA Length', type: 'number', default: 20, min: 5, max: 100, step: 1 },
+      { id: 'dispThresholdPct', name: 'Disparity Threshold %', type: 'number', default: 3, min: 0.5, max: 20, step: 0.5 },
+      { id: 'maxPullbackLen', name: 'Max Pullback Bricks', type: 'number', default: 3, min: 1, max: 6, step: 1 },
+    ],
+    styles: [],
+    compute: computeDsmartOverlay,
   },
 ];

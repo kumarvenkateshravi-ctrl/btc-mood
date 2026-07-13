@@ -36,6 +36,19 @@ const SMC_ALIASES: Record<string, { id: string; output: string }> = {
 };
 const STAGE_WORDS: Record<string, number> = { none: 0, watch: 1, building: 2, ready: 3, confirmed: 4 };
 
+// "dsmart <noun>" special forms (p/arrow/star are the long-side shorthand;
+// bearish variants live in the picker's output dropdown).
+const DSMART_ALIASES: Record<string, { id: string; output: string }> = {
+  regime: { id: 'dsmart_state', output: 'regime' },
+  cloud: { id: 'dsmart_state', output: 'inCloud' },
+  incloud: { id: 'dsmart_state', output: 'inCloud' },
+  width: { id: 'dsmart_state', output: 'cloudWidth' },
+  p: { id: 'dsmart_signal', output: 'pullbackBull' },
+  pullback: { id: 'dsmart_signal', output: 'pullbackBull' },
+  arrow: { id: 'dsmart_signal', output: 'arrowBull' },
+  star: { id: 'dsmart_signal', output: 'starBull' },
+};
+
 // Symbol ops match by shape; word ops need a trailing boundary so "over" does
 // not swallow the start of another word. Order matters: >= before >.
 const OP_PATTERNS: Array<{ re: RegExp; op: OperatorId; unary?: boolean }> = [
@@ -64,6 +77,12 @@ function parseSource(text: string): { ref: SeriesRef; rest: string } | null {
   if (smc) {
     const alias = SMC_ALIASES[smc[1].toLowerCase()];
     if (alias) return { ref: { source: alias.id, output: alias.output, params: {} }, rest: t.slice(smc[0].length) };
+  }
+  // dsmart <noun>
+  const dsm = /^dsmart\s+(\w+)/i.exec(t);
+  if (dsm) {
+    const alias = DSMART_ALIASES[dsm[1].toLowerCase()];
+    if (alias) return { ref: { source: alias.id, output: alias.output, params: {} }, rest: t.slice(dsm[0].length) };
   }
   // name + optional length (name20 or name(20))
   const m = /^([a-z]+)\s*(?:\(\s*(\d+)\s*\)|(\d+))?/i.exec(t);
