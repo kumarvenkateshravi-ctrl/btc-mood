@@ -1,14 +1,33 @@
 'use client';
 
-import { Bookmark, CheckCircle2, Dices, EyeOff, Pause, Play, Scissors, ShieldCheck, SkipBack, SkipForward, X, XCircle } from 'lucide-react';
+import type { ReactNode } from 'react';
+import {
+  Bookmark,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  Dices,
+  EyeOff,
+  MousePointer2,
+  Pause,
+  Play,
+  ShieldCheck,
+  SkipBack,
+  SkipForward,
+  X,
+  XCircle,
+} from 'lucide-react';
 import type { ReplayPhase } from '@/lib/replay/replayState';
 import type { IntegrityReport } from '@/lib/replay/verify';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { cx } from '@/components/ui/util';
 
 interface ReplayBarProps {
   /** True while the user is still picking the cut point (no controls yet). */
   selecting: boolean;
   playing: boolean;
-  /** Machine phase — drives the status readout. */
+  /** Machine phase, drives the status readout. */
   phase?: ReplayPhase;
   index: number;
   total: number;
@@ -27,6 +46,8 @@ interface ReplayBarProps {
   verification?: IntegrityReport | null;
   /** Jump-to-datetime replay start (selection mode). Epoch ms, local input. */
   onPickTime?: (ms: number) => void;
+  /** Earliest selectable practice date (unix ms) for the active timeframe. */
+  minPickMs?: number;
   /** Non-null while deep history is backfilling for a far-back practice date. */
   deepLoading?: { tf: string; pages: number; oldestMs: number } | null;
   /** Blind drill: random hidden start + masked axis (selection mode). */
@@ -44,6 +65,7 @@ const PHASE_LABEL: Partial<Record<ReplayPhase, string>> = {
 };
 
 const SPEEDS = [0.1, 0.3, 0.5, 1, 3, 10];
+const SHORTCUTS = ['Space play/pause', 'Left/Right step', 'Shift step 10', 'Home reset', 'Esc exit'];
 
 export default function ReplayBar({
   selecting,
@@ -64,6 +86,7 @@ export default function ReplayBar({
   onVerify,
   verification,
   onPickTime,
+  minPickMs,
   deepLoading,
   onDrill,
   blind = false,
@@ -71,67 +94,51 @@ export default function ReplayBar({
 }: ReplayBarProps) {
   if (selecting) {
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-surface-1 px-3 py-2 text-xs">
-        <Scissors className="h-3.5 w-3.5 text-accent" />
-        <span className="text-ink-muted">Click a candle on the chart to set the replay start.</span>
+      <div className="elev-1 rounded-xl p-3">
+        <ReplayHeader phase="selecting" blind={blind} onExit={onExit} />
         {deepLoading && (
-          <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-accent">
+          <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-[11px] text-accent">
             <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-            Loading {deepLoading.tf} history… page {deepLoading.pages} · reached{' '}
-            {new Date(deepLoading.oldestMs).toLocaleDateString()}
-          </span>
+            Loading {deepLoading.tf} history, page {deepLoading.pages}, reached {new Date(deepLoading.oldestMs).toLocaleDateString()}
+          </div>
         )}
-        {onPickTime && (
-          <label className="inline-flex items-center gap-1.5 text-ink-faint">
-            or jump to
-            <input
-              type="date"
-              onChange={(e) => {
-                // Jump to the DAY OPEN of the picked date. Crypto's trading
-                // day opens at 00:00 UTC — one instant worldwide, shown in
-                // each user's local wall-clock by the chart (05:30 in
-                // India, 01:00 in Berlin, ...). Date.UTC keeps the pick
-                // timezone-proof; parsing via new Date(value) would drift
-                // by the browser's offset in some engines.
-                const [y, m, d] = e.target.value.split('-').map(Number);
-                if (!y || !m || !d) return;
-                const ms = Date.UTC(y, m - 1, d);
-                if (Number.isFinite(ms)) onPickTime(ms);
-              }}
-              className="focus-ring rounded border border-line bg-base px-1.5 py-0.5 text-[11px] text-ink [color-scheme:dark]"
-              aria-label="Jump to date (replay starts at the day open)"
-            />
-          </label>
-        )}
-        {onDrill && (
-          <button
-            onClick={onDrill}
-            title="Blind drill: random hidden start, masked dates — trade it, then reveal your score"
-            className="focus-ring inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-ink-muted transition hover:bg-surface-2 hover:text-ink"
-          >
-            <Dices className="h-3.5 w-3.5" />
-            Blind drill
-          </button>
-        )}
-        <button
-          onClick={onExit}
-          className="focus-ring ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-ink-faint transition hover:bg-surface-2 hover:text-ink"
-        >
-          <X className="h-3.5 w-3.5" />
-          Cancel
-        </button>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          <StartChoice
+            icon={<MousePointer2 className="h-4 w-4" />}
+            title="Pick a candle"
+            body="Click directly on the chart to choose the exact replay cut."
+            active
+          />
+          {onPickTime && <DateStartChoice onPickTime={onPickTime} minPickMs={minPickMs} />}
+          {onDrill && (
+            <button
+              type="button"
+              onClick={onDrill}
+              title="Blind drill: random hidden start, masked dates, then review the score"
+              className="focus-ring rounded-lg border border-line bg-base p-3 text-left transition hover:border-line-strong hover:bg-surface-2"
+            >
+              <span className="flex items-center gap-2 text-[12px] font-semibold text-ink">
+                <Dices className="h-4 w-4 text-accent" />
+                Blind drill
+              </span>
+              <span className="mt-1 block text-[11px] leading-snug text-ink-faint">Random start, hidden dates, no progress spoilers.</span>
+            </button>
+          )}
+        </div>
+        <p className="mt-3 text-[11px] text-ink-faint">Esc cancels selection. Replay hides future candles and keeps live funds untouched.</p>
       </div>
     );
   }
 
   const atEnd = index >= total - 1;
+  const progress = total > 1 ? (Math.min(index, total - 1) / (total - 1)) * 100 : 0;
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-surface-1 px-3 py-2">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-accent">Replay</span>
+    <div className="elev-1 rounded-xl p-3">
+      <ReplayHeader phase={phase} blind={blind} onExit={onExit} />
 
-        <div className="flex items-center gap-1">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1 rounded-lg border border-line bg-base p-1">
           <IconBtn label="Step back" onClick={() => onStep(-1)} disabled={index <= 1}>
             <SkipBack className="h-3.5 w-3.5" />
           </IconBtn>
@@ -141,17 +148,12 @@ export default function ReplayBar({
           <IconBtn label="Step forward" onClick={() => onStep(1)} disabled={atEnd}>
             <SkipForward className="h-3.5 w-3.5" />
           </IconBtn>
-          <IconBtn label="Bookmark this bar" onClick={onBookmark}>
-            <Bookmark className="h-3.5 w-3.5" />
-          </IconBtn>
         </div>
 
         {blind ? (
-          // Future-blind: no scrubber, no counts — the trader genuinely
-          // doesn't know how much history remains.
-          <span className="flex-1 text-center font-mono text-[11px] uppercase tracking-wider text-ink-faint">
-            {phase && PHASE_LABEL[phase] ? `${PHASE_LABEL[phase]} · ` : ''}blind drill
-          </span>
+          <div className="flex min-w-[180px] flex-1 items-center justify-center rounded-lg border border-line bg-base px-3 py-2 text-[11px] uppercase tracking-wider text-ink-faint">
+            Future hidden. Trade the tape in front of you.
+          </div>
         ) : (
           <>
             <input
@@ -160,14 +162,12 @@ export default function ReplayBar({
               max={Math.max(1, total - 1)}
               value={Math.min(index, total - 1)}
               onChange={(e) => onScrub(Number(e.target.value))}
-              className="h-1 flex-1 min-w-[120px] cursor-pointer accent-accent"
+              className="h-1 min-w-[160px] flex-1 cursor-pointer accent-accent"
               aria-label="Replay position"
             />
-
-            <span className="font-mono text-[11px] tabular-nums text-ink-faint">
-              {phase && PHASE_LABEL[phase] && <span className="text-ink-muted">{PHASE_LABEL[phase]} · </span>}
+            <span className="min-w-[116px] text-right font-mono text-[11px] tabular-nums text-ink-faint">
               {Math.min(index, total - 1)}/{total - 1}
-              <span className="text-ink-faint/70"> · {(total > 1 ? (Math.min(index, total - 1) / (total - 1)) * 100 : 0).toFixed(1)}%</span>
+              <span className="text-ink-faint/70"> - {progress.toFixed(1)}%</span>
             </span>
           </>
         )}
@@ -177,10 +177,10 @@ export default function ReplayBar({
             onClick={onToggleBlind}
             aria-pressed={blind}
             title={blind ? 'Reveal position and dates' : 'Blind mode: hide progress and dates'}
-            className={[
+            className={cx(
               'focus-ring inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition',
               blind ? 'border-accent/40 bg-accent/10 text-accent' : 'border-line text-ink-faint hover:bg-surface-2 hover:text-ink',
-            ].join(' ')}
+            )}
           >
             <EyeOff className="h-3.5 w-3.5" />
             Blind
@@ -193,89 +193,165 @@ export default function ReplayBar({
               key={s}
               onClick={() => onSpeed(s)}
               aria-pressed={speed === s}
-              className={[
-                'rounded px-1.5 py-0.5 transition focus-ring',
-                speed === s ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink',
-              ].join(' ')}
+              className={cx('focus-ring rounded px-1.5 py-0.5 transition', speed === s ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink')}
             >
-              {s}×
+              {s}x
             </button>
           ))}
         </div>
-
-        {onVerify && (
-          <button
-            onClick={onVerify}
-            title="Verify replay integrity (developer)"
-            className="focus-ring inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-faint transition hover:bg-surface-2 hover:text-ink"
-          >
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Verify
-          </button>
-        )}
-
-        <button
-          onClick={onExit}
-          className="focus-ring ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-faint transition hover:bg-surface-2 hover:text-ink"
-        >
-          <X className="h-3.5 w-3.5" />
-          Exit
-        </button>
       </div>
 
-      {verification && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Replay Verification</span>
-          {verification.checks.map((c) => (
-            <span
-              key={c.name}
-              title={c.detail}
-              className={[
-                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]',
-                c.ok ? 'border-bull/30 text-bull-bright' : 'border-bear/40 text-bear-bright',
-              ].join(' ')}
-            >
-              {c.ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-              {c.name}
-            </span>
-          ))}
-          <span
-            className={[
-              'ml-auto font-mono text-[12px] font-semibold tabular-nums',
-              verification.integrity === 100 ? 'text-bull-bright' : 'text-bear-bright',
-            ].join(' ')}
-          >
-            Integrity {verification.integrity}%
-          </span>
-        </div>
-      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
+        {SHORTCUTS.map((shortcut) => (
+          <span key={shortcut} className="rounded bg-base px-1.5 py-0.5 text-[10px] text-ink-faint">{shortcut}</span>
+        ))}
+      </div>
 
-      {bookmarks.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Bookmarks</span>
-          {bookmarks.map((b) => (
-            <span
-              key={b}
-              className={[
-                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] tabular-nums',
-                b === index ? 'border-accent/50 text-ink' : 'border-line text-ink-muted',
-              ].join(' ')}
-            >
-              <button onClick={() => onJumpBookmark(b)} className="transition hover:text-ink" title={`Jump to bar ${b}`}>
-                ▸ {b}
-              </button>
-              <button
-                onClick={() => onRemoveBookmark(b)}
-                aria-label={`Remove bookmark ${b}`}
-                className="text-ink-faint transition hover:text-bear-bright"
+      <details className="mt-2 border-t border-line pt-2">
+        <summary className="focus-ring inline-flex cursor-pointer list-none items-center gap-1 rounded-md px-1 py-1 text-[11px] font-medium text-ink-muted transition hover:text-ink">
+          <ChevronDown className="h-3.5 w-3.5" />
+          Bookmarks and integrity
+        </summary>
+        <div className="mt-2 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" icon={<Bookmark className="h-3.5 w-3.5" />} onClick={onBookmark}>
+              Save bar
+            </Button>
+            {onVerify && (
+              <Button size="sm" variant="outline" icon={<ShieldCheck className="h-3.5 w-3.5" />} onClick={onVerify} title="Verify replay integrity">
+                Verify
+              </Button>
+            )}
+            {bookmarks.length === 0 && <span className="text-[11px] text-ink-faint">No saved bars yet.</span>}
+            {bookmarks.map((b) => (
+              <span
+                key={b}
+                className={cx(
+                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] tabular-nums',
+                  b === index ? 'border-accent/50 text-ink' : 'border-line text-ink-muted',
+                )}
               >
-                ✕
-              </button>
-            </span>
-          ))}
+                <button onClick={() => onJumpBookmark(b)} className="transition hover:text-ink" title={`Jump to bar ${b}`}>
+                  Bar {b}
+                </button>
+                <button onClick={() => onRemoveBookmark(b)} aria-label={`Remove bookmark ${b}`} className="text-ink-faint transition hover:text-bear-bright">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+          {verification && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-base p-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Replay integrity</span>
+              {verification.checks.map((c) => (
+                <span
+                  key={c.name}
+                  title={c.detail}
+                  className={cx(
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]',
+                    c.ok ? 'border-bull/30 text-bull-bright' : 'border-bear/40 text-bear-bright',
+                  )}
+                >
+                  {c.ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                  {c.name}
+                </span>
+              ))}
+              <span className={cx('ml-auto font-mono text-[12px] font-semibold tabular-nums', verification.integrity === 100 ? 'text-bull-bright' : 'text-bear-bright')}>
+                {verification.integrity}%
+              </span>
+            </div>
+          )}
         </div>
-      )}
+      </details>
     </div>
+  );
+}
+
+function ReplayHeader({ phase, blind, onExit }: { phase?: ReplayPhase; blind?: boolean; onExit: () => void }) {
+  const current = phase === 'selecting' ? 1 : phase === 'finished' ? 3 : 2;
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex min-w-[180px] flex-col">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-accent">Practice Mode</span>
+          <Badge tone="accent">Replay session</Badge>
+          {blind && <Badge tone="warn">Blind</Badge>}
+        </div>
+        <span className="mt-1 text-[11px] text-ink-faint">Future candles hidden. Live account untouched.</span>
+      </div>
+      <div className="flex flex-1 items-center gap-1.5">
+        <Step n={1} label="Setup" active={current === 1} done={current > 1} />
+        <Rail />
+        <Step n={2} label={PHASE_LABEL[phase ?? 'ready'] ?? 'Replay'} active={current === 2} done={current > 2} />
+        <Rail />
+        <Step n={3} label="Review" active={current === 3} />
+      </div>
+      <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={onExit}>
+        Exit
+      </Button>
+    </div>
+  );
+}
+
+function Step({ n, label, active, done }: { n: number; label: string; active?: boolean; done?: boolean }) {
+  return (
+    <span className={cx('inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px]', active ? 'bg-accent/15 text-accent' : done ? 'text-ink-muted' : 'text-ink-faint')}>
+      <span className={cx('flex h-4 w-4 items-center justify-center rounded-full border text-[9px]', active ? 'border-accent' : done ? 'border-bull/50 text-bull-bright' : 'border-line')}>
+        {done ? <CheckCircle2 className="h-3 w-3" /> : n}
+      </span>
+      {label}
+    </span>
+  );
+}
+
+function Rail() {
+  return <span className="h-px min-w-4 flex-1 bg-line" />;
+}
+
+function StartChoice({ icon, title, body, active }: { icon: ReactNode; title: string; body: string; active?: boolean }) {
+  return (
+    <div className={cx('rounded-lg border p-3', active ? 'border-accent/40 bg-accent/10' : 'border-line bg-base')}>
+      <span className="flex items-center gap-2 text-[12px] font-semibold text-ink">
+        <span className={active ? 'text-accent' : 'text-ink-muted'}>{icon}</span>
+        {title}
+      </span>
+      <span className="mt-1 block text-[11px] leading-snug text-ink-faint">{body}</span>
+    </div>
+  );
+}
+
+function DateStartChoice({ onPickTime, minPickMs }: { onPickTime: (ms: number) => void; minPickMs?: number }) {
+  const minStr = minPickMs ? new Date(minPickMs).toISOString().slice(0, 10) : undefined;
+  const maxStr = new Date().toISOString().slice(0, 10);
+  return (
+    <label className="rounded-lg border border-line bg-base p-3 transition focus-within:ring-2 focus-within:ring-accent/40 hover:border-line-strong hover:bg-surface-2">
+      <span className="flex items-center gap-2 text-[12px] font-semibold text-ink">
+        <CalendarDays className="h-4 w-4 text-accent" />
+        Jump to date
+      </span>
+      <span className="mt-1 block text-[11px] leading-snug text-ink-faint">
+        {minPickMs
+          ? `History on this timeframe: ${new Date(minPickMs).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} → today.`
+          : 'Start from a specific day open.'}
+      </span>
+      <input
+        type="date"
+        min={minStr}
+        max={maxStr}
+        onChange={(e) => {
+          const [y, m, d] = e.target.value.split('-').map(Number);
+          if (!y || !m || !d) return;
+          let ms = Date.UTC(y, m - 1, d);
+          if (!Number.isFinite(ms)) return;
+          // Browsers show min/max but still allow typing out-of-range dates —
+          // clamp so a too-early pick starts at the earliest available day.
+          if (minPickMs != null && ms < minPickMs) ms = minPickMs;
+          onPickTime(ms);
+        }}
+        className="input-field mt-2 h-8 w-full rounded-md border border-line bg-surface-1 px-2 text-[12px] text-ink [color-scheme:dark]"
+        aria-label="Jump to date, replay starts at the day open"
+      />
+    </label>
   );
 }
 
@@ -286,7 +362,7 @@ function IconBtn({
   disabled,
   primary,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   label: string;
   onClick: () => void;
   disabled?: boolean;
@@ -298,10 +374,10 @@ function IconBtn({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className={[
-        'focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-30',
-        primary ? 'bg-accent/15 text-ink hover:bg-accent/25' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
-      ].join(' ')}
+      className={cx(
+        'focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md transition disabled:opacity-30',
+        primary ? 'bg-accent text-white hover:bg-accent-bright' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+      )}
     >
       {children}
     </button>

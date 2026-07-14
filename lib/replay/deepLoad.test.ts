@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planDeepLoad, MAX_BARS_PER_TF } from './deepLoad';
+import { planDeepLoad, MAX_BARS_PER_TF, earliestReplayDateMs } from './deepLoad';
 
 const NOW = Date.UTC(2026, 6, 13);
 const YEARS = (n: number) => NOW - n * 365 * 86400 * 1000;
@@ -40,5 +40,26 @@ describe('planDeepLoad', () => {
   it('skips TFs below the selected one', () => {
     const steps = planDeepLoad('4h', YEARS(3), NOW);
     expect(steps.map((s) => s.tf)).toEqual(['4h', '1d']);
+  });
+});
+
+describe('earliestReplayDateMs', () => {
+  const NOW = Date.UTC(2026, 6, 14);
+  it('1d and 4h reach the exchange listing (Aug 2017)', () => {
+    expect(earliestReplayDateMs('1d', NOW)).toBe(Date.UTC(2017, 7, 17));
+    expect(earliestReplayDateMs('4h', NOW)).toBe(Date.UTC(2017, 7, 17));
+  });
+  it('1h is bounded by the 75k-bar valve (~8.5 years — within months of listing)', () => {
+    const ms = earliestReplayDateMs('1h', NOW);
+    const years = (NOW - ms) / (365 * 86400 * 1000);
+    expect(years).toBeGreaterThan(8.3);
+    expect(years).toBeLessThan(8.7);
+    // Jan 1st 2020 is comfortably selectable on 1h
+    expect(ms).toBeLessThan(Date.UTC(2020, 0, 1));
+  });
+  it('intraday TFs disclose their depth caps', () => {
+    expect(NOW - earliestReplayDateMs('5m', NOW)).toBe(180 * 86400 * 1000);
+    expect(NOW - earliestReplayDateMs('15m', NOW)).toBe(2 * 365 * 86400 * 1000);
+    expect(NOW - earliestReplayDateMs('30m', NOW)).toBe(3 * 365 * 86400 * 1000);
   });
 });

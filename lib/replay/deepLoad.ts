@@ -25,8 +25,24 @@ const MAX_DEPTH_S: Record<Timeframe, number> = {
   '1d': Infinity,
 };
 
-/** Absolute safety valve regardless of TF (bars per TF). */
-export const MAX_BARS_PER_TF = 60_000;
+/** Absolute safety valve regardless of TF (bars per TF). 75k keeps every
+ *  advertised per-TF depth cap truthful (2y of 15m = 70,080 bars) and lets
+ *  1h reach within months of the 2017 listing. */
+export const MAX_BARS_PER_TF = 75_000;
+
+/** BTCUSDT listed on Binance 2017-08-17 — no candles exist before this. */
+export const EXCHANGE_LISTING_MS = Date.UTC(2017, 7, 17);
+
+/**
+ * The earliest practice date Bar Replay can honor on a timeframe: bounded by
+ * the exchange listing, the per-TF depth cap, and the absolute bar valve.
+ * This is what the replay calendar discloses (input min + hint).
+ */
+export function earliestReplayDateMs(tf: Timeframe, nowMs: number): number {
+  const capMs = Number.isFinite(MAX_DEPTH_S[tf]) ? nowMs - MAX_DEPTH_S[tf] * 1000 : -Infinity;
+  const valveMs = nowMs - MAX_BARS_PER_TF * TF_SECONDS[tf] * 1000;
+  return Math.max(EXCHANGE_LISTING_MS, capMs, valveMs);
+}
 
 export interface DeepLoadStep {
   tf: Timeframe;

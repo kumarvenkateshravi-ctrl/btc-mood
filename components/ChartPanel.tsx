@@ -42,6 +42,7 @@ import { setReplayCut, clearReplayCut } from '@/lib/replay/replayCut';
 import { validateReplayData } from '@/lib/replay/validate';
 import { replayActions, useReplayState, isReplayActive, getReplayState } from '@/lib/replay/replayState';
 import { replayIndexForTime, TF_SECONDS } from '@/lib/replay/replaySlice';
+import { earliestReplayDateMs } from '@/lib/replay/deepLoad';
 import { verifyReplayIntegrity, type IntegrityReport } from '@/lib/replay/verify';
 import { buildTrainingReport, type TrainingReport } from '@/lib/replay/trainingReport';
 import TrainingReportModal from '@/components/replay/TrainingReportModal';
@@ -1050,6 +1051,35 @@ export default function ChartPanel({
         </div>
       )}
 
+      {replayPhase !== 'idle' && (
+        <div className="border-t border-line bg-surface-2/40 px-3 py-2">
+          <ReplayBar
+            selecting={replayPhase === 'selecting'}
+            playing={replayPlaying}
+            phase={replayPhase}
+            index={playIndex}
+            total={candles.length}
+            onVerify={featureFlags.replayDebug ? runVerification : undefined}
+            verification={verification}
+            onPickTime={onPickTime}
+            minPickMs={earliestReplayDateMs(selected, Date.now())}
+            deepLoading={deepLoading}
+            onDrill={onDrill}
+            blind={blindMode}
+            onToggleBlind={() => setBlindMode((v) => !v)}
+            speed={replaySpeed}
+            bookmarks={bookmarks}
+            onExit={() => replayActions.exit()}
+            onTogglePlay={() => (replayPlaying ? replayActions.pause() : replayActions.play())}
+            onStep={stepReplay}
+            onScrub={(i) => replayActions.scrubTo(i, candles.length)}
+            onSpeed={setReplaySpeed}
+            onBookmark={() => setBookmarks((b) => (b.includes(playIndex) ? b : [...b, playIndex].sort((x, y) => x - y)))}
+            onJumpBookmark={(i) => replayActions.scrubTo(i, candles.length)}
+            onRemoveBookmark={(i) => setBookmarks((b) => b.filter((x) => x !== i))}
+          />
+        </div>
+      )}
       {replayActive && !session.config && !sessionSkipped && !blindMode && (
         <div className="border-t border-line bg-surface-2/40 px-3 py-2">
           <SessionSetupCard
@@ -1066,34 +1096,6 @@ export default function ChartPanel({
             lastClose={replayLast.close}
             lastTime={replayLast.time}
             atr={hudAtr}
-          />
-        </div>
-      )}
-      {replayPhase !== 'idle' && (
-        <div className="border-t border-line bg-surface-2/40 px-3 py-2">
-          <ReplayBar
-            selecting={replayPhase === 'selecting'}
-            playing={replayPlaying}
-            phase={replayPhase}
-            index={playIndex}
-            total={candles.length}
-            onVerify={featureFlags.replayDebug ? runVerification : undefined}
-            verification={verification}
-            onPickTime={onPickTime}
-            deepLoading={deepLoading}
-            onDrill={onDrill}
-            blind={blindMode}
-            onToggleBlind={() => setBlindMode((v) => !v)}
-            speed={replaySpeed}
-            bookmarks={bookmarks}
-            onExit={() => replayActions.exit()}
-            onTogglePlay={() => (replayPlaying ? replayActions.pause() : replayActions.play())}
-            onStep={stepReplay}
-            onScrub={(i) => replayActions.scrubTo(i, candles.length)}
-            onSpeed={setReplaySpeed}
-            onBookmark={() => setBookmarks((b) => (b.includes(playIndex) ? b : [...b, playIndex].sort((x, y) => x - y)))}
-            onJumpBookmark={(i) => replayActions.scrubTo(i, candles.length)}
-            onRemoveBookmark={(i) => setBookmarks((b) => b.filter((x) => x !== i))}
           />
         </div>
       )}
