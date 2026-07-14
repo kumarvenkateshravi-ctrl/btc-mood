@@ -16,7 +16,7 @@ import type {
   SignalSide,
 } from '../indicatorFramework';
 import { resolveInputs } from './itsTemplates';
-import { computeSmc } from '../smc/engine';
+import { computeSmcWindowed } from '../smc/engine';
 import type { SmcObject, SmcSnapshot } from '../smc/types';
 
 interface SmcOverlayInputs {
@@ -125,7 +125,9 @@ function getSnapshot(candles: Candle[], inputs: SmcOverlayInputs): SmcSnapshot {
   const closed = candles.length > 1 ? candles[candles.length - 2].close : 0;
   const key = `${candles.length}:${last ? last.time : 0}:${candles[0]?.open ?? 0}:${closed}:${inputs.swingsLength}:${inputs.internalLength}`;
   if (cache && cache.key === key) return cache.snap;
-  const snap = computeSmc(candles, {
+  // Cap the analysis window: deep-loaded histories are unbounded, SMC context
+  // beyond a few thousand bars is not (and the overlay cost is O(objects)).
+  const snap = computeSmcWindowed(candles, 2500, {
     swingsLength: inputs.swingsLength,
     internalLength: inputs.internalLength,
   });
@@ -164,8 +166,23 @@ function bandPlot(
   };
 }
 
+// Result-object cache: the per-run chart sync pushes setData for EVERY plot
+// on EVERY pass. Returning the SAME result object for an unchanged closed bar
+// lets the chart layer skip those pushes entirely (reference equality).
+let resultCache: { key: string; result: IndicatorResult } | null = null;
+
 export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
   const inputs = resolveInputs<SmcOverlayInputs>(config, DEFAULTS);
+  const lastC = candles[candles.length - 1];
+  const closedC = candles.length > 1 ? candles[candles.length - 2].close : 0;
+  const resultKey = `${candles.length}:${lastC ? lastC.time : 0}:${candles[0]?.open ?? 0}:${closedC}:${JSON.stringify(inputs)}`;
+  if (resultCache && resultCache.key === resultKey) return resultCache.result;
+  const result = buildSmcOverlay(candles, inputs);
+  resultCache = { key: resultKey, result };
+  return result;
+}
+
+function buildSmcOverlay(candles: Candle[], inputs: SmcOverlayInputs): IndicatorResult {
   const n = candles.length;
   const signals = new Array<SignalSide>(n).fill('neutral');
   if (n === 0) return { plots: [], signals };
@@ -180,8 +197,22 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
   // bar at the broken level, labelled "Bullish BOS" / "Bearish CHoCH".
   // CHoCH is yellow (trend change warning); BOS is green/red (confirmation).
   const levelById = new Map(snap.objects.structureLevels.map((l) => [l.id, l]));
+  // Each structure segment is its OWN chart series with an n-length array.
+  // Unbounded, a deep-loaded history (tens of thousands of bars, hundreds of
+  // breaks) means hundreds of series that are all torn down and rebuilt on
+  // every lazy-load prepend (bar indices shift -> plot ids shift -> signature
+  // churn) — which froze the chart during zoom-out. Render only the most
+  // recent breaks; older ones are far off-screen anyway.
+  const MAX_STRUCT_SEGMENTS = 40;
+  let structTotal = 0;
+  for (const e of snap.events) {
+    if (e.type === 'BOS' || e.type === 'CHOCH') structTotal++;
+  }
+  let structSeen = 0;
   for (const e of snap.events) {
     if (e.type === 'BOS' || e.type === 'CHOCH') {
+      structSeen++;
+      if (structTotal - structSeen >= MAX_STRUCT_SEGMENTS) continue;
       if (e.scope === 'swing' && !inputs.showSwing) continue;
       if (e.scope === 'internal' && !inputs.showInternal) continue;
       const lvl = e.objectId ? levelById.get(e.objectId) : undefined;
@@ -190,7 +221,11 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
       const lineData: IndicatorPlot['data'] = new Array(n).fill(null);
       for (let j = Math.max(0, from); j <= Math.min(e.barIndex, n - 1); j++) lineData[j] = e.price;
       plots.push({
-        id: `struct_${e.id}`,
+        // Time-based id: bar indices shift on every lazy-load prepend, which
+        // changed `e.id`-based ids -> signature churn -> full teardown and
+        // rebuild of every series per prepend (the zoom-out freeze). Times
+        // never shift.
+        id: `struct_${e.type}_${e.scope}_${e.direction}_${candles[Math.min(e.barIndex, n - 1)]?.time ?? e.barIndex}`,
         title: e.type,
         color,
         type: 'line',
@@ -337,5 +372,5 @@ export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorCon
     signals[n - 1] = snap.state.setupDirection === 'bullish' ? 'buy' : 'sell';
   }
 
-  return { plots, signals, markers };
+  return { plots, signals, markers: markers.length > 150 ? markers.slice(-150) : markers };
 }

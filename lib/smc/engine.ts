@@ -292,3 +292,41 @@ export function projectSmcSnapshot(snap: SmcSnapshot) {
     },
   };
 }
+
+/**
+ * computeSmc over only the most recent `maxBars`, with every bar index in the
+ * snapshot shifted back into FULL-array space. Deep-loaded histories (tens of
+ * thousands of bars) made the unbounded pass + its overlay rebuild stall the
+ * chart during zoom-out; structure context beyond a few thousand bars adds
+ * nothing to the read. Pure and deterministic like computeSmc itself.
+ */
+export function computeSmcWindowed(
+  candles: Parameters<typeof computeSmc>[0],
+  maxBars: number,
+  config?: Parameters<typeof computeSmc>[1],
+): SmcSnapshot {
+  if (candles.length <= maxBars) return computeSmc(candles, config);
+  const slice = candles.slice(-maxBars);
+  const off = candles.length - slice.length;
+  const snap = computeSmc(slice, config);
+  const shiftObj = <T extends { createdAtBar: number; updatedAtBar: number }>(o: T): T => ({
+    ...o,
+    createdAtBar: o.createdAtBar + off,
+    updatedAtBar: o.updatedAtBar + off,
+  });
+  return {
+    ...snap,
+    objects: {
+      orderBlocks: snap.objects.orderBlocks.map(shiftObj),
+      fvgs: snap.objects.fvgs.map(shiftObj),
+      liquidityPools: snap.objects.liquidityPools.map(shiftObj),
+      structureLevels: snap.objects.structureLevels.map(shiftObj),
+      zones: snap.objects.zones.map(shiftObj),
+    },
+    events: snap.events.map((e) => ({ ...e, barIndex: e.barIndex + off })),
+    state: {
+      ...snap.state,
+      trailing: { ...snap.state.trailing, barIndex: snap.state.trailing.barIndex + off },
+    },
+  };
+}

@@ -227,7 +227,10 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
   };
 
   // Scroll-triggered lazy load: chase up to 3 pages per trigger so browsing
-  // left feels bottomless instead of one 1000-bar hop per gesture.
+  // left feels bottomless instead of one 1000-bar hop per gesture. The pages
+  // are merged in ONE state update — three separate prepends meant three
+  // full indicator recomputes + chart repaints per gesture, which is what
+  // made heavy indicators (SMC) hitch during zoom-out.
   const loadOlder = async (tf: Timeframe) => {
     const key = `${symbol}:${tf}`;
     if (loadingOlderRef.current[key] || noMoreOlderRef.current[key]) return;
@@ -235,10 +238,34 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     if (!arr || arr.length === 0) return;
     loadingOlderRef.current[key] = true;
     try {
-      let before: number | null = arr[0].time * 1000;
-      for (let page = 0; page < 3 && before != null; page++) {
-        before = await fetchAndPrependPage(tf, before);
+      let before = arr[0].time * 1000;
+      const chunks: Candle[][] = []; // newest chunk first
+      for (let page = 0; page < 3; page++) {
+        const older = await fetchKlinesBefore(tf, symbol, before, 1000);
+        if (older.length === 0) {
+          noMoreOlderRef.current[key] = true;
+          break;
+        }
+        chunks.push(older);
+        before = older[0].time * 1000;
+        if (older.length < 1000) {
+          noMoreOlderRef.current[key] = true;
+          break;
+        }
       }
+      if (chunks.length === 0) return;
+      const olderAll = chunks.reverse().flat(); // oldest -> newest
+      setCandlesByTf((prev) => {
+        const cur = prev[tf];
+        if (!cur || cur.length === 0) return prev;
+        const cutoff = cur[0].time;
+        const merged = olderAll.filter((c) => c.time < cutoff);
+        if (merged.length === 0) {
+          noMoreOlderRef.current[key] = true;
+          return prev;
+        }
+        return { ...prev, [tf]: [...merged, ...cur] };
+      });
     } catch {
       // Leave the guard cleared so a later scroll can retry.
     } finally {

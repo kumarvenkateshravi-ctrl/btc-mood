@@ -12,7 +12,7 @@
 
 import type { Candle } from '../types';
 import { TIMEFRAMES } from '../types';
-import { computeSmc } from '../smc/engine';
+import { computeSmcWindowed } from '../smc/engine';
 import type { SmcEvent, SmcSnapshot } from '../smc/types';
 import type { OperatorId, ScannerSource, Series } from './types';
 
@@ -22,7 +22,7 @@ function snapFor(candles: Candle[]): SmcSnapshot {
   const key = `${candles.length}:${candles[0]?.time ?? 0}:${candles[candles.length - 1]?.time ?? 0}:${candles[0]?.open ?? 0}:${candles.length > 1 ? candles[candles.length - 2].close : 0}`;
   const hit = snapCache.get(key);
   if (hit) return hit;
-  const snap = computeSmc(candles);
+  const snap = computeSmcWindowed(candles, 2500);
   if (snapCache.size >= 8) {
     const oldest = snapCache.keys().next().value;
     if (oldest !== undefined) snapCache.delete(oldest);

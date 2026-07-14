@@ -66,6 +66,11 @@ export function useChartData(
   // replay playback / live bar close: series.update instead of full setData).
   const prevCountRef = useRef(0);
   const prevFirstTimeRef = useRef<number | null>(null);
+  // Last plot-data reference pushed per series key. Indicators that cache
+  // their result object (e.g. SMC) return IDENTICAL arrays on unchanged
+  // closed bars — pushing those again costs O(bars x plots) per tick for
+  // nothing. Reference inequality is the only trigger for a re-push.
+  const lastPushedPlotRef = useRef<Map<string, unknown>>(new Map());
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -289,7 +294,15 @@ export function useChartData(
           try { candleSeriesRef.current?.detachPrimitive(bp); } catch {}
         }
         indicatorBandRef.current.clear();
+        // Marker plugins live on the CANDLE series (which survives this
+        // teardown) — clearing the map alone leaves their labels rendering
+        // forever ("Bullish CHoCH" ghosts after removing the indicator).
+        for (const [, mk] of indicatorMarkersRef.current) {
+          try { mk.setMarkers([]); } catch {}
+          try { (mk as unknown as { detach?: () => void }).detach?.(); } catch {}
+        }
         indicatorMarkersRef.current.clear();
+        lastPushedPlotRef.current.clear();
         for (const pane of [...panes.values()].sort((a, b) => b.paneIndex() - a.paneIndex())) {
           try { chart.removePane(pane.paneIndex()); } catch {}
         }
@@ -438,8 +451,11 @@ export function useChartData(
       for (const { key, result } of visibleResults) {
         for (const plot of result.plots) {
           if (plot.type !== 'line' && plot.type !== 'histogram') continue;
-          const series = existing.get(`${key}::${plot.id}`);
+          const seriesKey = `${key}::${plot.id}`;
+          const series = existing.get(seriesKey);
           if (!series) continue;
+          if (lastPushedPlotRef.current.get(seriesKey) === plot.data) continue;
+          lastPushedPlotRef.current.set(seriesKey, plot.data);
           const formatted = plot.data
             .map((v, i) => {
               if (v == null) return null;
@@ -464,8 +480,11 @@ export function useChartData(
         // fill primitive (supply/demand zones etc.).
         for (const plot of result.plots) {
           if (plot.type !== 'band') continue;
+          const bandKey = `band::${key}::${plot.id}`;
           const bp = indicatorBandRef.current.get(`${key}::${plot.id}`);
           if (!bp) continue;
+          if (lastPushedPlotRef.current.get(bandKey) === plot.data) continue;
+          lastPushedPlotRef.current.set(bandKey, plot.data);
           const upper: (number | null)[] = [];
           const lower: (number | null)[] = [];
           for (const v of plot.data) {
@@ -509,7 +528,8 @@ export function useChartData(
 
         // Pane markers (e.g. divergence Bull/Bear).
         const mk = indicatorMarkersRef.current.get(key);
-        if (mk && result.markers) {
+        if (mk && result.markers && lastPushedPlotRef.current.get(`mk::${key}`) !== result.markers) {
+          lastPushedPlotRef.current.set(`mk::${key}`, result.markers);
           const markers = result.markers
             .filter((m) => {
               const c = candles[m.index];
