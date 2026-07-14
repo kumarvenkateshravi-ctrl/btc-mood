@@ -259,9 +259,28 @@ export function subscribeTrades(
   };
 }
 
+// ---- Shared bookTicker channels -------------------------------------------
+// One live socket per symbol, refcounted with a short linger on release.
+// React StrictMode double-mounts, Fast Refresh, and page navigations used to
+// tear the socket down and reopen it every time — each teardown raced
+// Binance's protocol ping and spammed "Ping received after close" in the
+// console, and every reopen cost a bid/ask gap. Remounting subscribers now
+// REUSE the live connection; the socket only really closes when nobody has
+// wanted it for LINGER_MS (symbol switch, tab close).
+const BT_LINGER_MS = 5000;
+interface BtChannel {
+  handlers: Set<(t: BookTicker) => void>;
+  statuses: Set<StatusListener>;
+  close: () => void;
+  linger: ReturnType<typeof setTimeout> | null;
+  lastStatus: WSStatus | null;
+}
+const btChannels = new Map<string, BtChannel>();
+
 /**
  * Subscribe to Binance's @bookTicker stream for real-time best bid/ask.
  * Returns a disposer. Updates are pushed on every order book change.
+ * Subscriptions to the same symbol share one underlying socket.
  */
 export function subscribeBookTicker(
   symbol: string,
@@ -269,8 +288,46 @@ export function subscribeBookTicker(
   onStatus?: StatusListener,
 ): () => void {
   if (typeof window === 'undefined') return () => {};
+  const key = symbol.toLowerCase();
+  let ch = btChannels.get(key);
+  if (!ch) {
+    const handlers = new Set<(t: BookTicker) => void>();
+    const statuses = new Set<StatusListener>();
+    const created: BtChannel = { handlers, statuses, close: () => {}, linger: null, lastStatus: null };
+    created.close = rawBookTickerConnection(
+      key,
+      (t) => { for (const h of handlers) h(t); },
+      (st) => { created.lastStatus = st; for (const f of statuses) f(st); },
+    );
+    btChannels.set(key, created);
+    ch = created;
+  } else if (ch.linger) {
+    clearTimeout(ch.linger);
+    ch.linger = null;
+  }
+  ch.handlers.add(onTick);
+  if (onStatus) {
+    ch.statuses.add(onStatus);
+    if (ch.lastStatus) onStatus(ch.lastStatus); // late joiner sees current state
+  }
+  return () => {
+    ch.handlers.delete(onTick);
+    if (onStatus) ch.statuses.delete(onStatus);
+    if (ch.handlers.size === 0 && !ch.linger) {
+      ch.linger = setTimeout(() => {
+        btChannels.delete(key);
+        ch.close();
+      }, BT_LINGER_MS);
+    }
+  };
+}
 
-  const sym = symbol.toLowerCase();
+/** The raw single-socket implementation (reconnect + keepalive). */
+function rawBookTickerConnection(
+  sym: string,
+  onTick: (ticker: BookTicker) => void,
+  onStatus?: StatusListener,
+): () => void {
   const stream = `${sym}@bookTicker`;
   const url = `wss://stream.binance.com:9443/stream?streams=${stream}`;
 
