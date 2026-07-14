@@ -70,16 +70,30 @@ describe('intraday supply/demand zones', () => {
     for (const z of supply) expect(z.upper).toBeGreaterThanOrEqual(z.lower);
   });
 
-  it('skips HTF periods that are not larger than the chart interval', () => {
-    // 1h chart candles: a 15M/30M/1H "HTF" would be per-bar noise
+  it('skips HTF periods smaller than the chart interval, keeps equal and larger', () => {
+    // 1h chart: 15M is sub-bar noise (skipped); 1H = prior-period zones
+    // (kept, like 4H-on-4h or D-on-daily); 4H is a true higher TF (kept).
     const candles = mk(60, 3600);
     const res = computeSdZones(candles, {
       id: 'sd',
       settings: { inputs: { tf1: '15M', tf2: '1H', tf3: '4H' } },
     } as never);
-    // only 4H survives → exactly 4 band plots (one per kind)
+    expect(res.plots.length).toBe(8); // 1H + 4H, 4 kinds each
+    expect(res.plots.some((p) => p.id.startsWith('1H'))).toBe(true);
+    expect(res.plots.some((p) => p.id.startsWith('4H'))).toBe(true);
+    expect(res.plots.some((p) => p.id.startsWith('15M'))).toBe(false);
+  });
+
+  it('keeps 4H zones on the 4h chart (prior-period zones — the reported bug)', () => {
+    const candles = mk(80, 14400);
+    const res = computeSdZones(candles, {
+      id: 'sd',
+      settings: { inputs: { tf1: '4H', tf2: 'None', tf3: 'None' } },
+    } as never);
     expect(res.plots.length).toBe(4);
     expect(res.plots.every((p) => p.id.startsWith('4H'))).toBe(true);
+    // and the bands actually contain data
+    expect(res.plots.some((p) => p.data.some((d) => d != null))).toBe(true);
   });
 
   it('renders intraday zone plots with dashed styling on a 5m chart', () => {

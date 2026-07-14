@@ -161,14 +161,15 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
   const HTF_SET: ReadonlySet<string> = new Set(['15M', '30M', '1H', '2H', '4H', 'D', 'W', 'M']);
   let tfs = [inp.tf1, inp.tf2, inp.tf3].filter((t): t is HtfPeriod => HTF_SET.has(t));
 
-  // An HTF period must be LARGER than the chart's bar interval — otherwise
-  // every bar becomes its own "period" and zones degenerate into per-bar
-  // noise (4 zone objects per candle). Silently skip too-small periods.
+  // An HTF period SMALLER than the chart's bar interval is meaningless —
+  // multiple "periods" per bar collapse into noise, so those are skipped.
+  // EQUAL periods stay: 4H zones on the 4h chart (or D on daily) are the
+  // classic prior-period-range zones (previous period's high/low structure).
   const barSec = n >= 2 ? (candles[n - 1].time as number) - (candles[n - 2].time as number) : 0;
   if (barSec > 0) {
     tfs = tfs.filter((tf) => {
       const periodSec = HTF_PERIOD_SECONDS[tf];
-      return periodSec == null || periodSec > barSec; // W/M are always larger
+      return periodSec == null || periodSec >= barSec; // W/M are always larger
     });
   }
 
