@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { periodKey, priorPeriodOHLC } from './htf';
+import { periodKey, priorPeriodOHLC, HTF_PERIOD_SECONDS } from './htf';
 import type { Candle } from '../types';
 
 const c = (timeSec: number, o: number, h: number, l: number, cl: number, v = 1): Candle =>
@@ -53,5 +53,28 @@ describe('priorPeriodOHLC', () => {
     const prior = priorPeriodOHLC(candles, 'D');
     // bar 1 (day 1) must NOT see its own day; only day 0.
     expect(prior[1]).toEqual({ open: 1, high: 2, low: 0, close: 1, volume: 1, startTime: 0 });
+  });
+});
+
+describe('intraday periods', () => {
+  it('periodKey buckets 15M/30M/1H/2H on fixed boundaries', () => {
+    const t = Date.UTC(2026, 0, 1, 10, 44) / 1000; // 10:44 UTC
+    expect(periodKey(t, '15M')).toBe(Math.floor(t / 900));
+    expect(periodKey(t, '15M')).toBe(periodKey(t - 14 * 60, '15M')); // same 15m bucket as 10:30
+    expect(periodKey(t, '15M')).not.toBe(periodKey(t + 60, '15M')); // 10:45 = next bucket
+    expect(periodKey(t, '1H')).toBe(periodKey(Date.UTC(2026, 0, 1, 10, 0) / 1000, '1H'));
+    expect(periodKey(t, '1H')).not.toBe(periodKey(Date.UTC(2026, 0, 1, 11, 0) / 1000, '1H'));
+    expect(periodKey(t, '2H')).toBe(periodKey(Date.UTC(2026, 0, 1, 10, 1) / 1000, '2H'));
+    expect(periodKey(t, '30M')).toBe(periodKey(Date.UTC(2026, 0, 1, 10, 31) / 1000, '30M'));
+  });
+
+  it('HTF_PERIOD_SECONDS covers every fixed-width period', () => {
+    expect(HTF_PERIOD_SECONDS['15M']).toBe(900);
+    expect(HTF_PERIOD_SECONDS['30M']).toBe(1800);
+    expect(HTF_PERIOD_SECONDS['1H']).toBe(3600);
+    expect(HTF_PERIOD_SECONDS['2H']).toBe(7200);
+    expect(HTF_PERIOD_SECONDS['4H']).toBe(14400);
+    expect(HTF_PERIOD_SECONDS.D).toBe(86400);
+    expect(HTF_PERIOD_SECONDS.W).toBeUndefined(); // calendar periods
   });
 });

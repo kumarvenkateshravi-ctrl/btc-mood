@@ -421,9 +421,9 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     name: 'Supply / Demand Zones',
     description: 'Non-repainting supply/demand price bands from the prior higher-TF period (up to 3 TFs), ranked by a configurable Zone Strength Score.',
     inputs: [
-      { id: 'tf1', name: 'Timeframe 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf2', name: 'Timeframe 2', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf3', name: 'Timeframe 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf1', name: 'Timeframe 1', type: 'select', default: 'D', options: ['None','15M','30M','1H','2H','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf2', name: 'Timeframe 2', type: 'select', default: 'None', options: ['None','15M','30M','1H','2H','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
+      { id: 'tf3', name: 'Timeframe 3', type: 'select', default: 'None', options: ['None','15M','30M','1H','2H','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
       { id: 'targetFactor', name: 'Target projection ×', type: 'number', default: 1.5, min: 0, max: 5, step: 0.1 },
       { id: 'showLabels', name: 'Show labels', type: 'boolean', default: true },
       { id: 'showStrength', name: 'Show strength score', type: 'boolean', default: true },

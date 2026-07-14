@@ -3,7 +3,12 @@
 
 import type { Candle } from '../types';
 
-export type HtfPeriod = '4H' | 'D' | 'W' | 'M';
+export type HtfPeriod = '15M' | '30M' | '1H' | '2H' | '4H' | 'D' | 'W' | 'M';
+
+/** Seconds per fixed-width HTF period (calendar periods W/M excluded). */
+export const HTF_PERIOD_SECONDS: Partial<Record<HtfPeriod, number>> = {
+  '15M': 900, '30M': 1800, '1H': 3600, '2H': 7200, '4H': 14400, D: 86400,
+};
 
 export interface HtfBucketOHLC {
   open: number;
@@ -19,6 +24,10 @@ const SEC_DAY = 86400;
 
 /** UTC-aligned period index for a bar's unix-second timestamp. */
 export function periodKey(timeSec: number, period: HtfPeriod): number {
+  if (period === '15M') return Math.floor(timeSec / 900);
+  if (period === '30M') return Math.floor(timeSec / 1800);
+  if (period === '1H') return Math.floor(timeSec / 3600);
+  if (period === '2H') return Math.floor(timeSec / 7200);
   if (period === '4H') return Math.floor(timeSec / SEC_4H);
   if (period === 'D') return Math.floor(timeSec / SEC_DAY);
   if (period === 'W') {

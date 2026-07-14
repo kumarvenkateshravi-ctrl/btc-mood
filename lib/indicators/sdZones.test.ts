@@ -1,6 +1,6 @@
 // lib/indicators/sdZones.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildZones, summarizeZones } from './sdZones';
+import { buildZones, summarizeZones, computeSdZones } from './sdZones';
 import type { Candle } from '../types';
 
 const DAY = 86400;
@@ -46,5 +46,52 @@ describe('summarizeZones', () => {
     expect(['supply', 'demand']).toContain(s.zoneType);
     // distanceToPrice is a signed % from the last close (85) to the zone mid.
     expect(typeof s.distanceToPrice).toBe('number');
+  });
+});
+
+describe('intraday supply/demand zones', () => {
+  const mk = (n: number, stepSec: number): Candle[] =>
+    Array.from({ length: n }, (_, i) => {
+      const base = 100 + Math.sin(i / 7) * 5;
+      return {
+        time: 1_700_000_000 + i * stepSec,
+        open: base, close: base + 1, high: base + 2, low: base - 1, volume: 10,
+      };
+    });
+
+  it('builds 1H zones from 5m candles (one set per completed hour)', () => {
+    const candles = mk(12 * 6, 300); // 6 hours of 5m bars
+    const zones = buildZones(candles, '1H', 1.5);
+    // first completed hour yields zones starting at hour 2; 4 kinds per period
+    expect(zones.length).toBeGreaterThanOrEqual(4 * 4);
+    expect(zones.length % 4).toBe(0);
+    const supply = zones.filter((z) => z.kind === 'supply');
+    // zone geometry comes from the PRIOR hour's OHLC
+    for (const z of supply) expect(z.upper).toBeGreaterThanOrEqual(z.lower);
+  });
+
+  it('skips HTF periods that are not larger than the chart interval', () => {
+    // 1h chart candles: a 15M/30M/1H "HTF" would be per-bar noise
+    const candles = mk(60, 3600);
+    const res = computeSdZones(candles, {
+      id: 'sd',
+      settings: { inputs: { tf1: '15M', tf2: '1H', tf3: '4H' } },
+    } as never);
+    // only 4H survives → exactly 4 band plots (one per kind)
+    expect(res.plots.length).toBe(4);
+    expect(res.plots.every((p) => p.id.startsWith('4H'))).toBe(true);
+  });
+
+  it('renders intraday zone plots with dashed styling on a 5m chart', () => {
+    const candles = mk(12 * 8, 300);
+    const res = computeSdZones(candles, {
+      id: 'sd',
+      settings: { inputs: { tf1: '1H', tf2: 'None', tf3: 'None' } },
+    } as never);
+    expect(res.plots.length).toBe(4);
+    expect(res.plots[0].id.startsWith('1H')).toBe(true);
+    for (const p of res.plots) {
+      expect((p.zoneStyle as { lineStyle?: string }).lineStyle).toBe('dashed');
+    }
   });
 });

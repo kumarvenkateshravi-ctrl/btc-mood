@@ -1,7 +1,7 @@
 // lib/indicators/sdZones.ts
 import type { Candle } from '../types';
 import * as pm from '../pineMath';
-import { priorPeriodOHLC, type HtfPeriod, type HtfBucketOHLC } from './htf';
+import { priorPeriodOHLC, HTF_PERIOD_SECONDS, type HtfPeriod, type HtfBucketOHLC } from './htf';
 import {
   scoreZone, countRetests, type Zone, type ZoneStrength,
   type ZoneStrengthWeights, type ScoreZoneCtx,
@@ -134,7 +134,7 @@ const SD_DEFAULTS: SdZonesInputs = {
   wConfluence: 0.25, wRejection: 0.22, wVolume: 0.18, wRetests: 0.13, wZoneWidth: 0.12, wFreshness: 0.10,
 };
 
-const TF_LABEL: Record<string, string> = { '4H': '4H', D: 'D', W: 'W', M: 'M' };
+const TF_LABEL: Record<string, string> = { '15M': '15M', '30M': '30M', '1H': '1H', '2H': '2H', '4H': '4H', D: 'D', W: 'W', M: 'M' };
 const KIND_LABEL: Record<Zone['kind'], string> = {
   supply: 'Su', supplyTarget: 'Su T', demand: 'De', demandTarget: 'De T',
 };
@@ -142,11 +142,13 @@ const KIND_LABEL: Record<Zone['kind'], string> = {
 // demand = orange — STRUCTURE colors, deliberately distinct from the green/red
 // DIRECTION colors reserved for signals and trade levels. Slight tone shift
 // per timeframe so D and 4H zones read apart even before the label.
-const SUPPLY_RGB: Record<string, string> = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' };
-const DEMAND_RGB: Record<string, string> = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' };
+const SUPPLY_RGB: Record<string, string> = { '15M': '173,216,230', '30M': '135,206,250', '1H': '100,149,237', '2H': '110,150,246', '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' };
+const DEMAND_RGB: Record<string, string> = { '15M': '255,222,173', '30M': '255,218,185', '1H': '255,160,122', '2H': '255,170,112', '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' };
 
 const fillFor = (kind: Zone['kind'], tf: HtfPeriod): string => {
-  const rgb = kind === 'supply' || kind === 'supplyTarget' ? SUPPLY_RGB[tf] : DEMAND_RGB[tf];
+  const rgb = kind === 'supply' || kind === 'supplyTarget'
+    ? (SUPPLY_RGB[tf] || '79,127,255')
+    : (DEMAND_RGB[tf] || '255,159,54');
   const isTarget = kind === 'supplyTarget' || kind === 'demandTarget';
   return `rgba(${rgb},${isTarget ? 0.05 : 0.10})`;
 };
@@ -156,8 +158,19 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
   const n = candles.length;
   const signals = new Array<SignalSide>(n).fill('neutral');
 
-  const tfs = [inp.tf1, inp.tf2, inp.tf3].filter((t): t is HtfPeriod =>
-    t === '4H' || t === 'D' || t === 'W' || t === 'M');
+  const HTF_SET: ReadonlySet<string> = new Set(['15M', '30M', '1H', '2H', '4H', 'D', 'W', 'M']);
+  let tfs = [inp.tf1, inp.tf2, inp.tf3].filter((t): t is HtfPeriod => HTF_SET.has(t));
+
+  // An HTF period must be LARGER than the chart's bar interval — otherwise
+  // every bar becomes its own "period" and zones degenerate into per-bar
+  // noise (4 zone objects per candle). Silently skip too-small periods.
+  const barSec = n >= 2 ? (candles[n - 1].time as number) - (candles[n - 2].time as number) : 0;
+  if (barSec > 0) {
+    tfs = tfs.filter((tf) => {
+      const periodSec = HTF_PERIOD_SECONDS[tf];
+      return periodSec == null || periodSec > barSec; // W/M are always larger
+    });
+  }
 
   if (n === 0 || tfs.length === 0) return { plots: [], signals };
 
@@ -233,7 +246,8 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
       const cur = kindZones[kindZones.length - 1];
       const curScore = cur && current.includes(cur) ? scored.get(cur)?.score ?? 0 : 0;
       const zoneStyle: BandZoneStyle = {
-        lineStyle: tf === '4H' ? 'dashed' : 'solid',
+        // Sub-daily periods render dashed so they read apart from D/W/M.
+        lineStyle: HTF_PERIOD_SECONDS[tf] != null && HTF_PERIOD_SECONDS[tf]! < 86400 ? 'dashed' : 'solid',
       };
       if (isEntry) {
         zoneStyle.boundary = kind === 'supply' ? 'lower' : 'upper';
