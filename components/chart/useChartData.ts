@@ -19,6 +19,7 @@ import { IndicatorBandPrimitive } from '@/lib/indicatorBandPrimitive';
 import type { Candle } from '@/lib/types';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { shiftTime, getTfMinutes, ensureCleanSeries, type ChartType, type IndicatorRender } from './types';
+import { OSC, softHistogram } from './oscillatorTheme';
 import type { ChartRefs } from './refs';
 
 /**
@@ -320,17 +321,18 @@ export function useChartData(
             panes.set(key, pane);
             chart.priceScale('right', paneIndex).applyOptions({
               visible: true,
-              borderColor: '#2a3247',
-              textColor: '#7b88a0',
+              borderColor: OSC.paneBorderColor,
+              textColor: OSC.axisTextColor,
               autoScale: true,
+              scaleMargins: OSC.scaleMargins, // breathing room; curves never clip
             });
             if (!styledPanes) {
               try {
                 chart.applyOptions({
                   layout: {
                     panes: {
-                      separatorColor: '#2a3247',
-                      separatorHoverColor: 'rgba(154, 178, 215, 0.4)',
+                      separatorColor: OSC.separatorColor,
+                      separatorHoverColor: OSC.separatorHoverColor,
                     },
                   },
                 });
@@ -343,7 +345,13 @@ export function useChartData(
             const targetPane = plot.pane === 'separate' ? paneIndex : 0;
             const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
             const color = st?.color || plot.color;
-            const lineWidth = (st?.thickness as 1 | 2 | 3 | 4) || (plot.lineWidth as 1 | 2 | 3 | 4) || 2;
+            // Oscillator-pane lines inherit the design-system hair-thin default
+            // unless the user explicitly thickened this plot; overlays on the
+            // price pane keep their own weight.
+            const lineWidth = (st?.thickness as 1 | 2 | 3 | 4)
+              || (plot.pane === 'separate'
+                    ? OSC.lineWidth
+                    : ((plot.lineWidth as 1 | 2 | 3 | 4) || 2));
             const isHidden = hiddenKeys.has(key);
             const visible = isHidden ? false : (st?.display !== false);
             const labelsOnPriceScale = indicatorSettingsMap?.[key]?.labelsOnPriceScale ?? true;
@@ -456,15 +464,30 @@ export function useChartData(
           if (!series) continue;
           if (lastPushedPlotRef.current.get(seriesKey) === plot.data) continue;
           lastPushedPlotRef.current.set(seriesKey, plot.data);
+          let lastTime = -1;
           const formatted = plot.data
             .map((v, i) => {
-              if (v == null) return null;
+              if (v == null || !candles[i]) return null;
+              
+              let val: number;
+              let color: string | undefined;
               if (typeof v === 'object' && 'value' in v) {
-                if (!Number.isFinite(v.value)) return null; // NaN AND ±Infinity (div-by-zero)
-                return { time: shiftTime((candles[i]?.time ?? 0) as number), value: v.value, color: v.color };
+                if (!Number.isFinite(v.value)) return null;
+                val = v.value;
+                color = v.color;
+              } else {
+                if (!Number.isFinite(v as number)) return null;
+                val = v as number;
               }
-              if (!Number.isFinite(v as number)) return null;
-              return { time: shiftTime((candles[i]?.time ?? 0) as number), value: v as number };
+              
+              const t = shiftTime(candles[i].time as number) as number;
+              if (t <= lastTime) return null; // Ensure strictly ascending time
+              lastTime = t;
+              
+              const paint = color && plot.type === 'histogram' && plot.pane === 'separate'
+                ? softHistogram(color)
+                : color;
+              return paint ? { time: t as Time, value: val, color: paint } : { time: t as Time, value: val };
             })
             .filter((d): d is { time: Time; value: number; color?: string } => d !== null);
           if (formatted.length > 0) {
