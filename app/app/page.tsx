@@ -50,6 +50,7 @@ import { useAlerts } from '@/lib/hooks/useAlerts';
 import { useGridState } from '@/lib/hooks/useGridState';
 import { useReplayCut } from '@/lib/replay/replayCut';
 import { planDeepLoad } from '@/lib/replay/deepLoad';
+import { useAnalyticsWindow } from '@/lib/hooks/useAnalyticsWindow';
 import { sliceCandlesByTf } from '@/lib/replay/replaySlice';
 import { useLayoutMigrationToast } from '@/components/useLayoutMigrationToast';
 import { useKeyboardShortcuts } from '@/lib/hooks/useKeyboardShortcuts';
@@ -190,13 +191,18 @@ export default function DashboardPage() {
   // stored (fully formed) history. The chart itself keeps the full eval-TF
   // array: the replay machinery (selector, scrubber) needs it.
   const replayCut = useReplayCut();
-  const analyticsCandlesByTf = useMemo(
+  const analyticsCandlesByTfFull = useMemo(
     () =>
       replayCut.active && replayCut.cutBar
         ? sliceCandlesByTf(candlesByTf, replayCut.evalTf, replayCut.cutBar)
         : candlesByTf,
     [candlesByTf, replayCut],
   );
+  // Live-edge analytics window (mood/context/scanner/signals): capped tails
+  // with referential stability — a lazy-load prepend of old bars produces the
+  // IDENTICAL object, so none of the engines below recompute (this was the
+  // ~2s main-thread stall during zoom-out). The chart keeps full history.
+  const analyticsCandlesByTf = useAnalyticsWindow(analyticsCandlesByTfFull);
 
   // ---- Mood engine ----
   const { prices, changes, snapshots, mood, indicatorRows } = useMoodEngine(
@@ -224,7 +230,8 @@ export default function DashboardPage() {
   // Phase 2 alerts/webhooks subscribe by diffing newly-`triggered` ids here.
   const signalEvents = useMemo(
     () => computeSdSignalEvents(analyticsCandlesByTf[selected] ?? [], { id: 'sd_signals' }, { symbol, timeframe: selected }),
-    [currentCandles, symbol, selected],
+    // Keyed on the WINDOWED slice: stable across prepends, fresh per tick.
+    [analyticsCandlesByTf, symbol, selected],
   );
 
   const currentPrice = ticker24h ? ticker24h.price : prices[selected];
