@@ -45,7 +45,7 @@ export function ChartLegend({
     <>
       <div className="pointer-events-none absolute left-2 top-[60px] z-10 flex flex-col gap-0">
         {isLegendExpanded && legendKeys.map((key) => {
-          const def = CUSTOM_INDICATORS.find((d) => d.id === key);
+          const def = CUSTOM_INDICATORS.find((d) => d.id === key.split('::')[0]);
           if (!def) return null;
           const result = resultByKey.get(key);
           const settings = indicatorSettingsMap?.[key];
@@ -88,15 +88,22 @@ export function ChartLegend({
               key={key}
               className={`pointer-events-auto group flex cursor-default items-center gap-2 rounded px-2 py-0 transition-colors ${isOpen ? 'bg-white/[0.08]' : 'bg-transparent hover:bg-white/[0.04]'}`}
             >
-              <div className={`flex items-baseline gap-1.5 text-[13px] transition-opacity duration-200 ${hidden ? 'opacity-40' : 'opacity-100'}`}>
-                <span className="font-medium" style={{ color: isOpen ? LEGEND_ACCENT : undefined }}>{def.name}</span>
+              <div className={`flex items-baseline gap-1.5 text-[12px] transition-opacity duration-200 ${hidden ? 'opacity-40' : 'opacity-100'}`}>
+                {/* TV-style: the name is a quiet anchor (regular weight, muted
+                    until active); the live plot values carry the colour. */}
+                <span
+                  className="font-normal"
+                  style={{ color: isOpen ? LEGEND_ACCENT : 'var(--ink-muted, #9aa4b2)' }}
+                >
+                  {def.name}
+                </span>
                 {paramText && (
-                  <span className="rounded bg-white/[0.06] px-1.5 py-px font-mono text-[11px] tabular-nums text-ink-muted">
+                  <span className="rounded bg-white/[0.05] px-1.5 py-px font-mono text-[10px] tabular-nums text-ink-faint">
                     {paramText}
                   </span>
                 )}
                 {showValuesInStatusLine && plotValues.map((pv) => (
-                  <span key={pv.id} className="font-mono text-[12px] tabular-nums" style={{ color: pv.color }}>
+                  <span key={pv.id} className="font-mono text-[11px] tabular-nums" style={{ color: pv.color }}>
                     {pv.text}
                   </span>
                 ))}
@@ -139,12 +146,12 @@ export function ChartLegend({
       </div>
 
       {settingsForKey && (() => {
-        const def = CUSTOM_INDICATORS.find((d) => d.id === settingsForKey);
+        const def = CUSTOM_INDICATORS.find((d) => d.id === settingsForKey.split('::')[0]);
         if (!def) return null;
         const activeIndicatorsContext = renderResults
           .filter((r) => r.key !== settingsForKey)
           .map((r) => {
-            const d = CUSTOM_INDICATORS.find((dd) => dd.id === r.key);
+            const d = CUSTOM_INDICATORS.find((dd) => dd.id === r.key.split('::')[0]);
             return {
               id: r.key,
               name: d?.name || r.key,
