@@ -99,6 +99,12 @@ const listeners = new Set<() => void>();
 let toastSeq = 0;
 let emitting = false;
 let pendingEmit = false;
+// Live-reconcile cursor: the price we last checked SL/TP against. Live
+// reconciliation must only react to movement SINCE this price — never a
+// forming candle's accumulated high/low (which includes action from before
+// the position opened and, on higher TFs, the whole day's range). Seeded when
+// an order is placed so the first post-entry tick can't retroactively fill.
+let liveTickCursor: number | null = null;
 
 const subscribe = (l: () => void) => {
   listeners.add(l);
@@ -286,11 +292,18 @@ export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: strin
       lastFill: fill,
       balance: state.balance - needed + balanceDelta,
     });
+    liveTickCursor = fillPrice; // reset the cursor to the fresh entry
     pushToast(
       `Filled ${input.side.toUpperCase()} ${input.units} @ ${fillPrice.toFixed(1)}`,
       input.side,
     );
     return { ok: true };
+  }
+
+  // Limit / stop parked below: seed the cursor from the current price so a
+  // pending order is only checked against movement from here on.
+  if (liveTickCursor == null && Number.isFinite(input.midPrice) && input.midPrice > 0) {
+    liveTickCursor = input.midPrice;
   }
 
   // Limit / stop: park in pending. Deduct margin now.
@@ -482,6 +495,28 @@ export function setTakeProfit(_orderId: string | null, price: number | null) {
  *  open position so multi-symbol portfolios stay in sync. (Bar Replay
  *  uses a separate isolated account in lib/replaySession.ts, so this only
  *  ever sees live bars.) */
+/**
+ * Live reconciliation from a price tick. Builds a minimal bar covering only the
+ * movement between the previous tick and this one, so SL/TP and pending orders
+ * fill when price ACTUALLY reaches them — not retroactively against a forming
+ * candle's range. This fixes freshly-placed positions vanishing instantly
+ * because a higher-TF forming candle's low/high already spanned their exits.
+ */
+export function reconcileLiveTick(price: number, ts: number) {
+  if (typeof window === 'undefined' || !Number.isFinite(price) || price <= 0) return;
+  const prev = liveTickCursor;
+  liveTickCursor = price;
+  if (prev == null || prev === price) return; // seed only / no movement
+  reconcileBar({
+    time: ts,
+    open: prev,
+    high: Math.max(prev, price),
+    low: Math.min(prev, price),
+    close: price,
+    volume: 0,
+  });
+}
+
 export function reconcileBar(bar: import('./types').Candle) {
   if (typeof window === 'undefined') return;
   let nextState = state;

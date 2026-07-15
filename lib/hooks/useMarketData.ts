@@ -13,7 +13,7 @@ import {
   RateLimitedError,
 } from '../fetcher';
 import { subscribeKlines, subscribeBookTicker, type BookTicker, type WSStatus } from '../ws';
-import { reconcileBar } from '../paperStore';
+import { reconcileLiveTick } from '../paperStore';
 import { POLL_MS } from '../dashboardUrl';
 import type { CompareSymbol } from '../compare';
 
@@ -157,7 +157,10 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
       TIMEFRAMES,
       (bar, tf) => {
         wsBarCountRef.current += 1;
-        reconcileBar(bar);
+        // Reconcile paper positions against the price MOVEMENT (tick close),
+        // never the forming candle's accumulated high/low — the latter closed
+        // fresh positions instantly (esp. via the daily candle's full range).
+        reconcileLiveTick(bar.close, bar.time);
         setCandlesByTf((prev) => {
           const next = { ...prev } as CandlesByTf;
           const arr = next[tf];
@@ -337,7 +340,11 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
 
     return () => {
       active = false;
-      ws.close();
+      if (ws.readyState === WebSocket.CONNECTING) {
+        ws.onopen = () => ws.close();
+      } else {
+        try { ws.close(); } catch (e) {}
+      }
     };
   }, [symbol]);
 
