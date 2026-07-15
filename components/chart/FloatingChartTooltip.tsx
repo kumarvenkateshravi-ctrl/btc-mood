@@ -29,7 +29,7 @@ export function FloatingChartTooltip({
   };
   const fmtTime = (t: number): string => {
     const d = new Date(t * 1000);
-    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
   const currentPrice = active.base.close;

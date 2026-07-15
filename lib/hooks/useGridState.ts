@@ -3,54 +3,124 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Timeframe } from '../types';
 import {
-  DEFAULT_GRID_COUNT,
-  loadGrid,
+  DEFAULT_LAYOUT,
+  isSyncActive,
+  loadLayout,
   reconcileGridTfs,
-  saveGrid,
+  saveLayout,
   tfsForCount,
-  type GridCount,
+  type Layout,
+  type LayoutCount,
 } from '../gridLayout';
 
 export interface GridState {
-  gridCount: GridCount;
+  /** Current layout (mode + count + sync). */
+  layout: Layout;
+  /** Ordered list of TFs for multi-chart mode. */
   gridTfs: Timeframe[];
-  setGridCount: React.Dispatch<React.SetStateAction<GridCount>>;
-  handleGridCountChange: (n: GridCount) => void;
+  setLayout: React.Dispatch<React.SetStateAction<Layout>>;
+  /** Back-compat: returns the count for legacy callers. */
+  gridCount: LayoutCount;
+  setGridCount: React.Dispatch<React.SetStateAction<LayoutCount>>;
+  /** Back-compat handler for the old GridChip onChange. */
+  handleGridCountChange: (n: LayoutCount) => void;
+  /** True once on mount when the layout was migrated from v1 storage. */
+  migrated: boolean;
+  /** The user's pre-migration count (v1) — used by the migration toast. */
+  previousCount: number;
 }
 
 /**
- * Multi-pane grid state: the user-pickable count (1/2/4/6) and the
- * ordered list of timeframes filling the cells. Hydrates from
- * localStorage on mount and persists on every change.
+ * Layout state: the (mode, count, sync) tuple plus the per-cell TF
+ * list for multi-chart mode. Hydrates from localStorage on mount and
+ * persists on every change.
+ *
+ * The `gridCount` / `setGridCount` / `handleGridCountChange` surface is
+ * preserved for back-compat with the existing `GridChip` and the
+ * `useKeyboardShortcuts` "G" key. They operate on the `count` field of
+ * the layout, defaulting `mode` to `multi-chart` when the user goes
+ * from single to a higher count.
  */
 export function useGridState(selected: Timeframe): GridState {
-  const [gridCount, setGridCount] = useState<GridCount>(DEFAULT_GRID_COUNT);
+  const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
   const [gridTfs, setGridTfs] = useState<Timeframe[]>(
-    tfsForCount(DEFAULT_GRID_COUNT, selected),
+    tfsForCount(DEFAULT_LAYOUT.count, selected),
   );
+  const [migrated, setMigrated] = useState(false);
+  const [previousCount, setPreviousCount] = useState(0);
 
   const handleGridCountChange = useCallback(
-    (n: GridCount) => {
+    (n: LayoutCount) => {
+      setLayout((prev) => {
+        // Map old "set count" semantics onto the new model.
+        // Single-chart layout stays single; everything else becomes multi-chart.
+        const nextMode = n === 1 ? 'single' : 'multi-chart';
+        return {
+          ...prev,
+          mode: nextMode,
+          count: n,
+        };
+      });
       setGridTfs((tfs) => reconcileGridTfs(tfs, n, selected));
-      setGridCount(n);
     },
     [selected],
   );
 
   // Hydrate from localStorage once.
   useEffect(() => {
-    const persisted = loadGrid();
-    if (persisted) {
-      setGridCount(persisted.count);
-      setGridTfs(reconcileGridTfs(persisted.tfs, persisted.count, selected));
+    const { layout: persisted, migrated: didMigrate } = loadLayout();
+    setLayout(persisted);
+    setMigrated(didMigrate);
+    // We can't recover the v1 count from the v2 layout (it was folded
+    // into a single canonical state), so the migration toast only shows
+    // a generic message; the toast helper checks the flag.
+    if (didMigrate) {
+      // Heuristic: if the user ended up in multi-chart with count >= 2,
+      // they almost certainly had a multi-cell v1. (v1 count=1 would
+      // have migrated to single, which the toast skips.)
+      setPreviousCount(persisted.count);
+    }
+    if (persisted.mode === 'multi-chart') {
+      setGridTfs(reconcileGridTfs([], persisted.count, selected));
+    } else if (persisted.mode === 'multi-pane') {
+      // Multi-pane uses one TF replicated; not stored per-cell in v1.
+      setGridTfs(tfsForCount(persisted.count, selected));
+    } else {
+      setGridTfs(tfsForCount(1, selected));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Persist on every change.
   useEffect(() => {
-    saveGrid({ count: gridCount, tfs: gridTfs });
-  }, [gridCount, gridTfs]);
+    saveLayout(layout);
+  }, [layout]);
 
-  return { gridCount, gridTfs, setGridCount, handleGridCountChange };
+  // Derived: the legacy `gridCount` is the layout's count regardless of mode.
+  // The legacy `setGridCount` is provided for direct compat.
+  const gridCount = layout.count;
+  const setGridCount: React.Dispatch<React.SetStateAction<LayoutCount>> = (updater) => {
+    const next = typeof updater === 'function'
+      ? (updater as (prev: LayoutCount) => LayoutCount)(layout.count)
+      : updater;
+    setLayout((prev) => {
+      const nextMode = next === 1 ? 'single' : 'multi-chart';
+      return { ...prev, mode: nextMode, count: next };
+    });
+    setGridTfs((tfs) => reconcileGridTfs(tfs, next, selected));
+  };
+
+  return {
+    layout,
+    gridTfs,
+    setLayout,
+    gridCount,
+    setGridCount,
+    handleGridCountChange,
+    migrated,
+    previousCount,
+  };
 }
+
+// Re-export the sync helper so consumers don't need a second import.
+export { isSyncActive };

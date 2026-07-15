@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Maximize2,
   Minimize2,
-  MoreHorizontal,
   ChevronDown,
   History,
   CalendarSearch,
@@ -20,18 +19,24 @@ import {
   Bitcoin,
   Calculator,
   LayoutDashboard,
+  ScanLine,
 } from 'lucide-react';
 import Link from 'next/link';
 import { type Timeframe } from '@/lib/types';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { RenkoConfig, RenkoMethod } from '@/lib/renko';
-import { GRID_COUNTS, type GridCount } from '@/lib/gridLayout';
+import { GRID_COUNTS, type GridCount, type Layout } from '@/lib/gridLayout';
+import { LayoutSwitcher, LayoutSwitcherButton } from './LayoutSwitcher';
 import {
   useWorkspaces,
   saveWorkspace,
   deleteWorkspace,
   type WorkspaceConfig,
 } from '@/lib/workspaces';
+import { ChartSettingsButton } from './chart/ChartSettingsButton';
+import { ChartSettingsPopover } from './chart/ChartSettingsPopover';
+import type { ChartSettingsState } from './chart/useChartSettings';
+import { featureFlags } from '@/lib/featureFlags';
 
 
 export type ToolbarChartType = 'candlestick' | 'heikinAshi' | 'renko';
@@ -67,12 +72,21 @@ export interface ChartToolbarProps {
   // Grid layout controls
   gridCount: GridCount;
   onGridChange: (n: GridCount) => void;
+  // Full layout (mode + count + sync). When the feature flag is on, the
+  // LayoutSwitcher is used instead of the legacy GridChip.
+  layout?: Layout;
+  onLayoutChange?: (next: Layout) => void;
   // Workspace controls
   workspaceCurrent: WorkspaceConfig;
   onWorkspaceApply: (cfg: WorkspaceConfig) => void;
   // Layout toggles
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  // TV-style chart settings (gear popover). When the feature flag is off,
+  // the button is not rendered.
+  chartSettings?: ChartSettingsState;
+  onChartSettingsPatch?: (p: Partial<ChartSettingsState>) => void;
+  onChartSettingsReset?: () => void;
 }
 
 export default function ChartToolbar(props: ChartToolbarProps) {
@@ -100,18 +114,23 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onReturnToLive,
     gridCount,
     onGridChange,
+    layout,
+    onLayoutChange,
     workspaceCurrent,
     onWorkspaceApply,
     isSidebarOpen,
     onToggleSidebar,
+    chartSettings,
+    onChartSettingsPatch,
+    onChartSettingsReset,
   } = props;
 
   return (
     <div className="flex h-[40px] w-full shrink-0 flex-nowrap items-center gap-0.5 overflow-visible border-b border-line bg-base px-2">
-      {/* App Logo */}
-      <div className="flex shrink-0 items-center justify-center px-1 pr-3">
+      {/* App Logo / Back to Home */}
+      <Link href="/" className="flex shrink-0 items-center justify-center px-1 pr-3 hover:opacity-80 transition-opacity" title="Back to Dashboard">
         <Bitcoin className="h-5 w-5 text-regime-hot" />
-      </div>
+      </Link>
 
       <ToolbarDivider />
 
@@ -192,9 +211,17 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* Grid layout chip */}
+      {/* Layout switcher (new) or legacy GridChip (flag off) */}
       <div className="flex shrink-0 items-center h-full">
-        <GridChip value={gridCount} onChange={onGridChange} />
+        {featureFlags.layoutSwitcher && layout && onLayoutChange ? (
+          <LayoutSwitcherToolbarMount
+            layout={layout}
+            onChange={onLayoutChange}
+            chartType={chartType}
+          />
+        ) : (
+          <GridChip value={gridCount} onChange={onGridChange} />
+        )}
       </div>
 
       {/* Workspace chip */}
@@ -204,6 +231,14 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       {/* Spacer pushes fullscreen + more to the right */}
       <div className="ml-auto flex shrink-0 items-center h-full gap-1 px-1">
+        <Link
+          href="/technical-scanner"
+          title="Technical Scanner"
+          className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
+        >
+          <ScanLine className="h-3.5 w-3.5" />
+          Scanner
+        </Link>
         <Link
           href="/mycryptostack"
           title="MyCryptoStack — multi-timeframe intelligence dashboard"
@@ -266,8 +301,59 @@ export default function ChartToolbar(props: ChartToolbarProps) {
             <Maximize2 className="h-4 w-4" />
           )}
         </button>
-        <MoreMenu onFitContent={onFitContent} />
+        {featureFlags.chartSettings && chartSettings && onChartSettingsPatch && onChartSettingsReset && (
+          <ChartSettingsButtonWithPopover
+            settings={chartSettings}
+            onPatch={onChartSettingsPatch}
+            onReset={onChartSettingsReset}
+            onFitContent={onFitContent}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Inline gear + popover that signals "open" to ChartPanel via a body data
+ *  attribute so the chart-level keyboard handler can early-return while the
+ *  popover has focus. */
+function ChartSettingsButtonWithPopover({
+  settings,
+  onPatch,
+  onReset,
+  onFitContent,
+}: {
+  settings: ChartSettingsState;
+  onPatch: (p: Partial<ChartSettingsState>) => void;
+  onReset: () => void;
+  onFitContent: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (open) document.body.dataset.chartSettingsOpen = '1';
+    else delete document.body.dataset.chartSettingsOpen;
+    return () => {
+      delete document.body.dataset.chartSettingsOpen;
+    };
+  }, [open]);
+  return (
+    <div className="relative">
+      <ChartSettingsButton
+        ref={buttonRef}
+        open={open}
+        onClick={() => setOpen((o) => !o)}
+      />
+      <ChartSettingsPopover
+        open={open}
+        onClose={() => setOpen(false)}
+        settings={settings}
+        onPatch={onPatch}
+        onReset={onReset}
+        anchorRef={buttonRef}
+        onFitContent={onFitContent}
+        align="right"
+      />
     </div>
   );
 }
@@ -697,49 +783,6 @@ function RenkoChip({
   );
 }
 
-function MoreMenu({ onFitContent }: { onFitContent: () => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-label="More options"
-        aria-expanded={open}
-        className="focus-ring inline-flex h-full px-2 items-center justify-center text-ink-faint transition hover:text-ink"
-      >
-        <MoreHorizontal aria-hidden className="h-4 w-4" />
-      </button>
-
-      {open && (
-        <ul className="absolute right-0 top-full z-30 mt-1 min-w-[120px] rounded-lg border border-line bg-surface-1 py-1 shadow-2xl">
-          <li>
-            <button
-              onClick={() => {
-                onFitContent();
-                setOpen(false);
-              }}
-              className="block w-full px-3 py-1.5 text-left text-xs font-medium text-ink-muted transition hover:bg-surface-2 hover:text-ink"
-            >
-              Fit Content
-            </button>
-          </li>
-        </ul>
-      )}
-    </div>
-  );
-}
-
 /** Grid layout chip — icon only, opens a dropdown with 1/2/4/6 selector. */
 function GridChip({
   value,
@@ -840,6 +883,47 @@ function GridChip({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Toolbar mount for the LayoutSwitcher popover. Sets the `body` flag so
+ *  the chart-level keyboard handler can early-return while the popover
+ *  has focus, and returns focus to the gear button on close. */
+function LayoutSwitcherToolbarMount({
+  layout,
+  onChange,
+  chartType,
+}: {
+  layout: Layout;
+  onChange: (next: Layout) => void;
+  chartType: 'candlestick' | 'heikinAshi' | 'renko';
+}) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (open) document.body.dataset.layoutSwitcherOpen = '1';
+    else delete document.body.dataset.layoutSwitcherOpen;
+    return () => {
+      delete document.body.dataset.layoutSwitcherOpen;
+    };
+  }, [open]);
+  return (
+    <div className="relative">
+      <LayoutSwitcherButton
+        ref={buttonRef}
+        layout={layout}
+        open={open}
+        onClick={() => setOpen((o) => !o)}
+      />
+      <LayoutSwitcher
+        open={open}
+        onOpenChange={setOpen}
+        layout={layout}
+        onChange={onChange}
+        multiPaneDisabled={chartType === 'renko'}
+        anchorRef={buttonRef}
+      />
     </div>
   );
 }
@@ -1000,8 +1084,7 @@ export function IndicatorChip({
           {CUSTOM_INDICATORS.map((ind) => (
             <MenuItem
               key={ind.id}
-              active={activeIds.includes(ind.id)}
-              onClick={() => onToggle(ind.id)}
+              onClick={() => { onToggle(ind.id); setOpen(false); }}
             >
               {ind.name}
             </MenuItem>

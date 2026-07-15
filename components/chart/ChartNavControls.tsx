@@ -49,7 +49,7 @@ export function ChartNavControls({
   return (
     <div
       // Floats well clear of the time-axis strip at the base of the canvas.
-      className="pointer-events-auto absolute bottom-16 left-1/2 z-[5] flex -translate-x-1/2 items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/chart:opacity-100 focus-within:opacity-100"
+      className="pointer-events-auto absolute bottom-16 left-1/2 z-[5] flex -translate-x-1/2 items-center gap-2 opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100"
       // Chart canvas sits underneath — keep clicks from panning the chart.
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}

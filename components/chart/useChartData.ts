@@ -316,7 +316,7 @@ export function useChartData(
           let paneIndex = 0;
           if (hasSeparate) {
             const pane = chart.addPane();
-            pane.setHeight(150);
+            pane.setStretchFactor(250);
             paneIndex = pane.paneIndex();
             panes.set(key, pane);
             chart.priceScale('right', paneIndex).applyOptions({
@@ -328,6 +328,9 @@ export function useChartData(
             });
             if (!styledPanes) {
               try {
+                const mainPane = chart.panes?.()?.[0];
+                if (mainPane) mainPane.setStretchFactor(1000);
+                
                 chart.applyOptions({
                   layout: {
                     panes: {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ChartRefs } from './refs';
 import type { ChartApi } from './types';
 import type { Time, MouseEventParams } from 'lightweight-charts';
@@ -7,10 +7,13 @@ export function useChartApi(
   refs: ChartRefs,
   onReady?: (api: ChartApi) => void
 ) {
-  useEffect(() => {
-    if (!onReady) return;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
-    onReady({
+  useEffect(() => {
+    if (!onReadyRef.current) return;
+
+    onReadyRef.current({
       fitContent: () => refs.chartRef.current?.timeScale().fitContent(),
       timeToX: (t) => {
         const c = refs.chartRef.current;
@@ -86,5 +89,5 @@ export function useChartApi(
         return () => c.unsubscribeCrosshairMove(handler);
       },
     });
-  }, [refs, onReady]);
+  }, [refs]);
 }

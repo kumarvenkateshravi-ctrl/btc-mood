@@ -5,7 +5,6 @@ import TradeHistory from './trade/TradeHistory';
 import BacktestStats from './trade/BacktestStats';
 import BacktestPanel from './BacktestPanel';
 import AlertsPanel from './AlertsPanel';
-import ConfluenceRibbon from './ConfluenceRibbon';
 import { type ActiveIndicator } from './trade/IndicatorPicker';
 import { type IndicatorDef } from '@/lib/indicatorLibrary';
 import { type Candle, type Timeframe, TIMEFRAMES } from '@/lib/types';
@@ -36,14 +35,14 @@ export default function BottomDock({
   selected: Timeframe;
   onSelectTf: (tf: Timeframe) => void;
 }) {
-  type TabId = 'confluence' | 'trades' | 'stats' | 'backtest' | 'alerts';
-  const [activeTab, setActiveTab] = useState<TabId>('confluence');
+  type TabId = 'trades' | 'stats' | 'backtest' | 'alerts';
+  const [activeTab, setActiveTab] = useState<TabId>('trades');
 
   // Restore the last-open tab (client-only, after mount to stay SSR-safe).
   useEffect(() => {
     try {
       const saved = localStorage.getItem('bottomDockTab') as TabId | null;
-      if (saved && ['confluence', 'trades', 'stats', 'backtest', 'alerts'].includes(saved)) {
+      if (saved && ['trades', 'stats', 'backtest', 'alerts'].includes(saved)) {
         setActiveTab(saved);
       }
     } catch {}
@@ -78,7 +77,6 @@ export default function BottomDock({
   }, []);
 
   const tabs = [
-    { id: 'confluence', label: 'Confluence' },
     { id: 'trades', label: 'Trades' },
     { id: 'stats', label: 'Stats' },
     { id: 'backtest', label: 'Backtest' },
@@ -124,15 +122,6 @@ export default function BottomDock({
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-base p-4">
-        {activeTab === 'confluence' && (
-          <ConfluenceRibbon
-            candlesByTf={candlesByTf}
-            timeframes={TIMEFRAMES}
-            selected={selected}
-            snapshots={snapshots}
-            onSelectTf={onSelectTf}
-          />
-        )}
         {activeTab === 'trades' && <TradeHistory />}
         {activeTab === 'stats' && <BacktestStats />}
         {activeTab === 'backtest' && <BacktestPanel tf={tf} candles={candles} />}

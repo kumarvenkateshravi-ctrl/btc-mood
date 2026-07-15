@@ -1,9 +1,9 @@
 'use client';
 
-// Replay Training Report — the score card shown when a replay session with
-// trades ends. Deliberate practice needs a grade, not just a movie.
-
-import { GraduationCap, X } from 'lucide-react';
+import { GraduationCap, Target, X } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { cx } from '@/components/ui/util';
 import type { TrainingReport } from '@/lib/replay/trainingReport';
 
 const GRADE_STYLE: Record<TrainingReport['grade'], string> = {
@@ -15,8 +15,8 @@ const GRADE_STYLE: Record<TrainingReport['grade'], string> = {
 };
 
 function money(n: number): string {
-  const sign = n > 0 ? '+' : '';
-  return `${sign}${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const sign = n > 0 ? '+' : n < 0 ? '-' : '';
+  return `${sign}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 export default function TrainingReportModal({
@@ -27,73 +27,74 @@ export default function TrainingReportModal({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-[380px] rounded-xl border border-line bg-surface-1 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <span className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-            <GraduationCap className="h-4 w-4 text-accent" />
-            Replay Complete
-          </span>
-          <button onClick={onClose} aria-label="Close" className="focus-ring rounded p-1 text-ink-faint transition hover:text-ink">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-base/65 p-4 backdrop-blur-sm" role="dialog" aria-label="Replay training report">
+      <div className="elev-2 w-full max-w-xl rounded-2xl bg-surface-2">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
+                <GraduationCap className="h-4 w-4 text-accent" />
+                Replay Review
+              </span>
+              <Badge tone="accent">Practice score</Badge>
+            </div>
+            <p className="mt-1 text-[12px] text-ink-faint">Grade the drill, then pick one thing to improve next.</p>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-ink-faint transition hover:bg-surface-3 hover:text-ink">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex items-center gap-4 px-4 py-4">
-          <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border text-3xl font-bold ${GRADE_STYLE[report.grade]}`}>
-            {report.grade}
+        <div className="grid gap-4 px-5 py-5 md:grid-cols-[0.75fr_1.25fr]">
+          <div className="rounded-xl border border-line bg-base p-4 text-center">
+            <div className={cx('mx-auto flex h-20 w-20 items-center justify-center rounded-2xl border text-4xl font-bold', GRADE_STYLE[report.grade])}>
+              {report.grade}
+            </div>
+            <p className="mt-3 text-[13px] leading-snug text-ink-muted">{report.gradeNote}</p>
           </div>
-          <p className="text-[13px] leading-snug text-ink-muted">{report.gradeNote}</p>
+
+          <div className="grid grid-cols-3 gap-2">
+            <Metric label="Trades" value={String(report.trades)} />
+            <Metric label="Win rate" value={`${report.winRate}%`} />
+            <Metric label="P/L" value={money(report.totalPnl)} tone={report.totalPnl >= 0 ? 'bull' : 'bear'} />
+            <Metric label="Payoff" value={report.payoffRatio != null ? `${report.payoffRatio.toFixed(1)}R` : 'N/A'} />
+            <Metric label="Max DD" value={money(report.maxDrawdown)} tone="bear" />
+            <Metric label="Duration" value={`${report.durationBars} bars`} />
+            <Metric label="Best" value={money(report.bestTrade)} tone="bull" />
+            <Metric label="Worst" value={money(report.worstTrade)} tone="bear" />
+            <Metric label="W / L" value={`${report.wins} / ${report.losses}`} />
+          </div>
         </div>
 
-        <dl className="grid grid-cols-3 gap-x-4 gap-y-3 border-t border-line px-4 py-4 font-mono text-[13px] tabular-nums">
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">Trades</dt>
-            <dd className="text-ink">{report.trades}</dd>
+        <div className="mx-5 rounded-xl border border-line bg-base p-4">
+          <div className="flex items-center gap-2 text-[12px] font-semibold text-ink">
+            <Target className="h-4 w-4 text-accent" />
+            Next drill focus
           </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">Win rate</dt>
-            <dd className="text-ink">{report.winRate}%</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">P&L</dt>
-            <dd className={report.totalPnl >= 0 ? 'text-bull-bright' : 'text-bear-bright'}>{money(report.totalPnl)}</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">Payoff</dt>
-            <dd className="text-ink">{report.payoffRatio != null ? `${report.payoffRatio.toFixed(1)}R` : '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">Max DD</dt>
-            <dd className="text-bear-bright">{report.maxDrawdown.toLocaleString(undefined, { maximumFractionDigits: 2 })}</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">Duration</dt>
-            <dd className="text-ink">{report.durationBars} bars</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">Best</dt>
-            <dd className="text-bull-bright">{money(report.bestTrade)}</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">Worst</dt>
-            <dd className="text-bear-bright">{money(report.worstTrade)}</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-sans uppercase text-ink-faint">W / L</dt>
-            <dd className="text-ink">{report.wins} / {report.losses}</dd>
-          </div>
-        </dl>
+          <p className="mt-2 text-[13px] leading-snug text-ink-muted">{focusFromReport(report)}</p>
+        </div>
 
-        <div className="border-t border-line px-4 py-3 text-right">
-          <button
-            onClick={onClose}
-            className="focus-ring rounded-md bg-accent/15 px-4 py-1.5 text-[13px] font-semibold text-ink transition hover:bg-accent/25"
-          >
-            Close
-          </button>
+        <div className="flex justify-end px-5 py-4">
+          <Button onClick={onClose} variant="solid">Done</Button>
         </div>
       </div>
     </div>
   );
+}
+
+function Metric({ label, value, tone }: { label: string; value: string; tone?: 'bull' | 'bear' }) {
+  return (
+    <div className="rounded-lg border border-line bg-base p-3">
+      <dt className="text-[10px] font-sans uppercase text-ink-faint">{label}</dt>
+      <dd className={cx('mt-1 font-mono text-[13px] tabular-nums', tone === 'bull' ? 'text-bull-bright' : tone === 'bear' ? 'text-bear-bright' : 'text-ink')}>{value}</dd>
+    </div>
+  );
+}
+
+function focusFromReport(report: TrainingReport): string {
+  if (report.trades === 0) return 'Pick one clean setup and commit to the full replay, even if the best action is no trade.';
+  if (report.winRate < 40) return 'Wait for confirmation before entering. Your next drill is about selectivity, not speed.';
+  if (report.payoffRatio != null && report.payoffRatio < 1) return 'Protect asymmetry. Let winners reach the planned target or tighten the invalidation sooner.';
+  if (report.totalPnl < 0) return 'Review the first losing trade and define what would have invalidated it earlier.';
+  return 'Repeat the same setup criteria and compare whether the process stays stable across a new random day.';
 }

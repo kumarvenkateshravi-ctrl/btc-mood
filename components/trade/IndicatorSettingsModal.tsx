@@ -181,6 +181,57 @@ export default function IndicatorSettingsModal({
 }: IndicatorSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('Inputs');
   const [openColorPickerId, setOpenColorPickerId] = useState<string | null>(null);
+
+  // Dragging state
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const positionRef = useRef({ x: 0, y: 0 });
+  const headerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let initialX = 0;
+    let initialY = 0;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      initialX = positionRef.current.x;
+      initialY = positionRef.current.y;
+      header.setPointerCapture(e.pointerId);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      positionRef.current = { x: initialX + dx, y: initialY + dy };
+      setPosition(positionRef.current);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      isDragging = false;
+      try { header.releasePointerCapture(e.pointerId); } catch {}
+    };
+
+    header.addEventListener('pointerdown', onPointerDown);
+    header.addEventListener('pointermove', onPointerMove);
+    header.addEventListener('pointerup', onPointerUp);
+    header.addEventListener('pointercancel', onPointerUp);
+
+    return () => {
+      header.removeEventListener('pointerdown', onPointerDown);
+      header.removeEventListener('pointermove', onPointerMove);
+      header.removeEventListener('pointerup', onPointerUp);
+      header.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, []);
   
   // Initialize state from existing settings or defaults
   const [inputsState, setInputsState] = useState<IndicatorSettings['inputs']>(() => {
@@ -248,6 +299,30 @@ export default function IndicatorSettingsModal({
   const updateValuesInStatusLine = (val: boolean) => {
     setValuesInStatusLine(val);
     notifySave(inputsState, stylesState, visibilityState, labelsOnPriceScale, val);
+  };
+
+  const resetToDefaults = () => {
+    const defaultInputs: IndicatorSettings['inputs'] = {};
+    indicatorDef.inputs?.forEach((inp) => {
+      defaultInputs[inp.id] = inp.default;
+    });
+
+    const defaultStyles: IndicatorSettings['styles'] = {};
+    indicatorDef.styles?.forEach((st) => {
+      defaultStyles[st.id] = { color: st.color, thickness: st.thickness, lineStyle: st.lineStyle, display: st.display };
+    });
+
+    const defaultVisibility = {
+      ticks: true, seconds: true, minutes: true, hours: true, days: true, weeks: true, months: true, ranges: true,
+    };
+
+    setInputsState(defaultInputs);
+    setStylesState(defaultStyles);
+    setVisibilityState(defaultVisibility);
+    setLabelsOnPriceScale(true);
+    setValuesInStatusLine(true);
+
+    notifySave(defaultInputs, defaultStyles, defaultVisibility, true, true);
   };
 
   const handleCancel = () => {
@@ -453,9 +528,13 @@ export default function IndicatorSettingsModal({
       <div 
         ref={modalRef}
         className="pointer-events-auto flex w-[400px] max-h-full flex-col overflow-hidden rounded-lg bg-[#1e222d] text-[13px] text-[#d1d4dc] shadow-[0_2px_4px_rgba(0,0,0,0.5),0_16px_24px_rgba(0,0,0,0.5)] border border-[#434651]"
+        style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <div 
+          ref={headerRef}
+          className="flex items-center justify-between px-5 pt-4 pb-2 select-none cursor-grab active:cursor-grabbing"
+        >
           <h2 className="text-xl font-bold text-white tracking-wide">{indicatorDef.name}</h2>
           <button onClick={onClose} aria-label="Close" className="focus-ring rounded p-1 text-[#787b86] hover:text-[#d1d4dc] transition-colors">
             <X size={24} strokeWidth={1.2} />
@@ -776,10 +855,14 @@ export default function IndicatorSettingsModal({
                 };
                 localStorage.setItem('indicator_defaults', JSON.stringify(defaultsObj));
                 e.target.value = 'defaults';
+              } else if (e.target.value === 'reset_settings') {
+                resetToDefaults();
+                e.target.value = 'defaults';
               }
             }}
           >
-            <option value="defaults">Defaults</option>
+            <option value="defaults" style={{ display: 'none' }}>Defaults</option>
+            <option value="reset_settings">Reset settings</option>
             <option value="save_as_default">Save as default</option>
           </select>
           <div className="flex gap-2">

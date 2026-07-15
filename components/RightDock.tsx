@@ -1,14 +1,14 @@
 'use client';
 
-import { Gauge, Radar, Waves, Cpu, type LucideIcon } from 'lucide-react';
+import { Gauge, Radar, Waves, ScanLine, type LucideIcon } from 'lucide-react';
 
-export type RightPanelId = 'mood' | 'signals' | 'orderflow' | 'strategy';
+export type RightPanelId = 'mood' | 'signals' | 'orderflow' | 'scanner';
 
 const ITEMS: { id: RightPanelId; label: string; Icon: LucideIcon }[] = [
   { id: 'mood', label: 'Mood', Icon: Gauge },
   { id: 'signals', label: 'Signals', Icon: Radar },
   { id: 'orderflow', label: 'Order Flow', Icon: Waves },
-  { id: 'strategy', label: 'Technical Scanner', Icon: Cpu },
+  { id: 'scanner', label: 'Scanner', Icon: ScanLine },
 ];
 
 /**
@@ -51,3 +51,5 @@ export default function RightDock({
     </div>
   );
 }
+
+

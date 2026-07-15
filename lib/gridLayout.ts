@@ -1,86 +1,139 @@
 // Multi-pane grid layout — pure functions, no React, no DOM.
-// The grid layout picker lets the user pick 1/2/4/6 panes; each pane
-// shows a different timeframe for the active symbol. The CSS grid
-// `data-count` attribute picks the column count; this module decides
-// (a) which timeframes fill the panes and (b) how to persist them.
+// The layout switcher lets the user pick from three modes:
+//   - single       : one full-width chart (default)
+//   - multi-chart  : N independent Chart instances laid out as a grid
+//   - multi-pane   : one Chart with N LWC panes stacked vertically
+// The (mode, count) pair is the key into LAYOUT_CONFIGS and the unit of
+// persistence. Sync flags control whether range / crosshair / date range
+// propagate across cells (multi-chart) or panes (multi-pane — LWC
+// does this for free, so the flags are advisory in that mode).
 
 import type { Timeframe } from './types';
 
-// btc-mood currently exposes 6 timeframes. 1/2/4 panes fit naturally;
-// 6 fills the full set. 8+ would require extending TIMEFRAMES first —
-// keep the cap at 6 until then.
-export const GRID_COUNTS = [1, 2, 4, 6] as const;
-export type GridCount = (typeof GRID_COUNTS)[number];
+// v1 only supports 1, 2, or 4. Higher counts (8/16) are exposed in the
+// UI as "coming soon" with a lock icon.
+export const LAYOUT_COUNTS = [1, 2, 4] as const;
+export type LayoutCount = (typeof LAYOUT_COUNTS)[number];
 
-export const DEFAULT_GRID_COUNT: GridCount = 1;
+export type LayoutMode = 'single' | 'multi-chart' | 'multi-pane';
 
-// Default timeframe assignment per count. The first entry is always
-// the user's currently-selected TF so the grid feels connected to the
-// single-chart view. Excess entries follow vardhan's "fill in
-// adjacent higher TFs first" pattern.
-const DEFAULT_TFS_BY_COUNT: Record<GridCount, Timeframe[]> = {
-  1: ['15m'],
-  2: ['15m', '1h'],
-  4: ['15m', '1h', '4h', '1d'],
-  6: ['5m', '15m', '30m', '1h', '4h', '1d'],
+export interface LayoutSync {
+  /** Always on in v1 (single-symbol app). Surfaced for future per-cell symbol. */
+  symbol: boolean;
+  /** All cells / panes use the active TF in v1. */
+  interval: boolean;
+  /** When on, crosshair moves across all cells/panes. Default false. */
+  crosshair: boolean;
+  /** When on, the time scale (pan/zoom) is synced across all cells. Default false. */
+  time: boolean;
+  /** When on, the visible date range is shared. Default false. */
+  dateRange: boolean;
+}
+
+export interface Layout {
+  mode: LayoutMode;
+  count: LayoutCount;
+  sync: LayoutSync;
+}
+
+export interface LayoutConfig {
+  count: LayoutCount;
+  gridColsClass: string;
+  render: 'single' | 'multi-chart' | 'multi-pane';
+  label: string;
+  /** Thumbnail preview: rows × cols grid of filled cells. */
+  thumbnail: { rows: number; cols: number; filled: boolean[] };
+}
+
+/** Only valid (mode, count) combinations for v1. */
+export const LAYOUT_CONFIGS: Record<string, LayoutConfig> = {
+  'single::1': {
+    count: 1, gridColsClass: 'grid-cols-1', render: 'single',
+    label: 'Single chart',
+    thumbnail: { rows: 1, cols: 1, filled: [true] },
+  },
+  'multi-chart::2': {
+    count: 2, gridColsClass: 'grid-cols-2', render: 'multi-chart',
+    label: '2 charts side-by-side',
+    thumbnail: { rows: 1, cols: 2, filled: [true, true] },
+  },
+  'multi-chart::4': {
+    count: 4, gridColsClass: 'grid-cols-2', render: 'multi-chart',
+    label: '4 charts (2×2)',
+    thumbnail: { rows: 2, cols: 2, filled: [true, true, true, true] },
+  },
+  'multi-pane::2': {
+    count: 2, gridColsClass: 'grid-cols-1', render: 'multi-pane',
+    label: '2 panes stacked',
+    thumbnail: { rows: 2, cols: 1, filled: [true, true] },
+  },
+  'multi-pane::4': {
+    count: 4, gridColsClass: 'grid-cols-1', render: 'multi-pane',
+    label: '4 panes stacked',
+    thumbnail: { rows: 4, cols: 1, filled: [true, true, true, true] },
+  },
 };
 
-// CSS class names emitted as the `data-count` attribute on the grid
-// root. Tailwind doesn't support dynamic class names in `safelist`
-// without extra config, so we emit literal class strings here.
-export const GRID_COLS_CLASS: Record<GridCount, string> = {
-  1: 'grid-cols-1',
-  2: 'grid-cols-1 sm:grid-cols-2',
-  4: 'grid-cols-2',
-  6: 'grid-cols-2 lg:grid-cols-3',
+export const DEFAULT_LAYOUT: Layout = {
+  mode: 'single',
+  count: 1,
+  sync: {
+    symbol: true,
+    interval: true,
+    crosshair: false,
+    time: false,
+    dateRange: false,
+  },
 };
 
-/** True iff the count is one of the allowed values. */
-export function isGridCount(n: number): n is GridCount {
-  return (GRID_COUNTS as readonly number[]).includes(n);
+export function isLayoutCount(n: number): n is LayoutCount {
+  return (LAYOUT_COUNTS as readonly number[]).includes(n);
+}
+
+export function isLayoutMode(s: string): s is LayoutMode {
+  return s === 'single' || s === 'multi-chart' || s === 'multi-pane';
+}
+
+export function layoutConfigKey(mode: LayoutMode, count: LayoutCount): string {
+  return `${mode}::${count}`;
+}
+
+export function getLayoutConfig(mode: LayoutMode, count: LayoutCount): LayoutConfig | null {
+  return LAYOUT_CONFIGS[layoutConfigKey(mode, count)] ?? null;
 }
 
 /**
- * Build the ordered list of timeframes for a given count. Honors the
- * currently-selected TF (pinned in slot 0) and fills the rest with
- * the count's default ladder.
+ * Timeframe assignment for multi-chart mode. Honors the user's selected
+ * TF in slot 0 and fills the rest with the count's default ladder.
  */
-export function tfsForCount(count: GridCount, selected: Timeframe): Timeframe[] {
-  const defaults = DEFAULT_TFS_BY_COUNT[count];
-  // If the user is already looking at a TF in the default ladder,
-  // use the default ladder as-is so cells stay grouped logically.
-  if (defaults.includes(selected)) return defaults.slice();
-  // Otherwise pin `selected` to slot 0 and rotate the rest, dropping
-  // duplicates so the cell count stays exact.
+export function tfsForCount(count: LayoutCount, selected: Timeframe): Timeframe[] {
+  const defaults: Record<LayoutCount, Timeframe[]> = {
+    1: ['15m'],
+    2: ['15m', '1h'],
+    4: ['15m', '1h', '4h', '1d'],
+  };
+  const ladder = defaults[count];
+  if (ladder.includes(selected)) return ladder.slice();
   const out: Timeframe[] = [selected];
-  for (const tf of defaults) {
+  for (const tf of ladder) {
     if (out.length >= count) break;
     if (!out.includes(tf)) out.push(tf);
   }
-  // If we still don't have enough (e.g. count=6 but only 6 distinct
-  // TFs total), pad with the highest available TF.
   while (out.length < count) {
-    const last = out[out.length - 1];
-    out.push(last);
+    out.push(out[out.length - 1] ?? selected);
   }
   return out;
 }
 
-/**
- * Given a previous TF assignment and a new count, return the
- * closest valid TF list — preserve as many of the previous panes as
- * possible, falling back to defaults for slots that don't fit.
- */
+/** Reconcile a previous TF assignment to a new count. */
 export function reconcileGridTfs(
   previous: Timeframe[],
-  count: GridCount,
+  count: LayoutCount,
   selected: Timeframe,
 ): Timeframe[] {
   if (previous.length === count) return previous.slice();
   const defaults = tfsForCount(count, selected);
   if (previous.length === 0) return defaults;
-  // Keep as many previous cells as fit, then fill the rest from the
-  // default ladder.
   const out: Timeframe[] = previous.slice(0, count);
   for (const tf of defaults) {
     if (out.length >= count) break;
@@ -92,62 +145,201 @@ export function reconcileGridTfs(
   return out;
 }
 
-const STORAGE_KEY = 'btc-mood:chart-grid:v1';
-const SCHEMA_VERSION = 1;
-
-export interface PersistedGrid {
-  count: GridCount;
-  tfs: Timeframe[];
-}
-
-interface StoredGrid {
-  schemaVersion: number;
-  count: GridCount;
-  tfs: Timeframe[];
+/**
+ * In v1, all panes in multi-pane mode show the same TF as the active
+ * chart. The signature returns N copies of `selected` so the caller
+ * can use a per-pane lookup if the UI later exposes a per-pane picker.
+ */
+export function tfsForPanes(count: LayoutCount, selected: Timeframe): Timeframe[] {
+  return Array.from({ length: count }, () => selected);
 }
 
 /**
- * Load the persisted grid from localStorage. Returns null on any
- * failure (missing key, parse error, schema mismatch, invalid shape).
- * Schema-version bumps intentionally discard stale state.
+ * Returns whether the named sync behavior is active for a given layout.
+ * In multi-pane mode, time / crosshair / dateRange are always synced
+ * (LWC does it for free); the user flag is advisory only.
  */
-export function loadGrid(): PersistedGrid | null {
+export function isSyncActive(layout: Layout, key: keyof Omit<LayoutSync, 'symbol' | 'interval'>): boolean {
+  if (layout.mode === 'multi-pane') return true;
+  return layout.sync[key];
+}
+
+// ---------------- v1 back-compat aliases ----------------
+// These keep the old (pre-Layout) consumers compiling while we migrate
+// them to the new layout primitives. Safe to delete in a follow-up.
+
+/** @deprecated use LAYOUT_COUNTS */
+export const GRID_COUNTS = LAYOUT_COUNTS;
+/** @deprecated use LayoutCount */
+export type GridCount = LayoutCount;
+/** @deprecated use DEFAULT_LAYOUT */
+export const DEFAULT_GRID_COUNT: LayoutCount = 1;
+
+/** @deprecated use LAYOUT_CONFIGS[*].gridColsClass */
+export const GRID_COLS_CLASS: Record<LayoutCount, string> = (() => {
+  const out: Partial<Record<LayoutCount, string>> = {};
+  for (const cfg of Object.values(LAYOUT_CONFIGS)) {
+    out[cfg.count] = cfg.gridColsClass;
+  }
+  return out as Record<LayoutCount, string>;
+})();
+
+/** @deprecated use loadLayout */
+export function loadGrid(): { count: LayoutCount; tfs: import('./types').Timeframe[] } | null {
+  const { layout } = loadLayout();
+  if (layout.mode === 'single') {
+    return { count: 1, tfs: tfsForCount(1, '15m') };
+  }
+  if (layout.mode === 'multi-chart') {
+    return { count: layout.count, tfs: tfsForCount(layout.count, '15m') };
+  }
+  return { count: layout.count, tfs: tfsForPanes(layout.count, '15m') };
+}
+
+/** @deprecated use saveLayout */
+export function saveGrid(state: { count: LayoutCount; tfs: import('./types').Timeframe[] }): void {
+  const mode: LayoutMode = state.count === 1 ? 'single' : 'multi-chart';
+  saveLayout({ mode, count: state.count, sync: DEFAULT_LAYOUT.sync });
+}
+
+// ---------------- persistence (v2 with v1 migrate) ----------------
+
+const STORAGE_KEY_V2 = 'btc-mood:chart-grid:v2';
+const STORAGE_KEY_V1 = 'btc-mood:chart-grid:v1';
+const MIGRATION_FLAG_KEY = 'btc-mood:chart-grid:v2-migrated';
+const SCHEMA_VERSION_V2 = 2;
+
+interface StoredV2 {
+  schemaVersion: number;
+  mode: LayoutMode;
+  count: LayoutCount;
+  sync: LayoutSync;
+}
+
+interface StoredV1 {
+  schemaVersion: number;
+  count: number;
+  tfs: unknown[];
+}
+
+const VALID_TFS = new Set<Timeframe>(['5m', '15m', '30m', '1h', '4h', '1d']);
+function isTimeframe(s: string): s is Timeframe {
+  return VALID_TFS.has(s as Timeframe);
+}
+
+function isValidV2(v: unknown): v is StoredV2 {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as Partial<StoredV2>;
+  if (o.schemaVersion !== SCHEMA_VERSION_V2) return false;
+  if (typeof o.mode !== 'string' || !isLayoutMode(o.mode)) return false;
+  if (typeof o.count !== 'number' || !isLayoutCount(o.count)) return false;
+  if (!o.sync || typeof o.sync !== 'object') return false;
+  const s = o.sync as unknown as Record<string, unknown>;
+  for (const k of ['symbol', 'interval', 'crosshair', 'time', 'dateRange'] as const) {
+    if (typeof s[k] !== 'boolean') return false;
+  }
+  // The (mode, count) pair must be a known config.
+  if (!getLayoutConfig(o.mode, o.count)) return false;
+  return true;
+}
+
+function migrateV1ToV2(v1: StoredV1): Layout | null {
+  // v1 had only 1/2/4/6 — fold 6 → 4.
+  let count: LayoutCount | null = null;
+  if (v1.count === 1) count = 1;
+  else if (v1.count === 2) count = 2;
+  else if (v1.count === 4) count = 4;
+  else if (v1.count === 6) count = 4;
+  if (count === null) return null;
+  const mode: LayoutMode = count === 1 ? 'single' : 'multi-chart';
+  return { mode, count, sync: { ...DEFAULT_LAYOUT.sync } };
+}
+
+function readJson(key: string): unknown {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    const v = parsed as Partial<StoredGrid>;
-    if (v.schemaVersion !== SCHEMA_VERSION) return null;
-    if (typeof v.count !== 'number' || !isGridCount(v.count)) return null;
-    if (!Array.isArray(v.tfs)) return null;
-    const tfs = v.tfs.filter(
-      (x): x is Timeframe => typeof x === 'string' && isTimeframe(x),
-    );
-    return { count: v.count, tfs };
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-export function saveGrid(state: PersistedGrid): void {
+function writeJson(key: string, value: unknown): void {
   if (typeof window === 'undefined') return;
   try {
-    const stored: StoredGrid = {
-      schemaVersion: SCHEMA_VERSION,
-      count: state.count,
-      tfs: state.tfs,
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Quota or disabled storage — silently drop.
+    /* quota / disabled */
   }
 }
 
-const VALID_TFS = new Set<Timeframe>([
-  '5m', '15m', '30m', '1h', '4h', '1d',
-]);
-function isTimeframe(s: string): s is Timeframe {
-  return VALID_TFS.has(s as Timeframe);
+function clearKey(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {}
+}
+
+/**
+ * Load the persisted layout. Returns the default when nothing valid is
+ * stored. Performs a one-time v1→v2 migration when applicable.
+ *
+ * @returns The layout and a `migrated` flag indicating whether a v1
+ * entry was just migrated to v2. The toast UI uses this to show the
+ * "new layout options available" hint once per user.
+ */
+export function loadLayout(): { layout: Layout; migrated: boolean } {
+  const empty = { layout: DEFAULT_LAYOUT, migrated: false };
+  if (typeof window === 'undefined') return empty;
+
+  const v2 = readJson(STORAGE_KEY_V2);
+  if (isValidV2(v2)) {
+    const { schemaVersion: _s, ...rest } = v2;
+    return { layout: rest, migrated: false };
+  }
+
+  const v1 = readJson(STORAGE_KEY_V1);
+  if (v1 && typeof v1 === 'object') {
+    const migrated = migrateV1ToV2(v1 as StoredV1);
+    if (migrated) {
+      saveLayout(migrated);
+      clearKey(STORAGE_KEY_V1);
+      return { layout: migrated, migrated: true };
+    }
+  }
+
+  return empty;
+}
+
+export function saveLayout(layout: Layout): void {
+  if (typeof window === 'undefined') return;
+  const stored: StoredV2 = {
+    schemaVersion: SCHEMA_VERSION_V2,
+    mode: layout.mode,
+    count: layout.count,
+    sync: layout.sync,
+  };
+  writeJson(STORAGE_KEY_V2, stored);
+}
+
+/**
+ * Marks the migration toast as "shown" so it only appears once per
+ * browser. Called by the layout-switcher mount effect.
+ */
+export function markMigrationToastShown(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(MIGRATION_FLAG_KEY, '1');
+  } catch {}
+}
+
+export function wasMigrationToastShown(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(MIGRATION_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
 }

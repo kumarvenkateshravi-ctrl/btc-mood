@@ -196,5 +196,7 @@ export function computeSqueezeMomentum(
     },
   ];
 
-  return { plots, signals };
+  const levels = [{ value: 0, color: 'rgba(255, 255, 255, 0.2)', lineStyle: 'solid' as const }];
+
+  return { plots, signals, levels };
 }

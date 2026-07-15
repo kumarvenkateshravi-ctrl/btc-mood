@@ -62,7 +62,51 @@ export default function DashboardPage() {
   const [chartType, setChartType] = useState<ChartType>('candlestick');
   const [symbol, setSymbol] = useState<CompareSymbol>(DEFAULT_COMPARE_SYMBOL);
   const [hydrated, setHydrated] = useState(false);
-  const [activeIndicatorIds, setActiveIndicatorIds] = useState<string[]>([]);
+  const [indicatorState, setIndicatorState] = useState<{ past: string[][], present: string[], future: string[][] }>({ past: [], present: [], future: [] });
+  const activeIndicatorIds = indicatorState.present;
+
+  const setActiveIndicatorIds = useCallback((action: string[] | ((prev: string[]) => string[])) => {
+    setIndicatorState((state) => {
+      const next = typeof action === 'function' ? action(state.present) : action;
+      if (next === state.present) return state;
+      return {
+        past: [...state.past, state.present].slice(-50),
+        present: next,
+        future: []
+      };
+    });
+  }, []);
+
+  const undoIndicators = useCallback(() => {
+    setIndicatorState((state) => {
+      if (state.past.length === 0) return state;
+      const previous = state.past[state.past.length - 1];
+      const newPast = state.past.slice(0, state.past.length - 1);
+      return { past: newPast, present: previous, future: [state.present, ...state.future] };
+    });
+  }, []);
+
+  const redoIndicators = useCallback(() => {
+    setIndicatorState((state) => {
+      if (state.future.length === 0) return state;
+      const next = state.future[0];
+      const newFuture = state.future.slice(1);
+      return { past: [...state.past, state.present], present: next, future: newFuture };
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) redoIndicators();
+        else undoIndicators();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        redoIndicators();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undoIndicators, redoIndicators]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [tab, setTab] = useState<'signals' | 'trade' | 'trades'>('signals');
   // Which right-rail panel is shown (null = collapsed). Driven by the far-right icon dock.
@@ -74,9 +118,11 @@ export default function DashboardPage() {
   );
 
   const toggleIndicator = useCallback((id: string) => {
-    setActiveIndicatorIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    const instanceId = `${id}::${Math.random().toString(36).slice(2, 8)}`;
+    setActiveIndicatorIds((prev) => [...prev, instanceId]);
+  }, []);
+  const removeIndicator = useCallback((id: string) => {
+    setActiveIndicatorIds((prev) => prev.filter((x) => x !== id));
   }, []);
   const clearIndicators = useCallback(() => setActiveIndicatorIds([]), []);
 
@@ -89,7 +135,7 @@ export default function DashboardPage() {
     }
     if (isCompareSymbol(cfg.symbol)) setSymbol(cfg.symbol);
     if ((TIMEFRAMES as string[]).includes(cfg.tf)) setSelected(cfg.tf as Timeframe);
-    setActiveIndicatorIds(cfg.indicatorIds.filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id)));
+    setActiveIndicatorIds(cfg.indicatorIds.map(id => id.includes('::') ? id : `${id}::default`).filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0])));
   }, []);
 
   const { activeIndicators, showVolume, toggleVolume, handleAdd: handleAddIndicator, handleRemove: handleRemoveIndicator, handleToggle: handleToggleIndicator } = useSharedIndicators();
@@ -103,15 +149,15 @@ export default function DashboardPage() {
     setSelected(init.tf);
     setChartType(init.type);
     if (init.indicators && init.indicators.length) {
-      setActiveIndicatorIds(init.indicators);
+      setActiveIndicatorIds(init.indicators.map(id => id.includes('::') ? id : `${id}::default`).filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0])));
     } else {
       try {
         const raw = localStorage.getItem(INDICATORS_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
-            const valid = parsed.filter(
-              (id) => typeof id === 'string' && CUSTOM_INDICATORS.some((d) => d.id === id),
+            const valid = parsed.map((id: string) => id.includes('::') ? id : `${id}::default`).filter(
+              (id) => typeof id === 'string' && CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0]),
             );
             if (valid.length) setActiveIndicatorIds(valid);
           }
@@ -291,6 +337,7 @@ export default function DashboardPage() {
                     ask={ask}
                     activeIndicatorIds={activeIndicatorIds}
                     onToggleIndicator={toggleIndicator}
+                    onRemoveIndicator={removeIndicator}
                     onClearIndicators={clearIndicators}
                     onLoadOlder={handleLoadOlder}
                     historyActive={historyCandles != null}

@@ -55,7 +55,6 @@ export function subscribeKlines(
   let ws: WebSocket | null = null;
   let closed = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let pingTimer: ReturnType<typeof setInterval> | null = null;
 
   const setStatus = (s: WSStatus) => onStatus?.(s);
 
@@ -138,22 +137,9 @@ export function subscribeKlines(
 
   connect();
 
-  // Light keep-alive: many browsers/proxies drop idle sockets. Binance
-  // ignores client pings, but sending a frame keeps the TCP path warm.
-  pingTimer = setInterval(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send('ping');
-      } catch {
-        // noop
-      }
-    }
-  }, 30000);
-
   return () => {
     closed = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (pingTimer) clearInterval(pingTimer);
     if (ws) {
       try {
         ws.close();
@@ -186,7 +172,6 @@ export function subscribeTrades(
   let ws: WebSocket | null = null;
   let closed = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let pingTimer: ReturnType<typeof setInterval> | null = null;
 
   const setStatus = (s: WSStatus) => onStatus?.(s);
 
@@ -241,16 +226,9 @@ export function subscribeTrades(
 
   connect();
 
-  pingTimer = setInterval(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send('ping'); } catch {}
-    }
-  }, 30000);
-
   return () => {
     closed = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (pingTimer) clearInterval(pingTimer);
     if (ws) {
       try { ws.close(); } catch {}
       ws = null;
@@ -334,7 +312,6 @@ function rawBookTickerConnection(
   let ws: WebSocket | null = null;
   let closed = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let pingTimer: ReturnType<typeof setInterval> | null = null;
 
   const setStatus = (s: WSStatus) => onStatus?.(s);
 
@@ -388,16 +365,9 @@ function rawBookTickerConnection(
 
   connect();
 
-  pingTimer = setInterval(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send('ping'); } catch {}
-    }
-  }, 30000);
-
   return () => {
     closed = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (pingTimer) clearInterval(pingTimer);
     if (ws) {
       try { ws.close(); } catch {}
       ws = null;

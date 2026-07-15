@@ -39,6 +39,8 @@ export function useChartFx(
     const start = Math.max(0, baseCandles.length - 600);
     for (let i = start; i < baseCandles.length; i++) {
       const b = baseCandles[i];
+      // Guard: null entries can appear transiently when old history is prepended.
+      if (b == null || !Number.isFinite(b.time as number)) continue;
       const top = s.priceToCoordinate(Math.max(b.open, b.close));
       const bot = s.priceToCoordinate(Math.min(b.open, b.close));
       const x = c.timeScale().timeToCoordinate(shiftTime(b.time as number));
@@ -63,6 +65,7 @@ export function useChartFx(
       return;
     }
     const last = candles[candles.length - 1];
+    if (last == null) return;
     const prev = prevCloseRef.current;
     prevCloseRef.current = last.close;
     if (prev == null || last.close === prev) return;

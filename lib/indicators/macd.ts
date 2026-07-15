@@ -97,5 +97,7 @@ export function computeMacd(
     { id: 'hist', title: 'Histogram', color: '#7b88a0', type: 'histogram', pane: 'separate', lineWidth: 4, data: histColored as IndicatorPlot['data'] },
   ];
 
-  return { plots, signals: neutralSignals(n) };
+  const levels = [{ value: 0, color: 'rgba(255, 255, 255, 0.2)', lineStyle: 'dashed' as const }];
+
+  return { plots, signals: neutralSignals(n), levels };
 }

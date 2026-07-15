@@ -65,7 +65,7 @@ export function useKeyboardShortcuts({
         onChartType('renko');
         e.preventDefault();
       } else if (k === 'g') {
-        const order: GridCount[] = [1, 2, 4, 6];
+        const order: GridCount[] = [1, 2, 4];
         const i = order.indexOf(gridCount);
         onGridCycle(order[(i + 1) % order.length]);
         e.preventDefault();

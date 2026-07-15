@@ -17,7 +17,7 @@ export interface MarketState {
 
 const ITEMS: { label: string; icon: LucideIcon; href?: string; badge?: string }[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/mycryptostack' },
-  { label: 'Market Scanner', icon: ScanLine },
+  { label: 'Technical Scanner', icon: ScanLine, href: '/technical-scanner', badge: 'IDE' },
   { label: 'Multi-Timeframe', icon: Layers, href: '/multi-timeframe' },
   { label: 'Stack Score', icon: Gauge, href: '/stack-score' },
   { label: 'Trade Setup', icon: Target, href: '/trade-setup' },
@@ -110,3 +110,4 @@ function FearGreed({ value }: { value: number }) {
     </div>
   );
 }
+

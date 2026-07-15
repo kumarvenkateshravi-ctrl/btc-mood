@@ -149,13 +149,14 @@ function GridCell({
     const results: Array<{ key: string; result: NonNullable<ReturnType<typeof CUSTOM_INDICATORS[number]['compute']>> }> = [];
     
     activeIndicatorIds.forEach((id) => {
-      const def = CUSTOM_INDICATORS.find((d) => d.id === id);
+      const baseId = id.split('::')[0];
+      const def = CUSTOM_INDICATORS.find((d) => d.id === baseId);
       if (!def) return;
       
       let savedSettings;
       try {
         const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
-        savedSettings = JSON.parse(defaultsStr)[id];
+        savedSettings = JSON.parse(defaultsStr)[baseId];
       } catch {}
       
       let result;

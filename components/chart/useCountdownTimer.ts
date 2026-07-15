@@ -3,8 +3,22 @@ import type { ChartRefs } from './refs';
 import type { ChartPalette } from '@/lib/chartTheme';
 import { getTfMinutes } from './types';
 
-export function useCountdownTimer(refs: ChartRefs, tf: string | undefined, palette: ChartPalette) {
+export function useCountdownTimer(
+  refs: ChartRefs,
+  tf: string | undefined,
+  palette: ChartPalette,
+  enabled: boolean = true,
+) {
   useEffect(() => {
+    if (!enabled) {
+      // Kill the card instantly when disabled.
+      const cardEl = refs.priceCardRef.current;
+      if (cardEl) {
+        // eslint-disable-next-line react-hooks/immutability
+        cardEl.style.display = 'none';
+      }
+      return;
+    }
     let countdownRaf = 0;
     const updateCountdown = () => {
       countdownRaf = requestAnimationFrame(updateCountdown);
@@ -61,5 +75,5 @@ export function useCountdownTimer(refs: ChartRefs, tf: string | undefined, palet
     return () => {
       if (countdownRaf) cancelAnimationFrame(countdownRaf);
     };
-  }, [refs, tf, palette]);
+  }, [refs, tf, palette, enabled]);
 }

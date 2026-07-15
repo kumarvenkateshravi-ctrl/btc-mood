@@ -72,10 +72,14 @@ export function useDaySeparators(
 
       const seenDays = new Set<number>();
       for (let i = 1; i < src.length; i++) {
-        const t = src[i].time as number;
+        const c = src[i];
+        const prevC = src[i - 1];
+        if (c == null || prevC == null || !Number.isFinite(c.time as number) || !Number.isFinite(prevC.time as number)) continue;
+        
+        const t = c.time as number;
         // UTC day number
         const dayNum = Math.floor(t / 86400);
-        const prevDayNum = Math.floor((src[i - 1].time as number) / 86400);
+        const prevDayNum = Math.floor((prevC.time as number) / 86400);
         if (dayNum !== prevDayNum && !seenDays.has(dayNum)) {
           seenDays.add(dayNum);
           const x = ts.timeToCoordinate(shiftTime(t) as Time);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useReducer } from 'react';
+import { useEffect, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 
 interface TradeOverlayProps {
@@ -35,17 +35,24 @@ const SL_COLOR = '#f5a623'; // amber
  * directly on the chart; Close is the pill's `✕`.
  */
 export function TradeOverlay(p: TradeOverlayProps) {
-  const [, bump] = useReducer((x: number) => x + 1, 0);
-  useEffect(() => {
-    if (!p.chart) return;
-    const ts = p.chart.timeScale();
-    const onRange = () => bump();
-    ts.subscribeVisibleLogicalRangeChange(onRange);
-    return () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
-  }, [p.chart]);
+  const [y, setY] = useState<number | null>(null);
 
-  const y = p.series?.priceToCoordinate(p.entryPrice) ?? null;
-  if (y == null) return null;
+  useEffect(() => {
+    if (!p.series) return;
+    let raf: number;
+    const update = () => {
+      const nextY = p.series?.priceToCoordinate(p.entryPrice) ?? null;
+      if (nextY !== null) {
+        const roundedY = Math.round(nextY);
+        setY((prev) => (prev !== roundedY ? roundedY : prev));
+      }
+      raf = requestAnimationFrame(update);
+    };
+    raf = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(raf);
+  }, [p.series, p.entryPrice]);
+
+  if (y === null) return null;
 
   const chip = 'h-6 rounded border border-line bg-surface-1/95 px-2 text-[11px] leading-none text-ink hover:bg-surface-2';
   const primary = 'h-6 rounded bg-accent px-2.5 text-[11px] font-semibold leading-none text-white hover:opacity-90';

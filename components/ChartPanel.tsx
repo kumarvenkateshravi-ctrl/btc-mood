@@ -69,6 +69,7 @@ interface ChartPanelProps {
   ask?: number | null;
   activeIndicatorIds: string[];
   onToggleIndicator: (id: string) => void;
+  onRemoveIndicator: (id: string) => void;
   onClearIndicators: () => void;
   /** Lazy-load older history for the selected timeframe. */
   onLoadOlder?: () => void;
@@ -133,6 +134,7 @@ export default function ChartPanel({
   ask = null,
   activeIndicatorIds,
   onToggleIndicator,
+  onRemoveIndicator,
   onClearIndicators,
   onLoadOlder,
   onDeepLoadHistory,
@@ -606,7 +608,7 @@ export default function ChartPanel({
         const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
         const defaultsObj = JSON.parse(defaultsStr);
         activeIndicatorIds.forEach(id => {
-          if (defaultsObj[id]) state[id] = defaultsObj[id];
+          if (defaultsObj[id.split('::')[0]]) state[id] = defaultsObj[id.split('::')[0]];
         });
       } catch {}
     }
@@ -621,8 +623,9 @@ export default function ChartPanel({
         const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
         const defaultsObj = JSON.parse(defaultsStr);
         activeIndicatorIds.forEach((id) => {
-          if (!next[id] && defaultsObj[id]) {
-            next[id] = defaultsObj[id];
+          const baseId = id.split('::')[0];
+          if (!next[id] && defaultsObj[baseId]) {
+            next[id] = defaultsObj[baseId];
             changed = true;
           }
         });
@@ -844,7 +847,7 @@ export default function ChartPanel({
     const results: Array<{ key: string; result: NonNullable<ReturnType<typeof CUSTOM_INDICATORS[number]['compute']>> }> = [];
     
     activeIndicatorIds.forEach((id) => {
-      const def = CUSTOM_INDICATORS.find((d) => d.id === id);
+      const def = CUSTOM_INDICATORS.find((d) => d.id === id.split('::')[0]);
       if (!def) return;
       
       let result;
@@ -1005,7 +1008,7 @@ export default function ChartPanel({
               onUpdateIndicatorSettings={(settings) => handleUpdateIndicatorSettings(primaryId, settings)}
               activeIndicatorIds={activeIndicatorIds}
               indicatorSettingsMap={indicatorSettings}
-              onRemoveIndicator={onToggleIndicator}
+              onRemoveIndicator={onRemoveIndicator}
               onUpdateIndicatorSettingsFor={handleUpdateIndicatorSettings}
               resetTick={resetTick}
             />

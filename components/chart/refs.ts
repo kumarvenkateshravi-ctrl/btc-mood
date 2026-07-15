@@ -75,8 +75,6 @@ export interface ChartRefs {
   // State setters / store setters (for effects that drive React state)
   setHover: (h: HoverPayload | null) => void;
   setHoverLine: Dispatch<SetStateAction<{ kind: OverlayKind; price: number; y: number } | null>>;
-  setTooltipPos: Dispatch<
-    SetStateAction<{ x: number; y: number; time?: number; hover: HoverPayload } | null>
-  >;
+  setTooltipPos: (pos: { x: number; y: number; time?: number; hover: HoverPayload } | null) => void;
   setIsScrolledBack: Dispatch<SetStateAction<boolean>>;
 }

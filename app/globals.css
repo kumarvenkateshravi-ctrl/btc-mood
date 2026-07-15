@@ -635,6 +635,13 @@ button.elev-1:hover {
   to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
 
+/* ---- Chart settings popover entry: subtle fade + 4px slide-down.
+   Mirrors the TradingView feel without being loud. ---- */
+@keyframes settingsPopoverIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ---- Native <dialog> resets so MDS styling takes full control ---- */
 dialog {
   color: inherit;

@@ -40,11 +40,12 @@ export function useSignalMarkers(
       let prev: (typeof result.signals)[number] = 'neutral';
       for (let i = 0; i < result.signals.length; i++) {
         const sig = result.signals[i];
-        if (!candles[i]) continue;
+        const c = candles[i];
+        if (c == null || !Number.isFinite(c.time as number)) continue;
         if (sig !== prev) {
           if (sig === 'buy') {
             markers.push({
-              time: shiftTime(candles[i].time as number),
+              time: shiftTime(c.time as number),
               position: 'belowBar',
               color: palette.markerBuy,
               shape: 'arrowUp',
@@ -52,7 +53,7 @@ export function useSignalMarkers(
             });
           } else if (sig === 'sell') {
             markers.push({
-              time: shiftTime(candles[i].time as number),
+              time: shiftTime(c.time as number),
               position: 'aboveBar',
               color: palette.markerSell,
               shape: 'arrowDown',
