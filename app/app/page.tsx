@@ -30,6 +30,7 @@ import RightDock, { type RightPanelId } from '@/components/RightDock';
 import { usePaperStore } from '@/lib/paperStore';
 import { deriveActivePosition } from '@/lib/trade/activePosition';
 import ActivePositionWidget from '@/components/trade/ActivePositionWidget';
+import WidgetsPanel, { DEFAULT_WIDGET_PREFS, type WidgetKey, type WidgetPrefs } from '@/components/WidgetsPanel';
 import { useDrawings, getDrawings, setDrawings } from '@/lib/drawings';
 import { useSharedIndicators } from '@/lib/useSharedIndicators';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -293,6 +294,20 @@ export default function DashboardPage() {
     livePosition && !replayCut.active && currentPrice != null
       ? deriveActivePosition(livePosition, currentPrice, Date.now())
       : null;
+  const [widgetPrefs, setWidgetPrefs] = useState<WidgetPrefs>(DEFAULT_WIDGET_PREFS);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('widgetPrefs');
+      if (raw) setWidgetPrefs({ ...DEFAULT_WIDGET_PREFS, ...JSON.parse(raw) });
+    } catch { /* ignore */ }
+  }, []);
+  const toggleWidget = useCallback((key: WidgetKey) => {
+    setWidgetPrefs((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem('widgetPrefs', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   const currentChange = ticker24h ? ticker24h.change : changes[selected];
   const mid = useMemo(
     () => (currentCandles.length > 0 ? currentCandles[currentCandles.length - 1].close : 0),
@@ -415,31 +430,36 @@ export default function DashboardPage() {
         {/* Right Data Rail — docked sibling so the chart reflows beside it
             (never overlaps the price scale / canvas controls). The far-right
             icon dock selects which panel is shown (one at a time). */}
-        {(rightPanel || activeView) && (
+        {rightPanel && (
           <aside className="hidden xl:flex w-[450px] shrink-0 border-l border-line bg-surface flex-col min-h-0 overflow-y-auto">
-            {activeView && livePosition && (
-              <div className="border-b border-line p-2.5">
-                <ActivePositionWidget
-                  view={activeView}
-                  onMoveBreakEven={() => paper.setPositionOverlay('sl', livePosition.entryPrice)}
-                  onClosePartial={(f) => paper.partialClose(symbol, f, currentPrice ?? livePosition.entryPrice)}
-                  onToggleTrailing={() => paper.toggleTrailingSl(symbol, !livePosition.trailingSl)}
-                  onCloseFull={() => paper.closePosition(currentPrice ?? livePosition.entryPrice, symbol)}
-                />
-              </div>
-            )}
             {rightPanel === 'mood' && (
-              <MoodStrip
-                symbol={symbol}
-                onSymbolChange={setSymbol}
-                status={status}
-                dataState={dataState}
-                price={currentPrice}
-                change={currentChange}
-                mood={mood}
-                snapshots={snapshots}
-                timeframes={TIMEFRAMES}
-              />
+              <>
+                <MoodStrip
+                  symbol={symbol}
+                  onSymbolChange={setSymbol}
+                  status={status}
+                  dataState={dataState}
+                  price={currentPrice}
+                  change={currentChange}
+                  mood={mood}
+                  snapshots={snapshots}
+                  timeframes={TIMEFRAMES}
+                />
+                {widgetPrefs.activeTrade && activeView && livePosition && (
+                  <div className="border-t border-line p-2.5">
+                    <ActivePositionWidget
+                      view={activeView}
+                      onMoveBreakEven={() => paper.setPositionOverlay('sl', livePosition.entryPrice)}
+                      onClosePartial={(f) => paper.partialClose(symbol, f, currentPrice ?? livePosition.entryPrice)}
+                      onToggleTrailing={() => paper.toggleTrailingSl(symbol, !livePosition.trailingSl)}
+                      onCloseFull={() => paper.closePosition(currentPrice ?? livePosition.entryPrice, symbol)}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            {rightPanel === 'widgets' && (
+              <WidgetsPanel prefs={widgetPrefs} onToggle={toggleWidget} hasActiveTrade={!!activeView} />
             )}
             {rightPanel === 'signals' && (
               <DashboardAside

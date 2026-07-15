@@ -1,14 +1,15 @@
 'use client';
 
-import { Gauge, Radar, Waves, ScanLine, type LucideIcon } from 'lucide-react';
+import { Gauge, Radar, Waves, ScanLine, Boxes, type LucideIcon } from 'lucide-react';
 
-export type RightPanelId = 'mood' | 'signals' | 'orderflow' | 'scanner';
+export type RightPanelId = 'mood' | 'signals' | 'orderflow' | 'scanner' | 'widgets';
 
 const ITEMS: { id: RightPanelId; label: string; Icon: LucideIcon }[] = [
   { id: 'mood', label: 'Mood', Icon: Gauge },
   { id: 'signals', label: 'Signals', Icon: Radar },
   { id: 'orderflow', label: 'Order Flow', Icon: Waves },
   { id: 'scanner', label: 'Scanner', Icon: ScanLine },
+  { id: 'widgets', label: 'Widgets', Icon: Boxes },
 ];
 
 /**
