@@ -27,6 +27,9 @@ import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
+import { usePaperStore } from '@/lib/paperStore';
+import { deriveActivePosition } from '@/lib/trade/activePosition';
+import ActivePositionWidget from '@/components/trade/ActivePositionWidget';
 import { useDrawings, getDrawings, setDrawings } from '@/lib/drawings';
 import { useSharedIndicators } from '@/lib/useSharedIndicators';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -281,6 +284,15 @@ export default function DashboardPage() {
   );
 
   const currentPrice = ticker24h ? ticker24h.price : prices[selected];
+
+  // Live active-position cockpit (right drawer). Hidden during replay —
+  // Bar Replay has its own isolated session HUD.
+  const paper = usePaperStore();
+  const livePosition = paper.position;
+  const activeView =
+    livePosition && !replayCut.active && currentPrice != null
+      ? deriveActivePosition(livePosition, currentPrice, Date.now())
+      : null;
   const currentChange = ticker24h ? ticker24h.change : changes[selected];
   const mid = useMemo(
     () => (currentCandles.length > 0 ? currentCandles[currentCandles.length - 1].close : 0),
@@ -403,8 +415,19 @@ export default function DashboardPage() {
         {/* Right Data Rail — docked sibling so the chart reflows beside it
             (never overlaps the price scale / canvas controls). The far-right
             icon dock selects which panel is shown (one at a time). */}
-        {rightPanel && (
+        {(rightPanel || activeView) && (
           <aside className="hidden xl:flex w-[450px] shrink-0 border-l border-line bg-surface flex-col min-h-0 overflow-y-auto">
+            {activeView && livePosition && (
+              <div className="border-b border-line p-2.5">
+                <ActivePositionWidget
+                  view={activeView}
+                  onMoveBreakEven={() => paper.setPositionOverlay('sl', livePosition.entryPrice)}
+                  onClosePartial={(f) => paper.partialClose(symbol, f, currentPrice ?? livePosition.entryPrice)}
+                  onToggleTrailing={() => paper.toggleTrailingSl(symbol, !livePosition.trailingSl)}
+                  onCloseFull={() => paper.closePosition(currentPrice ?? livePosition.entryPrice, symbol)}
+                />
+              </div>
+            )}
             {rightPanel === 'mood' && (
               <MoodStrip
                 symbol={symbol}
