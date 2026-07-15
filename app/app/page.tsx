@@ -305,6 +305,10 @@ export default function DashboardPage() {
     setWidgetPrefs((prev) => {
       const next = { ...prev, [key]: !prev[key] };
       try { localStorage.setItem('widgetPrefs', JSON.stringify(next)); } catch { /* ignore */ }
+      // Turning the Active Trade widget ON jumps to the Mood section so the
+      // user immediately sees btc-mood WITH the widget docked below it
+      // (its home) — otherwise clicking Show gives no visible feedback.
+      if (key === 'activeTrade' && next.activeTrade) setRightPanel('mood');
       return next;
     });
   }, []);
