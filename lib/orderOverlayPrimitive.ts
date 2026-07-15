@@ -48,7 +48,7 @@ class OrderRenderer implements IPrimitivePaneRenderer {
         const cy = Math.round(y * vpr);
 
         const lineColor =
-          o.color || (o.kind === 'tp' ? '#22d39a' : o.kind === 'sl' ? '#fb5168' : '#2A62FF');
+          o.color || (o.kind === 'tp' ? '#22d39a' : o.kind === 'sl' ? '#fb5168' : (opts.side === 'sell' ? '#fb5168' : '#2A62FF'));
 
         ctx.strokeStyle = lineColor;
         ctx.lineWidth = Math.max(1, vpr);

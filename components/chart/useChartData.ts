@@ -556,7 +556,8 @@ export function useChartData(
         const mk = indicatorMarkersRef.current.get(key);
         if (mk && result.markers && lastPushedPlotRef.current.get(`mk::${key}`) !== result.markers) {
           lastPushedPlotRef.current.set(`mk::${key}`, result.markers);
-          const markers = result.markers
+          const isHidden = hiddenKeys.has(key);
+          const markers = isHidden ? [] : result.markers
             .filter((m) => {
               const c = candles[m.index];
               return c != null && Number.isFinite(c.time as number);

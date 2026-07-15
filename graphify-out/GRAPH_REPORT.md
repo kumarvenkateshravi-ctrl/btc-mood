@@ -1,16 +1,16 @@
 # Graph Report - btc-mood  (2026-07-15)
 
 ## Corpus Check
-- 551 files · ~447,254 words
+- 557 files · ~450,613 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 7385 nodes · 12321 edges · 414 communities (378 shown, 36 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 51 edges (avg confidence: 0.82)
+- 7416 nodes · 12397 edges · 414 communities (378 shown, 36 thin omitted)
+- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 52 edges (avg confidence: 0.82)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `63de87b6`
+- Built from commit: `c778fbe0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -391,13 +391,11 @@
 - [[_COMMUNITY_Community 383|Community 383]]
 - [[_COMMUNITY_Community 384|Community 384]]
 - [[_COMMUNITY_Community 385|Community 385]]
-- [[_COMMUNITY_Community 386|Community 386]]
 - [[_COMMUNITY_Community 387|Community 387]]
 - [[_COMMUNITY_Community 388|Community 388]]
 - [[_COMMUNITY_Community 389|Community 389]]
 - [[_COMMUNITY_Community 390|Community 390]]
 - [[_COMMUNITY_Community 391|Community 391]]
-- [[_COMMUNITY_Community 392|Community 392]]
 - [[_COMMUNITY_Community 393|Community 393]]
 - [[_COMMUNITY_Community 394|Community 394]]
 - [[_COMMUNITY_Community 395|Community 395]]
@@ -409,21 +407,23 @@
 - [[_COMMUNITY_Community 401|Community 401]]
 - [[_COMMUNITY_Community 402|Community 402]]
 - [[_COMMUNITY_Community 403|Community 403]]
-- [[_COMMUNITY_Community 405|Community 405]]
 - [[_COMMUNITY_Community 406|Community 406]]
 - [[_COMMUNITY_Community 407|Community 407]]
+- [[_COMMUNITY_Community 408|Community 408]]
 - [[_COMMUNITY_Community 409|Community 409]]
+- [[_COMMUNITY_Community 410|Community 410]]
+- [[_COMMUNITY_Community 411|Community 411]]
 - [[_COMMUNITY_Community 412|Community 412]]
 - [[_COMMUNITY_Community 413|Community 413]]
-- [[_COMMUNITY_Community 414|Community 414]]
-- [[_COMMUNITY_Community 415|Community 415]]
 - [[_COMMUNITY_Community 416|Community 416]]
 - [[_COMMUNITY_Community 417|Community 417]]
+- [[_COMMUNITY_Community 420|Community 420]]
+- [[_COMMUNITY_Community 423|Community 423]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Candle` - 192 edges
 2. `Timeframe` - 142 edges
-3. `cx()` - 62 edges
+3. `cx()` - 68 edges
 4. `struct_BOS_internal_bearish_1700000420` - 51 edges
 5. `struct_BOS_internal_bearish_1700002100` - 51 edges
 6. `struct_CHOCH_internal_bullish_1700004500` - 51 edges
@@ -433,16 +433,16 @@
 10. `struct_CHOCH_internal_bullish_1700008220` - 51 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `MTF Confluence Ribbon (time-aligned per-TF signal heatmap)` --shares_data_with--> `aggregateMood()`  [INFERRED]
-  CHART_ROADMAP.md → lib/signals.ts
 - `BTC Market Mood — multi-timeframe mood verdict product` --conceptually_related_to--> `aggregateMood()`  [INFERRED]
   PRODUCT.md → lib/signals.ts
-- `Explainable AI Grammar (E): never a score without its reasons` --semantically_similar_to--> `Design Principles`  [INFERRED] [semantically similar]
-  DESIGN.md → PRODUCT.md
 - `Timeframe-Group Divergence Callouts (lower 1m–15m vs higher 1h–1d bias)` --semantically_similar_to--> `TradingView RSI PineScript v6 source (RMA-based, smoothing MA, divergence pivots)`  [INFERRED] [semantically similar]
   CHART_ROADMAP.md → docs/TRADINGVIEW_PINESCRIPTS.md
 - `MTF Confluence Ribbon (time-aligned per-TF signal heatmap)` --references--> `scoreSignal()`  [EXTRACTED]
   CHART_ROADMAP.md → lib/signals.ts
+- `MTF Confluence Ribbon (time-aligned per-TF signal heatmap)` --shares_data_with--> `aggregateMood()`  [INFERRED]
+  CHART_ROADMAP.md → lib/signals.ts
+- `Porting PineScript Indicators to TypeScript (guide)` --references--> `compareIndicator()`  [EXTRACTED]
+  docs/PORTING_PINESCRIPT.md → lib/testing/goldenMaster.ts
 
 ## Import Cycles
 - None detected.
@@ -455,20 +455,20 @@
 ## Communities (414 total, 36 thin omitted)
 
 ### Community 0 - "Alerts Engine & Page"
-Cohesion: 0.08
-Nodes (33): AlertsPage(), clamp(), fmtN(), QualityGauge(), Ring(), SEV_BADGE, SEV_COLOR, SUCCESS_BY_TYPE (+25 more)
+Cohesion: 0.06
+Nodes (49): AlertsPage(), clamp(), fmtN(), QualityGauge(), Ring(), SEV_BADGE, SEV_COLOR, SUCCESS_BY_TYPE (+41 more)
 
 ### Community 1 - "Backtester"
-Cohesion: 0.08
-Nodes (22): BacktesterPage(), C(), CondRow(), DATA_SOURCES, DATE_RANGES, Distribution(), ENTRY_METRICS, EXIT_METRICS (+14 more)
+Cohesion: 0.05
+Nodes (41): BacktesterPage(), C(), CondRow(), DATA_SOURCES, DATE_RANGES, Distribution(), ENTRY_METRICS, EXIT_METRICS (+33 more)
 
 ### Community 2 - "Strategies Engine"
 Cohesion: 0.06
 Nodes (34): CATEGORIES, Category, CompareRow, comparisonRows(), Difficulty, DNA, HEALTH_WEIGHTS, HealthInputs (+26 more)
 
 ### Community 3 - "Data Sources & Symbol Search"
-Cohesion: 0.16
-Nodes (19): FlatSymbol, SymbolSearchProps, BinanceSpotSource, defaultDataSource(), getDataSource(), hasDataSource(), listDataSourceMetas(), listDataSources() (+11 more)
+Cohesion: 0.14
+Nodes (21): FlatSymbol, SymbolSearchProps, BinanceSpotSource, defaultDataSource(), getDataSource(), hasDataSource(), listDataSourceMetas(), listDataSources() (+13 more)
 
 ### Community 4 - "Fixture: adx.golden"
 Cohesion: 0.04
@@ -619,8 +619,8 @@ Cohesion: 0.04
 Nodes (51): 100, 101, 102, 103, 104, 105, 106, 107 (+43 more)
 
 ### Community 41 - "Mood Narrative & Docks"
-Cohesion: 0.10
-Nodes (22): MoodNarrativeProps, Side, SIDE_GLOW, SIDE_ICON, SIDE_INK, MoodRationaleProps, SIDE_CHIP, SIDE_GLYPH (+14 more)
+Cohesion: 0.16
+Nodes (10): MoodNarrativeProps, Side, SIDE_GLOW, SIDE_ICON, SIDE_INK, MoodRationaleProps, SIDE_CHIP, SIDE_GLYPH (+2 more)
 
 ### Community 42 - "Design System Docs"
 Cohesion: 0.15
@@ -635,32 +635,32 @@ Cohesion: 0.07
 Nodes (31): Arrow, buildPortfolio(), CORR_ASSETS, CORRELATION, derive(), Dir, HEALTH_WEIGHTS, HealthComponents (+23 more)
 
 ### Community 45 - "UI Kit & A11y Tests"
-Cohesion: 0.11
-Nodes (13): CloseConfirmDialogProps, OrderModalProps, ReverseConfirmDialogProps, Button, ButtonProps, ButtonSize, ButtonVariant, SIZE (+5 more)
+Cohesion: 0.08
+Nodes (19): TrainingReport, focusFromReport(), GRADE_STYLE, money(), TrainingReportModal(), CloseConfirmDialogProps, OrderModalProps, RenkoSettingsModalProps (+11 more)
 
 ### Community 46 - "Indicator Framework"
-Cohesion: 0.17
-Nodes (16): Alert, ALERT_TYPES, alertQualityScore(), AlertStatus, alertValue(), clamp(), conditionMet(), CONDITIONS (+8 more)
+Cohesion: 0.11
+Nodes (36): Breakdown(), ALIGN, Cell(), CellAs, CellProps, PercentCell(), PnlCell(), PriceCell() (+28 more)
 
 ### Community 47 - "Signal Matrix & Confluence"
-Cohesion: 0.09
-Nodes (23): ConfluenceRibbon(), ConfluenceRibbonProps, SIDE_STYLE, DivergenceExplainer, DivergenceExplainerProps, chartApiStore, charts, listeners (+15 more)
+Cohesion: 0.10
+Nodes (22): ConfluenceRibbon(), SIDE_STYLE, DivergenceExplainer, DivergenceExplainerProps, chartApiStore, charts, listeners, useRegisteredChart() (+14 more)
 
 ### Community 48 - "DataTable Columns"
-Cohesion: 0.12
-Nodes (26): collectConditions(), evaluate(), evaluateCondition(), explainAt(), mapTfIndices(), prepare(), PreparedCondition, refLabel() (+18 more)
+Cohesion: 0.15
+Nodes (6): Impact, clamp(), DIST, FACTOR_ICON, fmtN(), ScoreRing()
 
 ### Community 49 - "MyStack IQ Engine"
 Cohesion: 0.05
-Nodes (31): BacktestTab(), BOTTOM_TABS, BottomTab, BottomWorkspace(), BUILD_STEPS, BuildMode(), ChartPanel, cloneTree() (+23 more)
+Nodes (32): useMarketContext(), BacktestTab(), BOTTOM_TABS, BottomTab, BottomWorkspace(), BUILD_STEPS, BuildMode(), ChartPanel (+24 more)
 
 ### Community 50 - "Fixture: goldenMaster"
-Cohesion: 0.11
-Nodes (26): computeSqueezeMomentum(), PARAMS, SqueezeMomentumConfig, IndicatorResult, SignalSide, ActualCell, buildSnapshotFixture(), BuildSnapshotOptions (+18 more)
+Cohesion: 0.13
+Nodes (23): PARAMS, FIXTURE, ActualCell, buildSnapshotFixture(), compareIndicator(), ExpectedCell, fixtureExists(), fixturePath() (+15 more)
 
 ### Community 51 - "Paper Trading Store"
 Cohesion: 0.11
-Nodes (33): marginFor(), validateOrder(), cancelAll(), cancelOrder(), closePosition(), _closeUnits(), executeOrder(), ExecuteOrderInput (+25 more)
+Nodes (36): applyFill(), marginFor(), marketFillPrice(), cancelAll(), cancelOrder(), closePosition(), _closeUnits(), ExecuteOrderInput (+28 more)
 
 ### Community 52 - "Dashboard Shell"
 Cohesion: 0.04
@@ -668,15 +668,15 @@ Nodes (51): struct_BOS_internal_bearish_1700000420, 350, 351, 352, 353, 354, 355
 
 ### Community 53 - "Renko & Alignment"
 Cohesion: 0.09
-Nodes (24): IndicatorsDropdownProps, ChartPoint, ComputedBand, ComputedCloud, ComputedIndicator, ComputedLine, computeIndicator(), L() (+16 more)
+Nodes (22): IndicatorsDropdownProps, ChartPoint, ComputedBand, ComputedCloud, ComputedIndicator, ComputedLine, computeIndicator(), mapData() (+14 more)
 
 ### Community 54 - "Grid Layout & Chart Types"
 Cohesion: 0.04
 Nodes (51): 350, 351, 352, 353, 354, 355, 356, 357 (+43 more)
 
 ### Community 55 - "Order Flow & Schemas"
-Cohesion: 0.17
-Nodes (23): CONTEXT_PRODUCERS, buildMarketContext(), buildTfContext(), _cache, alignmentScore(), biasOf(), blendScores(), combineConfidence() (+15 more)
+Cohesion: 0.20
+Nodes (21): CONTEXT_PRODUCERS, buildMarketContext(), buildTfContext(), _cache, alignmentScore(), biasOf(), blendScores(), combineConfidence() (+13 more)
 
 ### Community 56 - "Stack Score Factors"
 Cohesion: 0.11
@@ -684,19 +684,19 @@ Nodes (18): 10. Backtest & track record (the trust layer), 11. Rendering & UX (P
 
 ### Community 57 - "Journal Engine"
 Cohesion: 0.08
-Nodes (30): analyzeJournal(), Breakdown, Bucket, buildInsights(), CalendarDay, clamp(), Direction, DisciplineChecks (+22 more)
+Nodes (31): analyzeJournal(), Breakdown, Bucket, buildInsights(), CalendarDay, clamp(), Direction, DisciplineChecks (+23 more)
 
 ### Community 58 - "Paper Trading Types"
-Cohesion: 0.12
-Nodes (19): AlertsPanelProps, BacktestPanel(), BacktestPanelProps, formatPct(), Sparkline(), KeyboardShortcutOptions, AlertRule, AlertSide (+11 more)
+Cohesion: 0.05
+Nodes (61): MTF Confluence Ribbon (time-aligned per-TF signal heatmap), Timeframe-Group Divergence Callouts (lower 1m–15m vs higher 1h–1d bias), AlertsPanelProps, BacktestPanel(), BacktestPanelProps, formatPct(), Sparkline(), ConfluenceRibbonProps (+53 more)
 
 ### Community 59 - "Sample Landing Page"
 Cohesion: 0.06
 Nodes (15): btcSpark, C, chartDataMap, CoinCardProps, ethSpark, ltcSpark, MarketRow, marketRows (+7 more)
 
 ### Community 60 - "Williams %R & Pine Math"
-Cohesion: 0.23
-Nodes (10): fmtQty(), OrderFlowPanel(), OrderFlowPanelProps, accumulate(), candleBucket(), delta(), DeltaAccumulator, emptyDelta() (+2 more)
+Cohesion: 0.14
+Nodes (28): COMPACT, Currency, delta(), formatNumber(), inr(), LOCALE, NumOpts, precisionFor() (+20 more)
 
 ### Community 61 - "Number Formatting"
 Cohesion: 0.04
@@ -723,12 +723,12 @@ Cohesion: 0.04
 Nodes (51): 350, 351, 352, 353, 354, 355, 356, 357 (+43 more)
 
 ### Community 67 - "MACD & ADX Indicators"
-Cohesion: 0.11
-Nodes (12): buildChecklist(), ChecklistRow, ChecklistSection, FilterSection, SECTION_LABEL, SIG_TFS, SmcScreenerPanel(), STATUS_STYLE (+4 more)
+Cohesion: 0.09
+Nodes (20): buildChecklist(), ChecklistRow, ChecklistSection, FilterSection, SECTION_LABEL, SIG_TFS, STATUS_STYLE, TabId (+12 more)
 
 ### Community 68 - "Chart Refs & Overlays"
-Cohesion: 0.13
-Nodes (16): computeDsmart(), DSMART_DEFAULTS, DsmartConfig, DsmartEvent, DsmartEventType, DsmartResult, computeDsmartOverlay(), DEFAULTS (+8 more)
+Cohesion: 0.16
+Nodes (11): computeDsmart(), DSMART_DEFAULTS, DsmartConfig, DsmartEvent, DsmartEventType, DsmartResult, computeDsmartOverlay(), DEFAULTS (+3 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.11
@@ -751,20 +751,20 @@ Cohesion: 0.04
 Nodes (51): struct_BOS_internal_bullish_1700012540, 350, 351, 352, 353, 354, 355, 356 (+43 more)
 
 ### Community 74 - "CSV Export Utils"
-Cohesion: 0.11
-Nodes (20): ExportBarProps, candlesToCsv(), copyText(), downloadCsv(), sample, tradesToCsv(), listeners, Mark (+12 more)
+Cohesion: 0.13
+Nodes (18): ExportBarProps, candlesToCsv(), copyText(), downloadCsv(), sample, tradesToCsv(), useMarkPrice(), replaySetOverlay() (+10 more)
 
 ### Community 75 - "Multi-Timeframe Engine"
 Cohesion: 0.11
 Nodes (18): ADX (`adx`), ATR (`atr`), Bollinger (`bollinger`), EMA (`ema`) / SMA (`sma`), MACD (`macd`), Market Structure (`structure`), OBV (`obv`), Price (`price`) (+10 more)
 
 ### Community 76 - "Stack Score Page"
-Cohesion: 0.09
-Nodes (21): Breakdown(), clamp(), dDate(), DisciplineGauge(), EMO_COLOR, equityLabels(), fmtN(), JournalPage() (+13 more)
+Cohesion: 0.07
+Nodes (26): clamp(), dDate(), DisciplineGauge(), EMO_COLOR, equityLabels(), fmtN(), JournalPage(), MISTAKE_ICON (+18 more)
 
 ### Community 77 - "Chart Harness & Legend"
-Cohesion: 0.13
-Nodes (29): useLayoutMigrationToast(), useGridState(), clearKey(), getLayoutConfig(), GRID_COLS_CLASS, isLayoutCount(), isLayoutMode(), isSyncActive() (+21 more)
+Cohesion: 0.08
+Nodes (39): GridCountControlProps, COMING_SOON, LayoutSwitcher(), LayoutSwitcherButton(), LayoutSwitcherProps, ThumbnailDef, GridState, useGridState() (+31 more)
 
 ### Community 78 - "Chart Toolbar"
 Cohesion: 0.18
@@ -775,8 +775,8 @@ Cohesion: 0.04
 Nodes (51): struct_BOS_internal_bullish_1700014820, 350, 351, 352, 353, 354, 355, 356 (+43 more)
 
 ### Community 80 - "Market State & Sidebar"
-Cohesion: 0.10
-Nodes (25): AtrInputs, computeAtr(), DEFAULTS, smooth(), SmoothingType, BacktestConfig, BacktestResult, BTrade (+17 more)
+Cohesion: 0.20
+Nodes (5): executeOrder(), ChartContextMenuProps, levelsFor(), QuickTrade(), QuickTradeProps
 
 ### Community 81 - "Trade Setup Checklist"
 Cohesion: 0.04
@@ -787,12 +787,12 @@ Cohesion: 0.10
 Nodes (19): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+11 more)
 
 ### Community 83 - "Community 83"
-Cohesion: 0.18
-Nodes (15): GET(), cache, CacheEntry, cacheGet(), cacheSet(), clientIp(), counters, GET() (+7 more)
+Cohesion: 0.09
+Nodes (27): GET(), cache, CacheEntry, cacheGet(), cacheSet(), clientIp(), counters, GET() (+19 more)
 
 ### Community 84 - "Mood Strip"
-Cohesion: 0.06
-Nodes (78): AXE_OPTIONS, Row, AICard(), AICardData, AIDirection, band(), DIR, Badge() (+70 more)
+Cohesion: 0.07
+Nodes (47): FearGreed(), fearGreedLabel(), ITEMS, MarketState, AXE_OPTIONS, Row, AICard(), AICardData (+39 more)
 
 ### Community 85 - "Community 85"
 Cohesion: 0.10
@@ -807,24 +807,24 @@ Cohesion: 0.12
 Nodes (15): 1. lib/indicators/signalEngine.test.ts, 2. lib/indicators/signalEngine.ts, Architecture, Code Quality, Commit Details, Concerns, Correctness, Files Created (+7 more)
 
 ### Community 88 - "Fixture: tradingViewCsv"
-Cohesion: 0.07
-Nodes (43): BollingerInputs, computeBollingerBands(), DEFAULTS, cols, neutralSignals(), computeKeltnerChannels(), DEFAULTS, KeltnerInputs (+35 more)
+Cohesion: 0.08
+Nodes (36): AdxInputs, DEFAULTS, computeFibPivot(), DEFAULTS, FibPivotInputs, computeMagicSr(), DEFAULTS, MagicSrInputs (+28 more)
 
 ### Community 89 - "Community 89"
-Cohesion: 0.11
-Nodes (21): applyMa(), computeRsi(), DEFAULTS, RsiInputs, Bias, Difficulty, generateSetup(), IndicatorRow (+13 more)
+Cohesion: 0.08
+Nodes (29): computeAdx(), AtrInputs, computeAtr(), DEFAULTS, smooth(), SmoothingType, applyMa(), computeRsi() (+21 more)
 
 ### Community 90 - "Price Lines Primitive"
 Cohesion: 0.13
 Nodes (4): PriceLineItem, PriceLinesPaneView, PriceLinesPrimitive, PriceLinesRenderer
 
 ### Community 91 - "Backtest Panel"
-Cohesion: 0.16
-Nodes (19): Porting PineScript Indicators to TypeScript (guide), TradingView Fixture Workflow (CSV export → golden fixture), DEFAULT_TOLERANCE, GoldenTolerance, assertColumns(), buildTradingViewFixtureFromCsv(), BuildTradingViewFixtureOptions, CsvRecord (+11 more)
+Cohesion: 0.18
+Nodes (17): DEFAULT_TOLERANCE, GoldenTolerance, assertColumns(), buildTradingViewFixtureFromCsv(), BuildTradingViewFixtureOptions, CsvRecord, parseCsv(), parseCsvRows() (+9 more)
 
 ### Community 92 - "Workspaces"
-Cohesion: 0.05
-Nodes (80): SCANNER_SOURCE_LIST, barsSince(), CMP, liveEdge(), SETUP_RANK, SINCE_OPS, SMC_SCANNER_SOURCES, snapCache (+72 more)
+Cohesion: 0.18
+Nodes (23): barsSince(), snapFor(), computeModuleScores(), confluenceScore(), ModuleScores, topObjectsScore(), computeSmc(), computeSmcWindowed() (+15 more)
 
 ### Community 93 - "Community 93"
 Cohesion: 0.15
@@ -851,8 +851,8 @@ Cohesion: 0.12
 Nodes (15): candles, capturedAt, expected, plots, signals, indicator, note, params (+7 more)
 
 ### Community 99 - "Toast module"
-Cohesion: 0.13
-Nodes (16): Session Log 2026-07-03: Chart refactor 70%, components/chart split, shiftTime bug open, 0 chart tests, Indicator Strategy: bucket, don't transpile, Chart Roadmap — Beating TradingView for the Active Trader, Deliberately NOT building, Phase 0 — Stabilize ✅ DONE, Phase 2 — Drawing tools (the #1 table-stakes gap) · ~2–3 wk · ✅, Phase 3 — Chart types & precision · ~1 wk · ✅, Phase 4 — Differentiators (where you pass TradingView) · ~3–4 wk · 🔨 (+8 more)
+Cohesion: 0.12
+Nodes (16): Session Log 2026-07-03: Chart refactor 70%, components/chart split, shiftTime bug open, 0 chart tests, Chart Roadmap — Beating TradingView for the Active Trader, Deliberately NOT building, Phase 0 — Stabilize ✅ DONE, Phase 1 — Indicators (the immediate goal) · ~1.5–2 wk, Phase 1A — The 14 Tier-1 indicators, Phase 1B — Multi-indicator stack engine, Phase 2 — Drawing tools (the #1 table-stakes gap) · ~2–3 wk · ✅ (+8 more)
 
 ### Community 100 - "Fixture: adx.golden"
 Cohesion: 0.13
@@ -876,7 +876,7 @@ Nodes (16): candles, capturedAt, expected, plots, signals, indicator, note, para
 
 ### Community 105 - "priceAlertsStore module"
 Cohesion: 0.31
-Nodes (7): ScoredZone, SdRejectReason, SIGNAL_STATUSES, SignalExplanation, SignalFactor, zoneIdOf(), ZoneKind
+Nodes (9): confidenceBand(), rejectionSummary(), SignalDetails(), signalRows(), SignalsEmptyState(), SignalsPanel(), STATUS_LABEL, rejected (+1 more)
 
 ### Community 106 - "Community 106"
 Cohesion: 0.10
@@ -891,12 +891,12 @@ Cohesion: 0.14
 Nodes (13): candles, capturedAt, expected, plots, signals, indicator, note, params (+5 more)
 
 ### Community 109 - "Community 109"
-Cohesion: 0.06
-Nodes (29): ChartApi, useChartSettings(), ChartPanel(), PHASE_LABEL, ReplayBarProps, SHORTCUTS, SPEEDS, ReplaySelectorProps (+21 more)
+Cohesion: 0.05
+Nodes (30): ChartApi, useChartSettings(), ChartPanel(), PHASE_LABEL, ReplayBarProps, SHORTCUTS, SPEEDS, ReplaySelectorProps (+22 more)
 
 ### Community 110 - "indicatorLibrary module"
-Cohesion: 0.09
-Nodes (42): AdxInputs, computeAdx(), DEFAULTS, computeMacd(), DEFAULTS, MacdInputs, MaType, movingAverage() (+34 more)
+Cohesion: 0.10
+Nodes (36): computeMacd(), DEFAULTS, MacdInputs, MaType, movingAverage(), computeObv(), computeSuperTrend(), vdAtr() (+28 more)
 
 ### Community 111 - "Fixture: maRibbonTV.golden"
 Cohesion: 0.15
@@ -928,7 +928,7 @@ Nodes (6): lower, upper, 118, 118, 118, 118
 
 ### Community 118 - "page module"
 Cohesion: 0.10
-Nodes (17): CANDLES, readState(), rsiResult, waitForState(), ChartHarness(), HarnessProps, ChartLegend(), ChartLegendProps (+9 more)
+Nodes (24): CANDLES, readState(), rsiResult, waitForState(), ChartHarness(), HarnessProps, ChartLegend(), ChartLegendProps (+16 more)
 
 ### Community 119 - "Fixture: maRibbonTV.golden"
 Cohesion: 0.17
@@ -979,20 +979,20 @@ Cohesion: 0.18
 Nodes (10): Design decisions locked in this plan, Global Constraints, Task 1: Projected-P&L helper + staged-lifecycle tests, Task 2: Buy/Sell chart buttons open the Order Ticket, Task 3: Order Ticket parity with the TV screenshot, Task 4: Staged order renders on the chart (draggable entry/TP/SL), Task 5: On-chart control row — Discard/Confirm/TP/SL + `qty | P&L | ×` pills, Task 6: Monitor + close — every ✕ does the right thing (+2 more)
 
 ### Community 131 - "DrawingLayer module"
-Cohesion: 0.16
-Nodes (25): adaptiveBins(), adaptiveThreshold(), buildVdZones(), clamp(), clamp01(), classifyZone(), closeInside(), extractPeriodZones() (+17 more)
+Cohesion: 0.15
+Nodes (26): adaptiveBins(), adaptiveThreshold(), buildVdZones(), clamp(), clamp01(), classifyZone(), closeInside(), extractPeriodZones() (+18 more)
 
 ### Community 132 - "Fixture: smaCrossover.golden"
 Cohesion: 0.11
 Nodes (17): candles, capturedAt, indicator, note, params, bbLen, bbMult, fastLen (+9 more)
 
 ### Community 133 - "Fixture: smaCrossover.golden"
-Cohesion: 0.16
-Nodes (5): Cap(), DetailCol(), SummaryCard(), TF_LABEL, vColor()
+Cohesion: 0.25
+Nodes (10): replayIndexForTime(), searchRightmost(), sliceAtTime(), sliceCandlesByTf(), TF_SECONDS, ReplayValidation, validateReplayData(), IntegrityCheck (+2 more)
 
 ### Community 134 - "Fixture: smaCrossover.golden"
-Cohesion: 0.11
-Nodes (28): applyFill(), marketFillPrice(), reconcile(), Side, PlaceOrderInput, configureReplaySession(), endReplaySession(), fillId() (+20 more)
+Cohesion: 0.13
+Nodes (21): Chip(), PaperTrade, ReplaySessionState, formatMoney(), SessionReportModal(), formatMoney(), SessionSetupCard(), CoachingNote (+13 more)
 
 ### Community 135 - "Community 135"
 Cohesion: 0.04
@@ -1003,8 +1003,8 @@ Cohesion: 0.13
 Nodes (14): candles, capturedAt, expected, plots, signals, indicator, note, params (+6 more)
 
 ### Community 138 - "Panel.stories module"
-Cohesion: 0.33
-Nodes (5): PineScript Port Pitfalls Checklist (RMA vs EMA, population stdev, na warm-up, var persistence), How We Use It, RSI CSV Contract, TradingView Fixture Workflow, TradingView RSI PineScript v6 source (RMA-based, smoothing MA, divergence pivots)
+Cohesion: 0.20
+Nodes (11): Indicator Strategy: bucket, don't transpile, Plugin & Extension Architecture (K): CustomIndicator, AIProvider, ExchangeConnector contracts, Fixture Provenance: tradingview (correctness) vs snapshot (regression-only), Golden-Master Test Harness (lib/testing/goldenMaster.ts), Porting PineScript Indicators to TypeScript (guide), PineScript Port Pitfalls Checklist (RMA vs EMA, population stdev, na warm-up, var persistence), How We Use It, RSI CSV Contract (+3 more)
 
 ### Community 139 - "Fixture: smaCrossover.golden"
 Cohesion: 0.29
@@ -1023,8 +1023,8 @@ Cohesion: 0.33
 Nodes (6): expected, plots, signals, 136, 37, 53
 
 ### Community 143 - "atr module"
-Cohesion: 0.07
-Nodes (46): useMarketData(), useMoodEngine(), COMPACT, Currency, delta(), formatNumber(), formatPercent(), inr() (+38 more)
+Cohesion: 0.10
+Nodes (20): useMarketData(), useMoodEngine(), formatPercent(), MultiTimeframePage(), BigGauge(), clamp(), Donut(), fmt() (+12 more)
 
 ### Community 144 - "page module"
 Cohesion: 0.12
@@ -1039,8 +1039,8 @@ Cohesion: 0.18
 Nodes (13): lower, upper, 137, 100, 101, 102, 103, 104 (+5 more)
 
 ### Community 147 - "Community 147"
-Cohesion: 0.08
-Nodes (9): ChartSettingsButton, ChartSettingsButtonProps, TvSettingsIcon(), ChartToolbarProps, ToolbarChartType, ToolbarPriceScaleMode, featureFlags, RenkoConfig (+1 more)
+Cohesion: 0.07
+Nodes (24): ChartSettingsButton, ChartSettingsButtonProps, TvSettingsIcon(), ChartToolbarProps, ToolbarChartType, ToolbarPriceScaleMode, WorkspaceChip(), WorkspaceMenu() (+16 more)
 
 ### Community 148 - "Community 148"
 Cohesion: 0.14
@@ -1267,8 +1267,8 @@ Cohesion: 0.18
 Nodes (13): lower, upper, 100, 101, 102, 103, 104, 105 (+5 more)
 
 ### Community 233 - "Community 233"
-Cohesion: 0.14
-Nodes (18): isPriceAlert(), newPriceAlertId(), PriceAlert, PriceAlertSide, priceAlertsToFire(), sideForLevel(), addPriceAlert(), EMPTY (+10 more)
+Cohesion: 0.17
+Nodes (17): isPriceAlert(), newPriceAlertId(), PriceAlert, PriceAlertSide, priceAlertsToFire(), sideForLevel(), addPriceAlert(), EMPTY (+9 more)
 
 ### Community 234 - "Community 234"
 Cohesion: 0.22
@@ -1283,16 +1283,16 @@ Cohesion: 0.18
 Nodes (13): lower, upper, 129, 129, 100, 101, 102, 103 (+5 more)
 
 ### Community 237 - "Community 237"
-Cohesion: 0.22
-Nodes (8): Clickable, columns, Empty, meta, rows, Sortable, Story, Strategy
+Cohesion: 0.06
+Nodes (46): barsSince(), cache, CMP, DSMART_SCANNER_SOURCES, resultFor(), SINCE_OPS, collectConditions(), evaluate() (+38 more)
 
 ### Community 246 - "Community 246"
-Cohesion: 0.08
-Nodes (20): resolveSource(), resolveSourceNum(), computeSma(), DEFAULTS, SmaInputs, computeWilliamsR(), DEFAULTS, WilliamsRInputs (+12 more)
+Cohesion: 0.10
+Nodes (14): computeWilliamsR(), DEFAULTS, WilliamsRInputs, barsSince(), ema(), emaPine(), highest(), linreg() (+6 more)
 
 ### Community 247 - "Community 247"
-Cohesion: 0.13
-Nodes (24): versionComparison(), cond, seedStrategy(), archiveStrategy(), createStrategy(), getStrategy(), listEvents(), listSignals() (+16 more)
+Cohesion: 0.12
+Nodes (26): versionComparison(), computeScannerSnapshot(), cond, seedStrategy(), archiveStrategy(), createStrategy(), getStrategy(), listEvents() (+18 more)
 
 ### Community 248 - "Community 248"
 Cohesion: 0.07
@@ -1303,24 +1303,24 @@ Cohesion: 0.11
 Nodes (17): 10. Future-proofing (hooks only, no implementation), 11. Milestones, 1. Goal, 2. Decisions already made, 3. Module layout, 4.1 Objects, 4.2 Lifecycle — one enum, every object kind, 4.3 Events (append-only log, replayable) (+9 more)
 
 ### Community 250 - "Community 250"
-Cohesion: 0.08
-Nodes (47): HtfBucketOHLC, HtfPeriod, resolveInputs(), buildScoredZones(), computeSdSignalEvents(), computeSdSignals(), _eventCache, eventCacheKey() (+39 more)
+Cohesion: 0.07
+Nodes (48): HTF_PERIOD_SECONDS, HtfBucketOHLC, periodKey(), priorPeriodOHLC(), buildScoredZones(), computeSdSignalEvents(), computeSdSignals(), _eventCache (+40 more)
 
 ### Community 251 - "Community 251"
 Cohesion: 0.15
 Nodes (12): Design decisions locked in this plan, File structure, Global Constraints, GTI-Inspired Zone & Level Indicators — Implementation Plan, Task 1: HTF resampling helper (`htf.ts`), Task 2: Zone Strength scoring (`zoneStrength.ts`), Task 3: Zone builder + engine summary API (`sdZones.ts` — pure part), Task 4: Supply/Demand Zones indicator (`computeSdZones`) + register (+4 more)
 
 ### Community 252 - "Community 252"
-Cohesion: 0.17
-Nodes (17): WorkspaceChip(), WorkspaceMenu(), WorkspaceMenuProps, deleteWorkspace(), EMPTY, isWorkspace(), listeners, load() (+9 more)
+Cohesion: 0.16
+Nodes (4): GradientZonePrimitive, ZonePaneView, ZoneRenderer, IndicatorGradientFill
 
 ### Community 253 - "Community 253"
 Cohesion: 0.22
 Nodes (8): Example, Intended AI usage, Notes & caveats, `SdZonesConfig`, Signature, `ZoneFactor` weights (for `cfg.weights`), ZoneSummary API — Developer Reference, `ZoneSummary` fields
 
 ### Community 254 - "Community 254"
-Cohesion: 0.08
-Nodes (35): ChartNavControls(), TradeOverlay(), TradeOverlayProps, ensureCleanSeries(), shiftTime(), AdditionalPane, PaneEntry, toBar() (+27 more)
+Cohesion: 0.07
+Nodes (38): ChartNavControls(), OverlayTooltip(), ChartRefs, PriceLineEntry, TradeOverlay(), TradeOverlayProps, ChartOverlay, OverlayKind (+30 more)
 
 ### Community 255 - "Community 255"
 Cohesion: 0.04
@@ -1335,8 +1335,8 @@ Cohesion: 0.53
 Nodes (6): lower, upper, 108, 108, 108, 108
 
 ### Community 258 - "Community 258"
-Cohesion: 0.21
-Nodes (10): ChartType, ChartPanelProps, ICON, ModeSwitchProps, isViewMode(), MODE_CONFIG, ModeConfig, readInitialMode() (+2 more)
+Cohesion: 0.24
+Nodes (8): ICON, ModeSwitchProps, isViewMode(), MODE_CONFIG, ModeConfig, readInitialMode(), VIEW_MODES, ViewMode
 
 ### Community 259 - "Community 259"
 Cohesion: 0.20
@@ -1347,7 +1347,7 @@ Cohesion: 0.53
 Nodes (6): lower, upper, 110, 110, 110, 110
 
 ### Community 261 - "Community 261"
-Cohesion: 0.15
+Cohesion: 0.16
 Nodes (16): BIAS_UI, MarketContextWidget(), riskLabel(), strengthStars(), ctx, latestVdDecisions(), latestVdTrades(), publishMarketContext() (+8 more)
 
 ### Community 262 - "Community 262"
@@ -1367,16 +1367,16 @@ Cohesion: 0.53
 Nodes (6): lower, upper, 115, 115, 115, 115
 
 ### Community 266 - "Community 266"
-Cohesion: 0.31
-Nodes (9): confidenceBand(), rejectionSummary(), SignalDetails(), signalRows(), SignalsEmptyState(), SignalsPanel(), STATUS_LABEL, rejected (+1 more)
+Cohesion: 0.12
+Nodes (21): reconcile(), configureReplaySession(), endReplaySession(), finalizeBehavior(), INITIAL, listeners, replayOpenWithRisk(), replayReconcileBar() (+13 more)
 
 ### Community 267 - "Community 267"
 Cohesion: 0.05
 Nodes (44): 357, 358, 359, 360, 361, 362, 363, 364 (+36 more)
 
 ### Community 269 - "Community 269"
-Cohesion: 0.09
-Nodes (25): SymbolPickerProps, HistoryWindow, COMPARE_SYMBOLS, CompareSymbol, isCompareSymbol(), compressDrawings(), decompressDrawings(), InitialDashboardState (+17 more)
+Cohesion: 0.15
+Nodes (15): SymbolPickerProps, HistoryWindow, COMPARE_SYMBOLS, CompareSymbol, isCompareSymbol(), compressDrawings(), decompressDrawings(), InitialDashboardState (+7 more)
 
 ### Community 270 - "Community 270"
 Cohesion: 0.53
@@ -1399,8 +1399,8 @@ Cohesion: 0.18
 Nodes (10): Behavioral Tests, Commit Details, Concerns, Golden Test, Implementation Details, Self-Review (Per Brief), Status, Task 7: Fibonacci Pivots Indicator — Report (+2 more)
 
 ### Community 275 - "Community 275"
-Cohesion: 0.22
-Nodes (6): DEFAULT_SIGNAL_CONFIG, atr, bars, ctx, GOLDEN, zones
+Cohesion: 0.16
+Nodes (10): CandlesByTf, ErrorsByTf, MarketData, synthCandles(), fetchKlinesBefore(), fetchKlinesTyped(), KlinesError, klinesQueryKey() (+2 more)
 
 ### Community 276 - "Community 276"
 Cohesion: 0.53
@@ -1420,19 +1420,15 @@ Nodes (6): lower, upper, 128, 128, 128, 128
 
 ### Community 280 - "Community 280"
 Cohesion: 0.22
-Nodes (6): atr, bars, ctx, demand, supply, zone
+Nodes (6): BacktestReport, backtestSignals(), BacktestSlice, RESOLVED, base, Tier
 
 ### Community 281 - "Community 281"
 Cohesion: 0.60
 Nodes (5): lower, upper, 131, 131, 131
 
-### Community 282 - "Community 282"
-Cohesion: 0.13
-Nodes (10): OverlayTooltip(), ChartOverlay, ChartProps, OverlayKind, OrderOverlayOptions, OrderOverlayPrimitive, OrderPaneView, OrderRenderer (+2 more)
-
 ### Community 283 - "Community 283"
-Cohesion: 0.50
-Nodes (4): Phase 1 — Indicators (the immediate goal) · ~1.5–2 wk, Phase 1A — The 14 Tier-1 indicators, Phase 1B — Multi-indicator stack engine, Strategy: bucket, don't transpile
+Cohesion: 0.20
+Nodes (7): L(), listeners, Mark, marks, setMarkPrice(), scheduleEmit(), set()
 
 ### Community 284 - "Community 284"
 Cohesion: 0.22
@@ -1455,8 +1451,8 @@ Cohesion: 0.33
 Nodes (5): 07:37 | feat/tv-order-flow, 08:05-16:33 | feat/sd-signals, 19:44 | feat/sd-signals, 20:32-22:19 | feat/sd-signals, 23:21 | feat/sd-signals
 
 ### Community 289 - "Community 289"
-Cohesion: 0.14
-Nodes (11): COLORS, computeMaRibbonTV(), DEFAULTS, MaRibbonTVInputs, MAType, resample(), RibbonTimeframe, FIXTURE (+3 more)
+Cohesion: 0.15
+Nodes (23): FvgEngine, LiquidityEngine, ScopeState, StructureBreak, StructureEngine, createOrderBlockEngine(), OrderBlockEngine, bullishBreak (+15 more)
 
 ### Community 290 - "Community 290"
 Cohesion: 0.14
@@ -1464,27 +1460,27 @@ Nodes (13): Global Constraints, SMC Intelligence Engine Implementation Plan, Tas
 
 ### Community 291 - "Community 291"
 Cohesion: 0.14
-Nodes (18): FactorKey, ChecklistItem, ChecklistStatus, EntryStatus, ExecVerdict, FACTOR_LABEL, FACTOR_MAX, generateTradeSetup() (+10 more)
+Nodes (23): Verdict, Consensus, MarketStructure, Factor, FactorKey, ChecklistItem, ChecklistStatus, EntryStatus (+15 more)
 
 ### Community 292 - "Community 292"
 Cohesion: 0.08
 Nodes (25): lower, upper, lower, upper, lower, upper, lower, upper (+17 more)
 
 ### Community 293 - "Community 293"
-Cohesion: 0.16
-Nodes (18): SdSignalsInputs, cap(), clamp01(), clamp100(), computeConfidence(), computeStopLoss(), computeTargets(), ConfirmationMode (+10 more)
+Cohesion: 0.08
+Nodes (36): HtfPeriod, cap(), clamp01(), clamp100(), computeConfidence(), computeStopLoss(), computeTargets(), DEFAULT_SIGNAL_CONFIG (+28 more)
 
 ### Community 294 - "Community 294"
 Cohesion: 0.60
 Nodes (5): lower, upper, 141, 141, 141
 
 ### Community 295 - "Community 295"
-Cohesion: 0.09
-Nodes (21): geistMono, geistSans, metadata, Providers(), DENSITY_MAP, DensityContext, DensityContextValue, DensityMode (+13 more)
+Cohesion: 0.06
+Nodes (31): geistMono, geistSans, metadata, Providers(), DENSITY_MAP, DensityContext, DensityContextValue, DensityMode (+23 more)
 
 ### Community 296 - "Community 296"
-Cohesion: 0.17
-Nodes (17): ReplaySessionState, SessionReportModal(), SessionSetupCard(), CoachingNote, coachingNotes(), currencySymbol(), DEFAULT_SESSION_CONFIG, SESSION_CURRENCIES (+9 more)
+Cohesion: 0.25
+Nodes (6): ColorPickerPopover(), ColorPickerPopoverProps, hexToRgba(), IndicatorSettingsModalProps, Tab, TV_COLORS
 
 ### Community 297 - "Community 297"
 Cohesion: 0.60
@@ -1495,8 +1491,8 @@ Cohesion: 0.60
 Nodes (5): lower, upper, 144, 144, 144
 
 ### Community 301 - "Community 301"
-Cohesion: 0.16
-Nodes (10): usePaperStore(), useReplaySession(), BacktestStats(), money(), EquitySparklineProps, levelsFor(), QuickTrade(), QuickTradeProps (+2 more)
+Cohesion: 0.15
+Nodes (10): usePaperStore(), computeStats(), TradeStats, useReplaySession(), BacktestStats(), money(), EquitySparklineProps, RecentTradesPanel() (+2 more)
 
 ### Community 302 - "Community 302"
 Cohesion: 0.60
@@ -1507,16 +1503,16 @@ Cohesion: 0.60
 Nodes (5): lower, upper, 147, 147, 147
 
 ### Community 304 - "Community 304"
-Cohesion: 0.06
-Nodes (32): FetchHistoryOptions, CandlesByTf, ErrorsByTf, MarketData, synthCandles(), fetchKlinesBefore(), fetchKlinesTyped(), KlinesError (+24 more)
+Cohesion: 0.53
+Nodes (6): lower, upper, 117, 117, 117, 117
 
 ### Community 305 - "Community 305"
 Cohesion: 0.60
 Nodes (5): lower, upper, 149, 149, 149
 
 ### Community 306 - "Community 306"
-Cohesion: 0.17
-Nodes (15): latestMarketContext(), publishVdDecisions(), selectedVdTradeId(), _cache, CLASS_LABEL, computeCached(), computeVdZoneObjects(), computeVolumeDistributionZones() (+7 more)
+Cohesion: 0.16
+Nodes (16): latestMarketContext(), publishVdDecisions(), publishVdTrades(), VdConfig, _cache, CLASS_LABEL, computeCached(), computeVdZoneObjects() (+8 more)
 
 ### Community 307 - "Community 307"
 Cohesion: 0.60
@@ -1547,20 +1543,20 @@ Cohesion: 0.15
 Nodes (13): deriveDisplay(), MoodStrip(), MoodStripProps, SEG_BG, Side, SIDE_FLIP, SIDE_INK, Status (+5 more)
 
 ### Community 314 - "Community 314"
-Cohesion: 0.20
-Nodes (16): VdDecisionSnapshot, decide(), DecideResult, gradeOf(), riskProfileOf(), ContextConfig, ContextScoreProducer, Decision (+8 more)
+Cohesion: 0.17
+Nodes (18): VdDecisionSnapshot, decide(), DecideResult, gradeOf(), riskProfileOf(), ContextConfig, ContextScoreProducer, ContextState (+10 more)
 
 ### Community 315 - "Community 315"
-Cohesion: 0.09
-Nodes (17): ChartErrorBoundary, Props, State, EMPTY_ARRAY, GridCell(), useBaseCandles(), toHeikinAshi(), atrBrick() (+9 more)
+Cohesion: 0.10
+Nodes (20): ChartType, ChartPanelProps, EMPTY_ARRAY, GridCell(), MultiChartGridProps, KeyboardShortcutOptions, useBaseCandles(), GridCount (+12 more)
 
 ### Community 316 - "Community 316"
-Cohesion: 0.06
-Nodes (14): ChartRefs, PriceLineEntry, getTfMinutes(), ChartFxPrimitive, HoverPayload, GradientZonePrimitive, ZonePaneView, ZoneRenderer (+6 more)
+Cohesion: 0.14
+Nodes (6): BandPaneView, BandRenderer, computeRuns(), IndicatorBandPrimitive, ZoneRun, BandZoneStyle
 
 ### Community 318 - "Community 318"
-Cohesion: 0.15
-Nodes (11): COMING_SOON, LayoutSwitcher(), LayoutSwitcherButton(), LayoutSwitcherProps, ThumbnailDef, MultiPaneChartProps, GridState, DEFAULT_LAYOUT (+3 more)
+Cohesion: 0.60
+Nodes (5): lower, upper, 148, 148, 148
 
 ### Community 319 - "Community 319"
 Cohesion: 0.60
@@ -1568,11 +1564,11 @@ Nodes (5): lower, upper, 142, 142, 142
 
 ### Community 320 - "Community 320"
 Cohesion: 0.08
-Nodes (36): notifyFresh(), TradePlanLike, VdTrade, walkVdTrades(), backtestStrategyVersion(), statsFromTrades(), StrategyVersionStats, tradesForStrategyVersion() (+28 more)
+Nodes (35): notifyFresh(), useScannerEngine(), TradePlanLike, VdTrade, walkVdTrades(), backtestStrategyVersion(), statsFromTrades(), StrategyVersionStats (+27 more)
 
 ### Community 321 - "Community 321"
-Cohesion: 0.10
-Nodes (32): computeStrategyDna(), HOLDING, inferStyle(), StrategyDna, walk(), evalNode(), andScopes(), DEFAULT_RISK (+24 more)
+Cohesion: 0.09
+Nodes (34): computeStrategyDna(), HOLDING, inferStyle(), StrategyDna, walk(), evalNode(), PreparedCondition, andScopes() (+26 more)
 
 ### Community 322 - "Community 322"
 Cohesion: 0.67
@@ -1603,8 +1599,8 @@ Cohesion: 0.67
 Nodes (4): lower, upper, 356, 356
 
 ### Community 329 - "Community 329"
-Cohesion: 0.18
-Nodes (8): ChartOHLCStrip(), OHLCCell(), FloatingChartTooltip(), emit(), listeners, setHover(), State, useHover()
+Cohesion: 0.12
+Nodes (12): ChartOHLCStrip(), OHLCCell(), FloatingChartTooltip(), SignalExplainer(), emit(), listeners, setHover(), State (+4 more)
 
 ### Community 330 - "Community 330"
 Cohesion: 0.67
@@ -1615,8 +1611,8 @@ Cohesion: 0.67
 Nodes (3): lower, upper, 362
 
 ### Community 332 - "Community 332"
-Cohesion: 0.25
-Nodes (9): computeVwap(), DEFAULTS, VwapInputs, VWAP_ANCHOR_OPTIONS, VwapAnchor, vwapPeriodKey(), computeVwapBands(), DEFAULTS (+1 more)
+Cohesion: 0.08
+Nodes (33): BollingerInputs, computeBollingerBands(), DEFAULTS, cols, neutralSignals(), resolveInputs(), resolveSource(), resolveSourceNum() (+25 more)
 
 ### Community 333 - "Community 333"
 Cohesion: 0.67
@@ -1695,8 +1691,8 @@ Cohesion: 0.67
 Nodes (3): lower, upper, 385
 
 ### Community 352 - "Community 352"
-Cohesion: 0.15
-Nodes (7): Impact, clamp(), DIST, FACTOR_ICON, fmtN(), ScoreRing(), StackScorePage()
+Cohesion: 0.40
+Nodes (4): Clickable, LongInProfit, ShortInLoss, Story
 
 ### Community 353 - "Community 353"
 Cohesion: 0.67
@@ -1731,8 +1727,8 @@ Cohesion: 0.67
 Nodes (3): lower, upper, 396
 
 ### Community 361 - "Community 361"
-Cohesion: 0.19
-Nodes (10): computeAlignmentMatrix(), TFS, avg(), computeStackScore(), recommend(), Recommendation, StackScore, StackScoreComponents (+2 more)
+Cohesion: 0.31
+Nodes (8): avg(), computeStackScore(), recommend(), Recommendation, StackScore, StackScoreComponents, starsFor(), WEIGHTS
 
 ### Community 362 - "Community 362"
 Cohesion: 0.67
@@ -1783,8 +1779,8 @@ Cohesion: 0.33
 Nodes (5): Architecture (`lib/scanner/` pure · `components/scanner/` UI), Engineering rules (FROZEN — apply to every sprint), Reuse map (unchanged, rev. 2) — ~70% exists, Sprints (TDD; commit each; user verifies visually), Technical Scanner — FINAL Plan (rev. 3, ARCHITECTURE FROZEN)
 
 ### Community 376 - "Community 376"
-Cohesion: 0.14
-Nodes (21): avg(), buildImprovements(), buildInsights(), clamp(), computeStackScoreFactors(), FACTOR_WEIGHT, Improvement, Insight (+13 more)
+Cohesion: 0.13
+Nodes (24): AlignmentMatrix, TimeframeDetails, avg(), buildImprovements(), buildInsights(), clamp(), computeStackScoreFactors(), FACTOR_WEIGHT (+16 more)
 
 ### Community 377 - "Community 377"
 Cohesion: 0.67
@@ -1815,16 +1811,12 @@ Cohesion: 0.18
 Nodes (8): fmt(), MarginRow(), OrderTicket(), OrderTicketProps, PCT_OPTIONS, SideToggle(), Tab, TABS
 
 ### Community 384 - "Community 384"
-Cohesion: 0.22
-Nodes (12): ThemeToggle(), CHART_PALETTES, TV_CANDLES, useThemeName(), applyTheme(), getStoredTheme(), isTheme(), setStoredTheme() (+4 more)
+Cohesion: 0.27
+Nodes (9): ThemeToggle(), applyTheme(), getStoredTheme(), isTheme(), setStoredTheme(), Theme, THEME_LABEL, THEME_META (+1 more)
 
 ### Community 385 - "Community 385"
-Cohesion: 0.08
-Nodes (22): notionalFor(), OrderType, PaperFill, PaperOrder, PaperPosition, PaperTrade, PositionSide, projectedPnl() (+14 more)
-
-### Community 386 - "Community 386"
-Cohesion: 0.07
-Nodes (29): DashboardAsideProps, CELL_LETTER, CELL_STYLE, CELL_TITLE, CellSide, IndicatorCell, IndicatorMatrixRow, Row (+21 more)
+Cohesion: 0.11
+Nodes (16): notionalFor(), OrderType, PaperFill, PaperOrder, PositionSide, projectedPnl(), Side, unrealizedPnl() (+8 more)
 
 ### Community 387 - "Community 387"
 Cohesion: 0.67
@@ -1835,88 +1827,88 @@ Cohesion: 0.67
 Nodes (3): lower, upper, 397
 
 ### Community 389 - "Community 389"
-Cohesion: 0.08
-Nodes (26): BottomDock, ChartPanel, DashboardPage(), MultiChartGrid, ITEMS, RightPanelId, useAlerts(), CandlesByTfLike (+18 more)
+Cohesion: 0.33
+Nodes (5): CandlesByTfLike, stepAnalyticsWindow(), tailSignature(), EMPTY, WindowState
 
 ### Community 390 - "Community 390"
-Cohesion: 0.14
-Nodes (25): adx(), atrSeries(), bbWidthSeries(), cci(), DEFAULT_SCREENER_CONFIG, donchianExpanding(), ema(), evaluateSmcScreener() (+17 more)
-
-### Community 392 - "Community 392"
-Cohesion: 0.29
-Nodes (7): FearGreed(), fearGreedLabel(), ITEMS, MarketState, LiqLevel, Regime, VolLevel
+Cohesion: 0.12
+Nodes (28): SmcScreenerPanel(), adx(), atrSeries(), bbWidthSeries(), cci(), DEFAULT_SCREENER_CONFIG, donchianExpanding(), ema() (+20 more)
 
 ### Community 393 - "Community 393"
 Cohesion: 0.60
 Nodes (5): lower, upper, 133, 133, 133
 
 ### Community 394 - "Community 394"
-Cohesion: 0.31
-Nodes (8): DEFAULT_FILTERS, TechnicalFilters, BUILT_IN_PRESETS, loadScreenerFilters(), mergeFilters(), saveScreenerFilters(), ScreenerPreset, StoredState
+Cohesion: 0.16
+Nodes (9): createLiquidityEngine(), PendingPierce, run(), createSwingTracker(), newPivotState(), PivotState, SwingUpdate, computeVolatility() (+1 more)
 
 ### Community 395 - "Community 395"
-Cohesion: 0.12
-Nodes (28): AlignmentMatrix, Verdict, bandLabel(), buildSummary(), computeConsensus(), computeHeatmap(), computeWeightedScore(), Consensus (+20 more)
+Cohesion: 0.08
+Nodes (27): bandLabel(), buildSummary(), computeConsensus(), computeHeatmap(), computeWeightedScore(), detectStructure(), HeatCategory, HeatmapRow (+19 more)
 
 ### Community 396 - "Community 396"
-Cohesion: 0.33
-Nodes (5): GridCountControlProps, MultiChartGridProps, GRID_COUNTS, GridCount, LayoutSync
+Cohesion: 0.12
+Nodes (19): BottomDock, ChartPanel, DashboardPage(), MultiChartGrid, ITEMS, RightPanelId, useLayoutMigrationToast(), DEFAULT_WIDGET_PREFS (+11 more)
 
 ### Community 397 - "Community 397"
-Cohesion: 0.09
-Nodes (17): clamp(), fmtN(), INDICATOR_TABS, MyStackIqPage(), PerfRow(), QualChart(), sgn(), tone() (+9 more)
+Cohesion: 0.15
+Nodes (9): clamp(), fmtN(), INDICATOR_TABS, MyStackIqPage(), PerfRow(), QualChart(), sgn(), tone() (+1 more)
 
 ### Community 398 - "Community 398"
-Cohesion: 0.40
-Nodes (5): MTF Confluence Ribbon (time-aligned per-TF signal heatmap), Timeframe-Group Divergence Callouts (lower 1m–15m vs higher 1h–1d bias), Explainable AI Grammar (E): never a score without its reasons, Market State Grammar (F): orthogonal perceptual channels per dimension, State Transition Grammar (I): Loading→Ready→Live→Stale→Disconnected lifecycle
+Cohesion: 0.12
+Nodes (18): fmtQty(), OrderFlowPanel(), OrderFlowPanelProps, accumulate(), candleBucket(), delta(), DeltaAccumulator, emptyDelta() (+10 more)
+
+### Community 399 - "Community 399"
+Cohesion: 0.29
+Nodes (9): createFvgEngine(), gapScene(), row(), run(), createStructureEngine(), CFG, run(), stairs() (+1 more)
 
 ### Community 400 - "Community 400"
 Cohesion: 0.33
 Nodes (5): 00:15 | feat/luxalgo-sd-daily, 10:08 | feat/luxalgo-sd-daily, 10:17 | feat/luxalgo-sd-daily, 11:05 | feat/luxalgo-sd-daily, 15:03 | feat/luxalgo-sd-daily
 
 ### Community 401 - "Community 401"
-Cohesion: 0.40
-Nodes (4): Clickable, LongInProfit, ShortInLoss, Story
+Cohesion: 0.23
+Nodes (9): PaperPosition, ActivePositionView, deriveActivePosition(), formatHeld(), ActivePositionWidget(), pct(), price(), Props (+1 more)
 
 ### Community 402 - "Community 402"
-Cohesion: 0.12
-Nodes (14): DslResult, OP_PATTERNS, parseCondition(), parseSource(), SMC_ALIASES, SOURCE_ALIASES, STAGE_WORDS, ok() (+6 more)
+Cohesion: 0.18
+Nodes (10): indicatorStyle(), INTENT_OPTIONS, IntentSwitch(), IntentSwitchProps, TradeIntent, Density, DENSITY_CYCLE, DENSITY_DESC (+2 more)
 
 ### Community 403 - "Community 403"
-Cohesion: 0.10
-Nodes (20): computeFibPivot(), DEFAULTS, FibPivotInputs, HTF_PERIOD_SECONDS, periodKey(), priorPeriodOHLC(), Candle, replayIndexForTime() (+12 more)
-
-### Community 405 - "Community 405"
-Cohesion: 0.22
-Nodes (6): BacktestReport, backtestSignals(), BacktestSlice, RESOLVED, base, Tier
+Cohesion: 0.33
+Nodes (3): fmt(), MarketPanel(), MarketPanelProps
 
 ### Community 406 - "Community 406"
 Cohesion: 0.22
 Nodes (8): 1. What the indicator is, 2. Critical constraint — no published formulas, 3. Why our architecture makes this cheap, 4. Reconstruction spec (deterministic, to be golden-locked), 5. Phases, 6. Explicit non-goals (v1), 7. Scope answers assumed (user was away; override freely), D Smart Line — Implementation Plan
 
 ### Community 407 - "Community 407"
-Cohesion: 0.13
-Nodes (15): Session State: bug fixes + adaptive personalization + premium chart redesign, Adaptive Personalization (Trader / Analyst / Casual modes), MyCryptoStack Design System (MDS) v0.3, Accessibility & Inclusion, Primary Persona: Active Crypto Trader, Secondary Persona: Analyst, Anti-references, Brand Personality (+7 more)
+Cohesion: 0.11
+Nodes (18): Session State: bug fixes + adaptive personalization + premium chart redesign, Adaptive Personalization (Trader / Analyst / Casual modes), Explainable AI Grammar (E): never a score without its reasons, Market State Grammar (F): orthogonal perceptual channels per dimension, MyCryptoStack Design System (MDS) v0.3, State Transition Grammar (I): Loading→Ready→Live→Stale→Disconnected lifecycle, Accessibility & Inclusion, Primary Persona: Active Crypto Trader (+10 more)
+
+### Community 408 - "Community 408"
+Cohesion: 0.29
+Nodes (3): ChartErrorBoundary, Props, State
 
 ### Community 409 - "Community 409"
 Cohesion: 0.23
 Nodes (13): bandPlot(), boxLabel(), buildSmcOverlay(), computeSmcOverlay(), DEFAULTS, dim(), FVG_COLORS, getSnapshot() (+5 more)
+
+### Community 410 - "Community 410"
+Cohesion: 0.24
+Nodes (7): COLORS, computeMaRibbonTV(), DEFAULTS, MaRibbonTVInputs, MAType, resample(), RibbonTimeframe
+
+### Community 411 - "Community 411"
+Cohesion: 0.24
+Nodes (7): DeepLoadStep, earliestReplayDateMs(), EXCHANGE_LISTING_MS, MAX_DEPTH_S, planDeepLoad(), NOW, TF_SECONDS
 
 ### Community 412 - "Community 412"
 Cohesion: 0.53
 Nodes (6): lower, upper, 116, 116, 116, 116
 
 ### Community 413 - "Community 413"
-Cohesion: 0.53
-Nodes (6): lower, upper, 117, 117, 117, 117
-
-### Community 414 - "Community 414"
-Cohesion: 0.33
-Nodes (5): Bearish, Bullish, InsufficientEvidence, Stale, Story
-
-### Community 415 - "Community 415"
-Cohesion: 0.60
-Nodes (5): lower, upper, 148, 148, 148
+Cohesion: 0.24
+Nodes (9): DslResult, OP_PATTERNS, parseCondition(), parseSource(), SMC_ALIASES, SOURCE_ALIASES, STAGE_WORDS, ok() (+1 more)
 
 ### Community 416 - "Community 416"
 Cohesion: 0.60
@@ -1926,6 +1918,14 @@ Nodes (5): lower, upper, 132, 132, 132
 Cohesion: 0.60
 Nodes (5): lower, upper, 135, 135, 135
 
+### Community 420 - "Community 420"
+Cohesion: 0.39
+Nodes (6): TrailingExtremes, computeZones(), trailing, zoneObject(), ZoneSnapshot, ZoneName
+
+### Community 423 - "Community 423"
+Cohesion: 0.33
+Nodes (5): Bearish, Bullish, InsufficientEvidence, Stale, Story
+
 ## Ambiguous Edges - Review These
 - `File/Document Icon (Next.js scaffold asset)` → `Next.js Wordmark Logo (default scaffold asset)`  [AMBIGUOUS]
   public/file.svg · relation: conceptually_related_to
@@ -1933,7 +1933,7 @@ Nodes (5): lower, upper, 135, 135, 135
   public/file.svg · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **4221 isolated node(s):** `CandlesByTf`, `ErrorsByTf`, `initialState`, `listeners`, `ExecuteOrderInput` (+4216 more)
+- **4223 isolated node(s):** `ChartPanel`, `MultiChartGrid`, `BottomDock`, `ITEMS`, `WidgetMeta` (+4218 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **36 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -1944,13 +1944,13 @@ _Questions this graph is uniquely positioned to answer:_
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `File/Document Icon (Next.js scaffold asset)` and `Vercel Logo (white triangle SVG)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `Candle` connect `Community 403` to `Community 385`, `Community 258`, `Data Sources & Symbol Search`, `Community 386`, `Community 389`, `Community 261`, `DrawingLayer module`, `Fixture: smaCrossover.golden`, `Fixture: smaCrossover.golden`, `Community 390`, `Community 395`, `Community 396`, `Community 269`, `Community 397`, `atr module`, `Community 275`, `Community 280`, `Community 409`, `Community 282`, `Community 289`, `Community 293`, `Signal Matrix & Confluence`, `Community 304`, `DataTable Columns`, `Fixture: goldenMaster`, `Community 306`, `MyStack IQ Engine`, `Renko & Alignment`, `Order Flow & Schemas`, `Paper Trading Types`, `Community 314`, `Community 315`, `Community 316`, `Community 318`, `Community 320`, `Community 321`, `MACD & ADX Indicators`, `Chart Refs & Overlays`, `Community 329`, `CSV Export Utils`, `Community 332`, `Stack Score Page`, `Market State & Sidebar`, `Community 83`, `Fixture: tradingViewCsv`, `Community 89`, `Community 247`, `Workspaces`, `Backtest Panel`, `Community 361`, `Community 109`, `indicatorLibrary module`, `page module`, `Community 246`, `Community 250`, `Community 381`, `Community 254`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
-- **Why does `Timeframe` connect `Paper Trading Types` to `Alerts Engine & Page`, `Backtester`, `Community 258`, `Community 386`, `Data Sources & Symbol Search`, `Community 389`, `Community 261`, `Fixture: smaCrossover.golden`, `Community 390`, `Strategies Engine`, `Community 395`, `Community 396`, `Community 269`, `atr module`, `Community 402`, `Community 147`, `Community 403`, `Community 289`, `Mood Narrative & Docks`, `Positions & Portfolio`, `Signal Matrix & Confluence`, `Community 304`, `DataTable Columns`, `MyStack IQ Engine`, `Renko & Alignment`, `Order Flow & Schemas`, `Community 313`, `Community 314`, `Community 315`, `Williams %R & Pine Math`, `Community 318`, `Community 320`, `Community 321`, `MACD & ADX Indicators`, `CSV Export Utils`, `Stack Score Page`, `Chart Harness & Legend`, `Community 338`, `Community 83`, `Fixture: tradingViewCsv`, `Community 352`, `Community 361`, `Community 109`, `indicatorLibrary module`, `Community 247`, `Community 376`, `Community 381`, `Community 254`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
-- **Why does `IndicatorBandPrimitive` connect `Community 316` to `Community 250`, `Community 254`?**
+- **Why does `Candle` connect `page module` to `Community 385`, `Backtester`, `Data Sources & Symbol Search`, `DrawingLayer module`, `Community 389`, `Community 261`, `Fixture: smaCrossover.golden`, `Community 390`, `Community 266`, `Community 395`, `Community 394`, `Community 269`, `Community 398`, `Community 397`, `Community 399`, `atr module`, `Community 275`, `Community 403`, `Community 409`, `Community 410`, `Community 289`, `Community 293`, `Signal Matrix & Confluence`, `MyStack IQ Engine`, `Community 306`, `Fixture: goldenMaster`, `Renko & Alignment`, `Order Flow & Schemas`, `Community 314`, `Paper Trading Types`, `Community 315`, `Community 320`, `Community 321`, `MACD & ADX Indicators`, `Chart Refs & Overlays`, `Community 329`, `CSV Export Utils`, `Community 332`, `Stack Score Page`, `Community 83`, `Fixture: tradingViewCsv`, `Community 89`, `Backtest Panel`, `Workspaces`, `Community 109`, `indicatorLibrary module`, `Community 237`, `Community 246`, `Community 247`, `Community 250`, `Community 381`, `Community 254`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+- **Why does `Timeframe` connect `Paper Trading Types` to `Alerts Engine & Page`, `Backtester`, `Community 258`, `Data Sources & Symbol Search`, `Strategies Engine`, `Community 261`, `Community 389`, `Fixture: smaCrossover.golden`, `Community 390`, `Community 395`, `Community 396`, `Community 269`, `Community 398`, `atr module`, `Community 402`, `Community 147`, `Community 275`, `Community 410`, `Community 411`, `Community 413`, `Positions & Portfolio`, `Signal Matrix & Confluence`, `DataTable Columns`, `MyStack IQ Engine`, `Renko & Alignment`, `Order Flow & Schemas`, `Community 313`, `Community 314`, `Community 315`, `Community 320`, `Community 321`, `MACD & ADX Indicators`, `CSV Export Utils`, `Stack Score Page`, `Chart Harness & Legend`, `Community 338`, `Community 83`, `Fixture: tradingViewCsv`, `Community 361`, `Community 109`, `indicatorLibrary module`, `Community 237`, `page module`, `Community 247`, `Community 376`, `Community 381`, `Community 254`?**
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
+- **Why does `cx()` connect `Williams %R & Pine Math` to `Fixture: smaCrossover.golden`, `Community 295`, `Community 266`, `Community 396`, `Community 109`, `Positions & Portfolio`, `atr module`, `UI Kit & A11y Tests`, `Community 401`, `Indicator Framework`, `Stack Score Page`, `Mood Strip`, `MyStack IQ Engine`, `Community 381`, `Reports Page`?**
   _High betweenness centrality (0.008) - this node is a cross-community bridge._
-- **What connects `CandlesByTf`, `ErrorsByTf`, `initialState` to the rest of the system?**
-  _4221 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `ChartPanel`, `MultiChartGrid`, `BottomDock` to the rest of the system?**
+  _4223 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Alerts Engine & Page` be split into smaller, more focused modules?**
-  _Cohesion score 0.07676767676767676 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06101190476190476 - nodes in this community are weakly interconnected._

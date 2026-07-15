@@ -84,6 +84,7 @@ export interface ChartProps {
    *  unconfirmed TP/SL change) reveals the Discard/Confirm buttons. */
   tradeOverlay?: {
     entryPrice: number;
+    side: 'long' | 'short';
     qty: number;
     pnl: number;
     isDirty: boolean;

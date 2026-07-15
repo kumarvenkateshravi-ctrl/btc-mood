@@ -7,6 +7,7 @@ interface TradeOverlayProps {
   chart: IChartApi | null;
   series: ISeriesApi<'Candlestick'> | null;
   entryPrice: number;
+  side: 'long' | 'short';
   qty: number;
   /** Live unrealized P&L for the open position (drives the pill colour). */
   pnl: number;
@@ -23,6 +24,7 @@ interface TradeOverlayProps {
 }
 
 const ENTRY_BLUE = '#2A62FF';
+const ENTRY_RED = '#fb5168';
 const TP_COLOR = '#22d39a'; // green
 const SL_COLOR = '#f5a623'; // amber
 
@@ -58,13 +60,14 @@ export function TradeOverlay(p: TradeOverlayProps) {
   const primary = 'h-6 rounded bg-accent px-2.5 text-[11px] font-semibold leading-none text-white hover:opacity-90';
 
   const pnlStr = `${p.pnl >= 0 ? '+' : '−'}${Math.abs(p.pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+  const pillColor = p.side === 'long' ? ENTRY_BLUE : ENTRY_RED;
 
   return (
     <div
       className="pointer-events-auto absolute right-[120px] z-[45] flex -translate-y-1/2 items-center gap-1"
       style={{ top: y }}
     >
-      <button type="button" className={chip} style={{ borderColor: ENTRY_BLUE }} title="Reverse position" onClick={p.onReverse}>
+      <button type="button" className={chip} style={{ borderColor: pillColor }} title="Reverse position" onClick={p.onReverse}>
         ⇅
       </button>
 
@@ -95,8 +98,8 @@ export function TradeOverlay(p: TradeOverlayProps) {
       </button>
 
       {/* qty | ±P&L | ✕ pill — gapped from the chips, floats left of the axis */}
-      <div className="ml-3 flex h-6 items-center overflow-hidden rounded border" style={{ borderColor: ENTRY_BLUE }}>
-        <span className="flex h-full items-center px-2 text-[11px] font-medium leading-none text-white" style={{ background: ENTRY_BLUE }}>
+      <div className="ml-3 flex h-6 items-center overflow-hidden rounded border" style={{ borderColor: pillColor }}>
+        <span className="flex h-full items-center px-2 text-[11px] font-medium leading-none text-white" style={{ background: pillColor }}>
           {p.qty}
         </span>
         <span

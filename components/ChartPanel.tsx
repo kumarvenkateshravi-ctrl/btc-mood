@@ -573,6 +573,7 @@ export default function ChartPanel({
       hasPosition && pos && !replayTrading
         ? {
             entryPrice: pos.entryPrice,
+            side: pos.side,
             qty: pos.units,
             pnl: unrealizedPnl(pos, mid),
             isDirty,

@@ -574,6 +574,7 @@ export default function Chart({
           chart={chartRef.current}
           series={candleSeriesRef.current}
           entryPrice={tradeOverlay.entryPrice}
+          side={tradeOverlay.side}
           qty={tradeOverlay.qty}
           pnl={tradeOverlay.pnl}
           isDirty={tradeOverlay.isDirty}
