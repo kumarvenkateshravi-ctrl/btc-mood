@@ -437,20 +437,25 @@ export default function DashboardPage() {
         {rightPanel && (
           <aside className="hidden xl:flex w-[450px] shrink-0 border-l border-line bg-surface flex-col min-h-0 overflow-y-auto">
             {rightPanel === 'mood' && (
-              <>
-                <MoodStrip
-                  symbol={symbol}
-                  onSymbolChange={setSymbol}
-                  status={status}
-                  dataState={dataState}
-                  price={currentPrice}
-                  change={currentChange}
-                  mood={mood}
-                  snapshots={snapshots}
-                  timeframes={TIMEFRAMES}
-                />
+              // Explicit vertical stack: btc-mood card, then the Active Trade
+              // card below it, separated by a gap. Both are normal-flow blocks
+              // (shrink-0) so neither can overlay the other.
+              <div className="flex flex-col gap-3 p-3">
+                <div className="shrink-0">
+                  <MoodStrip
+                    symbol={symbol}
+                    onSymbolChange={setSymbol}
+                    status={status}
+                    dataState={dataState}
+                    price={currentPrice}
+                    change={currentChange}
+                    mood={mood}
+                    snapshots={snapshots}
+                    timeframes={TIMEFRAMES}
+                  />
+                </div>
                 {widgetPrefs.activeTrade && activeView && livePosition && (
-                  <div className="border-t border-line p-2.5">
+                  <div className="shrink-0">
                     <ActivePositionWidget
                       view={activeView}
                       onMoveBreakEven={() => paper.setPositionOverlay('sl', livePosition.entryPrice)}
@@ -460,7 +465,7 @@ export default function DashboardPage() {
                     />
                   </div>
                 )}
-              </>
+              </div>
             )}
             {rightPanel === 'widgets' && (
               <WidgetsPanel prefs={widgetPrefs} onToggle={toggleWidget} hasActiveTrade={!!activeView} />
