@@ -69,7 +69,7 @@ interface ChartPanelProps {
   ask?: number | null;
   activeIndicatorIds: string[];
   onToggleIndicator: (id: string) => void;
-  onRemoveIndicator: (id: string) => void;
+  onRemoveIndicator?: (id: string) => void;
   onClearIndicators: () => void;
   /** Lazy-load older history for the selected timeframe. */
   onLoadOlder?: () => void;
@@ -89,6 +89,10 @@ interface ChartPanelProps {
    * with `additionalPanes` (TV-style stacked panes). v1 supports 2 or 4.
    */
   paneCount?: import('@/lib/gridLayout').LayoutCount;
+  /** When set, ChartPanel renders this multi-chart grid as its body instead
+   *  of the single chart — so the toolbar (TF/type/indicators/layout switcher)
+   *  and trade controls stay available in multi-chart layouts. */
+  multiChartSlot?: React.ReactNode;
   /** Full layout (mode + count + sync). Forwarded to the toolbar. */
   layout?: import('@/lib/gridLayout').Layout;
   onLayoutChange?: (next: import('@/lib/gridLayout').Layout) => void;
@@ -149,6 +153,7 @@ export default function ChartPanel({
   isSidebarOpen,
   onToggleSidebar,
   paneCount = 1,
+  multiChartSlot,
   layout,
   onLayoutChange,
 }: ChartPanelProps) {
@@ -573,7 +578,7 @@ export default function ChartPanel({
       hasPosition && pos && !replayTrading
         ? {
             entryPrice: pos.entryPrice,
-            side: pos.side,
+            side: pos.side as 'long' | 'short', // hasPosition guarantees non-flat
             qty: pos.units,
             pnl: unrealizedPnl(pos, mid),
             isDirty,
@@ -955,7 +960,29 @@ export default function ChartPanel({
         />
         <div ref={chartBoxRef} className="relative min-h-0 min-w-0 flex-1">
         {loading && <ChartSkeleton height={chartHeight} />}
-        {!loading && (
+        {!loading && multiChartSlot && (
+          <div className="flex h-full flex-col">
+            <div className="flex items-center gap-2 border-b border-line bg-surface-2/50 px-3 py-1.5">
+              <button
+                type="button"
+                onClick={() => handleQuickTrade('sell')}
+                className="focus-ring rounded-md border border-bear/40 bg-bear/10 px-3 py-1 text-xs font-semibold text-bear-bright transition hover:bg-bear/20"
+              >
+                Sell{bid != null ? ` ${bid.toFixed(1)}` : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickTrade('buy')}
+                className="focus-ring rounded-md border border-bull/40 bg-bull/10 px-3 py-1 text-xs font-semibold text-bull-bright transition hover:bg-bull/20"
+              >
+                Buy{ask != null ? ` ${ask.toFixed(1)}` : ''}
+              </button>
+              <span className="ml-1 text-[11px] text-ink-faint">Order applies to {symbol}</span>
+            </div>
+            <div className="relative min-h-0 flex-1">{multiChartSlot}</div>
+          </div>
+        )}
+        {!loading && !multiChartSlot && (
           <ChartErrorBoundary>
             <Chart
               candles={baseCandlesForIndicators}
@@ -1015,7 +1042,7 @@ export default function ChartPanel({
             />
           </ChartErrorBoundary>
         )}
-        {!loading && (
+        {!loading && !multiChartSlot && (
           <DrawingLayer
             api={chartApi}
             symbol={symbol}

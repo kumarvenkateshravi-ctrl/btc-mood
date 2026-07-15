@@ -47,6 +47,7 @@ export interface MaRibbonTVInputs {
 }
 
 const DEFAULTS: MaRibbonTVInputs = {
+  waitForTimeframeCloses: false,
   showMa1: true,  ma1Type: 'SMA', ma1Length: 20,
   showMa2: true,  ma2Type: 'SMA', ma2Length: 50,
   showMa3: true,  ma3Type: 'SMA', ma3Length: 100,

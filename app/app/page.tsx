@@ -338,19 +338,20 @@ export default function DashboardPage() {
             <Panel defaultSize={75} minSize={20}>
               <div className="flex-1 flex flex-col h-full relative">
 
-                {gridLayout.mode === 'multi-chart' ? (
-                  <MultiChartGrid
-                    count={gridLayout.count}
-                    tfs={gridTfs}
-                    candlesByTf={analyticsCandlesByTf}
-                    chartType={chartType}
-                    activeIndicatorIds={activeIndicatorIds}
-                    selected={selected}
-                    onSelectTf={setSelected}
-                    sync={gridLayout.sync}
-                  />
-                ) : (
+                {(
                   <ChartPanel
+                    multiChartSlot={gridLayout.mode === 'multi-chart' ? (
+                      <MultiChartGrid
+                        count={gridLayout.count}
+                        tfs={gridTfs}
+                        candlesByTf={analyticsCandlesByTf}
+                        chartType={chartType}
+                        activeIndicatorIds={activeIndicatorIds}
+                        selected={selected}
+                        onSelectTf={setSelected}
+                        sync={gridLayout.sync}
+                      />
+                    ) : undefined}
                     onDeepLoadHistory={deepLoadHistory}
                     candles={historyCandles ?? currentCandles}
                     candlesByTf={analyticsCandlesByTf}
