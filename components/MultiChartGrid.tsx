@@ -8,7 +8,7 @@ import { useBaseCandles } from '@/lib/chartHelpers';
 import { DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { Candle, Timeframe } from '@/lib/types';
-import { GRID_COLS_CLASS, type GridCount, type LayoutSync } from '@/lib/gridLayout';
+import { LAYOUT_CONFIGS, type GridCount, type LayoutSync } from '@/lib/gridLayout';
 
 interface MultiChartGridProps {
   /** Number of panes to render. Drives both the cell list and the
@@ -51,7 +51,11 @@ export default function MultiChartGrid({
   cellHeight = 240,
   sync,
 }: MultiChartGridProps) {
-  const colsClass = GRID_COLS_CLASS[count];
+  // Multi-chart column count comes from the multi-chart layout config, NOT
+  // the deprecated count-keyed GRID_COLS_CLASS (count is ambiguous across
+  // modes: multi-pane::2 overwrote multi-chart::2's grid-cols-2 with
+  // grid-cols-1, collapsing '2 charts side-by-side' into a single column).
+  const colsClass = LAYOUT_CONFIGS[`multi-chart::${count}`]?.gridColsClass ?? 'grid-cols-2';
   const chartApis = useRef(new Map<Timeframe, ChartApi>());
   const syncingRange = useRef(false);
   const syncingCrosshair = useRef(false);

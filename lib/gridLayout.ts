@@ -178,8 +178,12 @@ export const DEFAULT_GRID_COUNT: LayoutCount = 1;
 /** @deprecated use LAYOUT_CONFIGS[*].gridColsClass */
 export const GRID_COLS_CLASS: Record<LayoutCount, string> = (() => {
   const out: Partial<Record<LayoutCount, string>> = {};
+  // Prefer the multi-CHART grid columns for a given count — count is not
+  // unique across modes, and the pane configs (grid-cols-1) would otherwise
+  // clobber the chart-grid columns. Callers wanting pane columns should read
+  // LAYOUT_CONFIGS['multi-pane::N'] directly.
   for (const cfg of Object.values(LAYOUT_CONFIGS)) {
-    out[cfg.count] = cfg.gridColsClass;
+    if (out[cfg.count] == null || cfg.render === 'multi-chart') out[cfg.count] = cfg.gridColsClass;
   }
   return out as Record<LayoutCount, string>;
 })();

@@ -18,6 +18,7 @@ import {
   isSyncActive,
   type Layout,
   type LayoutMode,
+  GRID_COLS_CLASS,
 } from './gridLayout';
 
 const STORAGE_KEY_V2 = 'btc-mood:chart-grid:v2';
@@ -371,5 +372,18 @@ describe('migration toast flag', () => {
     markMigrationToastShown();
     expect(window.localStorage.getItem(MIGRATION_FLAG_KEY)).toBe('1');
     expect(wasMigrationToastShown()).toBe(true);
+  });
+});
+
+describe('GRID_COLS_CLASS (multi-chart columns, count is ambiguous across modes)', () => {
+  it('count 2 = 2 columns (multi-chart wins over multi-pane), not collapsed to 1', () => {
+    expect(GRID_COLS_CLASS[2]).toBe('grid-cols-2');
+  });
+  it('count 4 = 2 columns (a 2x2 grid)', () => {
+    expect(GRID_COLS_CLASS[4]).toBe('grid-cols-2');
+  });
+  it('the multi-chart configs themselves carry grid columns', () => {
+    expect(LAYOUT_CONFIGS['multi-chart::2'].gridColsClass).toBe('grid-cols-2');
+    expect(LAYOUT_CONFIGS['multi-chart::4'].gridColsClass).toBe('grid-cols-2');
   });
 });
