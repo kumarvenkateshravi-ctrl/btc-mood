@@ -26,6 +26,8 @@ interface MultiChartGridProps {
   selectedIndex: number;
   /** Click a cell to make it the toolbar target. */
   onSelectCell: (index: number) => void;
+  /** Remove an indicator from a specific cell (on-chart legend × ). */
+  onRemoveCellIndicator: (cellIndex: number, id: string) => void;
   /** Height of each cell's chart in px. */
   cellHeight?: number;
   /** Sync flags. crosshair / time / dateRange default false in v1
@@ -50,6 +52,7 @@ export default function MultiChartGrid({
   candlesByTf,
   selectedIndex,
   onSelectCell,
+  onRemoveCellIndicator,
   cellHeight = 240,
   sync,
 }: MultiChartGridProps) {
@@ -116,6 +119,7 @@ export default function MultiChartGrid({
           activeIndicatorIds={cell.indicatorIds}
           active={i === selectedIndex}
           onSelect={() => onSelectCell(i)}
+          onRemoveIndicator={(id) => onRemoveCellIndicator(i, id)}
           height={cellHeight}
           onReady={(api) => handleReady(i, api)}
         />
@@ -132,6 +136,7 @@ function GridCell({
   activeIndicatorIds,
   active,
   onSelect,
+  onRemoveIndicator,
   height,
   onReady,
 }: {
@@ -142,6 +147,7 @@ function GridCell({
   activeIndicatorIds: string[];
   active: boolean;
   onSelect: () => void;
+  onRemoveIndicator: (id: string) => void;
   height: number;
   onReady: (api: ChartApi) => void;
 }) {
@@ -220,8 +226,10 @@ function GridCell({
             indicatorResults={indicatorResults}
             renko={renkoOptions}
             showSignals={false}
-            activeIndicatorId=""
+            activeIndicatorIds={activeIndicatorIds}
+            activeIndicatorId={activeIndicatorIds[0] ?? ''}
             onIndicatorChange={() => {}}
+            onRemoveIndicator={onRemoveIndicator}
             onReady={onReady}
           />
         </ChartErrorBoundary>

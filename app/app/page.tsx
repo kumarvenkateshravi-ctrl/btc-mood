@@ -395,6 +395,10 @@ export default function DashboardPage() {
                         candlesByTf={analyticsCandlesByTf}
                         selectedIndex={selCell}
                         onSelectCell={setSelectedCell}
+                        onRemoveCellIndicator={(idx, id) =>
+                          setGridCells((cs) => cs.map((c, i) => i === idx
+                            ? { ...c, indicatorIds: c.indicatorIds.filter((x) => x !== id) }
+                            : c))}
                         sync={gridLayout.sync}
                       />
                     ) : undefined}
