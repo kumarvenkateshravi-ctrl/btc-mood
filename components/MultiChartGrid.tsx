@@ -10,17 +10,22 @@ import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { Candle, Timeframe } from '@/lib/types';
 import { LAYOUT_CONFIGS, type GridCount, type LayoutSync } from '@/lib/gridLayout';
 
+/** Per-cell configuration — each chart owns its own timeframe, type and
+ *  indicator set (edited from the main toolbar when the cell is selected). */
+export interface GridCellConfig {
+  tf: Timeframe;
+  type: ChartType;
+  indicatorIds: string[];
+}
+
 interface MultiChartGridProps {
-  /** Number of panes to render. Drives both the cell list and the
-   *  CSS grid column count. */
-  count: GridCount;
-  /** Per-pane timeframe. Length must match `count`. */
-  tfs: Timeframe[];
+  /** One entry per cell; length drives the grid column count. */
+  cells: GridCellConfig[];
   candlesByTf: Record<Timeframe, Candle[]>;
-  chartType: ChartType;
-  activeIndicatorIds: string[];
-  selected: Timeframe;
-  onSelectTf: (tf: Timeframe) => void;
+  /** Index of the selected cell — the one the main toolbar controls. */
+  selectedIndex: number;
+  /** Click a cell to make it the toolbar target. */
+  onSelectCell: (index: number) => void;
   /** Height of each cell's chart in px. */
   cellHeight?: number;
   /** Sync flags. crosshair / time / dateRange default false in v1
@@ -41,27 +46,25 @@ const EMPTY_ARRAY: any[] = [];
  * with default settings per cell.
  */
 export default function MultiChartGrid({
-  count,
-  tfs,
+  cells,
   candlesByTf,
-  chartType,
-  activeIndicatorIds,
-  selected,
-  onSelectTf,
+  selectedIndex,
+  onSelectCell,
   cellHeight = 240,
   sync,
 }: MultiChartGridProps) {
+  const count = cells.length as GridCount;
   // Multi-chart column count comes from the multi-chart layout config, NOT
   // the deprecated count-keyed GRID_COLS_CLASS (count is ambiguous across
   // modes: multi-pane::2 overwrote multi-chart::2's grid-cols-2 with
   // grid-cols-1, collapsing '2 charts side-by-side' into a single column).
   const colsClass = LAYOUT_CONFIGS[`multi-chart::${count}`]?.gridColsClass ?? 'grid-cols-2';
-  const chartApis = useRef(new Map<Timeframe, ChartApi>());
+  const chartApis = useRef(new Map<number, ChartApi>());
   const syncingRange = useRef(false);
   const syncingCrosshair = useRef(false);
 
-  const handleReady = (tf: Timeframe, api: ChartApi) => {
-    chartApis.current.set(tf, api);
+  const handleReady = (idx: number, api: ChartApi) => {
+    chartApis.current.set(idx, api);
 
     // Back-compat: when no sync prop is passed, keep the legacy always-on
     // behavior. When passed, follow the layout's sync flags (defaults
@@ -73,8 +76,8 @@ export default function MultiChartGrid({
       api.subscribeLogicalRange((range) => {
         if (syncingRange.current || !range) return;
         syncingRange.current = true;
-        chartApis.current.forEach((otherApi, otherTf) => {
-          if (otherTf !== tf) {
+        chartApis.current.forEach((otherApi, otherIdx) => {
+          if (otherIdx !== idx) {
             try { otherApi.setVisibleLogicalRange(range); } catch {}
           }
         });
@@ -86,8 +89,8 @@ export default function MultiChartGrid({
       api.subscribeCrosshairTime((time) => {
         if (syncingCrosshair.current) return;
         syncingCrosshair.current = true;
-        chartApis.current.forEach((otherApi, otherTf) => {
-          if (otherTf !== tf) {
+        chartApis.current.forEach((otherApi, otherIdx) => {
+          if (otherIdx !== idx) {
             try { otherApi.setCrosshairTime(time); } catch {}
           }
         });
@@ -103,18 +106,18 @@ export default function MultiChartGrid({
       data-count={count}
       className={['grid gap-3 w-full h-full flex-1', colsClass, count > 2 ? 'grid-rows-2' : 'grid-rows-1'].join(' ')}
     >
-      {tfs.map((tf) => (
+      {cells.map((cell, i) => (
         <GridCell
-          key={tf}
-          tf={tf}
-          candles={candlesByTf[tf] ?? EMPTY_ARRAY}
+          key={i}
+          tf={cell.tf}
+          candles={candlesByTf[cell.tf] ?? EMPTY_ARRAY}
           candlesByTf={candlesByTf}
-          type={chartType}
-          activeIndicatorIds={activeIndicatorIds}
-          active={tf === selected}
-          onSelect={() => onSelectTf(tf)}
+          type={cell.type}
+          activeIndicatorIds={cell.indicatorIds}
+          active={i === selectedIndex}
+          onSelect={() => onSelectCell(i)}
           height={cellHeight}
-          onReady={(api) => handleReady(tf, api)}
+          onReady={(api) => handleReady(i, api)}
         />
       ))}
     </div>
@@ -193,18 +196,13 @@ function GridCell({
   return (
     <div
       role="gridcell"
+      onPointerDownCapture={onSelect}
+      title="Click to control this chart from the toolbar"
       className={[
-        'panel relative overflow-hidden rounded-xl border transition-colors h-full min-h-0',
-        active ? 'border-accent/50' : 'border-line',
+        'panel relative overflow-hidden rounded-xl border transition-all h-full min-h-0 cursor-pointer',
+        active ? 'border-accent ring-1 ring-accent/60' : 'border-line hover:border-line-strong',
       ].join(' ')}
     >
-      <button
-        onClick={onSelect}
-        title={`Focus ${tf}`}
-        className="focus-ring absolute right-2 top-2 z-10 rounded bg-base/80 px-2 py-0.5 font-mono text-[11px] font-semibold text-ink backdrop-blur-sm transition hover:bg-surface-2"
-      >
-        {tf}
-      </button>
       {candles.length === 0 ? (
         <div
           className="flex items-center justify-center bg-chart-bg text-xs text-ink-faint"

@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 // it out of /app's initial bundle until a chart actually renders. BottomDock is
 // below the fold, so it's deferred too.
 const ChartPanel = dynamic(() => import('@/components/ChartPanel'), { ssr: false });
+import type { GridCellConfig } from '@/components/MultiChartGrid';
 const MultiChartGrid = dynamic(() => import('@/components/MultiChartGrid'), {
   ssr: false,
   loading: () => <div className="flex h-full items-center justify-center text-xs text-ink-faint">Loading charts…</div>,
@@ -131,6 +132,54 @@ export default function DashboardPage() {
   const clearIndicators = useCallback(() => setActiveIndicatorIds([]), []);
 
   const { gridCount, gridTfs, layout: gridLayout, setLayout: setGridLayout, handleGridCountChange, migrated: layoutMigrated, previousCount: layoutPreviousCount } = useGridState(selected);
+
+  // ---- Multi-chart per-cell config (each chart owns tf/type/indicators;
+  // the SELECTED cell is what the main toolbar controls) ----
+  const [gridCells, setGridCells] = useState<GridCellConfig[]>([]);
+  const [selectedCell, setSelectedCell] = useState(0);
+  // Seed / resize the cell list from the layout + current globals when the
+  // multi-chart layout or its count changes.
+  useEffect(() => {
+    if (gridLayout.mode !== 'multi-chart') return;
+    setGridCells((prev) => {
+      if (prev.length === gridLayout.count) return prev;
+      return Array.from({ length: gridLayout.count }, (_, i) =>
+        prev[i] ?? { tf: gridTfs[i] ?? selected, type: chartType, indicatorIds: activeIndicatorIds });
+    });
+    setSelectedCell((s) => (s < gridLayout.count ? s : 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridLayout.mode, gridLayout.count, gridTfs]);
+
+  const inMultiChart = gridLayout.mode === 'multi-chart' && gridCells.length > 0;
+  const selCell = inMultiChart ? Math.min(selectedCell, gridCells.length - 1) : 0;
+  const patchCell = useCallback((patch: Partial<GridCellConfig>) => {
+    setGridCells((cells) => cells.map((c, i) => (i === selCell ? { ...c, ...patch } : c)));
+  }, [selCell]);
+
+  // The toolbar binds to the selected cell in multi-chart mode, else globals.
+  const toolbarTf = inMultiChart ? gridCells[selCell].tf : selected;
+  const toolbarType = inMultiChart ? gridCells[selCell].type : chartType;
+  const toolbarIndicatorIds = inMultiChart ? gridCells[selCell].indicatorIds : activeIndicatorIds;
+  const onToolbarSelectTf = useCallback((tf: Timeframe) => {
+    if (inMultiChart) patchCell({ tf }); else setSelected(tf);
+  }, [inMultiChart, patchCell]);
+  const onToolbarSelectType = useCallback((t: import('@/components/Chart').ChartType) => {
+    if (inMultiChart) patchCell({ type: t }); else setChartType(t);
+  }, [inMultiChart, patchCell]);
+  const onToolbarToggleIndicator = useCallback((id: string) => {
+    if (!inMultiChart) { toggleIndicator(id); return; }
+    setGridCells((cells) => cells.map((c, i) => i === selCell
+      ? { ...c, indicatorIds: c.indicatorIds.includes(id) ? c.indicatorIds.filter((x) => x !== id) : [...c.indicatorIds, id] }
+      : c));
+  }, [inMultiChart, selCell, toggleIndicator]);
+  const onToolbarRemoveIndicator = useCallback((id: string) => {
+    if (!inMultiChart) { removeIndicator(id); return; }
+    setGridCells((cells) => cells.map((c, i) => i === selCell ? { ...c, indicatorIds: c.indicatorIds.filter((x) => x !== id) } : c));
+  }, [inMultiChart, selCell, removeIndicator]);
+  const onToolbarClearIndicators = useCallback(() => {
+    if (inMultiChart) patchCell({ indicatorIds: [] }); else clearIndicators();
+  }, [inMultiChart, patchCell, clearIndicators]);
+
   useLayoutMigrationToast({ migrated: layoutMigrated, previousCount: layoutPreviousCount });
 
   const applyWorkspace = useCallback((cfg: WorkspaceConfig) => {
@@ -342,23 +391,20 @@ export default function DashboardPage() {
                   <ChartPanel
                     multiChartSlot={gridLayout.mode === 'multi-chart' ? (
                       <MultiChartGrid
-                        count={gridLayout.count}
-                        tfs={gridTfs}
+                        cells={gridCells}
                         candlesByTf={analyticsCandlesByTf}
-                        chartType={chartType}
-                        activeIndicatorIds={activeIndicatorIds}
-                        selected={selected}
-                        onSelectTf={setSelected}
+                        selectedIndex={selCell}
+                        onSelectCell={setSelectedCell}
                         sync={gridLayout.sync}
                       />
                     ) : undefined}
                     onDeepLoadHistory={deepLoadHistory}
                     candles={historyCandles ?? currentCandles}
                     candlesByTf={analyticsCandlesByTf}
-                    type={chartType}
-                    onTypeChange={setChartType}
-                    selected={selected}
-                    onSelectTf={setSelected}
+                    type={toolbarType}
+                    onTypeChange={onToolbarSelectType}
+                    selected={toolbarTf}
+                    onSelectTf={onToolbarSelectTf}
                     symbol={symbol}
                     price={currentPrice}
                     change={currentChange}
@@ -367,10 +413,10 @@ export default function DashboardPage() {
                     onQuickTrade={() => { setTab('trade'); setRightPanel('signals'); }}
                     bid={bid}
                     ask={ask}
-                    activeIndicatorIds={activeIndicatorIds}
-                    onToggleIndicator={toggleIndicator}
-                    onRemoveIndicator={removeIndicator}
-                    onClearIndicators={clearIndicators}
+                    activeIndicatorIds={toolbarIndicatorIds}
+                    onToggleIndicator={onToolbarToggleIndicator}
+                    onRemoveIndicator={onToolbarRemoveIndicator}
+                    onClearIndicators={onToolbarClearIndicators}
                     onLoadOlder={handleLoadOlder}
                     historyActive={historyCandles != null}
                     onJumpToDate={jumpToDate}
