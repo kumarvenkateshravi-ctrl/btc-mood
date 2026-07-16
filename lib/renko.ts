@@ -99,7 +99,16 @@ export function toRenko(candles: Candle[], opts: RenkoOptions = {}): Candle[] {
   // diverge from TradingView even with identical settings.
   const rawStart = valid[0].close;
   const gridStart = Math.floor(rawStart / brick) * brick;
+  // Traditional Renko is direction-aware: a continuation needs 1× brick of
+  // movement beyond the last close, but a REVERSAL needs 2× brick (the price
+  // must retrace the whole last brick, then move one more). The reversal brick
+  // attaches at the prior brick's OPEN, not its close, so bricks stay
+  // contiguous (a down brick sits directly beneath the up brick it reverses).
+  // Tracking only `lastClose` symmetrically — the old bug — produced a spurious
+  // reversal brick after just 1× brick and diverged from TradingView.
+  let lastOpen = gridStart;
   let lastClose = gridStart;
+  let dir: 0 | 1 | -1 = 0;
 
 
   const firstTime = valid[0].time;
@@ -126,23 +135,54 @@ export function toRenko(candles: Candle[], opts: RenkoOptions = {}): Candle[] {
 
     let safety = 0;
     while (safety++ < 10_000) {
-      const diff = price - lastClose;
-      if (diff >= brick) {
-        const n = Math.floor(diff / brick);
-        for (let k = 0; k < n; k++) {
-          const prev = lastClose;
-          lastClose = prev + brick;
-          pendingBricks.push({ open: prev, close: lastClose });
-        }
-      } else if (diff <= -brick) {
-        const n = Math.floor(-diff / brick);
-        for (let k = 0; k < n; k++) {
-          const prev = lastClose;
-          lastClose = prev - brick;
-          pendingBricks.push({ open: prev, close: lastClose });
-        }
+      if (dir > 0) {
+        // Last brick was UP.
+        if (price >= lastClose + brick) {
+          // Continuation up: open at the prior close.
+          const open = lastClose;
+          lastOpen = open;
+          lastClose = open + brick;
+          pendingBricks.push({ open, close: lastClose });
+        } else if (price <= lastClose - 2 * brick) {
+          // Reversal down: needs 2× brick; attaches at the prior brick's open.
+          const open = lastOpen;
+          lastClose = open - brick;
+          lastOpen = open;
+          dir = -1;
+          pendingBricks.push({ open, close: lastClose });
+        } else break;
+      } else if (dir < 0) {
+        // Last brick was DOWN.
+        if (price <= lastClose - brick) {
+          // Continuation down.
+          const open = lastClose;
+          lastOpen = open;
+          lastClose = open - brick;
+          pendingBricks.push({ open, close: lastClose });
+        } else if (price >= lastClose + 2 * brick) {
+          // Reversal up: 2× brick, attaches at the prior brick's open.
+          const open = lastOpen;
+          lastClose = open + brick;
+          lastOpen = open;
+          dir = 1;
+          pendingBricks.push({ open, close: lastClose });
+        } else break;
       } else {
-        break;
+        // No established direction yet (right after the grid anchor): the first
+        // brick forms after 1× brick of movement in either direction.
+        if (price >= lastClose + brick) {
+          const open = lastClose;
+          lastOpen = open;
+          lastClose = open + brick;
+          dir = 1;
+          pendingBricks.push({ open, close: lastClose });
+        } else if (price <= lastClose - brick) {
+          const open = lastClose;
+          lastOpen = open;
+          lastClose = open - brick;
+          dir = -1;
+          pendingBricks.push({ open, close: lastClose });
+        } else break;
       }
     }
 

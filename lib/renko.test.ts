@@ -80,11 +80,27 @@ describe('toRenko (TradingView-style: grid anchor, real timestamps, forming bric
     }
   });
 
-  it('handles direction reversals correctly', () => {
-    // 100 → 110 (2 up-bricks, brick=5), then 110 → 95 (3 down-bricks),
-    // then the zero-width forming brick at 95.
+  it('handles direction reversals correctly (Traditional 2× reversal)', () => {
+    // 100 → 110 (2 up-bricks, brick=5). Then 110 → 95: a reversal needs 2×
+    // brick, so the first down brick only appears once price falls to 100
+    // (attaching at the last up brick's OPEN = 105 → close 100), then a
+    // continuation down brick to 95. Total 2 down bricks, not 3 — a 1× move
+    // (down to 105) must NOT create a brick. Finally the forming brick at 95.
     const bricks = toRenko(makeCandles([100, 110, 95]), { brickSize: 5 });
-    expect(bricks.map((b) => b.close)).toEqual([100, 105, 110, 105, 100, 95, 95]);
+    expect(bricks.map((b) => b.close)).toEqual([100, 105, 110, 100, 95, 95]);
+    // The reversal brick opens at the prior brick's open (105), keeping bricks
+    // contiguous instead of gapping from the prior close (110).
+    expect(bricks[3].open).toBe(105);
+    expect(bricks[3].close).toBe(100);
+  });
+
+  it('a 1× counter-move does NOT create a reversal brick (noise filter)', () => {
+    // Up to 110 (brick 5), then price dips to 106 (only 4 below 110 — less than
+    // one brick past the reversal threshold). No down brick; forming shows the dip.
+    const bricks = toRenko(makeCandles([100, 110, 106]), { brickSize: 5 });
+    // completed bricks unchanged by the dip: anchor + 2 up bricks
+    expect(completed(bricks).map((b) => b.close)).toEqual([100, 105, 110]);
+    expect(forming(bricks).close).toBe(106);
   });
 
   it('every completed brick opens at the prior close', () => {
