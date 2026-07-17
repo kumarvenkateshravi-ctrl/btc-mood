@@ -88,6 +88,7 @@ intraday 20 / swing 50) become pure configuration later.
 
 ```ts
 metadata: {
+  engine: 'marketStructure';  // engine identity — every future engine sets its own
   snapshotVersion: string;    // '1.0'
   symbol: string;
   timeframe: Timeframe;
@@ -118,15 +119,15 @@ extensible without breaking consumers. The card renders a quiet
 
 | Section | Content | Source |
 |---|---|---|
-| `structure` | trend (bullish/bearish/neutral), swing sequence (e.g. HH → HL → HH), confidence % (confluence/institutional score), **structure age** ("established N bars ago" — bars since the last trend-flipping CHoCH/BOS) | `state.swingTrend`, swing + structure events, existing scores |
+| `structure` | trend (bullish/bearish/neutral), swing sequence (e.g. HH → HL → HH), confidence % (confluence/institutional score), **structure age** ("established N bars ago" — bars since the last trend-flipping CHoCH/BOS; **`null` when no trend-flipping event exists** — null means "not yet established", never 0) | `state.swingTrend`, swing + structure events, existing scores |
 | `liquidity` | per side: **Created / Swept / Still Active** pool counts; created-today sub-counts | `liquidityPools` lifecycle, `LIQUIDITY_SWEEP`/`EQH`/`EQL` events |
-| `fvg` | per direction: created, still open, filled, created today, **stacked** (open same-direction FVGs with overlapping bands); net bias (+N direction); freshest | `fvgs` lifecycle + `FVG_*` events; small new geometry pass on existing top/bottom bands |
+| `fvg` | per direction: created, still open, filled, created today, **stacked**; net bias (+N direction); freshest. **Stacked rule (formal):** two open same-direction FVGs are stacked when their price bands intersect with positive overlap — `min(a.top, b.top) > max(a.bottom, b.bottom)`. The stacked count per direction = number of open FVGs of that direction that overlap at least one other open FVG of the same direction | `fvgs` lifecycle + `FVG_*` events; small new geometry pass on existing top/bottom bands |
 | `orderBlocks` | per direction: created, fresh, mitigated, broken; **nearest OB: price + distance %** from current close (closest unmitigated band on the relevant side) | `orderBlocks` lifecycle + `OB_*` events |
 | `structureBreaks` | BOS/CHoCH counts per direction over the **last `structureWindowBars` bars**; per-TF strip (same window) across matrix TFs; lifetime totals kept internal, not rendered | `BOS`/`CHOCH` events (barIndex filter) |
 | `premiumDiscount` | zone + descriptive sentence ("Price sits inside the discount half of the current dealing range.") — no badge/checkmark | `state.zone`, trailing range |
-| `timeline` | last `timelineLength` **significant** events: LIQUIDITY_SWEEP, CHOCH, BOS, OB_CREATED, FVG_CREATED (consecutive duplicates collapsed). Excluded: FVG_FILLED, OB_TESTED, OB_MITIGATED, SWING_FORMED, EQH/EQL_FORMED, ZONE_CHANGED | `events` |
+| `timeline` | last `timelineLength` **significant** events: LIQUIDITY_SWEEP, CHOCH, BOS, OB_CREATED, FVG_CREATED (consecutive duplicates collapsed). Excluded: FVG_FILLED, OB_TESTED, OB_MITIGATED, SWING_FORMED, EQH/EQL_FORMED, ZONE_CHANGED. **Ordering: oldest → newest, ending with Current Phase** (reads like a story). Each item preserves `{ eventId, eventType, barIndex, timestamp, direction, label }` even though the UI initially renders only the label — enables click-to-chart, replay-from-event, diagnostics, and AI explanations without a snapshot redesign | `events` |
 | `phase` | Current Phase label | screener `WorkflowStage` (reused, not reimplemented) |
-| `quality` | **Structure Quality: Excellent / Strong / Moderate / Weak** (bucketed from confluence score; numeric score stays internal in the snapshot) | existing confluence score |
+| `quality` | `{ classification, confidence, summary }` — **classification**: Excellent / Strong / Moderate / Weak, bucketed from the confluence score with **explicit thresholds: 90–100 Excellent, 75–89 Strong, 55–74 Moderate, 0–54 Weak** (defined as named constants; numeric `confidence` stays in the snapshot); **summary**: one concise descriptive headline sentence (e.g. "Bullish structure remains intact despite recent sell-side liquidity sweeps.") — narratives carry the detail | existing confluence score + narrative rule table |
 | `narratives` | deterministic descriptive sentences (see below) | rule table over the above |
 
 ## Narratives — descriptive, never predictive
@@ -201,11 +202,27 @@ Vitest only (no Playwright), against the pure module:
 8. Structure Quality bucketing thresholds.
 9. Narrative rule table outputs + banned-vocabulary scan.
 10. Section health states (`ready`/`warming_up`/`insufficient_history`).
-11. Metadata completeness; determinism (same inputs ⇒ identical snapshot,
-    modulo `createdAt`/`computationTimeMs`).
+11. Metadata completeness (incl. `engine: 'marketStructure'`); determinism
+    (same inputs ⇒ identical snapshot, modulo `createdAt`/`computationTimeMs`).
 12. `isDebugEnabled` scope behavior.
-13. Entire pre-existing suite (830+) passes unchanged; `lib/smc/` and
+13. **Default-drift guard:** `createMarketStructureSnapshot(smc, candles)`
+    equals `createMarketStructureSnapshot(smc, candles, { structureWindowBars: 20,
+    timelineLength: 7 })` (modulo timing fields).
+14. Structure age is `null` (not 0) when no trend-flipping event exists.
+15. Timeline items carry `eventId`/`eventType`/`barIndex`/`timestamp` and are
+    ordered oldest → newest.
+16. Quality thresholds honored at boundaries (89→Strong, 90→Excellent, etc.).
+17. Entire pre-existing suite (830+) passes unchanged; `lib/smc/` and
     `lib/alignment.ts` are not modified.
+
+## Future-proofing note
+
+Every future intelligence engine standardizes on a common shape —
+`IntelligenceSnapshot<T>` with `metadata` / `sections` / `diagnostics?` —
+and `MarketStructureSnapshot` is written so it can declare conformance
+when that interface is introduced. Not implemented in v1; the field naming
+here (metadata-first, per-section health states) is chosen to make that
+adoption a non-breaking change.
 
 ## Out of scope (v1)
 
