@@ -266,6 +266,29 @@ describe('createMarketStructureSnapshot', () => {
     expect(balanced.dominance).toBe('balanced');
   });
 
+  it('structure-break verdict is neutral when the window is empty', () => {
+    const ms = createMarketStructureSnapshot(input(snap({ events: [] })));
+    expect(ms.structureBreaks.data!.verdict.tone).toBe('neutral');
+    expect(ms.structureBreaks.data!.verdict.text).toBe('No BOS or CHoCH in the last 20 bars.');
+  });
+
+  it('structure-break verdict names an in-window break', () => {
+    const bos = ev({ type: 'BOS', direction: 'bullish', barIndex: 99 });
+    const ms = createMarketStructureSnapshot(input(snap({ events: [bos] })));
+    expect(ms.structureBreaks.data!.verdict.tone).toBe('bullish');
+    expect(ms.structureBreaks.data!.verdict.text).toMatch(/Bullish BOS/);
+  });
+
+  it('quality carries trend, liquidityBias and recentBreaks', () => {
+    const ms = createMarketStructureSnapshot(input(snap({
+      swingTrend: 1,
+      liquidityPools: [obj({ kind: 'liquidityPool', direction: 'bearish', state: 'active' })],
+    })));
+    expect(ms.quality.data!.trend).toBe('bullish');
+    expect(ms.quality.data!.liquidityBias).toBe('buy');
+    expect(ms.quality.data!.recentBreaks).toBe('None');
+  });
+
   it('narratives are descriptive — banned predictive vocabulary never appears', () => {
     const banned = /\b(likely|expected|will|probable|should|forecast|anticipat\w*|predict\w*)\b/i;
     const cases = [

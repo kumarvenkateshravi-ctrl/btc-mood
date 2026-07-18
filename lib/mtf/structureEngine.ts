@@ -76,19 +76,29 @@ export interface OrderBlockData {
   nearestBullish: NearestOb | null; nearestBearish: NearestOb | null;
 }
 export interface BreakCounts { bullishBos: number; bearishBos: number; bullishChoch: number; bearishChoch: number; }
+export interface StructureVerdict { tone: TrendWord; text: string; }
 export interface StructureBreaksData {
   windowBars: number;
   window: BreakCounts;
   /** Full-history totals — kept for future consumers, not rendered. */
   lifetime: BreakCounts;
   perTf: Array<{ timeframe: Timeframe } & BreakCounts>;
+  /** Descriptive one-liner for the windowed counts. */
+  verdict: StructureVerdict;
 }
 export interface PremiumDiscountData { zone: ZoneName; description: string; }
 export interface TimelineItem {
   eventId: string; eventType: SmcEventType; barIndex: number; timestamp: number;
   direction: SmcDirection; label: string;
 }
-export interface QualityData { classification: StructureQuality; confidence: number; summary: string; }
+export interface QualityData {
+  classification: StructureQuality;
+  confidence: number;
+  summary: string;
+  trend: TrendWord;
+  liquidityBias: 'buy' | 'sell' | 'mixed';
+  recentBreaks: string;
+}
 
 export interface MarketStructureSnapshot {
   metadata: {
@@ -158,6 +168,22 @@ function breakCounts(events: SmcEvent[], fromBar: number): BreakCounts {
     }
   }
   return c;
+}
+
+/** Descriptive one-liner for the windowed break counts. */
+function structureVerdict(w: BreakCounts, windowBars: number): StructureVerdict {
+  const bull = w.bullishBos + w.bullishChoch;
+  const bear = w.bearishBos + w.bearishChoch;
+  if (bull === 0 && bear === 0) {
+    return { tone: 'neutral', text: `No BOS or CHoCH in the last ${windowBars} bars.` };
+  }
+  const parts: string[] = [];
+  if (w.bullishBos) parts.push(`${w.bullishBos} Bullish BOS`);
+  if (w.bearishBos) parts.push(`${w.bearishBos} Bearish BOS`);
+  if (w.bullishChoch) parts.push(`${w.bullishChoch} Bullish CHoCH`);
+  if (w.bearishChoch) parts.push(`${w.bearishChoch} Bearish CHoCH`);
+  const tone: TrendWord = bull > bear ? 'bullish' : bear > bull ? 'bearish' : 'neutral';
+  return { tone, text: `${parts.join(' · ')} in the last ${windowBars} bars.` };
 }
 
 /** Swing labels (HH/HL/LH/LL) from swing-scope SWING_FORMED events; the first
@@ -348,16 +374,19 @@ export function createMarketStructureSnapshot(
 
   // ---- structure breaks (windowed; per-TF strip uses each TF's own bars) ----
   const windowFrom = Math.max(0, lastBarIndex - cfg.structureWindowBars + 1);
+  const windowCounts = breakCounts(events, windowFrom);
+  const verdict = structureVerdict(windowCounts, cfg.structureWindowBars);
   const structureBreaks: Section<StructureBreaksData> = {
     state: 'ready',
     data: {
       windowBars: cfg.structureWindowBars,
-      window: breakCounts(events, windowFrom),
+      window: windowCounts,
       lifetime: breakCounts(events, 0),
       perTf: (input.perTf ?? []).map((p) => ({
         timeframe: p.timeframe,
         ...breakCounts(p.events, Math.max(0, p.barsProcessed - cfg.structureWindowBars)),
       })),
+      verdict,
     },
   };
 
@@ -402,7 +431,15 @@ export function createMarketStructureSnapshot(
       ? `${cap(trend as SmcDirection)} structure remains intact despite recent ${trend === 'bullish' ? 'sell-side' : 'buy-side'} liquidity sweeps.`
       : `${cap(trend as SmcDirection)} structure remains intact across the current dealing range.`;
   const quality: Section<QualityData> = established
-    ? { state: 'ready', data: { classification, confidence: score, summary } }
+    ? {
+        state: 'ready',
+        data: {
+          classification, confidence: score, summary,
+          trend,
+          liquidityBias: liquidityData.dominance === 'balanced' ? 'mixed' : liquidityData.dominance,
+          recentBreaks: verdict.tone === 'neutral' ? 'None' : verdict.text,
+        },
+      }
     : { state: 'warming_up', data: null };
 
   // ---- narratives (descriptive only — see banned-vocabulary test) ----
