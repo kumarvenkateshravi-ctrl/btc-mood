@@ -58,11 +58,29 @@ describe('createMarketStructureSnapshot', () => {
     const c = candles(100);
     const ms = createMarketStructureSnapshot(input(snap(), c));
     expect(ms.metadata.engine).toBe('marketStructure');
-    expect(ms.metadata.snapshotVersion).toBe('1.0');
+    expect(ms.metadata.snapshotVersion).toBe('1.1');
     expect(ms.metadata.symbol).toBe('BTCUSDT');
     expect(ms.metadata.timeframe).toBe('1h');
     expect(ms.metadata.lastClosedBarTime).toBe(c[99].time);
     expect(ms.metadata.config).toEqual(DEFAULT_STRUCTURE_ENGINE_CONFIG);
+  });
+
+  it('qualityWord maps confidence at the 70 / 45 boundaries', () => {
+    const word = (institutional: number) =>
+      createMarketStructureSnapshot(input(snap({ institutional }))).structure.data!.qualityWord;
+    expect(word(70)).toBe('Strong');
+    expect(word(69)).toBe('Moderate');
+    expect(word(45)).toBe('Moderate');
+    expect(word(44)).toBe('Developing');
+  });
+
+  it('narratives are typed { category, text }', () => {
+    const ms = createMarketStructureSnapshot(input(snap()));
+    expect(ms.narratives.length).toBeGreaterThan(0);
+    for (const n of ms.narratives) {
+      expect(['Liquidity', 'Structure', 'FVG', 'Premium']).toContain(n.category);
+      expect(typeof n.text).toBe('string');
+    }
   });
 
   it('empty candles ⇒ every section insufficient_history', () => {
@@ -239,7 +257,7 @@ describe('createMarketStructureSnapshot', () => {
     ];
     for (const s of cases) {
       const ms = createMarketStructureSnapshot(input(s));
-      for (const line of [...ms.narratives, ms.quality.data?.summary ?? '']) {
+      for (const line of [...ms.narratives.map((n) => n.text), ms.quality.data?.summary ?? '']) {
         expect(line).not.toMatch(banned);
       }
       expect(ms.narratives.length).toBeGreaterThan(0);

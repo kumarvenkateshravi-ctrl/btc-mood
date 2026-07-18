@@ -38,6 +38,9 @@ export interface Section<T> { state: SectionState; data: T | null; }
 export type StructureQuality = 'Excellent' | 'Strong' | 'Moderate' | 'Weak';
 export type SwingLabel = 'HH' | 'HL' | 'LH' | 'LL';
 export type TrendWord = 'bullish' | 'bearish' | 'neutral';
+export type StructureQualityWord = 'Strong' | 'Moderate' | 'Developing';
+export type NarrativeCategory = 'Liquidity' | 'Structure' | 'FVG' | 'Premium';
+export interface Narrative { category: NarrativeCategory; text: string; }
 
 export interface StructureData {
   trend: TrendWord;
@@ -47,6 +50,8 @@ export interface StructureData {
   confidence: number;
   /** Bars since the last trend-flipping CHoCH (or first BOS); null = not yet established. */
   ageBars: number | null;
+  /** Word form of confidence, distinct from the raw percentage. */
+  qualityWord: StructureQualityWord;
 }
 export interface LiquiditySideData { created: number; swept: number; active: number; createdToday: number; }
 export interface LiquidityData { buySide: LiquiditySideData; sellSide: LiquiditySideData; }
@@ -98,7 +103,7 @@ export interface MarketStructureSnapshot {
   timeline: Section<{ items: TimelineItem[] }>;
   phase: Section<{ label: string }>;
   quality: Section<QualityData>;
-  narratives: string[];
+  narratives: Narrative[];
 }
 
 export interface StructureEngineInput {
@@ -115,8 +120,12 @@ export interface StructureEngineInput {
 
 // ----------------------------------------------------------------- helpers
 
-const SNAPSHOT_VERSION = '1.0';
+const SNAPSHOT_VERSION = '1.1';
 const LIVE = new Set(['active', 'tested', 'partial']);
+
+function qualityWordFor(confidence: number): StructureQualityWord {
+  return confidence >= 70 ? 'Strong' : confidence >= 45 ? 'Moderate' : 'Developing';
+}
 const SIGNIFICANT = new Set<SmcEventType>(['LIQUIDITY_SWEEP', 'CHOCH', 'BOS', 'OB_CREATED', 'FVG_CREATED']);
 
 const now = (): number =>
@@ -257,6 +266,7 @@ export function createMarketStructureSnapshot(
           sequence: swingSequence(events),
           confidence: smc.scores.institutional,
           ageBars: structureAgeBars(events, lastBarIndex),
+          qualityWord: qualityWordFor(smc.scores.institutional),
         },
       }
     : { state: 'warming_up', data: null };
@@ -383,26 +393,28 @@ export function createMarketStructureSnapshot(
     : { state: 'warming_up', data: null };
 
   // ---- narratives (descriptive only — see banned-vocabulary test) ----
-  const narratives: string[] = [];
+  const narratives: Narrative[] = [];
   if (established && opposingSweeps > 0) {
-    narratives.push(
-      `${trend === 'bullish' ? 'Sell-side' : 'Buy-side'} liquidity has been swept while ${trend} structure remains intact.`,
-    );
+    narratives.push({
+      category: 'Liquidity',
+      text: `${trend === 'bullish' ? 'Sell-side' : 'Buy-side'} liquidity has been swept while ${trend} structure remains intact.`,
+    });
   }
   const obData = orderBlocks.data!;
   if (obData.bullish.created !== obData.bearish.created) {
     const [a, b] = obData.bullish.created > obData.bearish.created ? ['Bullish', 'bearish'] : ['Bearish', 'bullish'];
-    narratives.push(`${a} order blocks outnumber ${b} order blocks.`);
+    narratives.push({ category: 'Structure', text: `${a} order blocks outnumber ${b} order blocks.` });
   }
   if (bullFvg.open !== bearFvg.open) {
     const [a, b] = bullFvg.open > bearFvg.open ? ['bullish', 'bearish'] : ['bearish', 'bullish'];
-    narratives.push(`Open ${a} fair value gaps outnumber ${b} gaps.`);
+    narratives.push({ category: 'FVG', text: `Open ${a} fair value gaps outnumber ${b} gaps.` });
   }
-  narratives.push(
-    zone === 'equilibrium'
+  narratives.push({
+    category: 'Premium',
+    text: zone === 'equilibrium'
       ? 'Price currently trades near equilibrium of the dealing range.'
       : `Price currently trades inside a ${zone} zone.`,
-  );
+  });
 
   return {
     metadata: metadata(round2(now() - t0)),
