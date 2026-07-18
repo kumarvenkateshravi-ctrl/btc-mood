@@ -19,7 +19,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
 import axe from 'axe-core';
 import {
-  Panel, Pill, FootLink, Badge, Stat, Bar, Num, KpiCard,
+  Panel, Pill, FootLink, Badge, InfoTip, Stat, Bar, Num, KpiCard,
   Gauge, Ring, Sparkline, Donut,
   PositionRow, PositionCard, AICard, DataTable, type Column,
   LineChart, ChartPanel,
@@ -71,6 +71,12 @@ describe('MDS primitives have no axe violations', () => {
 
   it('Badge tones', async () => {
     expect(await audit(<div><Badge tone="bull">Win</Badge><Badge tone="bear">Loss</Badge></div>)).toEqual([]);
+  });
+
+  it('InfoTip — tooltip has role and accessible trigger', async () => {
+    expect(await audit(
+      <p>Watch for a <InfoTip term="Stacked FVG">Stacked FVG</InfoTip> here.</p>,
+    )).toEqual([]);
   });
 
   it('DataTable — sortable headers (aria-sort) + clickable rows', async () => {

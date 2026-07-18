@@ -1,6 +1,7 @@
 // MDS Phase C — primitive barrel. Import from '@/components/ui'.
 export { Panel, Pill, FootLink, type PanelProps } from './Panel';
 export { Badge } from './Badge';
+export { InfoTip, SMC_GLOSSARY } from './InfoTip';
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button';
 export { Modal, type ModalProps, type ModalSize } from './Modal';
 export { Tabs, Tab, type TabsProps, type TabProps, type TabsVariant } from './Tabs';
