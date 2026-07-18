@@ -17,6 +17,7 @@
 - **No observable change:** nothing outside `lib/mtf/**` + docs may be touched; full suite (944+) and `tsc` (no new errors; `components/ui/DataTable.tsx` errors are pre-existing) must pass.
 - Weights JSDoc'd "Conservative default; tuned later against BTC data; API stable."
 - Test runner: `npx vitest run <path>`; typecheck: `npx tsc --noEmit`.
+- **Releasable-per-task invariant (user-mandated):** every task ends with ✅ `tsc` clean (no new errors) ✅ FULL suite green ✅ no observable behavior change ✅ exactly one atomic commit ✅ knowledge graph updated (post-commit graphify hook).
 
 ---
 
