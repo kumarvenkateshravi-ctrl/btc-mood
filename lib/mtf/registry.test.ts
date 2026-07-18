@@ -222,7 +222,7 @@ describe('M1.0 intelligence contract', () => {
   const up = series(260, 100, 0.5);
 
   it('every result carries the intelligence fields with placeholder values', () => {
-    for (const x of r.evaluate(up)) {
+    for (const x of r.evaluate(up).filter((y) => y.id !== 'ema')) {   // EMA is rich as of M1.1
       expect(['trend', 'momentum', 'volume', 'strength']).toContain(x.category);
       expect(x.confidence).toBe(x.score);
       expect(x.strength).toBe(x.score);
@@ -230,6 +230,20 @@ describe('M1.0 intelligence contract', () => {
       expect(x.signals).toEqual([]);
       expect(x.warnings).toEqual([]);
     }
+  });
+
+  it('EMA produces populated intelligence while score/display/verdict stay frozen', () => {
+    const ema = r.evaluate(up).find((x) => x.id === 'ema')!;
+    expect(ema.score).toBe(100);          // frozen bucket for the steadily rising series
+    expect(ema.display).toBe('Bullish');
+    expect(ema.verdict).toBe('bullish');
+    expect(Object.keys(ema.diagnostics).sort()).toEqual(
+      ['alignment', 'freshness', 'pricePosition', 'separation', 'slope']);
+    expect(ema.signals.length).toBeGreaterThan(0);
+    expect(ema.confidence).toBeGreaterThanOrEqual(0);
+    expect(ema.confidence).toBeLessThanOrEqual(100);
+    expect(ema.strength).toBeGreaterThanOrEqual(0);
+    expect(ema.strength).toBeLessThanOrEqual(100);
   });
 
   it('a rich evaluation passes through instead of placeholders', () => {
