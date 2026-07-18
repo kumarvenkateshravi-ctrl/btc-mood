@@ -15,6 +15,8 @@ import { labelOf, verdictOf, type IndicatorDefinition } from './types';
 import { evaluateEma } from './indicators/ema';
 import { evaluateRsi } from './indicators/rsi';
 import { evaluateMacd } from './indicators/macd';
+import { evaluateAdx } from './indicators/adx';
+import { evaluateSupertrend } from './indicators/supertrend';
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
@@ -54,13 +56,8 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'label',
     category: 'trend',
     defaultWeight: 1,
-    evaluate(candles, settings) {
-      const plots = computeSuperTrend(candles, settings && { id: 'supertrend', settings }).plots;
-      const stLine = lastNum(plotData(plots, 'supertrend'));
-      const lastClose = candles[candles.length - 1]?.close ?? 0;
-      const score = stLine == null ? 50 : lastClose > stLine ? 100 : 0;
-      return { score, display: labelDisplay(score) };
-    },
+    // M1.x: delegates to the Supertrend intelligence engine (score frozen there).
+    evaluate: (candles, settings) => evaluateSupertrend(candles, settings),
     subFor: (s) => `${s.inputs.atrPeriod ?? 10},${s.inputs.mult ?? 3}`,
   },
   {
@@ -92,18 +89,8 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'value',
     category: 'strength',
     defaultWeight: 1,
-    evaluate(candles, settings) {
-      const plots = computeAdx(candles, settings && { id: 'adx', settings }).plots;
-      const adx = lastNum(plotData(plots, 'adx'));
-      const plusDI = lastNum(plotData(plots, 'plusDI'));
-      const minusDI = lastNum(plotData(plots, 'minusDI'));
-      let score = 50;
-      if (adx != null && plusDI != null && minusDI != null) {
-        const dir = plusDI >= minusDI ? 1 : -1;
-        score = 50 + dir * clamp(adx, 0, 50);
-      }
-      return { score, display: adx == null ? '—' : adx.toFixed(1) };
-    },
+    // M1.x: delegates to the ADX intelligence engine (score frozen there).
+    evaluate: (candles, settings) => evaluateAdx(candles, settings),
     subFor: (s) => `${s.inputs.diLength ?? 14}`,
   },
   {
