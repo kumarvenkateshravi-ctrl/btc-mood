@@ -12,6 +12,7 @@ import {
   labelOf, verdictOf,
   type IndicatorDiagnostics, type IndicatorEvaluation, type IndicatorSignal,
 } from '../types';
+import { EPS, clamp, conv, lastVal } from './shared';
 
 // ---- tunables (conservative v1 — refine against real BTC data later) ----
 /** Conservative default: % combined separation that saturates the dim. Tuned later against BTC data; API stable. */
@@ -38,18 +39,6 @@ export interface EmaDiagnostics extends IndicatorDiagnostics {
   freshness: number;      // magnitude; 50 = no crossover in history (neutral)
 }
 
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-/** Conviction magnitude of a directional dim: 50→0, 0 or 100→100. */
-const conv = (x: number) => Math.abs(x - 50) * 2;
-
-function lastFinite(arr: (number | null)[]): number | null {
-  for (let i = arr.length - 1; i >= 0; i--) {
-    const v = arr[i];
-    if (v != null && Number.isFinite(v)) return v;
-  }
-  return null;
-}
-
 /** Frozen M0 score bucket — DO NOT CHANGE (observable behavior). */
 function frozenScore(e20: number | null, e50: number | null, e200: number | null): number {
   if (e20 == null || e50 == null) return 50;
@@ -68,9 +57,6 @@ function alignmentDim(e20: number | null, e50: number | null, e200: number | nul
   if (e20 < e50) return 35;
   return 50;
 }
-
-/** Sub-epsilon differences are EMA float residue (e.g. flat series), not signal. */
-const EPS = 1e-9;
 
 function separationDim(e20: number | null, e50: number | null, e200: number | null): number {
   if (e20 == null || e50 == null || e200 == null || e200 === 0) return 0;
@@ -166,9 +152,9 @@ export function evaluateEma(candles: Candle[]): IndicatorEvaluation {
   const e20Arr = pm.emaPine(closes, 20);
   const e50Arr = pm.emaPine(closes, 50);
   const e200Arr = pm.emaPine(closes, 200);
-  const e20 = lastFinite(e20Arr);
-  const e50 = lastFinite(e50Arr);
-  const e200 = lastFinite(e200Arr);
+  const e20 = lastVal(e20Arr);
+  const e50 = lastVal(e50Arr);
+  const e200 = lastVal(e200Arr);
   const price = closes.length ? closes[closes.length - 1] : null;
 
   const score = frozenScore(e20, e50, e200);

@@ -221,15 +221,28 @@ describe('M1.0 intelligence contract', () => {
   const r = createDefaultRegistry();
   const up = series(260, 100, 0.5);
 
-  it('every result carries the intelligence fields with placeholder values', () => {
-    for (const x of r.evaluate(up).filter((y) => y.id !== 'ema')) {   // EMA is rich as of M1.1
+  it('every roster result carries the intelligence contract fields in range', () => {
+    for (const x of r.evaluate(up)) {
       expect(['trend', 'momentum', 'volume', 'strength']).toContain(x.category);
-      expect(x.confidence).toBe(x.score);
-      expect(x.strength).toBe(x.score);
-      expect(x.diagnostics).toEqual({});
-      expect(x.signals).toEqual([]);
-      expect(x.warnings).toEqual([]);
+      expect(x.confidence).toBeGreaterThanOrEqual(0);
+      expect(x.confidence).toBeLessThanOrEqual(100);
+      expect(x.strength).toBeGreaterThanOrEqual(0);
+      expect(x.strength).toBeLessThanOrEqual(100);
+      expect(typeof x.diagnostics).toBe('object');
+      expect(Array.isArray(x.signals)).toBe(true);
+      expect(Array.isArray(x.warnings)).toBe(true);
     }
+  });
+
+  it('a bare evaluation gets placeholder intelligence', () => {
+    const r2 = new IndicatorRegistry();
+    r2.register(stubDef('bare', 80));   // evaluate returns only { score, display }
+    const [x] = r2.evaluate(series(10, 100, 0.5));
+    expect(x.confidence).toBe(80);
+    expect(x.strength).toBe(80);
+    expect(x.diagnostics).toEqual({});
+    expect(x.signals).toEqual([]);
+    expect(x.warnings).toEqual([]);
   });
 
   it('EMA produces populated intelligence while score/display/verdict stay frozen', () => {
