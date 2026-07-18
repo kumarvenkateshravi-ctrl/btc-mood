@@ -243,6 +243,29 @@ describe('createMarketStructureSnapshot', () => {
     expect(ms.quality.data!.confidence).toBe(80);
   });
 
+  it('liquidity dominance from active pools', () => {
+    const lp = (direction: 'bullish' | 'bearish', state: SmcObject['state']) =>
+      obj({ kind: 'liquidityPool', direction, state });
+    // pool direction 'bearish' = buy-side; 'bullish' = sell-side (see engine)
+    const buyHeavy = createMarketStructureSnapshot(input(snap({
+      liquidityPools: [lp('bearish', 'active'), lp('bearish', 'active'), lp('bullish', 'active')],
+    }))).liquidity.data!;
+    expect(buyHeavy.net).toBe(1);
+    expect(buyHeavy.dominance).toBe('buy');
+
+    const sellHeavy = createMarketStructureSnapshot(input(snap({
+      liquidityPools: [lp('bullish', 'active'), lp('bearish', 'mitigated')],
+    }))).liquidity.data!;
+    expect(sellHeavy.net).toBe(-1);
+    expect(sellHeavy.dominance).toBe('sell');
+
+    const balanced = createMarketStructureSnapshot(input(snap({
+      liquidityPools: [lp('bullish', 'active'), lp('bearish', 'active')],
+    }))).liquidity.data!;
+    expect(balanced.net).toBe(0);
+    expect(balanced.dominance).toBe('balanced');
+  });
+
   it('narratives are descriptive — banned predictive vocabulary never appears', () => {
     const banned = /\b(likely|expected|will|probable|should|forecast|anticipat\w*|predict\w*)\b/i;
     const cases = [

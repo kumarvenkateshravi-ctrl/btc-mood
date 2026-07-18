@@ -54,7 +54,14 @@ export interface StructureData {
   qualityWord: StructureQualityWord;
 }
 export interface LiquiditySideData { created: number; swept: number; active: number; createdToday: number; }
-export interface LiquidityData { buySide: LiquiditySideData; sellSide: LiquiditySideData; }
+export type LiquidityDominance = 'buy' | 'sell' | 'balanced';
+export interface LiquidityData {
+  buySide: LiquiditySideData;
+  sellSide: LiquiditySideData;
+  /** buySide.active − sellSide.active (positive = buy-side heavy). */
+  net: number;
+  dominance: LiquidityDominance;
+}
 export interface FvgSideData { created: number; open: number; filled: number; createdToday: number; stacked: number; }
 export interface FvgData {
   bullish: FvgSideData; bearish: FvgSideData;
@@ -282,7 +289,13 @@ export function createMarketStructureSnapshot(
       createdToday: side.filter(createdToday).length,
     };
   };
-  const liquidityData: LiquidityData = { buySide: sideStats('bearish'), sellSide: sideStats('bullish') };
+  const buySide = sideStats('bearish');
+  const sellSide = sideStats('bullish');
+  const liqNet = buySide.active - sellSide.active;
+  const liquidityData: LiquidityData = {
+    buySide, sellSide, net: liqNet,
+    dominance: liqNet > 0 ? 'buy' : liqNet < 0 ? 'sell' : 'balanced',
+  };
   const liquidity: Section<LiquidityData> = { state: 'ready', data: liquidityData };
 
   // ---- FVGs ----
