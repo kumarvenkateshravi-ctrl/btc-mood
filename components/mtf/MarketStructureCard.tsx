@@ -2,22 +2,38 @@
 
 // Market Structure Engine card — first renderer of MarketStructureSnapshot.
 // Pure display: every number comes from the snapshot; no scoring or market
-// logic lives here. Spec:
+// logic lives here. Specs:
 // docs/superpowers/specs/2026-07-18-market-structure-engine-design.md
+// docs/superpowers/specs/2026-07-18-market-structure-engine-presentation-refinements-design.md
 
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpRight, ArrowDownRight, Droplet, Square } from 'lucide-react';
 import type { Timeframe } from '@/lib/types';
 import type { MarketStructureSnapshot, Section } from '@/lib/mtf/structureEngine';
 import { isDebugEnabled } from '@/lib/debug';
-import { Panel } from '@/components/ui';
+import { Panel, InfoTip } from '@/components/ui';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5M', '15m': '15M', '30m': '30M', '1h': '1H', '4h': '4H', '1d': '1D' };
 
 const trendColor = (t: string) =>
   t === 'bullish' || t === 'Bullish' ? 'text-bull-bright' : t === 'bearish' || t === 'Bearish' ? 'text-bear-bright' : 'text-neutral';
 
+const cap1 = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ');
+const tintFor = (t: string) =>
+  t === 'bullish' ? 'bg-bull/15 text-bull-bright' : t === 'bearish' ? 'bg-bear/15 text-bear-bright' : 'bg-surface-3 text-ink-muted';
+
+function eventIcon(type: string, direction: string) {
+  const cls = trendColor(direction) + ' h-3 w-3 shrink-0';
+  switch (type) {
+    case 'LIQUIDITY_SWEEP': return <Droplet className={cls} />;
+    case 'CHOCH': return direction === 'bullish' ? <ArrowUpRight className={cls} /> : <ArrowDownRight className={cls} />;
+    case 'BOS': return direction === 'bullish' ? <ArrowUp className={cls} /> : <ArrowDown className={cls} />;
+    default: return <Square className={cls} />;
+  }
+}
+
 function SectionShell({ title, section, children }: {
-  title: string;
+  title: React.ReactNode;
   section: Section<unknown>;
   children: React.ReactNode;
 }) {
@@ -33,7 +49,7 @@ function SectionShell({ title, section, children }: {
   );
 }
 
-function Row({ k, v, tone }: { k: string; v: React.ReactNode; tone?: string }) {
+function Row({ k, v, tone }: { k: React.ReactNode; v: React.ReactNode; tone?: string }) {
   return (
     <div className="flex items-center justify-between py-0.5 text-xs">
       <span className="text-ink-faint">{k}</span>
@@ -57,9 +73,24 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
   return (
     <Panel>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
+        <div className="flex flex-wrap items-baseline gap-2">
           <h2 className="text-sm font-semibold tracking-wide text-accent">MARKET STRUCTURE ENGINE</h2>
-          <span className="text-[11px] text-ink-faint">{metadata.symbol} · live SMC state, no composite score</span>
+          <span className="text-[11px] text-ink-faint">{metadata.symbol}</span>
+          {structure.data && (
+            <span className={cx('rounded px-1.5 py-0.5 text-[10px] font-semibold', tintFor(structure.data.trend))}>
+              {cap1(structure.data.trend)}
+            </span>
+          )}
+          {structure.data && (
+            <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted">
+              {structure.data.qualityWord}
+            </span>
+          )}
+          {phase.data && (
+            <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-ink-faint">
+              {phase.data.label}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1 rounded-lg border border-line bg-base p-0.5">
           {tfOptions.map((tf) => (
@@ -76,14 +107,17 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
         <SectionShell title="Current Structure" section={structure}>
           {structure.data && (
             <>
-              <div className={['text-lg font-bold', trendColor(structure.data.trend)].join(' ')}>
-                {structure.data.trend.charAt(0).toUpperCase() + structure.data.trend.slice(1)}
+              <div className={cx('text-lg font-bold', trendColor(structure.data.trend))}>
+                {cap1(structure.data.trend)}
               </div>
               {structure.data.sequence.length > 0 && (
                 <div className="font-mono text-xs text-ink-muted">{structure.data.sequence.join(' → ')}</div>
               )}
-              <Row k="Confidence" v={`${structure.data.confidence}%`} />
-              <Row k="Structure Age" v={structure.data.ageBars != null ? `Established ${structure.data.ageBars} bars ago` : 'Not yet established'} />
+              <div className="mt-1 border-t border-line pt-1">
+                <Row k="Structure Quality" v={structure.data.qualityWord} />
+                <Row k="Established" v={structure.data.ageBars != null ? `${structure.data.ageBars} bars ago` : 'Not yet'} />
+                <Row k="Confidence" v={`${structure.data.confidence}%`} />
+              </div>
             </>
           )}
         </SectionShell>
@@ -91,17 +125,28 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
         {/* Liquidity */}
         <SectionShell title="Liquidity" section={liquidity}>
           {liquidity.data && (
-            <div className="grid grid-cols-2 gap-x-3">
-              {([['Buy-side', liquidity.data.buySide], ['Sell-side', liquidity.data.sellSide]] as const).map(([label, s]) => (
-                <div key={label}>
-                  <div className="mb-0.5 text-[10px] font-medium text-ink-muted">{label} Pools</div>
-                  <Row k="Created" v={s.created} />
-                  <Row k="Swept" v={s.swept} />
-                  <Row k="Still Active" v={s.active} tone="text-ink font-semibold" />
-                  <Row k="Today" v={s.createdToday} tone="text-ink-muted" />
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-x-3">
+                {([['Buy-side', liquidity.data.buySide], ['Sell-side', liquidity.data.sellSide]] as const).map(([label, s]) => (
+                  <div key={label}>
+                    <div className="mb-0.5 text-[10px] font-medium text-ink-muted">{label} Pools</div>
+                    <Row k="Created" v={s.created} />
+                    <Row k={<InfoTip term="Liquidity Sweep">Swept</InfoTip>} v={s.swept} />
+                    <Row k="Still Active" v={s.active} tone="text-ink font-semibold" />
+                    <Row k="Today" v={s.createdToday} tone="text-ink-muted" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-1 border-t border-line pt-1">
+                <Row
+                  k="Liquidity Dominance"
+                  tone={liquidity.data.dominance === 'buy' ? 'text-bull-bright font-semibold'
+                    : liquidity.data.dominance === 'sell' ? 'text-bear-bright font-semibold' : 'text-neutral'}
+                  v={liquidity.data.dominance === 'buy' ? `Buy Side · +${liquidity.data.net}`
+                    : liquidity.data.dominance === 'sell' ? `Sell Side · ${liquidity.data.net}` : 'Balanced'}
+                />
+              </div>
+            </>
           )}
         </SectionShell>
 
@@ -116,12 +161,28 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
                     <Row k="Created" v={s.created} />
                     <Row k="Still Open" v={s.open} tone="text-ink font-semibold" />
                     <Row k="Filled" v={s.filled} />
-                    <Row k="Stacked" v={s.stacked} />
+                    <Row k={<InfoTip term="Stacked FVG">Stacked</InfoTip>} v={s.stacked} />
                     <Row k="Today" v={s.createdToday} tone="text-ink-muted" />
                   </div>
                 ))}
               </div>
               <div className="mt-1 border-t border-line pt-1">
+                {(() => {
+                  const b = fvg.data.bullish.open, s = fvg.data.bearish.open;
+                  const max = Math.max(b, s, 1);
+                  return (
+                    <div className="mb-1 space-y-0.5">
+                      <div className="flex items-center gap-1">
+                        <span className="w-12 text-[10px] text-bull-bright">Bull {b}</span>
+                        <span className="h-1.5 rounded bg-bull-bright" style={{ width: `${(b / max) * 100}%` }} />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="w-12 text-[10px] text-bear-bright">Bear {s}</span>
+                        <span className="h-1.5 rounded bg-bear-bright" style={{ width: `${(s / max) * 100}%` }} />
+                      </div>
+                    </div>
+                  );
+                })()}
                 <Row k="Net FVG Bias" tone={fvg.data.netBias > 0 ? 'text-bull-bright font-semibold' : fvg.data.netBias < 0 ? 'text-bear-bright font-semibold' : 'text-neutral'}
                   v={fvg.data.netBias > 0 ? `+${fvg.data.netBias} Bullish` : fvg.data.netBias < 0 ? `${-fvg.data.netBias} Bearish` : 'Balanced'} />
                 <Row k="Freshest" v={fvg.data.freshestBarsAgo != null ? `${fvg.data.freshestBarsAgo} bars ago` : '—'} />
@@ -131,7 +192,7 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
         </SectionShell>
 
         {/* Order Blocks */}
-        <SectionShell title="Order Blocks" section={orderBlocks}>
+        <SectionShell title={<InfoTip term="Order Block">Order Blocks</InfoTip>} section={orderBlocks}>
           {orderBlocks.data && (
             <>
               <div className="grid grid-cols-2 gap-x-3">
@@ -147,7 +208,15 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
               </div>
               <div className="mt-1 border-t border-line pt-1">
                 {([['Nearest Bullish', orderBlocks.data.nearestBullish], ['Nearest Bearish', orderBlocks.data.nearestBearish]] as const).map(([label, nb]) => (
-                  <Row key={label} k={label} v={nb ? `${nb.price.toLocaleString(undefined, { maximumFractionDigits: 1 })} · ${nb.distancePct}%` : '—'} />
+                  <div key={label} className="flex items-baseline justify-between py-0.5">
+                    <span className="text-xs text-ink-faint">{label}</span>
+                    {nb ? (
+                      <span className="text-right">
+                        <span className="font-mono text-sm font-semibold tabular-nums text-ink">{nb.distancePct}%</span>
+                        <span className="ml-1 font-mono text-[10px] tabular-nums text-ink-faint">{nb.price.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                      </span>
+                    ) : <span className="text-xs text-ink-faint">—</span>}
+                  </div>
                 ))}
               </div>
             </>
@@ -158,10 +227,13 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
         <SectionShell title={`Market Structure · last ${structureBreaks.data?.windowBars ?? 20} bars`} section={structureBreaks}>
           {structureBreaks.data && (
             <>
+              <div className={cx('mb-1 text-xs', trendColor(structureBreaks.data.verdict.tone))}>
+                {structureBreaks.data.verdict.text}
+              </div>
               <div className="grid grid-cols-2 gap-x-3">
                 <div>
-                  <Row k="Bullish BOS" v={structureBreaks.data.window.bullishBos} tone="text-bull-bright" />
-                  <Row k="Bullish CHoCH" v={structureBreaks.data.window.bullishChoch} tone="text-bull-bright" />
+                  <Row k={<InfoTip term="BOS">Bullish BOS</InfoTip>} v={structureBreaks.data.window.bullishBos} tone="text-bull-bright" />
+                  <Row k={<InfoTip term="CHoCH">Bullish CHoCH</InfoTip>} v={structureBreaks.data.window.bullishChoch} tone="text-bull-bright" />
                 </div>
                 <div>
                   <Row k="Bearish BOS" v={structureBreaks.data.window.bearishBos} tone="text-bear-bright" />
@@ -197,6 +269,10 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
                 {premiumDiscount.data.zone.charAt(0).toUpperCase() + premiumDiscount.data.zone.slice(1)} Zone
               </div>
               <p className="mt-1 text-[11px] leading-snug text-ink-muted">{premiumDiscount.data.description}</p>
+              <div className="mt-1 border-t border-line pt-1 text-[10px] text-ink-faint">
+                <InfoTip term="Premium/Discount">Typical institutional preference</InfoTip>
+                <div className="mt-0.5 text-ink-muted">Longs → Discount · Shorts → Premium</div>
+              </div>
             </>
           )}
         </SectionShell>
@@ -207,7 +283,9 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
             <div className="flex flex-col items-start gap-0.5">
               {timeline.data.items.map((item) => (
                 <div key={item.eventId} className="flex flex-col items-start gap-0.5">
-                  <span className={['text-xs', trendColor(item.direction)].join(' ')}>✓ {item.label}</span>
+                  <span className={cx('flex items-center gap-1 text-xs', trendColor(item.direction))}>
+                    {eventIcon(item.eventType, item.direction)} {item.label}
+                  </span>
                   <ArrowDown className="ml-1 h-3 w-3 text-ink-faint" />
                 </div>
               ))}
@@ -223,19 +301,38 @@ export default function MarketStructureCard({ snapshot, cacheHit, tfOptions, sel
         <SectionShell title="Structure Quality" section={quality}>
           {quality.data && (
             <>
-              <div className={['text-lg font-bold', quality.data.classification === 'Excellent' || quality.data.classification === 'Strong' ? 'text-bull-bright' : quality.data.classification === 'Moderate' ? 'text-regime-hot' : 'text-bear-bright'].join(' ')}>
+              <div className={cx('text-lg font-bold',
+                quality.data.classification === 'Excellent' || quality.data.classification === 'Strong' ? 'text-bull-bright'
+                : quality.data.classification === 'Moderate' ? 'text-regime-hot' : 'text-bear-bright')}>
                 {quality.data.classification}
+              </div>
+              <div className="mt-1 border-t border-line pt-1">
+                <Row k="Confluence" v={`${quality.data.confidence}%`} />
+                <Row k="Trend" v={cap1(quality.data.trend)} tone={trendColor(quality.data.trend)} />
+                <Row k="Liquidity" v={cap1(quality.data.liquidityBias)} />
+                <Row k="Recent Breaks" v={quality.data.recentBreaks} />
               </div>
               <p className="mt-1 text-[11px] leading-snug text-ink-muted">{quality.data.summary}</p>
             </>
           )}
         </SectionShell>
 
-        {/* Narratives */}
-        <SectionShell title="Reading the Market" section={{ state: narratives.length > 0 ? 'ready' : 'warming_up', data: narratives }}>
-          <ul className="space-y-1 text-[11px] leading-snug text-ink-muted">
-            {narratives.map((line) => <li key={line}>· {line}</li>)}
-          </ul>
+        {/* Key Observations */}
+        <SectionShell title="Key Observations" section={{ state: narratives.length > 0 ? 'ready' : 'warming_up', data: narratives }}>
+          <div className="space-y-1.5">
+            {(['Structure', 'Liquidity', 'FVG', 'Premium'] as const).map((category) => {
+              const lines = narratives.filter((n) => n.category === category);
+              if (lines.length === 0) return null;
+              return (
+                <div key={category}>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{category}</div>
+                  <ul className="space-y-0.5 text-[11px] leading-snug text-ink-muted">
+                    {lines.map((n) => <li key={n.text}>· {n.text}</li>)}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
         </SectionShell>
       </div>
 
