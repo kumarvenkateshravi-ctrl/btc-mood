@@ -14,6 +14,9 @@
 - **Public API unchanged:** `computeAlignmentMatrix()` and all consumers untouched. Do NOT edit `lib/alignment.ts`, anything in `app/` or `components/`, or the other six indicators (RSI, MACD, ADX, OBV, Volume, Supertrend).
 - **Architectural Rule (from spec):** intelligence values are **indicator-local evidence**, not market-level conclusions. Comments in new files must say "Indicator Confidence" / "Indicator Strength".
 - Pure, deterministic, no global state, no extra passes over candle history where avoidable.
+- **Performance (MTFEnh2):** each EMA series (`emaPine` 20/50/200) is computed exactly once per `evaluateEma` call and reused across score + all five dimensions — no redundant recomputation.
+- **Diagnostics typing (MTFEnh2):** no `Record<string, unknown>` — a marker base `IndicatorDiagnostics` in `types.ts`; each indicator owns its concrete shape (`EmaDiagnostics extends IndicatorDiagnostics`); the registry never inspects it.
+- **Evolution note (M2+, documented not implemented):** indicators will eventually build their full `IndicatorIntelligence` and the registry will only attach `weight` (coordinator, not transformer).
 - Spec: `docs/superpowers/specs/2026-07-18-m1-indicator-intelligence-contract-ema-engine-design.md`.
 - Test runner: `npx vitest run <path>`; typecheck: `npx tsc --noEmit`.
 - `IndicatorResult` in `lib/mtf/types.ts` is imported **only** by `lib/mtf/registry.ts` (verified) — safe to relocate.
@@ -31,7 +34,7 @@
 **Interfaces:**
 - Consumes: existing `IndicatorCategory`, `Verdict`, `verdictOf`, `IndicatorDefinition`.
 - Produces (used by Tasks 2–3):
-  - `types.ts`: `interface IndicatorSignal { code: string; message: string; severity: 'info' | 'warning' | 'strong' }`; `IndicatorEvaluation` with optional `confidence?/strength?: number`, `diagnostics?: Record<string, unknown>`, `signals?/warnings?: IndicatorSignal[]`.
+  - `types.ts`: `interface IndicatorSignal { code: string; message: string; severity: 'info' | 'warning' | 'strong'; timestamp?: number }`; marker `interface IndicatorDiagnostics {}`; `IndicatorEvaluation` with optional `confidence?/strength?: number`, `diagnostics?: IndicatorDiagnostics`, `signals?/warnings?: IndicatorSignal[]`.
   - `intelligence.ts`: `interface IndicatorIntelligence { id; category; score; verdict; confidence; strength; display; diagnostics; signals; warnings }`; `type IndicatorResult = IndicatorIntelligence & { weight: number }`.
   - `registry.evaluate()` returns `IndicatorResult[]` with placeholders `confidence = ev.confidence ?? score`, `strength = ev.strength ?? score`, `diagnostics ?? {}`, `signals/warnings ?? []`.
 
@@ -99,7 +102,14 @@ export interface IndicatorSignal {
   code: string;                       // e.g. 'EMA_ALIGNMENT_STRONG'
   message: string;                    // human-readable
   severity: 'info' | 'warning' | 'strong';
+  /** Optional epoch-ms timing (unused in M1; replay/AI/reports attach later). */
+  timestamp?: number;
 }
+
+/** Marker base for per-indicator diagnostics — each indicator OWNS its concrete
+ * shape (EmaDiagnostics, later RsiDiagnostics, …); the registry never inspects it. */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface IndicatorDiagnostics {}
 
 export interface IndicatorEvaluation {
   /** 0–100 directional sub-score (100 = max bull, 0 = max bear, 50 = neutral). */
@@ -109,7 +119,7 @@ export interface IndicatorEvaluation {
   // Optional indicator-local intelligence (M1). Absent → registry fills placeholders.
   confidence?: number;
   strength?: number;
-  diagnostics?: Record<string, unknown>;
+  diagnostics?: IndicatorDiagnostics;
   signals?: IndicatorSignal[];
   warnings?: IndicatorSignal[];
 }
@@ -124,8 +134,12 @@ Delete the old `export interface IndicatorResult extends IndicatorEvaluation { .
 // are INDICATOR-LOCAL evidence (Indicator Confidence / Indicator Strength), not
 // market-level conclusions; later engines (Category, Confidence, Market Context,
 // Decision) aggregate them. Pure types; imports one-directionally from types.ts.
+//
+// Evolution (locked direction, M2+): indicator modules will construct their full
+// IndicatorIntelligence themselves and the registry will only register,
+// orchestrate, and attach the effective weight. Not implemented in M1.
 
-import type { IndicatorCategory, IndicatorSignal, Verdict } from './types';
+import type { IndicatorCategory, IndicatorDiagnostics, IndicatorSignal, Verdict } from './types';
 
 export interface IndicatorIntelligence {
   id: string;
@@ -138,7 +152,7 @@ export interface IndicatorIntelligence {
   /** Indicator Strength 0–100, direction-independent (placeholder = score). */
   strength: number;
   display: string;
-  diagnostics: Record<string, unknown>;
+  diagnostics: IndicatorDiagnostics;
   signals: IndicatorSignal[];
   warnings: IndicatorSignal[];
 }
@@ -276,7 +290,7 @@ describe('evaluateEma — frozen score parity (all scenarios)', () => {
 describe('evaluateEma — scenarios', () => {
   it('Perfect Bull: full alignment, price above all, mature trend is not penalized', () => {
     const r = evaluateEma(mk(rise(300, 100, 0.5)));
-    const d = r.diagnostics as unknown as EmaDiagnostics;
+    const d = r.diagnostics as EmaDiagnostics;
     expect(r.score).toBe(100);
     expect(d.alignment).toBe(100);
     expect(d.pricePosition).toBe(100);
@@ -290,7 +304,7 @@ describe('evaluateEma — scenarios', () => {
 
   it('Strong Bear: mirrored — strength high despite bearish direction', () => {
     const r = evaluateEma(mk(fall(300, 300, 0.5)));
-    const d = r.diagnostics as unknown as EmaDiagnostics;
+    const d = r.diagnostics as EmaDiagnostics;
     expect(r.score).toBe(0);
     expect(d.alignment).toBe(0);
     expect(d.pricePosition).toBe(0);
@@ -301,7 +315,7 @@ describe('evaluateEma — scenarios', () => {
 
   it('Mixed Alignment: partial bucket + mixed-alignment warning', () => {
     const r = evaluateEma(mk([...fall(260, 300, 0.5), ...rise(40, 170, 2)]));
-    const d = r.diagnostics as unknown as EmaDiagnostics;
+    const d = r.diagnostics as EmaDiagnostics;
     expect([35, 65]).toContain(r.score);
     expect([35, 65]).toContain(d.alignment);
     expect(codes(r.warnings!)).toContain('EMA_MIXED_ALIGNMENT');
@@ -309,14 +323,14 @@ describe('evaluateEma — scenarios', () => {
 
   it('Old Cross: long-ago cross floors freshness and warns EMA_AGING', () => {
     const r = evaluateEma(mk([...fall(60, 300, 1), ...rise(240, 240, 1)]));
-    const d = r.diagnostics as unknown as EmaDiagnostics;
+    const d = r.diagnostics as EmaDiagnostics;
     expect(d.freshness).toBe(EMA_FRESH_FLOOR);
     expect(codes(r.warnings!)).toContain('EMA_AGING');
   });
 
   it('Flat Market: compression + flat-slope warnings, minimal strength', () => {
     const r = evaluateEma(mk(Array(260).fill(100)));
-    const d = r.diagnostics as unknown as EmaDiagnostics;
+    const d = r.diagnostics as EmaDiagnostics;
     expect(d.alignment).toBe(50);   // exact equality → neutral (diagnostic only)
     expect(d.separation).toBe(0);
     expect(d.slope).toBe(50);
@@ -328,7 +342,7 @@ describe('evaluateEma — scenarios', () => {
 
   it('Insufficient Data: empty candles → all-neutral diagnostics', () => {
     const r = evaluateEma([]);
-    const d = r.diagnostics as unknown as EmaDiagnostics;
+    const d = r.diagnostics as EmaDiagnostics;
     expect(r.score).toBe(50);
     expect(d).toEqual({ alignment: 50, separation: 0, slope: 50, pricePosition: 50, freshness: 50 });
   });
@@ -337,7 +351,7 @@ describe('evaluateEma — scenarios', () => {
     const c = mk(Array.from({ length: 260 }, (_, i) => 100 + 10 * Math.sin(i / 5)));
     const a = evaluateEma(c);
     expect(a).toEqual(evaluateEma(c));
-    const d = a.diagnostics as unknown as EmaDiagnostics;
+    const d = a.diagnostics as EmaDiagnostics;
     for (const v of [a.score, a.confidence!, a.strength!, d.alignment, d.separation, d.slope, d.pricePosition, d.freshness]) {
       expect(v).toBeGreaterThanOrEqual(0);
       expect(v).toBeLessThanOrEqual(100);
@@ -392,18 +406,29 @@ Expected: FAIL — module `./ema` not found.
 
 import type { Candle } from '../../types';
 import * as pm from '../../pineMath';
-import { labelOf, verdictOf, type IndicatorEvaluation, type IndicatorSignal } from '../types';
+import {
+  labelOf, verdictOf,
+  type IndicatorDiagnostics, type IndicatorEvaluation, type IndicatorSignal,
+} from '../types';
 
 // ---- tunables (conservative v1 — refine against real BTC data later) ----
-export const EMA_SEP_SAT = 6;         // % combined separation that saturates the dim
-export const EMA_SLOPE_LOOKBACK = 10; // bars for slope measurement
-export const EMA_SLOPE_GAIN = 8;      // % mean slope → points around 50
-export const EMA_FRESH_DECAY = 4;     // freshness points lost per bar since cross
-export const EMA_FRESH_FLOOR = 20;    // old-cross floor (M1Enhance: old cross → 20)
+/** Conservative default: % combined separation that saturates the dim. Tuned later against BTC data; API stable. */
+export const EMA_SEP_SAT = 6;
+/** Conservative default: bars for slope measurement. Tuned later against BTC data; API stable. */
+export const EMA_SLOPE_LOOKBACK = 10;
+/** Conservative default: % mean slope → points around 50. Tuned later against BTC data; API stable. */
+export const EMA_SLOPE_GAIN = 8;
+/** Conservative default: freshness points lost per bar since cross. Tuned later against BTC data; API stable. */
+export const EMA_FRESH_DECAY = 4;
+/** Conservative default: old-cross floor (M1Enhance: old cross → 20). Tuned later against BTC data; API stable. */
+export const EMA_FRESH_FLOOR = 20;
+/** Conservative default weights for Indicator Confidence. Tuned later against BTC data; API stable. */
 export const EMA_CONFIDENCE_WEIGHTS = { alignment: 0.4, slope: 0.2, separation: 0.2, pricePosition: 0.1, freshness: 0.1 } as const;
+/** Conservative default weights for Indicator Strength. Tuned later against BTC data; API stable. */
 export const EMA_STRENGTH_WEIGHTS = { alignment: 0.5, separation: 0.25, slope: 0.25 } as const;
 
-export interface EmaDiagnostics {
+/** EMA-owned diagnostics shape (registry sees only the IndicatorDiagnostics marker). */
+export interface EmaDiagnostics extends IndicatorDiagnostics {
   alignment: number;      // directional 0–100 (100 bull stack, 0 bear stack)
   separation: number;     // magnitude 0–100
   slope: number;          // directional 0–100 around 50
@@ -694,3 +719,4 @@ Expected: AST-only refresh.
 - **Fresh Cross note:** exercised at unit level (`barsSinceCross` + `EMA_FRESH_DECAY` guards) rather than a brittle candle fixture; the Mixed scenario's recent cross often also emits `EMA_FRESH_CROSS`, but the plan does not assert it to avoid fixture brittleness.
 - **Type consistency:** `evaluateEma` / `barsSinceCross` / `buildConfidence` / `buildStrength` / `EmaDiagnostics` / constants named identically across Tasks 2–3; `IndicatorResult` import path `./intelligence` used in Task 1 registry code.
 - **Placeholder scan:** none — all steps carry complete code/commands.
+- **MTFEnh2 review folded in:** `IndicatorDiagnostics` marker base (no `Record<string, unknown>`); `EmaDiagnostics extends IndicatorDiagnostics`; `IndicatorSignal.timestamp?`; JSDoc on every exported constant; performance criterion (each `emaPine` series computed once, reused across all dims); registry-as-coordinator direction documented in `intelligence.ts` header, deliberately not implemented in M1 per the review ("isn't urgent for M1").

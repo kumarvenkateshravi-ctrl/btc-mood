@@ -57,7 +57,13 @@ export interface IndicatorSignal {
   code: string;                                  // machine-readable, e.g. 'EMA_ALIGNMENT_STRONG'
   message: string;                               // human-readable
   severity: 'info' | 'warning' | 'strong';
+  /** Optional epoch-ms timing (unused in M1; replay/AI/reports attach later). */
+  timestamp?: number;
 }
+
+/** Marker base for per-indicator diagnostics — each indicator OWNS its concrete
+ * shape (EmaDiagnostics, later RsiDiagnostics, …); the registry never inspects it. */
+export interface IndicatorDiagnostics {}
 
 export interface IndicatorEvaluation {
   score: number;
@@ -65,7 +71,7 @@ export interface IndicatorEvaluation {
   // Optional richer intelligence — absent means "use placeholders" (M1.0 default).
   confidence?: number;
   strength?: number;
-  diagnostics?: Record<string, unknown>;
+  diagnostics?: IndicatorDiagnostics;
   signals?: IndicatorSignal[];
   warnings?: IndicatorSignal[];
 }
@@ -86,7 +92,7 @@ export interface IndicatorIntelligence {
   confidence: number;            // INDICATOR confidence 0–100 (see Architectural Rule)
   strength: number;              // INDICATOR strength 0–100, direction-independent
   display: string;
-  diagnostics: Record<string, unknown>;
+  diagnostics: IndicatorDiagnostics;
   signals: IndicatorSignal[];
   warnings: IndicatorSignal[];
 }
@@ -94,6 +100,12 @@ export interface IndicatorIntelligence {
 /** What the registry returns per indicator: full intelligence + applied weight. */
 export type IndicatorResult = IndicatorIntelligence & { weight: number };
 ```
+
+> **Evolution note (locked direction, M2+):** over time each indicator module will
+> construct its complete `IndicatorIntelligence` itself, and the registry will only
+> register, orchestrate, and attach the effective `weight` (coordinator, not
+> transformer). Not implemented in M1 — it would force every indicator to duplicate
+> `id`/`category` metadata today — but new code must not make it harder.
 
 ### Registry
 
@@ -197,7 +209,12 @@ Both take the `EmaDiagnostics` object as their only input. Result rounded, clamp
   `slope>=40 && slope<=60 → EMA_FLAT_SLOPE / "Flat EMA Slope" / warning`;
   `alignment===35 || alignment===65 → EMA_MIXED_ALIGNMENT / "Mixed Alignment" / warning`.
 
-`diagnostics = { alignment, separation, slope, pricePosition, freshness }`.
+`diagnostics = { alignment, separation, slope, pricePosition, freshness }`, typed as
+`interface EmaDiagnostics extends IndicatorDiagnostics` — EMA owns its shape; the
+registry and future engines receive it through the marker base.
+
+Every exported constant carries a JSDoc of the form *"Conservative default; tuned
+later against real BTC data; API stable."*
 
 ### `lib/mtf/definitions.ts`
 
@@ -222,7 +239,10 @@ directionally sensible; signals/warnings contain the expected `code`s; no-cross 
 
 ✓ EMA returns full `IndicatorIntelligence` ✓ dashboard unchanged (score frozen)
 ✓ score 0–100 ✓ confidence/strength/diagnostics/signals/warnings populated
-✓ all tests pass ✓ no public API changes ✓ only EMA modified.
+✓ all tests pass ✓ no public API changes ✓ only EMA modified
+✓ **performance:** each EMA series (`emaPine` 20/50/200) computed exactly once per
+evaluation and reused for score, separation, slope, price position, and freshness —
+no redundant passes over candle history, no per-call state.
 
 ---
 
