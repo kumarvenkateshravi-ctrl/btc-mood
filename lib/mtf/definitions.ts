@@ -1,41 +1,17 @@
-// The fixed seven-indicator roster of the MTF Engine. Scoring logic moved
-// verbatim from lib/alignment.ts computeTfCells so the registry is the single
-// source of truth; alignment.ts delegates here. Weights default to equal so
-// the composite score stays identical to the legacy rounded mean.
+// The fixed seven-indicator roster of the MTF Engine — a lightweight registry
+// of metadata + delegation. All evaluation (frozen M0 scores + M1 indicator-
+// local intelligence) lives in the per-indicator modules under ./indicators/.
+// Specs: docs/superpowers/specs/2026-07-18-m1-indicator-intelligence-contract-ema-engine-design.md
+//        docs/superpowers/specs/2026-07-18-m1x-six-indicator-intelligence-design.md
 
-import type { Candle } from '../types';
-import type { IndicatorPlot } from '../indicatorFramework';
-import * as pm from '../pineMath';
-import { computeRsi } from '../indicators/rsi';
-import { computeMacd } from '../indicators/macd';
-import { computeAdx } from '../indicators/adx';
-import { computeSuperTrend } from '../indicators/superTrend';
-import { computeObv } from '../indicators/obv';
-import { labelOf, verdictOf, type IndicatorDefinition } from './types';
+import type { IndicatorDefinition } from './types';
 import { evaluateEma } from './indicators/ema';
 import { evaluateRsi } from './indicators/rsi';
 import { evaluateMacd } from './indicators/macd';
 import { evaluateAdx } from './indicators/adx';
 import { evaluateSupertrend } from './indicators/supertrend';
-
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-
-/** Last finite value of an indicator plot's data array. */
-function lastNum(data: IndicatorPlot['data']): number | null {
-  for (let i = data.length - 1; i >= 0; i--) {
-    const d = data[i];
-    if (d == null) continue;
-    const v = typeof d === 'number' ? d : (d as { value?: number }).value;
-    if (v != null && Number.isFinite(v)) return v;
-  }
-  return null;
-}
-
-function plotData(plots: IndicatorPlot[], id: string): IndicatorPlot['data'] {
-  return plots.find((p) => p.id === id)?.data ?? [];
-}
-
-const labelDisplay = (score: number) => labelOf(verdictOf(score));
+import { evaluateObv } from './indicators/obv';
+import { evaluateVolume } from './indicators/volume';
 
 /** Row order here is the dashboard row order — keep stable. */
 export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
@@ -46,7 +22,6 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'label',
     category: 'trend',
     defaultWeight: 1,
-    // M1.1: evaluation delegates to the EMA intelligence engine (score frozen there).
     evaluate: (candles) => evaluateEma(candles),
   },
   {
@@ -56,7 +31,6 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'label',
     category: 'trend',
     defaultWeight: 1,
-    // M1.x: delegates to the Supertrend intelligence engine (score frozen there).
     evaluate: (candles, settings) => evaluateSupertrend(candles, settings),
     subFor: (s) => `${s.inputs.atrPeriod ?? 10},${s.inputs.mult ?? 3}`,
   },
@@ -67,7 +41,6 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'value',
     category: 'momentum',
     defaultWeight: 1,
-    // M1.x: delegates to the RSI intelligence engine (score frozen there).
     evaluate: (candles, settings) => evaluateRsi(candles, settings),
     subFor: (s) => `${s.inputs.length ?? 14}`,
   },
@@ -78,7 +51,6 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'label',
     category: 'momentum',
     defaultWeight: 1,
-    // M1.x: delegates to the MACD intelligence engine (score frozen there).
     evaluate: (candles, settings) => evaluateMacd(candles, settings),
     subFor: (s) => `${s.inputs.fast ?? 12},${s.inputs.slow ?? 26},${s.inputs.signal ?? 9}`,
   },
@@ -89,7 +61,6 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'value',
     category: 'strength',
     defaultWeight: 1,
-    // M1.x: delegates to the ADX intelligence engine (score frozen there).
     evaluate: (candles, settings) => evaluateAdx(candles, settings),
     subFor: (s) => `${s.inputs.diLength ?? 14}`,
   },
@@ -100,14 +71,7 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'label',
     category: 'volume',
     defaultWeight: 1,
-    evaluate(candles) {
-      const obv = plotData(computeObv(candles).plots, 'obv');
-      const last = lastNum(obv);
-      const prevIdx = Math.max(0, obv.length - 15);
-      const prev = typeof obv[prevIdx] === 'number' ? (obv[prevIdx] as number) : null;
-      const score = last == null || prev == null ? 50 : last > prev ? 100 : last < prev ? 0 : 50;
-      return { score, display: labelDisplay(score) };
-    },
+    evaluate: (candles) => evaluateObv(candles),
   },
   {
     id: 'volume',
@@ -116,13 +80,6 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'value',
     category: 'volume',
     defaultWeight: 1,
-    evaluate(candles) {
-      const volumes = candles.map((c) => c.volume);
-      const volSma = lastNum(pm.sma(volumes, 20));
-      const lastVol = volumes[volumes.length - 1] ?? 0;
-      const volPct = volSma && volSma > 0 ? (lastVol / volSma - 1) * 100 : 0;
-      const score = clamp(50 + volPct / 2, 0, 100);
-      return { score, display: `${volPct >= 0 ? '+' : ''}${volPct.toFixed(0)}%` };
-    },
+    evaluate: (candles) => evaluateVolume(candles),
   },
 ];
