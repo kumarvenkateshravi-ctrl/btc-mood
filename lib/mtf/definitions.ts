@@ -13,6 +13,8 @@ import { computeSuperTrend } from '../indicators/superTrend';
 import { computeObv } from '../indicators/obv';
 import { labelOf, verdictOf, type IndicatorDefinition } from './types';
 import { evaluateEma } from './indicators/ema';
+import { evaluateRsi } from './indicators/rsi';
+import { evaluateMacd } from './indicators/macd';
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
@@ -68,12 +70,8 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'value',
     category: 'momentum',
     defaultWeight: 1,
-    evaluate(candles, settings) {
-      const plots = computeRsi(candles, settings && { id: 'rsi', settings }).plots;
-      const rsi = lastNum(plotData(plots, 'rsi'));
-      const score = rsi == null ? 50 : clamp(rsi, 0, 100);
-      return { score, display: rsi == null ? '—' : rsi.toFixed(1) };
-    },
+    // M1.x: delegates to the RSI intelligence engine (score frozen there).
+    evaluate: (candles, settings) => evaluateRsi(candles, settings),
     subFor: (s) => `${s.inputs.length ?? 14}`,
   },
   {
@@ -83,13 +81,8 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'label',
     category: 'momentum',
     defaultWeight: 1,
-    evaluate(candles, settings) {
-      const plots = computeMacd(candles, settings && { id: 'macd', settings }).plots;
-      const macd = lastNum(plotData(plots, 'macd'));
-      const signal = lastNum(plotData(plots, 'signal'));
-      const score = macd == null || signal == null ? 50 : macd > signal ? 100 : 0;
-      return { score, display: labelDisplay(score) };
-    },
+    // M1.x: delegates to the MACD intelligence engine (score frozen there).
+    evaluate: (candles, settings) => evaluateMacd(candles, settings),
     subFor: (s) => `${s.inputs.fast ?? 12},${s.inputs.slow ?? 26},${s.inputs.signal ?? 9}`,
   },
   {
