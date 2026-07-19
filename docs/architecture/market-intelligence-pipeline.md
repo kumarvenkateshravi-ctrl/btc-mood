@@ -1,15 +1,16 @@
-# Market Intelligence Pipeline (M0–M3) — Engine Constitution
+# Market Intelligence Pipeline (M0–M6) — Engine Constitution
 
-**Status:** Canonical reference. Frozen. Every future milestone (M4 Confidence, M5 Market
-Intelligence, M6 Decision, Alerts, AI narration, Scanner) references this document rather than
-re-deriving how these layers interact. Changing a public contract below requires a version bump
-(see §Versioning) and an edit here.
+**Status:** Canonical reference. Frozen. Every future milestone (M7 Probability, M8 Market Intelligence,
+M9 Trade Decision, M10 Trading Plan Generator, Alerts, AI narration, Scanner) references this document
+rather than re-deriving how these layers interact. Changing a public contract below requires a version
+bump (see §Versioning) and an edit here.
 
 ```
-Candles → M0 Registry → M1 Indicator Intelligence → M2 Category Intelligence → M3 Agreement → M4 Confidence
-                                                                                                    │
-                                                                                     (M5 Market Intel →
-                                                                                      M6 Decision → …)
+Candles → M0 Registry → M1 Indicator Intelligence → M2 Category Intelligence → M3 Agreement
+                                                                                       │
+                          M6 Trend Lifecycle ← M5 Timeframe Hierarchy + Regime ← M4 Confidence
+                                    │
+                       (M7 Probability → M8 Market Intelligence → M9 Trade Decision → M10 Trading Plan → …)
 ```
 
 Everything below is pure, deterministic, closed-bar, replay-safe, and free of React/UI/network.
@@ -31,8 +32,8 @@ pure, deterministic, releasable-per-task, and invisible until explicitly wired t
 | **M3** | Agreement engines. | ✅ shipped |
 | **M4** | Confidence engines. | ✅ shipped |
 | **M5** | Timeframe Hierarchy + Market Regime engines. | ✅ shipped |
-| **M6** | Trend Lifecycle detection. | ← next |
-| **M7** | Probability Engine. | planned |
+| **M6** | Trend Lifecycle detection. | ✅ shipped |
+| **M7** | Probability Engine. | ← next |
 | **M8** | Market Intelligence Engine (combine all outputs). | planned |
 | **M9** | Trade Decision Engine. | planned |
 | **M10** | Goal-Based Trading Plan Generator. | planned |
@@ -230,7 +231,52 @@ M6: M5 = "what is the current multi-timeframe context?"; M6 = "where are we in t
 **M6-facing durable surface:** `htfBias`, `alignment`, `conflict`, `controller`, per-TF `authority`,
 `overallMarketState`, `transition`, per-TF `regime`. M6 consumes `TimeframeSnapshot[]` + `HierarchyResult`.
 
+**M6 additive extension:** `TimeframeSnapshot` gained two fields for lifecycle evidence (schema stays
+additive-compatible, no version bump): `trendFreshness` (from the `supertrend` indicator's
+`diagnostics.flipFreshness`) and `momentumExhaustion` (from the `momentum` category's
+`diagnostics.exhaustion`), both computed in `buildTimeframeSnapshots`.
+
 **Depends on:** M0–M4 (via `buildTimeframeSnapshots`).
+
+---
+
+## M6 — Trend Lifecycle
+
+**Responsibility:** the first EVOLUTIONARY engine — where is the controller timeframe's trend in its
+lifecycle? Boundary with M5: M5 = "what is the current multi-timeframe context?"; **M6 = "where are we
+in the evolution of the trend?"**
+
+**Files:** `lib/mtf/lifecycle/{lifecycleTypes, config, stage, expectation, progression, invalidation,
+strength, explanation, lifecycleEngine}.ts`.
+
+**Public contract:**
+- `computeTrendLifecycle(snapshots: TimeframeSnapshot[], hierarchy: HierarchyResult, previousStage?: TrendStage): TrendLifecycleResult`.
+- `TrendStage` — 9-stage canonical cycle (`accumulation → breakout → confirmation → trend_establishment
+  → healthy_pullback → continuation → exhaustion → distribution → reversal`) plus off-cycle `range`.
+- `TrendLifecycleResult { schemaVersion: 1, timeframe (controller), stage, direction, lifecycleStrength,
+  freshness, exhaustion, stageConfidence, nextStageConfidence, progression, expectation, invalidation,
+  perTimeframe, signals, warnings }`.
+
+**Invariants:**
+- **Never recomputes M1–M5** — consumes `TimeframeSnapshot[]` + `HierarchyResult` only.
+- **Controller timeframe is the headline**, with a coarse per-TF stage map alongside (oms-derived
+  branches — reversal/pullback/continuation — are stack-wide facts, only meaningful for the controller;
+  non-controller snapshots fall through to a regime/freshness/exhaustion-only classification).
+- **`accumulation`/`distribution`/`confirmation` are documented approximations** from a single snapshot,
+  not precise Wyckoff phases — the rest of the cycle classifies cleanly.
+- **`lifecycleStrength` (stage expression) is never conflated with `freshness` (age)** — a trend can be
+  fresh-and-strong or old-and-strong; they're independent fields.
+- **Expectation, Progression, and Invalidation are separate small engines**, not folded together:
+  Expectation = deterministic forward map (current → expected next); Progression = trajectory
+  (previous → current: advancing/stalling/regressing); Invalidation = what would break the current stage.
+- **`stageConfidence`/`nextStageConfidence` are reserved for M7, NOT probabilities** — they express the
+  engine's own confidence in its classification/forecast; M7 (Probability Engine) combines them with
+  actual probability modeling without requiring another M6 contract revision.
+
+**M7-facing durable surface:** `stage`, `direction`, `lifecycleStrength`, `freshness`, `exhaustion`,
+`stageConfidence`, `nextStageConfidence`, `expectation`, `invalidation`, per-TF stages.
+
+**Depends on:** M0–M5 (via `TimeframeSnapshot[]` + `HierarchyResult`).
 
 ---
 
@@ -271,4 +317,5 @@ setup) remain byte-identical until a milestone explicitly wires a consumer.
 - M3 agreement: `docs/superpowers/specs/2026-07-19-m3-market-agreement-engine-design.md`
 - M4 confidence: `docs/superpowers/specs/2026-07-19-m4-market-confidence-engine-design.md`
 - M5 timeframe hierarchy + regime: `docs/superpowers/specs/2026-07-19-m5-timeframe-hierarchy-market-regime-design.md`
+- M6 trend lifecycle: `docs/superpowers/specs/2026-07-19-m6-trend-lifecycle-design.md`
 - Architecture graph (navigation): `graphify-out/`
