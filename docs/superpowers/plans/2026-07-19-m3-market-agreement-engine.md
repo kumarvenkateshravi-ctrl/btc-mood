@@ -196,6 +196,7 @@ Blend (renormalized for empty layers) → agreement/conflict; `combine()` → bi
   - `previousAgreement` supplied → `agreementDelta === agreement − previousAgreement`.
   - Determinism: `toEqual` twice.
   - State orthogonality: a fixture with agreement ≥ 75 AND conflict ≥ 50 → `state: 'strong'` (not conflicted).
+  - **Explainability/traceability invariant:** for the real-pipeline result, (a) `contributors` ids === the set of input indicator + category ids (nothing dropped); (b) every id token appearing in any `signals`/`warnings` message is a substring match of some `contributors[].id` — no signal names a component absent from `contributors`.
 - [ ] **Step 2:** Run → FAIL. **Step 3:** Implement. **Step 4:** Run → PASS (fill inline snapshot).
 - [ ] **Step 5: Releasable gate.**
 - [ ] **Step 6: Commit:** `feat(mtf): M3 agreement orchestrator (computeAgreement)`
@@ -209,6 +210,7 @@ Blend (renormalized for empty layers) → agreement/conflict; `combine()` → bi
 - [ ] `git diff --name-only <M3-base>..HEAD | grep -v '^lib/mtf/' | grep -v '^docs/'` → empty (nothing outside lib/mtf + docs).
 - [ ] `graphify update .`
 - [ ] Update memory `mtf-engine.md`: M3 Agreement Engine complete, architecture frozen, next = M4 Market Confidence.
+- [ ] **Follow-up (deferred, post-M3):** author a canonical M0–M3 "core infrastructure" architecture doc (`docs/architecture/mtf-intelligence-pipeline.md`) describing the Indicator Registry → Indicator Intelligence → Category Intelligence → Agreement pipeline as the single reference for M4+. Not required to close M3; noted so it isn't lost. (graphify-out already covers navigation; this is the narrative companion.)
 
 ## Self-Review Notes
 

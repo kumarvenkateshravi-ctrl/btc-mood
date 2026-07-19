@@ -198,6 +198,26 @@ Warnings:
 - `AGR_DISSENT` — dissenters exist; warning; source 'indicator' if any indicator dissenter else 'category'; message lists their ids: "&lt;ids&gt; diverge from the &lt;bias&gt; consensus."
 - `AGR_LOW_DIRECTION` — state ≠ 'none' ∧ (dominantShare + minorityShare) < 0.3; warning; "Little directional conviction."
 
+## Schema versioning policy
+
+`schemaVersion: 1` is a literal type. **v1 permits additive changes only** (new optional
+fields, new signal/warning codes, new enum members). Any change that removes or retypes an
+existing field, or changes the meaning of an existing number, **requires `schemaVersion++`**
+and a migration note here. Consumers may branch on `schemaVersion` but must tolerate unknown
+additive fields. This keeps M4+ safe against accidental breakage.
+
+## Explainability invariant
+
+Every computed field in `AgreementResult` is **deterministically traceable** from the same
+result — no value exists that can't be explained from its siblings:
+- `agreement` / `conflict` / `dominantBias` ← `contributors[] { id, layer, vote, weight }`
+  (the exact weighted inputs) + `diagnostics` (`dominantShare`, `minorityShare`, head-counts).
+- `signals` / `warnings` are the human-readable "why", and any component id they name **must**
+  appear in `contributors` (enforced by a traceability test).
+- `contributors` covers **every** input voter (indicators + categories) — nothing is dropped
+  silently. This invariant is what makes the M5 AI narration layer possible without
+  reverse-engineering the engine.
+
 ## Files & testing
 
 `lib/mtf/agreement/{agreementTypes,vote,conflict,indicatorAgreement,categoryAgreement,dominance,explanation,agreementEngine}.ts`
