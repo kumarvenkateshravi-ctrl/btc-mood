@@ -1,9 +1,18 @@
 # Market Intelligence Pipeline (M0–M7) — Engine Constitution
 
-**Status:** Canonical reference. Frozen. Every future milestone (M8 Market Intelligence, M9 Trade
-Decision, M10 Trading Plan Generator, Alerts, AI narration, Scanner) references this document rather
-than re-deriving how these layers interact. Changing a public contract below requires a version bump
-(see §Versioning) and an edit here.
+**Status: 🔒 INTELLIGENCE PLATFORM v1.0 — PERMANENTLY FROZEN (2026-07-19, user-declared).**
+
+M0–M7 together constitute **Version 1.0 of the Intelligence Platform**. From this point:
+- **No redesign of the lower layers.** The architectures, formulas, and public contracts of M0–M7 are
+  final for v1.
+- **Only additive enhancements, bug fixes, or performance improvements** are permitted (per §Versioning:
+  additive-only; anything breaking requires a platform major version, not a patch).
+- **M8–M10 consume these contracts — they never modify them.** Higher-level reasoning engines build on
+  the frozen surfaces below.
+
+Every future milestone (M8 Market Intelligence, M9 Trade Decision, M10 Trading Plan Generator, Alerts,
+AI narration, Scanner) references this document rather than re-deriving how these layers interact.
+Changing a public contract below requires a version bump (see §Versioning) and an edit here.
 
 ```
 Candles → M0 Registry → M1 Indicator Intelligence → M2 Category Intelligence → M3 Agreement
