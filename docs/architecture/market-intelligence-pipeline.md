@@ -1,16 +1,16 @@
-# Market Intelligence Pipeline (M0–M6) — Engine Constitution
+# Market Intelligence Pipeline (M0–M7) — Engine Constitution
 
-**Status:** Canonical reference. Frozen. Every future milestone (M7 Probability, M8 Market Intelligence,
-M9 Trade Decision, M10 Trading Plan Generator, Alerts, AI narration, Scanner) references this document
-rather than re-deriving how these layers interact. Changing a public contract below requires a version
-bump (see §Versioning) and an edit here.
+**Status:** Canonical reference. Frozen. Every future milestone (M8 Market Intelligence, M9 Trade
+Decision, M10 Trading Plan Generator, Alerts, AI narration, Scanner) references this document rather
+than re-deriving how these layers interact. Changing a public contract below requires a version bump
+(see §Versioning) and an edit here.
 
 ```
 Candles → M0 Registry → M1 Indicator Intelligence → M2 Category Intelligence → M3 Agreement
                                                                                        │
-                          M6 Trend Lifecycle ← M5 Timeframe Hierarchy + Regime ← M4 Confidence
-                                    │
-                       (M7 Probability → M8 Market Intelligence → M9 Trade Decision → M10 Trading Plan → …)
+        M7 Probability ← M6 Trend Lifecycle ← M5 Timeframe Hierarchy + Regime ← M4 Confidence
+                │
+       (M8 Market Intelligence → M9 Trade Decision → M10 Trading Plan → …)
 ```
 
 Everything below is pure, deterministic, closed-bar, replay-safe, and free of React/UI/network.
@@ -33,8 +33,8 @@ pure, deterministic, releasable-per-task, and invisible until explicitly wired t
 | **M4** | Confidence engines. | ✅ shipped |
 | **M5** | Timeframe Hierarchy + Market Regime engines. | ✅ shipped |
 | **M6** | Trend Lifecycle detection. | ✅ shipped |
-| **M7** | Probability Engine. | ← next |
-| **M8** | Market Intelligence Engine (combine all outputs). | planned |
+| **M7** | Probability Engine. | ✅ shipped |
+| **M8** | Market Intelligence Engine (combine all outputs). | ← next |
 | **M9** | Trade Decision Engine. | planned |
 | **M10** | Goal-Based Trading Plan Generator. | planned |
 
@@ -280,6 +280,46 @@ strength, explanation, lifecycleEngine}.ts`.
 
 ---
 
+## M7 — Probability Engine
+
+**Responsibility:** estimate the probability distribution of future market outcomes — deterministic,
+explainable, and **honest about its source**. Laws: (1) Confidence ≠ Probability; (2) probability is a
+model estimate, not a prediction — v1 is always `calibration: 'prior'` with the permanent
+`PROB_MODEL_PRIORS` signal; (3) calibration is built in — `priors.ts` is the swap point where a future
+empirical transition matrix (from replay/backtesting) replaces the model priors with zero contract change.
+**M7 never predicts price.**
+
+**Files:** `lib/mtf/probability/{probabilityTypes, config, priors, transitions, directional, outcomes,
+opportunity, explanation, probabilityEngine}.ts`.
+
+**Public contract:**
+- `computeProbability(lifecycle: TrendLifecycleResult, hierarchy: HierarchyResult): ProbabilityResult`.
+- Three normalized layers (0–1, Σ=1 each): `stageTransitions` (advance/stay/regress/break with target
+  stages), `directional` (bullish/bearish/sideways), `marketOutcomes` (continuation/pullback/range/
+  reversal/false_breakout/expansion — the trader-facing layer).
+- `dominantTransition` / `dominantDirection` / `mostLikelyOutcome`; `opportunity { score, grade }`;
+  `contributors` (multiplicative audit trail); `calibration/modelVersion/sampleSize/confidenceInterval`
+  (calibration metadata, the latter two reserved for empirical mode).
+
+**Invariants:**
+- **Consumes M6 + M5 outputs only** (`TrendLifecycleResult` + `HierarchyResult`) — no candles, never
+  recomputes lower layers.
+- **Multiplicative audit identity per layer:** `final = prior × Π(named factors) / Z`; contributors record
+  every factor ≠ 1; tests reconstruct all three distributions from the contributors.
+- **`opportunity` is distribution ACTIONABILITY, not trade quality** — `expectedRR`/execution-quality are
+  deliberately excluded (they require price levels M7 cannot see; M9 owns them).
+- `confidenceInterval` MUST remain undefined while `calibration === 'prior'`.
+- Layer 3 buckets transition mass by **target stage** (breakout→expansion; confirmation/
+  trend_establishment/continuation→continuation; healthy_pullback→pullback; exhaustion/distribution/
+  reversal→reversal; range/accumulation→range), with a **false-breakout override** for regress/break out
+  of breakout/confirmation stages, then three directional modulations.
+
+**M8-facing durable surface:** the entire `ProbabilityResult` — **M8 consumes only this.**
+
+**Depends on:** M0–M6 (via `TrendLifecycleResult` + `HierarchyResult`).
+
+---
+
 ## Cross-cutting rules
 
 **Dependency rule (one direction, never up or sideways):**
@@ -318,4 +358,5 @@ setup) remain byte-identical until a milestone explicitly wires a consumer.
 - M4 confidence: `docs/superpowers/specs/2026-07-19-m4-market-confidence-engine-design.md`
 - M5 timeframe hierarchy + regime: `docs/superpowers/specs/2026-07-19-m5-timeframe-hierarchy-market-regime-design.md`
 - M6 trend lifecycle: `docs/superpowers/specs/2026-07-19-m6-trend-lifecycle-design.md`
+- M7 probability engine: `docs/superpowers/specs/2026-07-19-m7-probability-engine-design.md`
 - Architecture graph (navigation): `graphify-out/`
