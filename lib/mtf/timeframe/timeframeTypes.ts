@@ -37,6 +37,10 @@ export interface TimeframeSnapshot {
   confidence: number;     // confidence.confidence (0–100)
   regime: RegimeType;
   regimeClarity: number;  // 0–100
+  /** M6 addition (additive): recency of the current trend, from supertrend.flipFreshness. */
+  trendFreshness: number;
+  /** M6 addition (additive): momentum overextension, from the momentum category's exhaustion dim. */
+  momentumExhaustion: number;
 }
 
 /** Per-TF entry ENRICHED by the hierarchy engine. */

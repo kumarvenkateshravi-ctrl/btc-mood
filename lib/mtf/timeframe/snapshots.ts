@@ -22,6 +22,14 @@ export function buildTimeframeSnapshots(candlesByTf: Partial<Record<Timeframe, C
     const agreement = computeAgreement(indicators, catList);
     const confidence = computeConfidence(indicators, catList, agreement);
     const regime = classifyRegime(categories.trend, categories.volatility);
+
+    const stEntry = indicators.find((r) => r.id === 'supertrend');
+    const stDiag = stEntry?.diagnostics as { flipFreshness?: number } | undefined;
+    const trendFreshness = typeof stDiag?.flipFreshness === 'number' ? stDiag.flipFreshness : 0;
+
+    const momDiag = categories.momentum.diagnostics as { exhaustion?: number };
+    const momentumExhaustion = typeof momDiag.exhaustion === 'number' ? momDiag.exhaustion : 0;
+
     out.push({
       timeframe: tf,
       bias: agreement.dominantBias,
@@ -30,6 +38,8 @@ export function buildTimeframeSnapshots(candlesByTf: Partial<Record<Timeframe, C
       confidence: confidence.confidence,
       regime: regime.regime,
       regimeClarity: regime.clarity,
+      trendFreshness,
+      momentumExhaustion,
     });
   }
   return out;

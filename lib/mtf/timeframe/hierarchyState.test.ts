@@ -6,7 +6,7 @@ import { computeTimeframeHierarchy } from './hierarchy';
 const snap = (
   timeframe: TimeframeSnapshot['timeframe'], bias: Verdict, confidence: number,
   regimeClarity = 60, regime: RegimeType = 'trending_up',
-): TimeframeSnapshot => ({ timeframe, bias, agreement: confidence, conflict: 0, confidence, regime, regimeClarity });
+): TimeframeSnapshot => ({ timeframe, bias, agreement: confidence, conflict: 0, confidence, regime, regimeClarity, trendFreshness: 0, momentumExhaustion: 0 });
 const codes = (xs: { code: string }[]) => xs.map((x) => x.code);
 
 describe('hierarchy overallMarketState + transition + explanation', () => {

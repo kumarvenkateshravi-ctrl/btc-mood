@@ -46,4 +46,18 @@ describe('buildTimeframeSnapshots', () => {
     const c = { '1d': series(200, 200, -0.5), '1h': series(200, 200, -0.4) };
     expect(computeTimeframeHierarchy(buildTimeframeSnapshots(c))).toEqual(computeTimeframeHierarchy(buildTimeframeSnapshots(c)));
   });
+
+  it('includes trendFreshness and momentumExhaustion (additive M6 fields)', () => {
+    const [s] = buildTimeframeSnapshots({ '1d': series(260, 100, 0.5) });
+    expect(s.trendFreshness).toBeGreaterThanOrEqual(0);
+    expect(s.trendFreshness).toBeLessThanOrEqual(100);
+    expect(s.momentumExhaustion).toBeGreaterThanOrEqual(0);
+    expect(s.momentumExhaustion).toBeLessThanOrEqual(100);
+  });
+
+  it('empty candles → freshness/exhaustion still well-formed', () => {
+    const [s] = buildTimeframeSnapshots({ '1d': [] });
+    expect(s.trendFreshness).toBe(0);
+    expect(s.momentumExhaustion).toBe(0);
+  });
 });
