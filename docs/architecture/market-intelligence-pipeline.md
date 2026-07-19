@@ -18,6 +18,31 @@ Same inputs ⇒ identical outputs (except explicitly noted timing metadata). All
 
 ---
 
+## Roadmap (M0–M10, canonical)
+
+The authoritative milestone plan. Every milestone consumes only lower-layer outputs; each is
+pure, deterministic, releasable-per-task, and invisible until explicitly wired to a consumer.
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| **M0** | Indicator Registry & plugin architecture (registration, metadata, settings, categories, weights, enable/disable, compute contract). | ✅ shipped |
+| **M1** | Each indicator returns a standardized `IndicatorIntelligence` object. | ✅ shipped |
+| **M2** | Dynamic Category Engines that discover enabled indicators by category. | ✅ shipped¹ |
+| **M3** | Agreement engines. | ✅ shipped |
+| **M4** | Confidence engines. | ✅ shipped |
+| **M5** | Timeframe Hierarchy + Market Regime engines. | ← next |
+| **M6** | Trend Lifecycle detection. | planned |
+| **M7** | Probability Engine. | planned |
+| **M8** | Market Intelligence Engine (combine all outputs). | planned |
+| **M9** | Trade Decision Engine. | planned |
+| **M10** | Goal-Based Trading Plan Generator. | planned |
+
+¹ **M2 divergence to reconcile:** the roadmap lists categories *Trend, Momentum, Volume,
+Volatility, **Structure, Smart Money*** with *dynamic* per-category indicator discovery. As built
+(per the frozen MTFM2 brief) M2 ships *Trend, Momentum, Volume, Volatility, **Quality, Participation***
+with **fixed** contributor lists. Structure/Smart-Money categories and dynamic discovery are not yet
+implemented — revisit before or during a milestone that needs them.
+
 ## M0 — Indicator Registry
 
 **Responsibility:** hold the fixed indicator roster in stable row order; evaluate each against one
