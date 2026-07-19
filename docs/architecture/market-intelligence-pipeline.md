@@ -30,8 +30,8 @@ pure, deterministic, releasable-per-task, and invisible until explicitly wired t
 | **M2** | Dynamic Category Engines that discover enabled indicators by category. | ✅ shipped¹ |
 | **M3** | Agreement engines. | ✅ shipped |
 | **M4** | Confidence engines. | ✅ shipped |
-| **M5** | Timeframe Hierarchy + Market Regime engines. | ← next |
-| **M6** | Trend Lifecycle detection. | planned |
+| **M5** | Timeframe Hierarchy + Market Regime engines. | ✅ shipped |
+| **M6** | Trend Lifecycle detection. | ← next |
 | **M7** | Probability Engine. | planned |
 | **M8** | Market Intelligence Engine (combine all outputs). | planned |
 | **M9** | Trade Decision Engine. | planned |
@@ -199,6 +199,41 @@ agreementConfidence, evidence, penalties, explanation, confidenceEngine}.ts`.
 
 ---
 
+## M5 — Timeframe Hierarchy + Market Regime
+
+**Responsibility:** the first CROSS-timeframe engine — per-TF stationary **regime**, and how the
+timeframes **relate** (authority, alignment, control transfer, `overallMarketState`). Boundary with
+M6: M5 = "what is the current multi-timeframe context?"; M6 = "where are we in the trend lifecycle?".
+
+**Files:** `lib/mtf/timeframe/{timeframeTypes, config, regime, hierarchy, hierarchyState, snapshots}.ts`.
+
+**Public contract:**
+- `buildTimeframeSnapshots(candlesByTf): TimeframeSnapshot[]` — the only candle-touching helper; runs
+  M0→M4 per TF + `classifyRegime`. **Outside** the core.
+- `computeTimeframeHierarchy(snapshots: TimeframeSnapshot[]): HierarchyResult`.
+- `classifyRegime(trend, volatility): RegimeResult`.
+- `RegimeType` (5 stationary: trending_up/down, ranging, compression, expansion); `OverallMarketState`
+  (cross-TF composite incl. pullback/transition/reversal_risk); `TimeframeSnapshot`, `HierarchyResult`.
+- Config (`config.ts`): `TIMEFRAME_HIERARCHY` + position-derived `tfWeight`/`tfRole`, `REGIME_THRESHOLDS`,
+  `AUTHORITY`, `HIERARCHY_THRESHOLDS`.
+
+**Invariants:**
+- **M5 core never sees candles** — consumes `TimeframeSnapshot[]`. `buildTimeframeSnapshots` is the sole
+  M0–M4 orchestrator.
+- **Reuses the frozen M3 vote primitive** — TFs are `Voter { id: tf, verdict: bias, confidence, weight }`.
+- **Per-TF regime is stationary; cross-TF interpretation is `overallMarketState`** (pullback/transition/
+  reversal_risk live at the hierarchy level, not in regime — clean M6 boundary).
+- **Hybrid authority:** intrinsic authority (confidence + regime clarity) + top-down control **transfer**
+  when a higher TF drops below the authority threshold.
+- **Configurable hierarchy** — swap `TIMEFRAME_HIERARCHY` for scalp/swing with no engine change.
+
+**M6-facing durable surface:** `htfBias`, `alignment`, `conflict`, `controller`, per-TF `authority`,
+`overallMarketState`, `transition`, per-TF `regime`. M6 consumes `TimeframeSnapshot[]` + `HierarchyResult`.
+
+**Depends on:** M0–M4 (via `buildTimeframeSnapshots`).
+
+---
+
 ## Cross-cutting rules
 
 **Dependency rule (one direction, never up or sideways):**
@@ -235,4 +270,5 @@ setup) remain byte-identical until a milestone explicitly wires a consumer.
 - M2 categories: `docs/superpowers/specs/2026-07-19-m2-category-intelligence-design.md`
 - M3 agreement: `docs/superpowers/specs/2026-07-19-m3-market-agreement-engine-design.md`
 - M4 confidence: `docs/superpowers/specs/2026-07-19-m4-market-confidence-engine-design.md`
+- M5 timeframe hierarchy + regime: `docs/superpowers/specs/2026-07-19-m5-timeframe-hierarchy-market-regime-design.md`
 - Architecture graph (navigation): `graphify-out/`
