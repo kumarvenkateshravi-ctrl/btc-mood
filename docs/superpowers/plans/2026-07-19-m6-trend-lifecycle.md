@@ -140,6 +140,8 @@ export interface TrendLifecycleResult {
   lifecycleStrength: number;
   freshness: number;
   exhaustion: number;
+  stageConfidence: number;
+  nextStageConfidence: number;
   progression: { previous: TrendStage | null; current: TrendStage; trajectory: 'advancing' | 'stalling' | 'regressing' };
   expectation: { expected: TrendStage; rationale: string };
   invalidation: { invalidated: boolean; condition: string | null };
@@ -161,6 +163,7 @@ import type { TrendStage } from './lifecycleTypes';
 
 export const LIFECYCLE_THRESHOLDS = {
   exhaustHigh: 70, freshHigh: 70, freshMid: 40, alignConfirm: 60, strongTrend: 55, weakConfidence: 40,
+  invalidationPenalty: 30,
 } as const;
 
 /** Canonical forward order for progression/expectation. 'range' is off-cycle. */
@@ -181,10 +184,10 @@ export const CYCLE_ORDER: TrendStage[] = [
 **Files:** Create `lib/mtf/lifecycle/stage.ts`, `stage.test.ts`.
 
 **Interfaces:**
-- `classifyStage(s: TimeframeSnapshot, hier: HierarchyResult): { stage: TrendStage; direction: Verdict }` — controller-aware (uses `hier.overallMarketState`, `hier.alignment` when `s.timeframe === hier.controller`, else a coarse per-TF form using only `s.regime/trendFreshness/momentumExhaustion`).
+- `classifyStage(s: TimeframeSnapshot, hier: HierarchyResult): { stage: TrendStage; direction: Verdict; stageConfidence: number }` — controller-aware (uses `hier.overallMarketState`, `hier.alignment`/`hier.conflict` when `s.timeframe === hier.controller`, else a coarse per-TF form using only `s.regime/trendFreshness/momentumExhaustion/regimeClarity`, with `hier.alignment`/`hier.conflict` falling back to `s.confidence`-derived proxies when off-controller). `stageConfidence` per the spec's per-branch `marginScore` table, blended 50/50 with `s.confidence`, rounded and clamped 0–100.
 
-- [ ] **Step 1: Write failing tests.** Build fixture `TimeframeSnapshot`s and minimal `HierarchyResult`s covering every branch in the spec's precedence list: compression+bullish→accumulation, compression+bearish→distribution, expansion+fresh+directional→breakout, ranging→range, trending+reversal_risk→reversal, trending+high exhaustion→exhaustion, trending+`*_pullback`→healthy_pullback, trending+`*_continuation`→continuation, trending+high freshness→breakout, trending+midFreshness+alignConfirm→confirmation, trending+else→trend_establishment. One per test, asserting `stage` and `direction === s.bias`.
-- [ ] **Step 2:** FAIL. **Step 3:** implement per the spec's exact precedence order (first match wins — check in the listed sequence). **Step 4:** PASS.
+- [ ] **Step 1: Write failing tests.** Build fixture `TimeframeSnapshot`s and minimal `HierarchyResult`s covering every branch in the spec's precedence list: compression+bullish→accumulation, compression+bearish→distribution, expansion+fresh+directional→breakout, ranging→range, trending+reversal_risk→reversal, trending+high exhaustion→exhaustion, trending+`*_pullback`→healthy_pullback, trending+`*_continuation`→continuation, trending+high freshness→breakout, trending+midFreshness+alignConfirm→confirmation, trending+else→trend_establishment. One per test, asserting `stage`, `direction === s.bias`, and `stageConfidence` in `[0,100]` with an exact hand-computed value for at least the breakout and reversal cases (e.g. breakout: `round(0.5·trendFreshness + 0.5·s.confidence)`).
+- [ ] **Step 2:** FAIL. **Step 3:** implement per the spec's exact precedence order (first match wins — check in the listed sequence) and the `stageConfidence` marginScore table. **Step 4:** PASS.
 - [ ] **Step 5: gate.** **Step 6: Commit:** `feat(mtf): M6 trend stage classifier`
 
 ---
@@ -225,11 +228,11 @@ export const CYCLE_ORDER: TrendStage[] = [
 
 **Interfaces:**
 - `explainLifecycle(ctx): { signals: LifecycleSignal[]; warnings: LifecycleSignal[] }` — `LC_BREAKOUT`/`LC_TREND`/`LC_CONTINUATION`/`LC_EXHAUSTION` (name the controller TF); `LC_INVALIDATION` (names the condition), `LC_REVERSAL_RISK`, `LC_EXHAUSTION_WARN`.
-- `computeTrendLifecycle(snapshots, hierarchy, previousStage?): TrendLifecycleResult` — composes: `classifyStage` on the controller snapshot → `progress(previousStage ?? null, stage)` → `expectNext(stage, exhaustion)` → `checkInvalidation` → `lifecycleStrength` → per-TF map via `classifyStage` on each snapshot → `explainLifecycle` → assemble.
+- `computeTrendLifecycle(snapshots, hierarchy, previousStage?): TrendLifecycleResult` — composes: `classifyStage` on the controller snapshot (→ `stage`, `direction`, `stageConfidence`) → `progress(previousStage ?? null, stage)` → `expectNext(stage, exhaustion)` → `checkInvalidation` → `lifecycleStrength` → `nextStageConfidence = round(clamp(stageConfidence - (invalidation.invalidated ? LIFECYCLE_THRESHOLDS.invalidationPenalty : 0), 0, 100))` → per-TF map via `classifyStage` on each snapshot → `explainLifecycle` → assemble.
 
 - [ ] **Step 1: Write failing tests.**
   - explanation: controlled contexts firing each code; a stage with no controller present → still returns without throwing.
-  - orchestrator: **real pipeline** — `buildTimeframeSnapshots(candlesByTf) → computeTimeframeHierarchy → computeTrendLifecycle`; assert `schemaVersion:1`, valid `stage`/`direction`, `perTimeframe` covers all input TFs, `expectation`/`invalidation`/`progression` well-formed; `previousStage` supplied → `progression.previous` reflects it and `trajectory` computed; determinism (`toEqual` twice); empty candles → graceful `stage:'range'`-ish safe result (no throw).
+  - orchestrator: **real pipeline** — `buildTimeframeSnapshots(candlesByTf) → computeTimeframeHierarchy → computeTrendLifecycle`; assert `schemaVersion:1`, valid `stage`/`direction`, `stageConfidence`/`nextStageConfidence` both in `[0,100]`, `perTimeframe` covers all input TFs, `expectation`/`invalidation`/`progression` well-formed; `previousStage` supplied → `progression.previous` reflects it and `trajectory` computed; **invalidated stage → `nextStageConfidence` strictly less than `stageConfidence`** (the discount applies); determinism (`toEqual` twice); empty candles → graceful `stage:'range'`-ish safe result (no throw).
 - [ ] **Step 2–4:** TDD. **Step 5: gate.** **Step 6: Commit:** `feat(mtf): M6 lifecycle explanation + orchestrator`
 
 ---
@@ -243,6 +246,6 @@ export const CYCLE_ORDER: TrendStage[] = [
 
 ## Self-Review Notes
 
-- **Spec coverage:** snapshot extension + contract (T1), stage classifier incl. all precedence branches (T2), expectation + progression (T3), invalidation + strength (T4), explanation + orchestrator + real pipeline (T5), verification/docs (T6). Hybrid decisions applied: `trendFreshness`/`momentumExhaustion` additive (T1), richer 9+1 stage set with honesty note on approximated stages (T2 spec ref), `lifecycleStrength` kept distinct from `freshness` (T4/contract), `previousStage` as an input param not a stored field (T5/contract), Expectation + Invalidation + Strength as separate small engines, not folded together (T3/T4), controller-TF headline with per-TF map (contract + T2/T5).
+- **Spec coverage:** snapshot extension + contract (T1), stage classifier incl. all precedence branches + `stageConfidence` (T2), expectation + progression (T3), invalidation + strength (T4), `nextStageConfidence` + explanation + orchestrator + real pipeline (T5), verification/docs (T6). Hybrid decisions applied: `trendFreshness`/`momentumExhaustion` additive (T1), richer 9+1 stage set with honesty note on approximated stages (T2 spec ref), `lifecycleStrength` kept distinct from `freshness` (T4/contract), `previousStage` as an input param not a stored field (T5/contract), Expectation + Invalidation + Strength as separate small engines, not folded together (T3/T4), controller-TF headline with per-TF map (contract + T2/T5). **M7 reservation:** `stageConfidence`/`nextStageConfidence` added to the contract now (T1), computed in T2/T5 — explicitly NOT probabilities (M7's job); avoids a future contract revision when the Probability Engine ships.
 - **Type consistency:** `TrendLifecycleResult`, `TrendStage`, `LifecycleSignal` from `lifecycleTypes.ts` used identically across all engines; `CYCLE_ORDER`/`LIFECYCLE_THRESHOLDS` single-sourced in `config.ts`.
 - **No placeholders:** every formula and branch has exact logic in the frozen spec + this plan.

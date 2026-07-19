@@ -44,12 +44,13 @@ single snapshot (regime + context bias + freshness), documented as heuristics; t
 ```ts
 export const LIFECYCLE_THRESHOLDS = {
   exhaustHigh: 70, freshHigh: 70, freshMid: 40, alignConfirm: 60, strongTrend: 55, weakConfidence: 40,
+  invalidationPenalty: 30,
 } as const;
 ```
 
 ## Stage classifier (`stage.ts`)
 
-`classifyStage(s: TimeframeSnapshot, hier: HierarchyResult): { stage: TrendStage; direction: Verdict }`.
+`classifyStage(s: TimeframeSnapshot, hier: HierarchyResult): { stage: TrendStage; direction: Verdict; stageConfidence: number }`.
 `direction = s.bias`. `oms = hier.overallMarketState`. Precedence:
 
 - **Non-trending regime** (`ranging`/`compression`/`expansion`):
@@ -67,6 +68,26 @@ export const LIFECYCLE_THRESHOLDS = {
 
 Per-TF map: `classifyStage` on each snapshot (using its own bias; `oms` only meaningful at controller, so
 per-TF uses a reduced form — regime + freshness + exhaustion → coarse stage).
+
+### Stage & forecast confidence (M7 reservation)
+
+Two fields reserved on the contract now so M7 (Probability Engine) never forces a contract revision.
+**Not probabilities** — they express the engine's own confidence in its classification and forecast; M7
+combines them with probability modeling later.
+
+- **`stageConfidence`** — how decisively the winning branch condition was met, blended with the
+  underlying snapshot confidence: `round(clamp(0.5·marginScore + 0.5·s.confidence, 0, 100))`, where
+  `marginScore` is the specific signal behind the branch that fired:
+  - `breakout` → `trendFreshness`
+  - `confirmation` → `mean(trendFreshness, alignment)`
+  - `healthy_pullback` / `continuation` → `hier.alignment`
+  - `exhaustion` / `distribution` → `momentumExhaustion`
+  - `reversal` → `hier.conflict`
+  - `accumulation` / `trend_establishment` / `range` → `s.regimeClarity`
+- **`nextStageConfidence`** — `stageConfidence` discounted when the current stage is already
+  invalidated (forecasting off a broken stage is unreliable):
+  `round(clamp(stageConfidence − (invalidation.invalidated ? LIFECYCLE_THRESHOLDS.invalidationPenalty : 0), 0, 100))`.
+  Computed in the orchestrator, after `checkInvalidation` runs.
 
 ## Expectation engine (`expectation.ts`)
 
@@ -120,6 +141,8 @@ export interface TrendLifecycleResult {
   lifecycleStrength: number;     // 0–100 (stage expression)
   freshness: number;             // 0–100 (age proxy — distinct from strength)
   exhaustion: number;            // 0–100
+  stageConfidence: number;       // 0–100 — confidence in the CURRENT stage classification (not a probability)
+  nextStageConfidence: number;   // 0–100 — confidence in the EXPECTED next stage (not a probability; M7 reservation)
   progression: { previous: TrendStage | null; current: TrendStage; trajectory: 'advancing' | 'stalling' | 'regressing' };
   expectation: { expected: TrendStage; rationale: string };
   invalidation: { invalidated: boolean; condition: string | null };
@@ -147,4 +170,5 @@ map, trajectory, invalidation conditions, strength ranges, snapshot-extension fi
 
 Pure, deterministic, replay-safe, no UI. **Releasable-per-task invariant.** Nothing outside `lib/mtf/**` +
 docs; M6 invisible (no consumers). **M7-facing durable surface:** `stage`, `direction`, `lifecycleStrength`,
-`freshness`, `exhaustion`, `expectation`, `invalidation`, per-TF stages — M7 (Probability) consumes these.
+`freshness`, `exhaustion`, `stageConfidence`, `nextStageConfidence`, `expectation`, `invalidation`,
+per-TF stages — M7 (Probability) consumes these without requiring another M6 contract revision.
