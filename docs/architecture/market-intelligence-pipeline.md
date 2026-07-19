@@ -6,11 +6,10 @@ re-deriving how these layers interact. Changing a public contract below requires
 (see §Versioning) and an edit here.
 
 ```
-Candles → M0 Registry → M1 Indicator Intelligence → M2 Category Intelligence → M3 Agreement
-                                                                                     │
-                                                                              (M4 Confidence →
-                                                                               M5 Market Intel →
-                                                                               M6 Decision → …)
+Candles → M0 Registry → M1 Indicator Intelligence → M2 Category Intelligence → M3 Agreement → M4 Confidence
+                                                                                                    │
+                                                                                     (M5 Market Intel →
+                                                                                      M6 Decision → …)
 ```
 
 Everything below is pure, deterministic, closed-bar, replay-safe, and free of React/UI/network.
@@ -142,6 +141,39 @@ dominance, explanation, agreementEngine}.ts`.
 
 ---
 
+## M4 — Market Confidence Engine
+
+**Responsibility:** answer "can I trust the current market state enough to act?" — **trust, not
+agreement**. A 95%-agreement neutral market yields *low* directional confidence.
+
+**Files:** `lib/mtf/confidence/{confidenceTypes, config, indicatorConfidence, categoryConfidence,
+agreementConfidence, evidence, penalties, explanation, confidenceEngine}.ts`.
+
+**Public contract:**
+- `computeConfidence(indicatorResults: IndicatorResult[], categoryResults: CategoryResult[], agreementResult: AgreementResult, previousConfidence?: number): ConfidenceResult`.
+- `ConfidenceResult { schemaVersion: 1, confidence, state, contributors: ConfidenceContributor[],
+  signals, warnings, diagnostics{ indicatorConfidence, categoryConfidence, agreementConfidence,
+  evidence, penalties }, previousConfidence?, confidenceDelta? }`.
+- `ConfidenceContributor { id, layer, kind: 'base'|'evidence'|'penalty', contribution }` (signed).
+- Config (single source `config.ts`): `CONFIDENCE_WEIGHTS` (pillar blend), `CATEGORY_CONFIDENCE_FACTORS`
+  (directional-category aggregation), `CONFIDENCE_THRESHOLDS`, `CONFIDENCE_EVIDENCE`, `CONFIDENCE_PENALTIES`.
+
+**Invariants:**
+- **Consumes M1/M2/M3 outputs only.** Confidence is trust, not agreement.
+- **Audit identity:** `confidence = clamp(Σ contributors.contribution)`; every point maps to a signed
+  base / evidence / penalty contribution — no hidden scoring.
+- **Base = pillar blend** (indicator/category/agreement confidence). **Evidence** (data completeness)
+  and **penalties** (conflict, layer-mismatch, low quality, high volatility, weak-pillar limiter) are
+  strictly **orthogonal** to the base — never re-counting a base signal.
+- **Neutral consensus → low confidence:** `agreementConfidence = agreement × directionalShare`.
+- **Weak-pillar limiter:** a strong result is constrained by its weakest foundational pillar.
+- **Semantic but declarative (relaxed Rule 6):** category knowledge lives in `CATEGORY_CONFIDENCE_FACTORS`
+  and the named quality/volatility penalties — never ad-hoc `if id === …` in general logic.
+
+**Depends on:** M1 (`IndicatorResult[]`) + M2 (`CategoryResult[]`) + M3 (`AgreementResult`).
+
+---
+
 ## Cross-cutting rules
 
 **Dependency rule (one direction, never up or sideways):**
@@ -177,4 +209,5 @@ setup) remain byte-identical until a milestone explicitly wires a consumer.
 - M1.x six indicators: `docs/superpowers/specs/2026-07-18-m1x-six-indicator-intelligence-design.md`
 - M2 categories: `docs/superpowers/specs/2026-07-19-m2-category-intelligence-design.md`
 - M3 agreement: `docs/superpowers/specs/2026-07-19-m3-market-agreement-engine-design.md`
+- M4 confidence: `docs/superpowers/specs/2026-07-19-m4-market-confidence-engine-design.md`
 - Architecture graph (navigation): `graphify-out/`
