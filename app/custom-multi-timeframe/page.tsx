@@ -28,6 +28,8 @@ import type { SmcSnapshot } from '@/lib/smc/types';
 import { evaluateSmcScreener } from '@/lib/smc/screener';
 import { createMarketStructureSnapshot } from '@/lib/mtf/structureEngine';
 import MarketStructureCard from '@/components/mtf/MarketStructureCard';
+import { MTFIntelligenceBoard, AgreementConfidencePanel, CategoryStrip, TradeContextCard } from '@/components/mtf/MarketIntelligence';
+import { useMarketIntelligence } from '@/components/mtf/useMarketIntelligence';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import { Panel } from '@/components/ui';
@@ -155,6 +157,9 @@ export default function CustomMultiTimeframePage() {
     });
   }, [smcByTf, candlesByTf, structTf, symbol, phaseLabel]);
 
+  // ---- Market Intelligence (M2–M5), memoized on the closed-bar signature ----
+  const intel = useMarketIntelligence(candlesByTf, structTf);
+
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
   const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
   const change = ticker24h ? ticker24h.change : (changes['1d'] ?? 0);
@@ -230,6 +235,23 @@ export default function CustomMultiTimeframePage() {
                 </div>
                 <MatrixTable matrix={matrix} onConfigure={setEditingId} />
               </Panel>
+
+              {intel.board.snapshots.length > 0 && (
+                <>
+                  <MTFIntelligenceBoard hierarchy={intel.board.hierarchy} />
+                  {intel.board.selected && (
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      <AgreementConfidencePanel
+                        agreement={intel.board.selected.agreement}
+                        confidence={intel.board.selected.confidence}
+                        timeframe={intel.board.selected.timeframe}
+                      />
+                      <CategoryStrip categories={intel.board.selected.categories} />
+                    </div>
+                  )}
+                  <TradeContextCard context={intel.tradeContext} />
+                </>
+              )}
 
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
                 <Panel eyebrow title="Timeframe Heatmap"><Heatmap rows={heatmap} /></Panel>
