@@ -76,6 +76,28 @@ live-validated against real BTCUSDT data (spec:
 **Conclusion: the intelligence stack produces coherent conclusions on live data. M9 (Trade
 Decision Engine) may now build on this validated foundation.**
 
+## UI Wiring — Phase 1c (complete, 2026-07-20)
+
+M9's decision wired into `/custom-multi-timeframe` for a multi-day practice period before any
+M9 fine-tuning or M10 (user directive via MTFM91c.md: "trade with it → replay it → refine if
+necessary → freeze M9"; spec: `docs/superpowers/specs/2026-07-20-mtf-intelligence-ui-phase1c-design.md`).
+
+- `decisionEngine.ts` additively exports `executionTimeframeOf(hierarchy)` (no logic change).
+- `components/mtf/useTradeDecision.ts` reuses the page's already-computed `FullMarketIntelligence`
+  (never re-runs the stack) and the page's closed-bar-cached `smcByTf`; passes the execution TF's
+  `SmcSnapshot` only when the toggle is on. Memoized on the closed-bar signature + toggle.
+- `TradeDecisionPanel` (dumb renderer) shows action, execution TF, risk tier, the priors chip,
+  gate reason when blocked, the full setup (entry/stop/targets with sources + RR, ATR),
+  confluence notes, warnings, and explanation — plus an **SMC confluence on/off toggle** so
+  ATR-only vs ATR+SMC decisions can be compared live. Mounted directly below the M8 verdict.
+- Live Playwright validation (0 console errors) confirmed M9 defers to M8's environment gate: the
+  verdict's readiness (`avoid` / "high environment risk") passed through verbatim as M9 NO TRADE /
+  `environment_avoid`; the SMC toggle flipped ON↔OFF without error (a no-trade-by-environment
+  decision is correctly unaffected, since the gate fires before pricing).
+- The setup path (ready ⇒ entry/stop/targets) and SMC-adjusted levels are proven by unit tests;
+  observing them live across regimes is the point of the practice period.
+- Deferred: M9 bar-replay integration, alerts, other pages, any M9 logic change, M10.
+
 ## M0 — Indicator Registry
 
 **Responsibility:** hold the fixed indicator roster in stable row order; evaluate each against one
