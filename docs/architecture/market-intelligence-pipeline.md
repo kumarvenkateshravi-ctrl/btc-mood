@@ -53,6 +53,29 @@ Volatility, **Structure, Smart Money*** with *dynamic* per-category indicator di
 with **fixed** contributor lists. Structure/Smart-Money categories and dynamic discovery are not yet
 implemented — revisit before or during a milestone that needs them.
 
+## UI Wiring — Phase 1b (complete, 2026-07-20)
+
+Before starting M9, the frozen M0–M8 stack was wired into `/custom-multi-timeframe` and
+live-validated against real BTCUSDT data (spec:
+`docs/superpowers/specs/2026-07-20-mtf-intelligence-ui-phase1b-design.md`).
+
+- `components/mtf/useMarketIntelligence.ts` now calls M8's single entry point,
+  `computeFullMarketIntelligence(candlesByTf)`, once per closed-bar signature, and separately
+  computes a per-selected-timeframe M1–M4 bundle for the interactive panels.
+- Four new dumb renderers added to `components/mtf/MarketIntelligence.tsx`:
+  `MarketIntelligenceVerdict`, `TrendLifecyclePanel`, `ProbabilityPanel`, `NarrativeEvidencePanel`.
+- Live Playwright validation (0 console errors) confirmed the coherence properties the phase
+  exists to prove: controller identical across the verdict/board/trade-context panels; readiness
+  ladder consistent with quality/opportunity/risk (`wait` because opportunity grade C sits below
+  the B threshold despite good quality and low risk); lifecycle stage consistent with the M5
+  `overallMarketState`; M7 probability buckets sum to ~100% on screen; the `model priors`
+  calibration badge renders wherever M7 output is shown.
+- Deferred (explicitly out of scope for this phase): Phase 2 widget, Phase 3 alerts, consolidating
+  `TradeContextCard` into the M8 verdict, and pointing any other page at M8.
+
+**Conclusion: the intelligence stack produces coherent conclusions on live data. M9 (Trade
+Decision Engine) may now build on this validated foundation.**
+
 ## M0 — Indicator Registry
 
 **Responsibility:** hold the fixed indicator roster in stable row order; evaluate each against one
