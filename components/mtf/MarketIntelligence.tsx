@@ -16,6 +16,7 @@ import type { TradeContext } from '@/lib/mtf/marketIntelligence';
 import type { TrendLifecycleResult } from '@/lib/mtf/lifecycle/lifecycleTypes';
 import type { ProbabilityResult } from '@/lib/mtf/probability/probabilityTypes';
 import type { MarketIntelligenceResult, QualityLevel, ReadinessState, RiskLevel } from '@/lib/mtf/market/marketTypes';
+import type { TradeDecisionResult } from '@/lib/mtf/decision/decisionTypes';
 import { Panel } from '@/components/ui';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5M', '15m': '15M', '30m': '30M', '1h': '1H', '4h': '4H', '1d': '1D' };
@@ -312,6 +313,84 @@ export function TradeContextCard({ context }: { context: TradeContext }) {
       <p className="mt-1 border-t border-line pt-1 text-[10px] text-ink-faint">
         Deterministic interpretation of the current multi-timeframe state — context only, not a trade signal.
       </p>
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------- 9. trade decision (M9)
+const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+const SOURCE_SHORT: Record<string, string> = {
+  atr: 'ATR', swing: 'swing', smc_orderblock: 'OB', smc_fvg: 'FVG', smc_liquidity: 'LIQ',
+};
+
+export function TradeDecisionPanel({ decision, smcEnabled, onToggleSmc }: {
+  decision: TradeDecisionResult;
+  smcEnabled: boolean;
+  onToggleSmc: () => void;
+}) {
+  const { action, gate, executionTf, setup, riskTier, confluence, calibration, explanation, warnings } = decision;
+  const actionTone = action === 'long' ? 'text-bull-bright' : action === 'short' ? 'text-bear-bright' : 'text-neutral';
+  const tierTone = riskTier === 'full' ? 'text-bull-bright' : riskTier === 'none' ? 'text-ink-faint' : 'text-regime-hot';
+
+  return (
+    <Panel eyebrow title="Trade Decision" badge="M9 · conditional proposal">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className={cx('text-lg font-bold uppercase', actionTone)}>{action.replace('_', ' ')}</span>
+        <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">{TF_LABEL[executionTf]} executes</span>
+        <span className={cx('rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold uppercase', tierTone)}>risk: {riskTier}</span>
+        {calibration === 'prior' && (
+          <span className="rounded bg-regime-hot/12 px-1.5 py-0.5 text-[10px] text-regime-hot">model priors</span>
+        )}
+        <button
+          type="button"
+          onClick={onToggleSmc}
+          className={cx(
+            'ml-auto rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+            smcEnabled ? 'border-accent/40 bg-accent/10 text-accent' : 'border-line bg-surface-3 text-ink-faint',
+          )}
+        >
+          SMC confluence: {smcEnabled ? 'ON' : 'OFF'}
+        </button>
+      </div>
+
+      {action === 'no_trade' && (
+        <div className="mb-2 rounded-lg border border-line bg-base/40 p-2">
+          <span className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[10px] text-ink-faint">{gate.blockedBy}</span>
+          <div className="mt-1 text-[11px] text-ink-muted">{gate.reason}</div>
+        </div>
+      )}
+
+      {setup && (
+        <div className="mb-2 grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+          <Stat k={`Entry Zone (${setup.entry.type})`} v={`${fmt(setup.entry.zone[0])}–${fmt(setup.entry.zone[1])}`} tone="text-accent" />
+          <Stat k="Stop (invalidation)" v={`${fmt(setup.stop.price)} · ${setup.stop.distancePct}% · ${SOURCE_SHORT[setup.stop.source]}`} tone="text-bear-bright" />
+          {setup.targets.map((t, i) => (
+            <Stat key={t.price} k={`Target ${i + 1}`} v={`${fmt(t.price)} · RR ${t.rr} · ${SOURCE_SHORT[t.source]}`} tone="text-bull-bright" />
+          ))}
+          <Stat k="Headline RR" v={setup.rr} />
+          <Stat k="ATR" v={fmt(setup.atr)} />
+        </div>
+      )}
+
+      {confluence.length > 0 && (
+        <ul className="mb-2 space-y-0.5 border-t border-line pt-1 text-[11px] text-ink-muted">
+          {confluence.map((n) => (
+            <li key={n.code}>
+              <span className="font-mono text-[10px] text-accent">[{n.code}]</span> {n.message} ({fmt(n.before)} → {fmt(n.after)})
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {warnings.length > 0 && (
+        <ul className="mb-2 space-y-0.5 text-[11px] text-regime-hot">
+          {warnings.map((w) => <li key={w.code}>⚠ {w.message}</li>)}
+        </ul>
+      )}
+
+      <ul className="space-y-0.5 border-t border-line pt-1 text-[11px] leading-snug text-ink-muted">
+        {explanation.map((line) => <li key={line}>{line}</li>)}
+      </ul>
     </Panel>
   );
 }
