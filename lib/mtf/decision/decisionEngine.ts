@@ -26,8 +26,9 @@ export const DECISION_SCHEMA_VERSION = 1;
 const closed = (c: Candle[]): Candle[] => (c.length > 1 ? c.slice(0, -1) : c);
 
 /** Execution TF: highest-authority trigger → else lowest-weight entry → else
- *  controller (deliberate mirror of deriveTradeContext's selection). */
-function executionTimeframeOf(hierarchy: HierarchyResult): Timeframe {
+ *  controller (deliberate mirror of deriveTradeContext's selection). Exported so
+ *  UI hooks can select the execution TF's SmcSnapshot before calling the engine. */
+export function executionTimeframeOf(hierarchy: HierarchyResult): Timeframe {
   const entries = Object.values(hierarchy.perTimeframe).filter((e): e is NonNullable<typeof e> => !!e);
   const triggers = entries.filter((e) => e.role === 'trigger');
   if (triggers.length) return triggers.reduce((b, e) => (e.authority > b.authority ? e : b)).timeframe;
