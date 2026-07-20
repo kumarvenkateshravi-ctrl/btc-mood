@@ -28,7 +28,10 @@ import type { SmcSnapshot } from '@/lib/smc/types';
 import { evaluateSmcScreener } from '@/lib/smc/screener';
 import { createMarketStructureSnapshot } from '@/lib/mtf/structureEngine';
 import MarketStructureCard from '@/components/mtf/MarketStructureCard';
-import { MTFIntelligenceBoard, AgreementConfidencePanel, CategoryStrip, TradeContextCard } from '@/components/mtf/MarketIntelligence';
+import {
+  MTFIntelligenceBoard, AgreementConfidencePanel, CategoryStrip, TradeContextCard,
+  MarketIntelligenceVerdict, TrendLifecyclePanel, ProbabilityPanel, NarrativeEvidencePanel,
+} from '@/components/mtf/MarketIntelligence';
 import { useMarketIntelligence } from '@/components/mtf/useMarketIntelligence';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -238,6 +241,7 @@ export default function CustomMultiTimeframePage() {
 
               {intel.full.layers.snapshots.length > 0 && (
                 <>
+                  <MarketIntelligenceVerdict result={intel.full.result} />
                   <MTFIntelligenceBoard hierarchy={intel.full.layers.hierarchy} />
                   {intel.selected && (
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -250,6 +254,11 @@ export default function CustomMultiTimeframePage() {
                     </div>
                   )}
                   <TradeContextCard context={intel.tradeContext} />
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    <TrendLifecyclePanel lifecycle={intel.full.layers.lifecycle} />
+                    <ProbabilityPanel probability={intel.full.layers.probability} />
+                  </div>
+                  <NarrativeEvidencePanel result={intel.full.result} />
                 </>
               )}
 
