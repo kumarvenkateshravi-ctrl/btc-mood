@@ -236,17 +236,17 @@ export default function CustomMultiTimeframePage() {
                 <MatrixTable matrix={matrix} onConfigure={setEditingId} />
               </Panel>
 
-              {intel.board.snapshots.length > 0 && (
+              {intel.full.layers.snapshots.length > 0 && (
                 <>
-                  <MTFIntelligenceBoard hierarchy={intel.board.hierarchy} />
-                  {intel.board.selected && (
+                  <MTFIntelligenceBoard hierarchy={intel.full.layers.hierarchy} />
+                  {intel.selected && (
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                       <AgreementConfidencePanel
-                        agreement={intel.board.selected.agreement}
-                        confidence={intel.board.selected.confidence}
-                        timeframe={intel.board.selected.timeframe}
+                        agreement={intel.selected.agreement}
+                        confidence={intel.selected.confidence}
+                        timeframe={intel.selected.timeframe}
                       />
-                      <CategoryStrip categories={intel.board.selected.categories} />
+                      <CategoryStrip categories={intel.selected.categories} />
                     </div>
                   )}
                   <TradeContextCard context={intel.tradeContext} />

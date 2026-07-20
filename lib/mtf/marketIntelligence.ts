@@ -17,15 +17,42 @@ import { computeTimeframeHierarchy } from './timeframe/hierarchy';
 import { tfWeight } from './timeframe/config';
 import type { HierarchyResult, OverallMarketState, TimeframeSnapshot } from './timeframe/timeframeTypes';
 
+export interface SelectedTimeframeBundle {
+  timeframe: Timeframe;
+  agreement: AgreementResult;
+  confidence: ConfidenceResult;
+  categories: CategoryResult[];
+}
+
 export interface MarketIntelligenceBoard {
   hierarchy: HierarchyResult;
   snapshots: TimeframeSnapshot[];
-  selected: { timeframe: Timeframe; agreement: AgreementResult; confidence: ConfidenceResult; categories: CategoryResult[] } | null;
+  selected: SelectedTimeframeBundle | null;
 }
 
 /** Drop the still-forming last bar (closed-bar determinism). */
 const closed = (c: Candle[]): Candle[] => (c.length > 1 ? c.slice(0, -1) : c);
 
+/** M1–M4 + categories for one user-selected timeframe (closed bars). */
+export function computeSelectedTimeframeBundle(
+  candlesByTf: Partial<Record<Timeframe, Candle[]>>,
+  selectedTf: Timeframe,
+): SelectedTimeframeBundle | null {
+  const arr = candlesByTf[selectedTf];
+  if (!arr || !arr.length) return null;
+  const selCandles = closed(arr);
+  if (!selCandles.length) return null;
+  const indicators = createDefaultRegistry().evaluate(selCandles);
+  const categories = Object.values(computeCategoryIntelligence(indicators).categories);
+  const agreement = computeAgreement(indicators, categories);
+  const confidence = computeConfidence(indicators, categories, agreement);
+  return { timeframe: selectedTf, agreement, confidence, categories };
+}
+
+/** Phase-1 aggregator. SUPERSEDED for hierarchy/snapshots by M8's
+ *  computeFullMarketIntelligence (lib/mtf/market/marketEngine.ts) — the page's
+ *  hook now uses that entry point; this remains for its tests and for
+ *  deriveTradeContext/computeSelectedTimeframeBundle consumers. */
 export function computeMarketIntelligenceBoard(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   selectedTf: Timeframe,
@@ -37,16 +64,7 @@ export function computeMarketIntelligenceBoard(
 
   const snapshots = buildTimeframeSnapshots(closedByTf);
   const hierarchy = computeTimeframeHierarchy(snapshots);
-
-  let selected: MarketIntelligenceBoard['selected'] = null;
-  const selCandles = closedByTf[selectedTf];
-  if (selCandles && selCandles.length) {
-    const indicators = createDefaultRegistry().evaluate(selCandles);
-    const categories = Object.values(computeCategoryIntelligence(indicators).categories);
-    const agreement = computeAgreement(indicators, categories);
-    const confidence = computeConfidence(indicators, categories, agreement);
-    selected = { timeframe: selectedTf, agreement, confidence, categories };
-  }
+  const selected = computeSelectedTimeframeBundle(candlesByTf, selectedTf);
 
   return { hierarchy, snapshots, selected };
 }
