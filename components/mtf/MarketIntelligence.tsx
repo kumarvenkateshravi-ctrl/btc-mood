@@ -13,6 +13,9 @@ import type { ConfidenceResult } from '@/lib/mtf/confidence/confidenceTypes';
 import type { CategoryResult } from '@/lib/mtf/categoryTypes';
 import type { HierarchyResult, OverallMarketState, RegimeType } from '@/lib/mtf/timeframe/timeframeTypes';
 import type { TradeContext } from '@/lib/mtf/marketIntelligence';
+import type { TrendLifecycleResult } from '@/lib/mtf/lifecycle/lifecycleTypes';
+import type { ProbabilityResult } from '@/lib/mtf/probability/probabilityTypes';
+import type { MarketIntelligenceResult, QualityLevel, ReadinessState, RiskLevel } from '@/lib/mtf/market/marketTypes';
 import { Panel } from '@/components/ui';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5M', '15m': '15M', '30m': '30M', '1h': '1H', '4h': '4H', '1d': '1D' };
@@ -136,6 +139,159 @@ export function CategoryStrip({ categories }: { categories: CategoryResult[] }) 
           </div>
         ))}
       </div>
+    </Panel>
+  );
+}
+
+// ------------------------------------------------ Phase 1b shared helpers
+const readinessColor = (s: ReadinessState) =>
+  s === 'ready' ? 'text-bull-bright' : s === 'avoid' ? 'text-bear-bright' : s === 'wait' ? 'text-regime-hot' : 'text-neutral';
+const qualityColor = (l: QualityLevel) =>
+  l === 'excellent' || l === 'good' ? 'text-bull-bright' : l === 'average' ? 'text-regime-hot' : 'text-bear-bright';
+const riskColor = (l: RiskLevel) =>
+  l === 'very_low' || l === 'low' ? 'text-bull-bright' : l === 'medium' ? 'text-regime-hot' : 'text-bear-bright';
+
+function MiniBar({ label, value, tone = 'bg-accent/70' }: { label: string; value: number; tone?: string }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-[10px]">
+        <span className="text-ink-faint">{label}</span>
+        <span className="font-mono tabular-nums text-ink-muted">{value}</span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-surface-3">
+        <div className={cx('h-full rounded-full', tone)} style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------- 5. market intelligence verdict (M8)
+export function MarketIntelligenceVerdict({ result }: { result: MarketIntelligenceResult }) {
+  const { headline, quality, opportunity, risk, readiness } = result;
+  return (
+    <Panel eyebrow title="Market Intelligence Verdict" badge="M8 · single source of truth">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className={cx('text-lg font-bold', stateColor(headline.state))}>{title(headline.state)}</span>
+        <span className={cx('rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold uppercase', vColor(headline.bias))}>{headline.bias}</span>
+        <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-ink-muted">{title(headline.stage)}</span>
+        <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-ink-muted">{REGIME_SHORT[headline.regime]}</span>
+        <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">{TF_LABEL[headline.controller]} controls</span>
+        {headline.calibration === 'prior' && (
+          <span className="rounded bg-regime-hot/12 px-1.5 py-0.5 text-[10px] text-regime-hot">model priors</span>
+        )}
+      </div>
+
+      <div className="mb-2 rounded-lg border border-line bg-base/40 p-2">
+        <span className="text-[10px] uppercase tracking-wider text-ink-faint">Readiness</span>
+        <div className={cx('text-xl font-bold uppercase', readinessColor(readiness.state))}>{readiness.state.replace('_', ' ')}</div>
+        <div className="text-[11px] text-ink-muted">{readiness.reason}</div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="rounded-lg border border-line bg-base/40 p-2">
+          <div className="text-[10px] uppercase tracking-wider text-ink-faint">Quality</div>
+          <div className={cx('text-sm font-bold capitalize', qualityColor(quality.level))}>{quality.level} · {quality.score}</div>
+          {quality.reasons.slice(0, 2).map((r) => <div key={r} className="text-[10px] text-ink-faint">· {r}</div>)}
+        </div>
+        <div className="rounded-lg border border-line bg-base/40 p-2">
+          <div className="text-[10px] uppercase tracking-wider text-ink-faint">Opportunity</div>
+          <div className="text-sm font-bold text-ink">{opportunity.grade} · {opportunity.score}</div>
+        </div>
+        <div className="rounded-lg border border-line bg-base/40 p-2">
+          <div className="text-[10px] uppercase tracking-wider text-ink-faint">Risk</div>
+          <div className={cx('text-sm font-bold capitalize', riskColor(risk.level))}>{risk.level.replace('_', ' ')} · {risk.score}</div>
+          {risk.reasons.slice(0, 2).map((r) => <div key={r} className="text-[10px] text-ink-faint">· {r}</div>)}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+// --------------------------------------------------- 6. trend lifecycle (M6)
+export function TrendLifecyclePanel({ lifecycle }: { lifecycle: TrendLifecycleResult }) {
+  const { stage, direction, progression, expectation, nextStageConfidence, invalidation } = lifecycle;
+  return (
+    <Panel eyebrow title="Trend Lifecycle" badge="M6">
+      <div className="flex items-baseline gap-2">
+        <span className={cx('text-lg font-bold', vColor(direction))}>{title(stage)}</span>
+        <span className="text-[11px] text-ink-muted">
+          {progression.previous ? `${title(progression.previous)} → ` : ''}{title(progression.current)} · {progression.trajectory}
+        </span>
+      </div>
+      <Stat k="Expected Next" v={`${title(expectation.expected)} (${nextStageConfidence}%)`} />
+      {invalidation.invalidated && (
+        <div className="text-[11px] text-bear-bright">Invalidated: {invalidation.condition}</div>
+      )}
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <MiniBar label="Strength" value={lifecycle.lifecycleStrength} />
+        <MiniBar label="Freshness" value={lifecycle.freshness} />
+        <MiniBar label="Exhaustion" value={lifecycle.exhaustion} tone="bg-bear-bright/70" />
+      </div>
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------ 7. probability (M7)
+export function ProbabilityPanel({ probability }: { probability: ProbabilityResult }) {
+  const pct = (p: number) => Math.round(p * 100);
+  return (
+    <Panel eyebrow title="Outcome Probability" badge="M7">
+      <div className="space-y-1">
+        {probability.marketOutcomes.map((o) => {
+          const dominant = o.outcome === probability.mostLikelyOutcome.outcome;
+          return (
+            <div key={o.outcome} className="flex items-center gap-2 text-[11px]">
+              <span className={cx('w-24 shrink-0', dominant ? 'font-semibold text-ink' : 'text-ink-muted')}>{title(o.outcome)}</span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
+                <div className={cx('h-full rounded-full', dominant ? 'bg-accent' : 'bg-accent/40')} style={{ width: `${pct(o.probability)}%` }} />
+              </div>
+              <span className="w-9 shrink-0 text-right font-mono tabular-nums">{pct(o.probability)}%</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex gap-4 border-t border-line pt-1 text-[11px]">
+        {probability.directional.map((d) => (
+          <span key={d.direction} className={vColor(d.direction === 'sideways' ? 'neutral' : d.direction)}>
+            {title(d.direction)} {pct(d.probability)}%
+          </span>
+        ))}
+      </div>
+      {probability.calibration === 'prior' && (
+        <p className="mt-1 text-[10px] text-ink-faint">Estimates from model priors, not measured frequencies.</p>
+      )}
+    </Panel>
+  );
+}
+
+// -------------------------------------------- 8. narrative + evidence (M8)
+export function NarrativeEvidencePanel({ result }: { result: MarketIntelligenceResult }) {
+  return (
+    <Panel eyebrow title="Executive Summary & Evidence" badge="M8">
+      <ul className="space-y-0.5 text-[11px] leading-snug text-ink-muted">
+        {result.narrative.map((s) => <li key={s}>{s}</li>)}
+      </ul>
+      <div className="mt-2 grid grid-cols-1 gap-2 border-t border-line pt-2 sm:grid-cols-2">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-bull-bright">Supporting</div>
+          <ul className="space-y-0.5 text-[11px] text-ink-muted">
+            {result.evidence.supporting.map((e) => <li key={e.text}><span className="text-ink-faint">[{e.source}]</span> {e.text}</li>)}
+            {result.evidence.supporting.length === 0 && <li className="text-ink-faint">none</li>}
+          </ul>
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-bear-bright">Opposing</div>
+          <ul className="space-y-0.5 text-[11px] text-ink-muted">
+            {result.evidence.opposing.map((e) => <li key={e.text}><span className="text-ink-faint">[{e.source}]</span> {e.text}</li>)}
+            {result.evidence.opposing.length === 0 && <li className="text-ink-faint">none</li>}
+          </ul>
+        </div>
+      </div>
+      {result.warnings.length > 0 && (
+        <ul className="mt-2 space-y-0.5 border-t border-line pt-1 text-[11px] text-regime-hot">
+          {result.warnings.slice(0, 3).map((w) => <li key={w.code}>⚠ [{w.source}] {w.message}</li>)}
+        </ul>
+      )}
     </Panel>
   );
 }
