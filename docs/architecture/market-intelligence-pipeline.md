@@ -1,4 +1,4 @@
-# Market Intelligence Pipeline (M0–M8) — Engine Constitution
+# Market Intelligence Pipeline (M0–M9) — Engine Constitution
 
 **Status: 🔒 INTELLIGENCE PLATFORM v1.0 — PERMANENTLY FROZEN (2026-07-19, user-declared).**
 
@@ -44,8 +44,8 @@ pure, deterministic, releasable-per-task, and invisible until explicitly wired t
 | **M6** | Trend Lifecycle detection. | ✅ shipped |
 | **M7** | Probability Engine. | ✅ shipped |
 | **M8** | Market Intelligence Engine (combine all outputs). | ✅ shipped |
-| **M9** | Trade Decision Engine. | ← next |
-| **M10** | Goal-Based Trading Plan Generator. | planned |
+| **M9** | Trade Decision Engine. | ✅ shipped |
+| **M10** | Goal-Based Trading Plan Generator. | ← next |
 
 ¹ **M2 divergence to reconcile:** the roadmap lists categories *Trend, Momentum, Volume,
 Volatility, **Structure, Smart Money*** with *dynamic* per-category indicator discovery. As built
@@ -391,6 +391,52 @@ narrative, unifiedSignals, marketEngine}.ts`.
 
 ---
 
+## M9 — Trade Decision Engine
+
+**Responsibility:** the first **actionable** layer — M0–M8 describe; M9 gates, translates, and
+**prices** M8's conclusion into a conditional setup proposal. NOT execution (no orders, no account,
+no equity) and never a prediction: the stop IS the invalidation.
+
+**Files:** `lib/mtf/decision/{decisionTypes, config, gate, swings, levels, smcConfluence, riskTier,
+explanation, decisionEngine}.ts` (+ test-only `testFixtures.ts`).
+
+**Public contract:**
+- `computeTradeDecision(intel: FullMarketIntelligence, candlesByTf, smc?): TradeDecisionResult`.
+- `computeFullTradeDecision(candlesByTf, smc?): { decision, intel }` — convenience: whole stack.
+- `TradeDecisionResult { schemaVersion: 1, action long|short|no_trade, gate{passed,blockedBy,reason},
+  direction (echoed M8 bias), executionTf, setup{entry{zone,type,basis}, stop(+distancePct),
+  targets[](+rr), rr, atr} | null, riskTier full|half|quarter|none, confluence[], calibration,
+  explanation, signals, warnings, diagnostics }`.
+
+**Gate — first-match no-trade ladder:** (1) M8 readiness ≠ ready → `environment_<state>` with M8's
+reason verbatim; (2) neutral bias → `no_directional_edge`; (3) extreme risk; (4) lifecycle
+invalidated; (5) `insufficient_data` (< 20 closed bars); (6) `insufficient_structure` (missing the
+side-specific anchoring swing, or close already at/beyond the stop); (7) `rr_too_low` (< 1.5 —
+fires when a structural obstacle sits too close, or after SMC refinement lowers RR; `rawRR` recorded).
+
+**Levels core:** ATR = last RMA(TR) via `lib/pineMath`; fractal swings (strict, k=2, confirmed only);
+entry zone anchored at the swing (width 0.25·ATR), stop beyond it by 1.0·ATR, structural obstacle
+(opposing swing) is ALWAYS target 1 when it exists and gates RR — never papered over by the measured
+2R target; without an obstacle the measured move leads. All multiples in `DECISION_CONFIG`.
+
+**SMC confluence (optional, bounded, additive):** entry snap to order block/FVG within 0.5·ATR,
+stop extension past a resting pool within 0.75·ATR (+ `STOP_HUNT_RISK` warning), target upgrade to
+an opposing pool only if RR stays ≥ 1.5. Every adjustment emits a `ConfluenceNote{before,after}`;
+RR is re-gated after refinement; omitting `smc` reproduces the core byte-for-byte.
+
+**Risk tier:** account-agnostic first-match ladder (excellent∧≤low → full; ≥good∧≤medium → half;
+else quarter; gate failed → none) with the **honesty cap**: while `calibration === 'prior'`, `full`
+is reduced to `half` (`TIER_CAPPED_PRIOR` signal) — model priors never justify full risk.
+
+**Invariants:** `setup === null ⟺ action === 'no_trade' ⟺ riskTier === 'none'`;
+`gate.passed ⟺ action ≠ no_trade`; direction never recomputed (echoed M8 headline bias); closed-bar
+only; deterministic; banned predictive vocabulary in all text; `calibration` propagated, never hidden.
+
+**Depends on:** M8 only (`FullMarketIntelligence`), candles for pricing (M9 owns price levels —
+M7/M8 explicitly excluded them), and structurally `SmcSnapshot['objects']` when offered.
+
+---
+
 ## Cross-cutting rules
 
 **Dependency rule (one direction, never up or sideways):**
@@ -431,4 +477,5 @@ setup) remain byte-identical until a milestone explicitly wires a consumer.
 - M6 trend lifecycle: `docs/superpowers/specs/2026-07-19-m6-trend-lifecycle-design.md`
 - M7 probability engine: `docs/superpowers/specs/2026-07-19-m7-probability-engine-design.md`
 - M8 market intelligence: `docs/superpowers/specs/2026-07-20-m8-market-intelligence-engine-design.md`
+- M9 trade decision: `docs/superpowers/specs/2026-07-20-m9-trade-decision-engine-design.md`
 - Architecture graph (navigation): `graphify-out/`
