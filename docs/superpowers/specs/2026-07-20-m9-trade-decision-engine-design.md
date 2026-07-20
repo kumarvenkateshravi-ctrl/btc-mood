@@ -63,7 +63,7 @@ export interface DecisionSignal { code: string; message: string; severity: 'info
 export interface TradeSetup {
   entry: { zone: [number, number]; type: EntryType; basis: PriceLevel };  // zone = [low, high]
   stop: PriceLevel & { distancePct: number };
-  targets: Array<PriceLevel & { rr: number }>;   // [0] structural/primary, [1] measured
+  targets: Array<PriceLevel & { rr: number }>;   // [structural, measured] or [measured] when no obstacle exists
   rr: number;                                    // to targets[0] — the honest headline number
   atr: number;                                   // audit: the ATR every level was built from
 }
@@ -108,8 +108,8 @@ stable `blockedBy` code):
 | 3 | `risk.level === 'extreme'` | `extreme_risk` | |
 | 4 | `outlook.invalidation.invalidated` | `lifecycle_invalidated` | |
 | 5 | execution-TF candles missing/too short | `insufficient_data` | pre-pricing structural rung |
-| 6 | no confirmed swing high+low pair | `insufficient_structure` | post-swing-detection rung |
-| 7 | `rr < DECISION_CONFIG.minRR` | `rr_too_low` | post-pricing rung; `diagnostics.rawRR` records the rejected value |
+| 6 | missing the required **anchoring** swing (low for long, high for short) | `insufficient_structure` | the opposing swing is optional — without it the measured target leads (see Levels) |
+| 7 | `rr < DECISION_CONFIG.minRR` | `rr_too_low` | fires when a structural obstacle sits too close to entry, or after SMC refinement lowers RR; `diagnostics.rawRR` records the rejected value |
 
 Rungs 5–7 mean the gate is evaluated in two phases: environment rungs (1–4) before pricing,
 structural/pricing rungs (5–7) after. A `no_trade` from rungs 5–7 still reports
@@ -132,11 +132,15 @@ For a **long** (short mirrors exactly):
   → `type: 'market'`, else `type: 'pullback'` (a limit proposal at the zone).
 - **Stop**: `swingLow − stopAtrMult·ATR` (beyond structure), `distancePct` from entry-zone
   midpoint.
-- **Target 1** (structural): most recent confirmed opposing swing high, **only if above the
-  entry zone** (else fall through to ATR target). **Target 2** (measured): entryMid `+
-  targetRR·risk` where risk = entryMid − stop. If the structural target yields RR < `minRR`,
-  the ATR-measured target substitutes as target 1 (recorded via `source: 'atr'`) and the
-  structural level is dropped.
+- **Targets** *(amended during planning — the original substitution rule made gate rung 7
+  unfireable, since the measured target has RR = `targetRR` ≥ `minRR` by construction)*:
+  the most recent confirmed opposing swing high **beyond the entry zone** is the *structural
+  obstacle*. If one exists, it is **always** target 1 and it gates the RR — a structural
+  obstacle too close to entry is an honest no-trade (`rr_too_low`), never papered over by an
+  imaginary measured target. Target 2 is then the measured move: entryMid `+ targetRR·risk`
+  where risk = entryMid − stop. If **no** structural obstacle exists (e.g. price at highs),
+  the measured move is the sole target (`source: 'atr'`, single-element array) and RR =
+  `targetRR` by construction.
 - **RR** = `(target1 − entryMid) / (entryMid − stop)`, rounded to 2 dp.
 
 Degenerate protections: stop must be strictly below entry zone (long); non-positive risk ⇒
