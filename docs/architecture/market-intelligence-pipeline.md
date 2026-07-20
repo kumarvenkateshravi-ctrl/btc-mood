@@ -1,4 +1,4 @@
-# Market Intelligence Pipeline (M0–M7) — Engine Constitution
+# Market Intelligence Pipeline (M0–M8) — Engine Constitution
 
 **Status: 🔒 INTELLIGENCE PLATFORM v1.0 — PERMANENTLY FROZEN (2026-07-19, user-declared).**
 
@@ -43,8 +43,8 @@ pure, deterministic, releasable-per-task, and invisible until explicitly wired t
 | **M5** | Timeframe Hierarchy + Market Regime engines. | ✅ shipped |
 | **M6** | Trend Lifecycle detection. | ✅ shipped |
 | **M7** | Probability Engine. | ✅ shipped |
-| **M8** | Market Intelligence Engine (combine all outputs). | ← next |
-| **M9** | Trade Decision Engine. | planned |
+| **M8** | Market Intelligence Engine (combine all outputs). | ✅ shipped |
+| **M9** | Trade Decision Engine. | ← next |
 | **M10** | Goal-Based Trading Plan Generator. | planned |
 
 ¹ **M2 divergence to reconcile:** the roadmap lists categories *Trend, Momentum, Volume,
@@ -323,9 +323,48 @@ opportunity, explanation, probabilityEngine}.ts`.
   reversal→reversal; range/accumulation→range), with a **false-breakout override** for regress/break out
   of breakout/confirmation stages, then three directional modulations.
 
-**M8-facing durable surface:** the entire `ProbabilityResult` — **M8 consumes only this.**
+**M8-facing durable surface:** the entire `ProbabilityResult`. (Clarification, resolved in M8: this
+constraint governs the **M7 edge** — from M7, M8 consumes only `ProbabilityResult` and never reaches
+into M7 internals. M8 additionally consumes the other four frozen result objects, per its Rule 1.)
 
 **Depends on:** M0–M6 (via `TrendLifecycleResult` + `HierarchyResult`).
+
+---
+
+## M8 — Market Intelligence Engine
+
+**Responsibility:** the **Institutional Intelligence Synthesizer** ("CEO dashboard") — NOT another
+analysis engine. Collects the frozen v1.0 outputs and produces the single complete picture that UI,
+alerts, AI narration, reports, and M9 consume. Single source of truth.
+
+**Files:** `lib/mtf/market/{marketTypes, config, quality, opportunity, risk, readiness, evidence,
+narrative, unifiedSignals, marketEngine}.ts`.
+
+**Public contract:**
+- `computeMarketIntelligence(agreement, confidence, hierarchy, lifecycle, probability): MarketIntelligenceResult`.
+- `computeFullMarketIntelligence(candlesByTf): { result, layers }` — **the single public entry point**:
+  runs the entire frozen v1.0 stack (closed-bar) and returns both the synthesis and the layer objects.
+- `MarketIntelligenceResult { schemaVersion: 1, headline, quality{score,level,reasons},
+  opportunity{score,grade A+…F}, risk{score,level,reasons}, readiness{state,reason}, evidence
+  {supporting,opposing}, outlook, narrative, signals, warnings, diagnostics }`.
+
+**Invariants:**
+- **Never recalculates anything** — consumes exactly the five frozen result objects (`AgreementResult`,
+  `ConfidenceResult`, `HierarchyResult`, `TrendLifecycleResult`, `ProbabilityResult`).
+- **No timestamps, no execution-time fields** — strict determinism (same inputs ⇒ identical output).
+- **No composite conviction score** — quality/opportunity/risk/readiness are the decomposed,
+  explainable alternative; every value derives from named v1.0 fields via documented config formulas.
+- **Readiness is an ENVIRONMENT GATE** — no direction, entry, size, or RR (M9 owns those; M9 consumes
+  readiness as an input).
+- Evidence/reasons are source-tagged (`LayerTag M3–M8`); narrative is deterministic templates
+  (banned-vocabulary tested; probability phrased as "currently favors"); the unified feed merges
+  M3–M7 (+M8) signals — M2 category signals are not in the input set (documented; they surface
+  transitively via M3 contributors).
+- M7's honesty flag (`calibration`) is propagated in headline + diagnostics — never hidden.
+
+**M9-facing durable surface:** the entire `MarketIntelligenceResult` + `computeFullMarketIntelligence`.
+
+**Depends on:** Intelligence Platform v1.0 (M0–M7), consumed via the five frozen contracts.
 
 ---
 
@@ -368,4 +407,5 @@ setup) remain byte-identical until a milestone explicitly wires a consumer.
 - M5 timeframe hierarchy + regime: `docs/superpowers/specs/2026-07-19-m5-timeframe-hierarchy-market-regime-design.md`
 - M6 trend lifecycle: `docs/superpowers/specs/2026-07-19-m6-trend-lifecycle-design.md`
 - M7 probability engine: `docs/superpowers/specs/2026-07-19-m7-probability-engine-design.md`
+- M8 market intelligence: `docs/superpowers/specs/2026-07-20-m8-market-intelligence-engine-design.md`
 - Architecture graph (navigation): `graphify-out/`
