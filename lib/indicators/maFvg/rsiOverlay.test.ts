@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest';
+import type { Candle } from '../../types';
+import { computeRsi } from '../rsi';
+import { rawRsi, scaleToPrice, crossSignals } from './rsiOverlay';
+
+describe('rawRsi', () => {
+  it('matches the golden-tested computeRsi engine (parity)', () => {
+    const closes = [44, 44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28];
+    const candles: Candle[] = closes.map((c, i) => ({ time: i * 60, open: c, high: c, low: c, close: c, volume: 1 }));
+    const engine = computeRsi(candles, { length: 14 } as never).plots.find((p) => p.id === 'rsi')!.data as (number | null)[];
+    const mine = rawRsi(closes, 14);
+    for (let i = 0; i < closes.length; i++) {
+      if (engine[i] == null) expect(mine[i]).toBeNull();
+      else expect(mine[i]!).toBeCloseTo(engine[i] as number, 8);
+    }
+  });
+
+  it('is 100 on a strictly rising series and 0 on a strictly falling one', () => {
+    const up = rawRsi([1, 2, 3, 4, 5, 6], 2);
+    const down = rawRsi([6, 5, 4, 3, 2, 1], 2);
+    expect(up.at(-1)).toBe(100);
+    expect(down.at(-1)).toBe(0);
+  });
+});
+
+describe('scaleToPrice', () => {
+  it('maps 50 to the baseline and ±50 to ±half the price range', () => {
+    // baseline 100, range 40: scale(v) = 100 + (v-50)/100*40.
+    expect(scaleToPrice(50, 100, 40)).toBe(100);
+    expect(scaleToPrice(100, 100, 40)).toBe(120);
+    expect(scaleToPrice(0, 100, 40)).toBe(80);
+  });
+});
+
+describe('crossSignals', () => {
+  it('fires buy when strength rises above BOTH vwap and ma4; sell when below both', () => {
+    // strength vs vwap(=10 const) and ma4(=12 const):
+    // i0: 9  (below both)  i1: 13 (above both → buy)  i2: 14 (still above, no repeat)
+    // i3: 8  (below both → sell)
+    const { buy, sell } = crossSignals([9, 13, 14, 8], [10, 10, 10, 10], [12, 12, 12, 12]);
+    expect(buy).toEqual([false, true, false, false]);
+    expect(sell).toEqual([false, false, false, true]);
+  });
+
+  it('does not fire when only one condition is met', () => {
+    // strength 11 is above vwap(10) but below ma4(12) → neither above-both nor below-both.
+    const { buy, sell } = crossSignals([9, 11], [10, 10], [12, 12]);
+    expect(buy).toEqual([false, false]);
+    expect(sell).toEqual([false, false]);
+  });
+});
