@@ -26,10 +26,22 @@ the signal."
 - 5m MTF status ← `intel.full.layers.hierarchy.perTimeframe['5m']` (bias, regime, confidence).
 - SMC structure ← `smcByTf['5m'].state` (swingTrend, zone) + latest structural event; 5m screener phase.
 
-## Stale-signal behaviour (user-chosen)
+## Freshness & timestamp (user-specified)
 
-Always show the **latest** signal with a clear "N bars ago" age stamp; no expiry, no
-active-until-invalidated. The trader judges relevance. Context reflects the current (last-closed) bar.
+Always show the **latest** signal with BOTH its exact generation timestamp (date & time) AND its age
+in bars, plus a freshness tier so the trader instantly knows if it's still actionable. On 5m,
+1 bar = 5 min. Freshness from `barsAgo = lastClosedBarIndex − signalBarIndex`:
+
+| Tier | Bars ago | Minutes | Dot | Example display |
+|------|----------|---------|-----|-----------------|
+| **Active** | 0–5 | 0–25 | 🟢 | `Generated: 21 Jul 2026, 10:35 AM • 2 bars ago` |
+| **Aging** | 6–20 | 30–100 | 🟡 | `Generated: 21 Jul 2026, 09:40 AM • 12 bars ago` |
+| **Stale** | >20 | >100 | ⚪ | `Generated: 21 Jul 2026, 07:15 AM • 42 bars ago` |
+
+Thresholds are exported constants (`SIGNAL_FRESHNESS = { activeMaxBars: 5, agingMaxBars: 20 }`).
+Timestamp = the signal bar's `time` (UNIX seconds → `new Date(t*1000)`), formatted in the user's
+local timezone as `DD Mon YYYY, h:mm AM/PM`. No expiry, no active-until-invalidated — the tier
+communicates actionability; the signal is always shown. Context reflects the current last-closed bar.
 
 ## Tasks (each releasable — TDD, tsc clean, suite green, atomic commit)
 
@@ -44,8 +56,9 @@ MA-FVG signal, guaranteeing the card and the chart never diverge.
 `components/mtf/useMaFvgSignal.ts` → `useMaFvgSignal(candlesByTf, full, smcByTf)`:
 - Runs `computeMaFvgSignals` on **5m closed candles only**, memoized on the 5m closed-bar signature
   (never on ticks — indicator-tick-perf discipline).
-- Returns `{ latest: { side, confidence, barTime, barsAgo, price } | null, recent: […up to 3],
-  context: { mtf5m: {bias,regime,confidence} | null, smc: {swingTrend, zone, phase, lastEvent} | null } }`.
+- Returns `{ latest: { side, confidence, barTime, barsAgo, freshness, price } | null, recent: […up to 3],
+  context: { mtf5m: {bias,regime,confidence} | null, smc: {swingTrend, zone, phase, lastEvent} | null } }`
+  where `freshness ∈ {'active','aging','stale'}` from `SIGNAL_FRESHNESS`.
 - Context is assembled read-only; it can never change `side`.
 
 ### 3. Renderer
