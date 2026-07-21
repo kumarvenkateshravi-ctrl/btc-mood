@@ -8,56 +8,17 @@
 import type { Candle } from '../../types';
 import type {
   IndicatorResult, IndicatorPlot, IndicatorMarker, SignalSide, CustomIndicatorConfig,
+  CandleColorOverride,
 } from '../../indicatorFramework';
-import * as pm from '../../pineMath';
 import { neutralSignals, resolveInputs, resolveSourceNum } from '../itsTemplates';
-import type { VwapAnchor } from '../vwapAnchor';
 import { anchoredVwap } from './anchoredVwap';
 import { detectFvgs } from './fvg';
-import { rawRsi, scaleToPrice, crossSignals } from './rsiOverlay';
+import { emitCrossSignals } from './rsiOverlay';
+import { DEFAULTS, ma, scaledRsiLines, type MaFvgInputs } from './signals';
 
-export interface MaFvgInputs {
-  showMa1: boolean; ma1Type: string; ma1Source: string; ma1Length: number;
-  showMa2: boolean; ma2Type: string; ma2Source: string; ma2Length: number;
-  showMa3: boolean; ma3Type: string; ma3Source: string; ma3Length: number;
-  showMa4: boolean; ma4Type: string; ma4Source: string; ma4Length: number;
-  showVwap: boolean; vwapAnchor: VwapAnchor; vwapSource: string; bandsMode: string;
-  showBand1: boolean; bandMult1: number; showBand2: boolean; bandMult2: number; showBand3: boolean; bandMult3: number;
-  showVwap1: boolean; vwap1Anchor: VwapAnchor; vwap1Source: string; showVwap1Band: boolean; vwap1BandMult: number;
-  showConfluence: boolean;
-  fvgThresholdPct: number; fvgAuto: boolean; fvgExtend: number;
-  rsiLength: number; rsiSource: string; scaleMode: string; scaleLookback: number;
-  atrLenForScale: number; atrMultForScale: number; baselineType: string; baselineLen: number;
-  showSignals: boolean;
-}
-
-const DEFAULTS: MaFvgInputs = {
-  showMa1: true, ma1Type: 'SMA', ma1Source: 'close', ma1Length: 20,
-  showMa2: true, ma2Type: 'SMA', ma2Source: 'close', ma2Length: 50,
-  showMa3: true, ma3Type: 'SMA', ma3Source: 'close', ma3Length: 100,
-  showMa4: true, ma4Type: 'SMA', ma4Source: 'close', ma4Length: 200,
-  showVwap: true, vwapAnchor: 'session', vwapSource: 'hlc3', bandsMode: 'Standard Deviation',
-  showBand1: true, bandMult1: 1, showBand2: false, bandMult2: 2, showBand3: false, bandMult3: 3,
-  showVwap1: true, vwap1Anchor: 'week', vwap1Source: 'hlc3', showVwap1Band: true, vwap1BandMult: 1,
-  showConfluence: true,
-  fvgThresholdPct: 0, fvgAuto: false, fvgExtend: 20,
-  rsiLength: 9, rsiSource: 'close', scaleMode: 'Range', scaleLookback: 100,
-  atrLenForScale: 14, atrMultForScale: 4, baselineType: 'SMA of Source', baselineLen: 50,
-  showSignals: true,
-};
+export type { MaFvgInputs };
 
 const MA_COLORS = ['#f6c309', '#fb9800', '#fb6500', '#f60c0c'];
-
-function ma(src: (number | null)[], length: number, type: string, volume: (number | null)[]): (number | null)[] {
-  switch (type) {
-    case 'EMA': return pm.emaPine(src, length);
-    case 'SMMA (RMA)': return pm.rma(src, length);
-    case 'WMA': return pm.wma(src, length);
-    case 'VWMA': return pm.vwma(src, volume, length);
-    case 'SMA':
-    default: return pm.sma(src, length);
-  }
-}
 
 const line = (id: string, title: string, color: string, data: (number | null)[], width = 1): IndicatorPlot =>
   ({ id, title, color, type: 'line', pane: 'overlay', lineWidth: width, data });
@@ -89,12 +50,14 @@ export function computeMaFvg(
   });
 
   // ── VWAP + bands ───────────────────────────────────────────
-  let vwapArr: (number | null)[] = new Array(n).fill(null);
+  // Always compute the primary VWAP — needed for confluence detection even
+  // when the VWAP line is hidden (showVwap = false).
+  const vwapSrc = resolveSourceNum(candles, cfg.vwapSource, computedSources);
+  const { vwap: vwapData, sd: vwapSd } = anchoredVwap(candles, vwapSrc, cfg.vwapAnchor);
+  const vwapArr = vwapData; // always available for confluence + signal generation
+
   if (cfg.showVwap) {
-    const src = resolveSourceNum(candles, cfg.vwapSource, computedSources);
-    const { vwap, sd } = anchoredVwap(candles, src, cfg.vwapAnchor);
-    vwapArr = vwap;
-    plots.push(line('vwap', 'VWAP', '#2962FF', vwap, 2));
+    plots.push(line('vwap', 'VWAP', '#2962FF', vwapData, 2));
     const bandSpecs = [
       { show: cfg.showBand1, mult: cfg.bandMult1, color: '#26a69a' },
       { show: cfg.showBand2, mult: cfg.bandMult2, color: '#808000' },
@@ -105,7 +68,7 @@ export function computeMaFvg(
       const u = new Array<number | null>(n).fill(null);
       const l = new Array<number | null>(n).fill(null);
       for (let i = 0; i < n; i++) {
-        const v = vwap[i]; const s = sd[i];
+        const v = vwapData[i]; const s = vwapSd[i];
         if (v === null || s === null) continue;
         const basis = cfg.bandsMode === 'Percentage' ? v * 0.01 : s;
         u[i] = v + b.mult * basis; l[i] = v - b.mult * basis;
@@ -134,23 +97,36 @@ export function computeMaFvg(
     }
   }
 
-  // ── MA + VWAP confluence (MA1, MA2, main VWAP only) ────────
-  if (cfg.showConfluence && cfg.showVwap) {
+  // ── MA + VWAP confluence → yellow candle body highlight ────
+  // Detect bars where MA1, MA2 and the main VWAP all pass through the candle.
+  // Detection uses the computed values regardless of whether those lines are
+  // currently visible — the user may hide the lines but still want the alert.
+  // Body color comes from the 'confluenceCandle' style entry (user-configurable).
+  // Wick and border are always directional: green for bullish, red for bearish.
+  const DEFAULT_CONFLUENCE_BODY = 'rgba(255, 215, 0, 0.85)';
+  const BULL_WICK = '#26a69a';
+  const BEAR_WICK = '#ef5350';
+  const confluenceBody: (string | null)[] = new Array(n).fill(null);
+  const confluenceWick: (string | null)[] = new Array(n).fill(null);
+  if (cfg.showConfluence) {
     for (let i = 0; i < lastConfirmed; i++) {
       const c = candles[i];
       const m1 = maLines[0][i]; const m2 = maLines[1][i]; const v = vwapArr[i];
       const touch = (x: number | null) => x !== null && c.low <= x && c.high >= x;
       if (touch(m1) && touch(m2) && touch(v)) {
-        markers.push({ index: i, position: 'inBar', color: '#2962FF', shape: 'circle', text: 'C' });
+        confluenceBody[i] = DEFAULT_CONFLUENCE_BODY;
+        confluenceWick[i] = c.close >= c.open ? BULL_WICK : BEAR_WICK;
       }
     }
   }
 
-  // ── Fair Value Gaps (boxes as band plots) ──────────────────
+  // ── Fair Value Gaps ────────────────────────────────────────
+  // The Pine deletes a gap's box on mitigation, so only UNMITIGATED gaps show.
+  // Each open gap is a flat box from formation-2 to formation+extend.
   const fvg = detectFvgs(candles, { thresholdPct: cfg.fvgThresholdPct, auto: cfg.fvgAuto });
-  fvg.fvgs.forEach((g, k) => {
+  fvg.fvgs.filter((g) => g.endIndex === null).forEach((g, k) => {
     const left = Math.max(0, g.startIndex - 2);
-    const right = Math.min(n - 1, g.endIndex ?? g.startIndex + cfg.fvgExtend);
+    const right = Math.min(n - 1, g.startIndex + cfg.fvgExtend);
     const data = new Array<{ upper: number; lower: number } | null>(n).fill(null);
     for (let i = left; i <= right; i++) data[i] = { upper: g.top, lower: g.bottom };
     plots.push({
@@ -162,50 +138,54 @@ export function computeMaFvg(
   });
 
   // ── RSI overlay + Buy/Sell signals ─────────────────────────
-  const rsiSrc = resolveSourceNum(candles, cfg.rsiSource, computedSources);
-  const rsi = rawRsi(rsiSrc, cfg.rsiLength);
-  const strengthRsi = pm.wma(rsi, 21);
-  const signalRsi = pm.emaPine(rsi, 3);
-  const highs = candles.map((c) => c.high);
-  const lows = candles.map((c) => c.low);
-  const rangeHi = pm.highest(highs, cfg.scaleLookback);
-  const rangeLo = pm.lowest(lows, cfg.scaleLookback);
-  const atr = pm.rma(pm.tr(candles), cfg.atrLenForScale);
-  const baseSma = pm.sma(rsiSrc, cfg.baselineLen);
-
-  const baselineArr = new Array<number | null>(n).fill(null);
-  const scaledRsi = new Array<number | null>(n).fill(null);
-  const scaledStrength = new Array<number | null>(n).fill(null);
-  const scaledSignal = new Array<number | null>(n).fill(null);
+  const { baseline: baselineArr, scaledRsi, scaledStrength, scaledSignal } =
+    scaledRsiLines(candles, cfg, computedSources);
+  // RSI fill (the Pine's fill(p_rsi, h_50, ...)): ONE band between the scaled RSI
+  // line (upper) and the baseline (lower), drawn two-tone — teal where RSI > 50
+  // (scaled line above baseline), red where < 50 — and split at the EXACT
+  // interpolated crossing so the colours meet on the line with no notch or seam.
+  // Pushed BEFORE the lines so it renders behind them.
+  const rsiFill = new Array<{ upper: number; lower: number } | null>(n).fill(null);
   for (let i = 0; i < n; i++) {
-    const priceRange = cfg.scaleMode === 'ATR'
-      ? (atr[i] === null ? null : atr[i]! * cfg.atrMultForScale)
-      : (rangeHi[i] === null || rangeLo[i] === null ? null : rangeHi[i]! - rangeLo[i]!);
-    const baseline = cfg.baselineType === 'Current Price' ? candles[i].close : baseSma[i];
-    baselineArr[i] = baseline;
-    if (priceRange === null || baseline === null || baseline === undefined) continue;
-    if (rsi[i] !== null) scaledRsi[i] = scaleToPrice(rsi[i]!, baseline, priceRange);
-    if (strengthRsi[i] !== null) scaledStrength[i] = scaleToPrice(strengthRsi[i]!, baseline, priceRange);
-    if (signalRsi[i] !== null) scaledSignal[i] = scaleToPrice(signalRsi[i]!, baseline, priceRange);
+    const s = scaledRsi[i]; const b = baselineArr[i];
+    if (s === null || b === null) continue;
+    rsiFill[i] = { upper: s, lower: b };
   }
-  plots.push(line('rsiBaseline', 'Baseline (50)', '#4caf50', baselineArr, 1));
-  plots.push(line('rsiLine', 'RSI (scaled)', '#000000', scaledRsi, 2));
-  plots.push(line('rsiStrength', 'Strength (WMA)', '#f23645', scaledStrength, 2));
-  plots.push(line('rsiSignal', 'Signal (EMA)', '#4caf50', scaledSignal, 2));
+  plots.push({
+    id: 'rsiFill', title: 'RSI Fill', color: 'rgba(38, 166, 154, 0.20)',
+    type: 'band', pane: 'overlay', areaFill: true,
+    areaFillColors: { above: 'rgba(38, 166, 154, 0.20)', below: 'rgba(242, 54, 69, 0.20)' },
+    data: rsiFill,
+  });
+  plots.push(line('rsiBaseline', 'Baseline (50)', 'rgba(120, 124, 139, 0.5)', baselineArr, 1));
+  plots.push(line('rsiLine', 'RSI (scaled)', '#b388ff', scaledRsi, 2));
+  plots.push(line('rsiStrength', 'Strength (WMA)', '#ff9800', scaledStrength, 2));
+  plots.push(line('rsiSignal', 'Signal (EMA)', '#00b0ff', scaledSignal, 2));
 
+  // ── Signals ───────────────────────────────────────────────
+  // Strength crosses BOTH the VWAP and MA #4 (price space), with optional
+  // cooldown + trend filter to cut whipsaws. Confidence rides on the marker.
   if (cfg.showSignals) {
-    // Strength crosses BOTH the VWAP and MA #4 (in price space), per the Pine.
-    const { buy, sell } = crossSignals(scaledStrength, vwapArr, maLines[3]);
-    for (let i = 0; i < lastConfirmed; i++) {
-      if (buy[i]) {
-        signals[i] = 'buy';
-        markers.push({ index: i, position: 'belowBar', color: '#26a69a', shape: 'arrowUp', text: 'BUY' });
-      } else if (sell[i]) {
-        signals[i] = 'sell';
-        markers.push({ index: i, position: 'aboveBar', color: '#f23645', shape: 'arrowDown', text: 'SELL' });
-      }
+    const closes = candles.map((c) => c.close);
+    const events = emitCrossSignals(scaledStrength, vwapArr, maLines[3], closes, {
+      cooldownBars: cfg.signalCooldownBars,
+      trendFilter: cfg.signalTrendFilter,
+      end: lastConfirmed, // never signal the still-forming bar
+    });
+    for (const ev of events) {
+      signals[ev.index] = ev.side;
+      markers.push(ev.side === 'buy'
+        ? { index: ev.index, position: 'belowBar', color: '#26a69a', shape: 'arrowUp', text: 'BUY', value: ev.confidence }
+        : { index: ev.index, position: 'aboveBar', color: '#f23645', shape: 'arrowDown', text: 'SELL', value: ev.confidence });
     }
   }
 
-  return { plots, signals, markers };
+  const candleColors: CandleColorOverride | undefined = cfg.showConfluence ? {
+    styleId: 'confluenceCandle',
+    color: confluenceBody,
+    wickColor: confluenceWick,
+    borderColor: confluenceWick,
+  } : undefined;
+
+  return { plots, signals, markers, candleColors };
 }
