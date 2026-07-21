@@ -5,7 +5,8 @@ import type {
   CustomIndicatorConfig,
 } from '../indicatorFramework';
 import { neutralSignals, resolveInputs, resolveSourceNum } from './itsTemplates';
-import { vwapPeriodKey, type VwapAnchor } from './vwapAnchor';
+import type { VwapAnchor } from './vwapAnchor';
+import { anchoredVwap } from './maFvg/anchoredVwap';
 
 export interface VwapBandsInputs {
   mult1: number;
@@ -32,41 +33,20 @@ export function computeVwapBands(
   const n = candles.length;
   const src = resolveSourceNum(candles, source, computedSources);
 
-  const vwap = new Array<number | null>(n).fill(null);
+  const { vwap, sd } = anchoredVwap(candles, src, anchor);
   const u1 = new Array<number | null>(n).fill(null);
   const l1 = new Array<number | null>(n).fill(null);
   const u2 = new Array<number | null>(n).fill(null);
   const l2 = new Array<number | null>(n).fill(null);
 
-  let cumPV = 0;
-  let cumV = 0;
-  let cumPV2 = 0;
-  let period: number | null = null;
-
   for (let i = 0; i < n; i++) {
-    const c = candles[i];
-    const key = vwapPeriodKey(c.time, anchor);
-    if (key !== period) {
-      cumPV = 0;
-      cumV = 0;
-      cumPV2 = 0;
-      period = key;
-    }
-    const p = src[i];
-    cumPV += p * c.volume;
-    cumV += c.volume;
-    cumPV2 += p * p * c.volume;
-
-    if (cumV > 0) {
-      const v = cumPV / cumV;
-      const variance = Math.max(0, cumPV2 / cumV - v * v);
-      const sd = Math.sqrt(variance);
-      vwap[i] = v;
-      u1[i] = v + mult1 * sd;
-      l1[i] = v - mult1 * sd;
-      u2[i] = v + mult2 * sd;
-      l2[i] = v - mult2 * sd;
-    }
+    const v = vwap[i];
+    const s = sd[i];
+    if (v === null || s === null) continue;
+    u1[i] = v + mult1 * s;
+    l1[i] = v - mult1 * s;
+    u2[i] = v + mult2 * s;
+    l2[i] = v - mult2 * s;
   }
 
   const line = (id: string, title: string, color: string, data: (number | null)[], width = 1): IndicatorPlot => ({
