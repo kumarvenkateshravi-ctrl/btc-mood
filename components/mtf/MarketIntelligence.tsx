@@ -17,6 +17,8 @@ import type { TrendLifecycleResult } from '@/lib/mtf/lifecycle/lifecycleTypes';
 import type { ProbabilityResult } from '@/lib/mtf/probability/probabilityTypes';
 import type { MarketIntelligenceResult, QualityLevel, ReadinessState, RiskLevel } from '@/lib/mtf/market/marketTypes';
 import type { TradeDecisionResult } from '@/lib/mtf/decision/decisionTypes';
+import type { SignalFreshness } from '@/lib/indicators/maFvg/signals';
+import type { MaFvgSignalView } from './useMaFvgSignal';
 import { Panel } from '@/components/ui';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5M', '15m': '15M', '30m': '30M', '1h': '1H', '4h': '4H', '1d': '1D' };
@@ -391,6 +393,70 @@ export function TradeDecisionPanel({ decision, smcEnabled, onToggleSmc }: {
       <ul className="space-y-0.5 border-t border-line pt-1 text-[11px] leading-snug text-ink-muted">
         {explanation.map((line) => <li key={line}>{line}</li>)}
       </ul>
+    </Panel>
+  );
+}
+
+// ---------------------------------------------- 10. MA-FVG 5m signal card
+const FRESH: Record<SignalFreshness, { label: string; dot: string; tone: string }> = {
+  active: { label: 'Active', dot: 'bg-bull-bright', tone: 'text-bull-bright' },
+  aging: { label: 'Aging', dot: 'bg-regime-hot', tone: 'text-regime-hot' },
+  stale: { label: 'Stale', dot: 'bg-ink-faint', tone: 'text-ink-faint' },
+};
+
+/** Local-timezone "DD Mon YYYY, h:mm AM/PM" for a UNIX-seconds bar time. */
+function fmtSignalTime(sec: number): string {
+  return new Date(sec * 1000).toLocaleString('en-US', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+}
+
+export function MaFvgSignalCard({ signal }: { signal: MaFvgSignalView }) {
+  const { latest, recent, context } = signal;
+  return (
+    <Panel eyebrow title="Moving Averages & FVG" badge="5M · indicator decides">
+      {latest ? (
+        <div className="mb-2 rounded-lg border border-line bg-base/40 p-2.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className={cx('text-xl font-bold uppercase', latest.side === 'buy' ? 'text-bull-bright' : 'text-bear-bright')}>{latest.side}</span>
+            <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted">conf {latest.confidence}%</span>
+            <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-mono text-ink-muted">@ {fmt(latest.price)}</span>
+            <span className={cx('ml-auto inline-flex items-center gap-1 text-[11px] font-semibold', FRESH[latest.freshness].tone)}>
+              <span className={cx('h-2 w-2 rounded-full', FRESH[latest.freshness].dot)} />{FRESH[latest.freshness].label}
+            </span>
+          </div>
+          <div className="mt-1 text-[11px] text-ink-muted">
+            Generated: {fmtSignalTime(latest.barTime)} • {latest.barsAgo} {latest.barsAgo === 1 ? 'bar' : 'bars'} ago
+          </div>
+        </div>
+      ) : (
+        <div className="mb-2 rounded-lg border border-line bg-base/40 p-2.5 text-sm text-ink-muted">No active signal on 5m.</div>
+      )}
+
+      {recent.length > 1 && (
+        <div className="mb-2 flex flex-wrap gap-1 text-[10px]">
+          {recent.map((r) => (
+            <span key={`${r.side}-${r.barTime}`} className={cx('rounded px-1.5 py-0.5 font-semibold', r.side === 'buy' ? 'bg-bull/15 text-bull-bright' : 'bg-bear/15 text-bear-bright')}>
+              {r.side.toUpperCase()} · {r.barsAgo}b
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="border-t border-line pt-1.5">
+        <div className="text-[10px] uppercase tracking-wider text-ink-faint">Context — not used to confirm the signal</div>
+        <div className="mt-1 grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+          {context.mtf5m && (
+            <Stat k="MTF 5m" v={`${title(context.mtf5m.bias)} · ${REGIME_SHORT[context.mtf5m.regime]} · ${context.mtf5m.confidence}`} tone={vColor(context.mtf5m.bias)} />
+          )}
+          {context.smc && (
+            <Stat k="SMC Structure" v={`${title(context.smc.trend)} · ${title(context.smc.zone)}`} tone={vColor(context.smc.trend)} />
+          )}
+          {context.smc?.lastEvent && (
+            <Stat k="Last SMC Event" v={`${context.smc.lastEvent.type} (${context.smc.lastEvent.direction})`} />
+          )}
+        </div>
+      </div>
     </Panel>
   );
 }
