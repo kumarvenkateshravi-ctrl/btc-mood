@@ -37,6 +37,13 @@ export interface CustomIndicatorDef {
   styles?: IndicatorStyleDef[];
 }
 
+/** Shared price-source options for `type: 'source'` inputs (dropdowns need these). */
+const SRC_OPTS = [
+  { value: 'close', label: 'Close' }, { value: 'open', label: 'Open' },
+  { value: 'high', label: 'High' }, { value: 'low', label: 'Low' },
+  { value: 'hl2', label: 'HL2' }, { value: 'hlc3', label: 'HLC3' }, { value: 'ohlc4', label: 'OHLC4' },
+];
+
 export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'sma',
@@ -174,14 +181,14 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
           { id: `showMa${k}`, name: g, type: 'boolean' as const, default: true, group: g },
           { id: `ma${k}Type`, name: 'Type', type: 'select' as const, default: 'SMA', group: g,
             options: ['SMA', 'EMA', 'SMMA (RMA)', 'WMA', 'VWMA'].map((v) => ({ value: v, label: v })), disabledIf: dis },
-          { id: `ma${k}Source`, name: 'Source', type: 'source' as const, default: 'close', group: g, disabledIf: dis },
+          { id: `ma${k}Source`, name: 'Source', type: 'source' as const, default: 'close', group: g, options: SRC_OPTS, disabledIf: dis },
           { id: `ma${k}Length`, name: 'Length', type: 'number' as const, default: len, min: 1, max: 2000, step: 1, group: g, disabledIf: dis },
         ];
       }),
       { id: 'showVwap', name: 'Show VWAP', type: 'boolean', default: true, group: 'VWAP' },
       { id: 'vwapAnchor', name: 'Anchor Period', type: 'select', default: 'session', group: 'VWAP',
         options: ['session', 'week', 'month', 'quarter', 'year'].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) })) },
-      { id: 'vwapSource', name: 'Source', type: 'source', default: 'hlc3', group: 'VWAP' },
+      { id: 'vwapSource', name: 'Source', type: 'source', default: 'hlc3', group: 'VWAP', options: SRC_OPTS },
       { id: 'bandsMode', name: 'Bands Calculation Mode', type: 'select', default: 'Standard Deviation', group: 'VWAP',
         options: [{ value: 'Standard Deviation', label: 'Standard Deviation' }, { value: 'Percentage', label: 'Percentage' }] },
       { id: 'showBand1', name: 'Band #1', type: 'boolean', default: true, group: 'VWAP Bands' },
@@ -193,7 +200,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'showVwap1', name: 'Show VWAP-1', type: 'boolean', default: true, group: 'VWAP-1' },
       { id: 'vwap1Anchor', name: 'Anchor Period', type: 'select', default: 'week', group: 'VWAP-1',
         options: ['session', 'week', 'month', 'quarter', 'year'].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) })) },
-      { id: 'vwap1Source', name: 'Source', type: 'source', default: 'hlc3', group: 'VWAP-1' },
+      { id: 'vwap1Source', name: 'Source', type: 'source', default: 'hlc3', group: 'VWAP-1', options: SRC_OPTS },
       { id: 'showVwap1Band', name: 'Band #1', type: 'boolean', default: true, group: 'VWAP-1' },
       { id: 'vwap1BandMult', name: 'Multiplier #1', type: 'number', default: 1, min: 0, max: 10, step: 0.5, group: 'VWAP-1', disabledIf: (i) => !i['showVwap1Band'] },
       { id: 'showConfluence', name: 'Highlight Confluence Candles', type: 'boolean', default: true, group: 'MA + VWAP Confluence' },
@@ -201,7 +208,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'fvgAuto', name: 'Auto', type: 'boolean', default: false, group: 'Fair Value Gap' },
       { id: 'fvgExtend', name: 'Extend', type: 'number', default: 20, min: 0, max: 200, step: 1, group: 'Fair Value Gap' },
       { id: 'rsiLength', name: 'Length', type: 'number', default: 9, min: 1, max: 500, step: 1, group: 'RSI Settings' },
-      { id: 'rsiSource', name: 'Source', type: 'source', default: 'close', group: 'RSI Settings' },
+      { id: 'rsiSource', name: 'Source', type: 'source', default: 'close', group: 'RSI Settings', options: SRC_OPTS },
       { id: 'scaleMode', name: 'Scale Basis', type: 'select', default: 'Range', group: 'RSI Overlay Scaling',
         options: [{ value: 'Range', label: 'Range' }, { value: 'ATR', label: 'ATR' }] },
       { id: 'scaleLookback', name: 'Price Range Lookback', type: 'number', default: 100, min: 10, max: 1000, step: 1, group: 'RSI Overlay Scaling', disabledIf: (i) => i['scaleMode'] !== 'Range' },
@@ -210,7 +217,9 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'baselineType', name: 'Baseline', type: 'select', default: 'SMA of Source', group: 'RSI Overlay Scaling',
         options: [{ value: 'SMA of Source', label: 'SMA of Source' }, { value: 'Current Price', label: 'Current Price' }] },
       { id: 'baselineLen', name: 'Baseline SMA Length', type: 'number', default: 50, min: 1, max: 500, step: 1, group: 'RSI Overlay Scaling', disabledIf: (i) => i['baselineType'] !== 'SMA of Source' },
-      { id: 'showSignals', name: 'Show Buy/Sell Signal Markers', type: 'boolean', default: true, group: 'Signals' },
+      { id: 'showSignals', name: 'Show Buy/Sell Signal Markers', type: 'boolean', default: false, group: 'Signals' },
+      { id: 'signalCooldownBars', name: 'Signal Cooldown (bars)', type: 'number', default: 5, min: 0, max: 200, step: 1, group: 'Signals', tooltip: 'Suppress a new signal within this many bars of the previous one (0 = off).', disabledIf: (i) => !i['showSignals'] },
+      { id: 'signalTrendFilter', name: 'Trend Filter (price vs MA #4)', type: 'boolean', default: false, group: 'Signals', tooltip: 'Only BUY when price is above MA #4, only SELL when below.', disabledIf: (i) => !i['showSignals'] },
     ],
     styles: [
       { id: 'ma_1', name: 'MA #1', color: '#f6c309', thickness: 1, lineStyle: 'solid', display: true, hideCheckbox: true },
@@ -219,10 +228,11 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'ma_4', name: 'MA #4', color: '#f60c0c', thickness: 1, lineStyle: 'solid', display: true, hideCheckbox: true },
       { id: 'vwap', name: 'VWAP', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
       { id: 'vwap1', name: 'VWAP-1', color: '#e91e63', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
-      { id: 'rsiBaseline', name: 'RSI Baseline', color: '#4caf50', thickness: 1, lineStyle: 'solid', display: true, hideCheckbox: true },
-      { id: 'rsiLine', name: 'RSI (scaled)', color: '#000000', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
-      { id: 'rsiStrength', name: 'RSI Strength', color: '#f23645', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
-      { id: 'rsiSignal', name: 'RSI Signal', color: '#4caf50', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
+      { id: 'confluenceCandle', name: 'Confluence Candle', color: 'rgba(255, 215, 0, 0.45)', thickness: 1, lineStyle: 'solid', display: true, hideCheckbox: true },
+      { id: 'rsiBaseline', name: 'RSI Baseline', color: 'rgba(120, 124, 139, 0.5)', thickness: 1, lineStyle: 'solid', display: true, hideCheckbox: true },
+      { id: 'rsiLine', name: 'RSI (scaled)', color: '#b388ff', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
+      { id: 'rsiStrength', name: 'RSI Strength', color: '#ff9800', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
+      { id: 'rsiSignal', name: 'RSI Signal', color: '#00b0ff', thickness: 2, lineStyle: 'solid', display: true, hideCheckbox: true },
     ],
     compute: computeMaFvg,
   },

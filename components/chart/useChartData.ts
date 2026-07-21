@@ -186,16 +186,29 @@ export function useChartData(
     };
 
     if (isIncremental || isAppendOne) {
-      const last = baseCandles[baseCandles.length - 1];
+      const lastIdx = baseCandles.length - 1;
+      const last = baseCandles[lastIdx];
       if (isRenderable(last)) {
+        const updateEntry: CandlestickData<Time> = {
+          time: shiftTime(last.time as number),
+          open: last.open,
+          high: last.high,
+          low: last.low,
+          close: last.close,
+        };
+        // Apply any candle color overrides for the last bar.
+        for (const { key, result } of visibleResults) {
+          if (!result.candleColors || hiddenKeys.has(key)) continue;
+          const cc = result.candleColors;
+          const styleColor = cc.styleId
+            ? (indicatorSettingsMap?.[key]?.styles?.[cc.styleId]?.color ?? null)
+            : null;
+          if (cc.color[lastIdx] != null) updateEntry.color = styleColor ?? cc.color[lastIdx]!;
+          if (cc.wickColor[lastIdx] != null) updateEntry.wickColor = cc.wickColor[lastIdx]!;
+          if (cc.borderColor[lastIdx] != null) updateEntry.borderColor = cc.borderColor[lastIdx]!;
+        }
         try {
-          candleSeries.update({
-            time: shiftTime(last.time as number),
-            open: last.open,
-            high: last.high,
-            low: last.low,
-            close: last.close,
-          });
+          candleSeries.update(updateEntry);
         } catch (err) {
           recoverNextFrame(err);
           return;
@@ -212,15 +225,44 @@ export function useChartData(
       // Fall through — indicator plots still need sync (they recompute on
       // the appended bar), but the candle + whitespace series are done.
     } else {
-      const candleData: CandlestickData<Time>[] = baseCandles
-        .filter(isRenderable)
-        .map((c) => ({
+      // ── Collect per-bar candle color overrides from indicators ──────────────
+      // Scanned BEFORE candleData is built so colors are merged in one setData
+      // call (no flicker). Each indicator can emit a `candleColors` result with
+      // per-bar body/wick/border arrays; a styleId lets the user pick the body
+      // color via the indicator's style panel.
+      const bodyOverride: (string | null)[] = new Array(baseCandles.length).fill(null);
+      const wickOverride: (string | null)[] = new Array(baseCandles.length).fill(null);
+      const borderOverride: (string | null)[] = new Array(baseCandles.length).fill(null);
+      for (const { key, result } of visibleResults) {
+        if (!result.candleColors || hiddenKeys.has(key)) continue;
+        const cc = result.candleColors;
+        const styleColor = cc.styleId
+          ? (indicatorSettingsMap?.[key]?.styles?.[cc.styleId]?.color ?? null)
+          : null;
+        for (let ci = 0; ci < baseCandles.length; ci++) {
+          if (cc.color[ci] != null) bodyOverride[ci] = styleColor ?? cc.color[ci];
+          if (cc.wickColor[ci] != null) wickOverride[ci] = cc.wickColor[ci];
+          if (cc.borderColor[ci] != null) borderOverride[ci] = cc.borderColor[ci];
+        }
+      }
+
+      const candleData: CandlestickData<Time>[] = [];
+      let renderIdx = 0;
+      for (let ci = 0; ci < baseCandles.length; ci++) {
+        const c = baseCandles[ci];
+        if (!isRenderable(c)) continue;
+        const entry: CandlestickData<Time> = {
           time: shiftTime(c.time as number),
           open: c.open,
           high: c.high,
           low: c.low,
           close: c.close,
-        }));
+        };
+        if (bodyOverride[ci] != null) entry.color = bodyOverride[ci]!;
+        if (wickOverride[ci] != null) entry.wickColor = wickOverride[ci]!;
+        if (borderOverride[ci] != null) entry.borderColor = borderOverride[ci]!;
+        candleData.push(entry);
+      }
 
       const futureData: WhitespaceData<Time>[] = [];
       if (tf && baseCandles.length > 0 && !isRenko) {
@@ -525,16 +567,19 @@ export function useChartData(
               lower.push(null);
             }
           }
-          // Guard: `candles` is the RAW prop array; when old history is
-          // prepended it can momentarily contain null entries before React
-          // re-renders the full deduplicated list. A null here would throw
-          // "Value is null at Array.map" — uncaught — and crash the page.
-          const times = candles
-            .filter((c) => c != null && Number.isFinite(c.time as number))
-            .map((c) => shiftTime(c.time as number) as number);
+          // IMPORTANT: use map (not filter+map) so times[i] stays positionally
+          // aligned with upper[i] / lower[i]. Filtering destroys the 1-to-1
+          // index mapping and causes the areaFill polygon to draw points at the
+          // wrong x-coordinates — invisible on 5m (dense bars) but very visible
+          // on higher timeframes where bars are far apart.
+          const times = candles.map((c) =>
+            c != null && Number.isFinite(c.time as number)
+              ? (shiftTime(c.time as number) as number)
+              : null
+          );
           const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
           const visible = hiddenKeys.has(key) ? false : st?.display !== false;
-          try { bp.setData(upper, lower, times, st?.color || plot.color, visible, plot.zoneStyle); } catch {}
+          try { bp.setData(upper, lower, times, st?.color || plot.color, visible, plot.zoneStyle, plot.areaFill ?? false, plot.areaFillColors); } catch {}
         }
 
         // Gradient zones: feed the source plot's per-bar values + bar times.

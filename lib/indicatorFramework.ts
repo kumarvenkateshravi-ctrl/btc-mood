@@ -100,6 +100,20 @@ export interface IndicatorPlot {
   /** Premium zone rendering for band plots (see BandZoneStyle). */
   zoneStyle?: BandZoneStyle;
   /**
+   * When true, the band is drawn as a continuous polygon area (upper edge →
+   * lower edge back) rather than per-bar filled rectangles. Use this for RSI
+   * fill clouds, moving-average ribbon fills, etc. where the shape must
+   * follow the line contour exactly without bar-width gaps.
+   */
+  areaFill?: boolean;
+  /**
+   * Two-tone area fill (requires `areaFill`). Colours the fill by which side of
+   * the baseline the upper edge sits on — `above` where upper > lower, `below`
+   * otherwise — and splits each segment at the EXACT interpolated crossing so
+   * the two colours meet on the line with no gap or overlap (the RSI cloud).
+   */
+  areaFillColors?: { above: string; below: string };
+  /**
    * Set false to suppress this plot's price-scale label + price line even
    * when the indicator's labelsOnPriceScale is on — for annotation-style
    * plots (e.g. SMC structure segments) that would otherwise stack pills
@@ -151,6 +165,27 @@ export interface IndicatorMarker {
   color: string;
   shape: 'arrowUp' | 'arrowDown' | 'circle' | 'square';
   text?: string;
+  /** Optional scalar payload for consumers (e.g. a signal's confidence score);
+   *  render-agnostic — the chart ignores it. */
+  value?: number;
+}
+
+/**
+ * Per-bar candle color overrides injected directly into the CandlestickSeries.
+ * Use for confluence highlights that need to color the body independently
+ * from the wicks/borders.
+ * `styleId` — the indicator style-panel entry whose user-chosen color should
+ * override the default `color` values (e.g. 'confluenceCandle').
+ */
+export interface CandleColorOverride {
+  /** Plot style ID to look up for body color in the indicator's style panel. */
+  styleId?: string;
+  /** Per-bar body fill color. null = keep default. */
+  color: (string | null)[];
+  /** Per-bar wick color. null = keep default. */
+  wickColor: (string | null)[];
+  /** Per-bar border color. null = keep default. */
+  borderColor: (string | null)[];
 }
 
 export interface IndicatorResult {
@@ -165,6 +200,12 @@ export interface IndicatorResult {
   gradientFills?: IndicatorGradientFill[];
   /** Pane labels/markers (e.g. divergence Bull/Bear). */
   markers?: IndicatorMarker[];
+  /**
+   * Per-bar candle series color overrides. When set, the chart merges these
+   * colors into the CandlestickData before calling setData, letting indicators
+   * color individual candle bodies/wicks without a separate overlay primitive.
+   */
+  candleColors?: CandleColorOverride;
 }
 
 export interface CustomIndicatorConfig {

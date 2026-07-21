@@ -59,13 +59,98 @@ class BandRenderer implements IPrimitivePaneRenderer {
       const { upper, lower, times, color, zoneStyle } = this._prim;
 
       if (!zoneStyle) {
-        // ---- Legacy flat fill --------------------------------------------
+        if (this._prim.areaFill && this._prim.areaFillColors) {
+          // ---- Two-tone area fill (RSI cloud) ------------------------------
+          // Fill between `upper` (e.g. scaled RSI) and `lower` (baseline),
+          // colouring each segment by side and splitting at the EXACT
+          // interpolated crossing so the colours meet on the line — no notch.
+          const { above, below } = this._prim.areaFillColors;
+          const xOf = (t: number | null) => (t == null ? null : ts.timeToCoordinate(t as Time));
+
+          const quad = (xa: number, ya0: number, ya1: number, xb: number, yb0: number, yb1: number, fill: string) => {
+            ctx.fillStyle = fill;
+            ctx.beginPath();
+            ctx.moveTo(xa, ya0 * vpr);
+            ctx.lineTo(xb, yb0 * vpr);
+            ctx.lineTo(xb, yb1 * vpr);
+            ctx.lineTo(xa, ya1 * vpr);
+            ctx.closePath();
+            ctx.fill();
+          };
+
+          for (let i = 0; i < upper.length - 1; i++) {
+            const u0 = upper[i]; const l0 = lower[i];
+            const u1 = upper[i + 1]; const l1 = lower[i + 1];
+            if (u0 == null || l0 == null || u1 == null || l1 == null) continue;
+            const x0raw = xOf(times[i]); const x1raw = xOf(times[i + 1]);
+            if (x0raw == null || x1raw == null) continue;
+            const x0 = x0raw * hpr; const x1 = x1raw * hpr;
+            const yU0 = series.priceToCoordinate(u0); const yL0 = series.priceToCoordinate(l0);
+            const yU1 = series.priceToCoordinate(u1); const yL1 = series.priceToCoordinate(l1);
+            if (yU0 == null || yL0 == null || yU1 == null || yL1 == null) continue;
+
+            const d0 = u0 - l0; const d1 = u1 - l1; // signed distance in price space
+            if ((d0 >= 0 && d1 >= 0) || (d0 <= 0 && d1 <= 0)) {
+              // No crossing — one colour for the whole segment.
+              quad(x0, yU0, yL0, x1, yU1, yL1, (d0 || d1) >= 0 ? above : below);
+            } else {
+              // Crossing: interpolate where upper == lower.
+              const f = d0 / (d0 - d1);
+              const xc = x0 + f * (x1 - x0);
+              const yc = series.priceToCoordinate(l0 + f * (l1 - l0)); // == upper at crossing
+              if (yc == null) { quad(x0, yU0, yL0, x1, yU1, yL1, d0 >= 0 ? above : below); continue; }
+              quad(x0, yU0, yL0, xc, yc, yc, d0 >= 0 ? above : below);
+              quad(xc, yc, yc, x1, yU1, yL1, d1 >= 0 ? above : below);
+            }
+          }
+          return;
+        }
+        if (this._prim.areaFill) {
+          // ---- Continuous polygon area fill --------------------------------
+          // Draws a closed path: forward along upper, backward along lower,
+          // then back to start. Handles gaps (null entries) by breaking the
+          // path into separate polygons so the fill hugs the RSI line exactly.
+          ctx.fillStyle = color;
+          const upperPts: { x: number; yU: number; yL: number }[] = [];
+
+          const flush = () => {
+            if (upperPts.length < 2) { upperPts.length = 0; return; }
+            ctx.beginPath();
+            ctx.moveTo(upperPts[0].x, upperPts[0].yU * vpr);
+            for (let k = 1; k < upperPts.length; k++)
+              ctx.lineTo(upperPts[k].x, upperPts[k].yU * vpr);
+            for (let k = upperPts.length - 1; k >= 0; k--)
+              ctx.lineTo(upperPts[k].x, upperPts[k].yL * vpr);
+            ctx.closePath();
+            ctx.fill();
+            upperPts.length = 0;
+          };
+
+          for (let i = 0; i < upper.length; i++) {
+            const u = upper[i];
+            const l = lower[i];
+            if (u == null || l == null) { flush(); continue; }
+            const t = times[i];
+            if (t == null) { flush(); continue; }
+            const x = ts.timeToCoordinate(t as Time);
+            if (x == null) { flush(); continue; }
+            const yU = series.priceToCoordinate(u);
+            const yL = series.priceToCoordinate(l);
+            if (yU === null || yL === null) { flush(); continue; }
+            upperPts.push({ x: x * hpr, yU, yL });
+          }
+          flush();
+          return;
+        }
+        // ---- Legacy flat fill (per-bar rectangles) ---------------------------
         ctx.fillStyle = color;
         for (let i = 0; i < upper.length; i++) {
           const u = upper[i];
           const l = lower[i];
           if (u == null || l == null) continue;
-          const x = ts.timeToCoordinate(times[i] as Time);
+          const t = times[i];
+          if (t == null) continue;
+          const x = ts.timeToCoordinate(t as Time);
           if (x == null) continue;
           const cx = x * hpr;
           const yU = series.priceToCoordinate(u);
@@ -275,9 +360,11 @@ class BandPaneView implements IPrimitivePaneView {
 export class IndicatorBandPrimitive implements ISeriesPrimitive {
   public upper: (number | null)[] = [];
   public lower: (number | null)[] = [];
-  public times: number[] = [];
+  public times: (number | null)[] = [];
   public color = 'rgba(120,120,120,0.10)';
   public visible = true;
+  public areaFill = false;
+  public areaFillColors: { above: string; below: string } | undefined;
   public zoneStyle: BandZoneStyle | undefined;
   /** Contiguous same-value zone runs, precomputed in setData. */
   public runs: ZoneRun[] = [];
@@ -300,16 +387,20 @@ export class IndicatorBandPrimitive implements ISeriesPrimitive {
   setData(
     upper: (number | null)[],
     lower: (number | null)[],
-    times: number[],
+    times: (number | null)[],
     color: string,
     visible = true,
     zoneStyle?: BandZoneStyle,
+    areaFill = false,
+    areaFillColors?: { above: string; below: string },
   ) {
     this.upper = upper;
     this.lower = lower;
     this.times = times;
     this.color = color;
     this.visible = visible;
+    this.areaFill = areaFill;
+    this.areaFillColors = areaFillColors;
     this.zoneStyle = zoneStyle;
     this.runs = zoneStyle ? computeRuns(upper, lower) : [];
     this.updateAllViews();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../../types';
 import { computeRsi } from '../rsi';
-import { rawRsi, scaleToPrice, crossSignals } from './rsiOverlay';
+import { rawRsi, scaleToPrice, crossSignals, emitCrossSignals } from './rsiOverlay';
 
 describe('rawRsi', () => {
   it('matches the golden-tested computeRsi engine (parity)', () => {
@@ -47,5 +47,45 @@ describe('crossSignals', () => {
     const { buy, sell } = crossSignals([9, 11], [10, 10], [12, 12]);
     expect(buy).toEqual([false, false]);
     expect(sell).toEqual([false, false]);
+  });
+});
+
+describe('emitCrossSignals (cooldown / trend filter / confidence)', () => {
+  const V = [10, 10, 10, 10, 10, 10];
+  const M = [12, 12, 12, 12, 12, 12];
+  const closes = [100, 100, 100, 100, 100, 100];
+
+  it('fires a BUY on the fresh cross above both, with a % confidence over the nearer line', () => {
+    // strength: 9 (below) → 15 (above both). BUY at i=1.
+    // confidence = min(15-10, 15-12)/15 * 100 = 3/15*100 = 20.
+    const ev = emitCrossSignals([9, 15, 15, 15, 15, 15], V, M, closes);
+    expect(ev).toEqual([{ index: 1, side: 'buy', confidence: 20 }]);
+  });
+
+  it('null-guards warm-up (no coercion signals) and never fires on bar 0', () => {
+    const ev = emitCrossSignals([null, 15, 15], V, M, closes);
+    expect(ev).toEqual([]); // i=1 needs a valid i-1; bar 0 is null → skipped.
+  });
+
+  it('cooldown collapses a cluster of signals into the first', () => {
+    // s dips below/above both repeatedly → buy@1, sell@2, buy@3 with no cooldown.
+    const s = [9, 15, 9, 15, 15, 15];
+    expect(emitCrossSignals(s, V, M, closes, { cooldownBars: 0 }).map((e) => e.index)).toEqual([1, 2, 3]);
+    // cooldown 3: after firing at 1, bars 2 and 3 are within 3 → suppressed.
+    expect(emitCrossSignals(s, V, M, closes, { cooldownBars: 3 }).map((e) => e.index)).toEqual([1]);
+  });
+
+  it('trend filter blocks a BUY when close is not above the MA', () => {
+    const s = [9, 15, 15, 15, 15, 15];
+    const below = [100, 11, 11, 11, 11, 11]; // close 11 < ma 12 at i=1 → BUY blocked
+    expect(emitCrossSignals(s, V, M, below, { trendFilter: true })).toEqual([]);
+    expect(emitCrossSignals(s, V, M, closes, { trendFilter: true })).toHaveLength(1); // close 100 > 12 → allowed
+  });
+
+  it('respects the exclusive `end` bound (forming-bar exclusion)', () => {
+    // Cross at i=5 is excluded when end=5.
+    const s = [9, 9, 9, 9, 9, 15];
+    expect(emitCrossSignals(s, V, M, closes, { end: 5 })).toEqual([]);
+    expect(emitCrossSignals(s, V, M, closes).map((e) => e.index)).toEqual([5]);
   });
 });

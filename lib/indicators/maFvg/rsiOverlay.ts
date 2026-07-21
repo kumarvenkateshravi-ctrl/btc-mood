@@ -63,3 +63,52 @@ export function crossSignals(
   }
   return { buy, sell };
 }
+
+export interface SignalEvent {
+  index: number;
+  side: 'buy' | 'sell';
+  /** How far the strength line sits beyond the NEARER of the two lines, as a
+   *  percent of price — a conviction read for later ranking. */
+  confidence: number;
+}
+
+/**
+ * Confirmed Buy/Sell events with two noise controls on top of the base
+ * strength-crosses-BOTH-lines rule (all in price space):
+ *   - `cooldownBars`: suppress a signal within N bars of the previous one.
+ *   - `trendFilter`: BUY only when close > ma; SELL only when close < ma.
+ * Null-guarded (JS coerces null→0 in comparisons), never fires on bar 0, and
+ * loops only up to `end` (exclusive) so the forming bar is excluded by the caller.
+ */
+export function emitCrossSignals(
+  strength: (number | null)[],
+  vwap: (number | null)[],
+  ma: (number | null)[],
+  closes: number[],
+  opts: { cooldownBars?: number; trendFilter?: boolean; end?: number } = {},
+): SignalEvent[] {
+  const { cooldownBars = 0, trendFilter = false, end = strength.length } = opts;
+  const out: SignalEvent[] = [];
+  let lastSignalBar = -Infinity;
+  const r2 = (x: number) => Math.round(x * 100) / 100;
+
+  for (let i = 1; i < end; i++) {
+    const s0 = strength[i - 1]; const s1 = strength[i];
+    const m0 = ma[i - 1]; const m1 = ma[i];
+    const v0 = vwap[i - 1]; const v1 = vwap[i];
+    if (s0 == null || s1 == null || m0 == null || m1 == null || v0 == null || v1 == null) continue;
+
+    const buy = !(s0 > m0 && s0 > v0) && s1 > m1 && s1 > v1;
+    const sell = !(s0 < m0 && s0 < v0) && s1 < m1 && s1 < v1;
+    if (!buy && !sell) continue;
+    if (i - lastSignalBar < cooldownBars) continue;
+    if (trendFilter && (buy ? !(closes[i] > m1) : !(closes[i] < m1))) continue;
+
+    const conf = buy
+      ? r2((Math.min(s1 - v1, s1 - m1) / s1) * 100)
+      : r2((Math.min(v1 - s1, m1 - s1) / s1) * 100);
+    out.push({ index: i, side: buy ? 'buy' : 'sell', confidence: conf });
+    lastSignalBar = i;
+  }
+  return out;
+}
