@@ -59,6 +59,33 @@ describe('computeAlignmentMatrix', () => {
   });
 });
 
+describe('computeAlignmentMatrix with custom indicator settings', () => {
+  // Wavy series (mixed up/down moves) so oscillator lengths actually matter.
+  const wavy: Candle[] = Array.from({ length: 260 }, (_, i) => {
+    const close = 100 + 10 * Math.sin(i / 5) + i * 0.05;
+    const o = 100 + 10 * Math.sin((i - 1) / 5) + (i - 1) * 0.05;
+    return {
+      time: i * 300, open: o,
+      high: Math.max(o, close) + 1, low: Math.min(o, close) - 1,
+      close, volume: 1000 + (i % 5) * 80,
+    };
+  });
+  const byTf = { '1h': wavy } as Record<Timeframe, Candle[]>;
+  const settings = { rsi: { inputs: { length: 5 }, styles: {}, visibility: {} } };
+
+  it('changes the rsi sub-score and row sub-label', () => {
+    const base = computeAlignmentMatrix(byTf, ['1h']);
+    const custom = computeAlignmentMatrix(byTf, ['1h'], settings);
+    expect(custom.sub['1h']!.rsi).not.toBe(base.sub['1h']!.rsi);
+    expect(custom.rows.find((r) => r.key === 'rsi')!.sub).toBe('5');
+    expect(base.rows.find((r) => r.key === 'rsi')!.sub).toBe('14');
+  });
+
+  it('without settings the output is unchanged (parity)', () => {
+    expect(computeAlignmentMatrix(byTf, ['1h'], {})).toEqual(computeAlignmentMatrix(byTf, ['1h']));
+  });
+});
+
 // --- Stack Score over hand-built matrices (isolates the formula) ---
 
 function matrixFrom(sub: number, verdict: 'bullish' | 'bearish' | 'neutral'): AlignmentMatrix {

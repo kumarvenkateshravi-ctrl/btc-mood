@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, ScanLine, Layers, Gauge, Target, Bell, FlaskConical, BookOpen,
+  LayoutDashboard, ScanLine, Layers, SlidersHorizontal, Gauge, Target, Bell, FlaskConical, BookOpen,
   Briefcase, Boxes, FileBarChart, BrainCircuit, HelpCircle, Settings, TrendingUp, type LucideIcon,
 } from 'lucide-react';
 
@@ -19,6 +19,7 @@ const ITEMS: { label: string; icon: LucideIcon; href?: string; badge?: string }[
   { label: 'Dashboard', icon: LayoutDashboard, href: '/mycryptostack' },
   { label: 'Technical Scanner', icon: ScanLine, href: '/technical-scanner', badge: 'IDE' },
   { label: 'Multi-Timeframe', icon: Layers, href: '/multi-timeframe' },
+  { label: 'Custom MTF', icon: SlidersHorizontal, href: '/custom-multi-timeframe' },
   { label: 'Stack Score', icon: Gauge, href: '/stack-score' },
   { label: 'Trade Setup', icon: Target, href: '/trade-setup' },
   { label: 'Alerts', icon: Bell, href: '/alerts' },

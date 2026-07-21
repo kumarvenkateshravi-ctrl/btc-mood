@@ -106,7 +106,7 @@ export default function PositionsPage() {
       <StackSidebar extra={sidebarExtra} />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
-        <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
+        <header className="sticky top-0 z-50 flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
           <button className="flex items-center gap-1.5 rounded-lg border border-line bg-base px-2.5 py-1.5 text-sm"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span><ChevronDown className="h-3.5 w-3.5 text-ink-faint" /></button>
           <Num value={price} precision={2} className="text-lg font-semibold" />
           <span className="text-sm"><Num value={(price * change) / 100} precision={2} signed tone /> (<Num.Pct value={change} tone />)</span>

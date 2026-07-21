@@ -89,11 +89,16 @@ export function subscribeKlines(
       // Validate the combined-stream envelope with the shared schema so
       // a malformed frame is dropped instead of producing NaN candles.
       const parsed = BinanceStreamEnvelopeSchema.safeParse(json);
-      if (!parsed.success) return;
+      if (!parsed.success) {
+        console.warn('Zod validation failed for subscribeKlines:', parsed.error);
+        return;
+      }
       const { stream, data } = parsed.data;
       if (!data || !stream) return;
+      
       const tf = streamToTf.get(stream);
       if (!tf) return;
+      
       const k = data.k;
       const bar: Candle = {
         time: Math.floor(k.t / 1000),
@@ -103,6 +108,7 @@ export function subscribeKlines(
         close: Number(k.c),
         volume: Number(k.v),
       };
+      
       // Binance sends numbers as strings; guard against a non-numeric
       // field slipping through as NaN and corrupting the chart.
       if (
@@ -191,7 +197,10 @@ export function subscribeTrades(
       let json: unknown;
       try { json = JSON.parse(evt.data as string); } catch { return; }
       const parsed = AggTradeEnvelopeSchema.safeParse(json);
-      if (!parsed.success) return;
+      if (!parsed.success) {
+        console.warn('Zod validation failed for subscribeTrades:', parsed.error);
+        return;
+      }
       const { data } = parsed.data;
       if (!data) return;
       const price = Number(data.p);
@@ -331,17 +340,23 @@ function rawBookTickerConnection(
       let json: unknown;
       try { json = JSON.parse(evt.data as string); } catch { return; }
       const parsed = BookTickerEnvelopeSchema.safeParse(json);
-      if (!parsed.success) return;
+      if (!parsed.success) {
+        console.warn('Zod validation failed for bookTicker:', parsed.error);
+        return;
+      }
       const { data } = parsed.data;
       if (!data) return;
       const bid = Number(data.b);
+      const bidQty = Number(data.B);
       const ask = Number(data.a);
+      const askQty = Number(data.A);
       if (!Number.isFinite(bid) || !Number.isFinite(ask)) return;
+      
       onTick({
         bid,
-        bidQty: Number(data.B),
+        bidQty,
         ask,
-        askQty: Number(data.A),
+        askQty,
       });
     };
 
@@ -375,3 +390,4 @@ function rawBookTickerConnection(
     setStatus('closed');
   };
 }
+// End of ws.ts

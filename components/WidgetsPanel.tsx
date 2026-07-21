@@ -8,13 +8,14 @@
 import { Boxes, Activity, Check } from 'lucide-react';
 import { cx } from '@/components/ui/util';
 
-export type WidgetKey = 'activeTrade';
+export type WidgetKey = 'activeTrade' | 'marketContext';
 
 export interface WidgetPrefs {
   activeTrade: boolean;
+  marketContext: boolean;
 }
 
-export const DEFAULT_WIDGET_PREFS: WidgetPrefs = { activeTrade: false };
+export const DEFAULT_WIDGET_PREFS: WidgetPrefs = { activeTrade: false, marketContext: false };
 
 interface WidgetMeta {
   key: WidgetKey;
@@ -34,6 +35,13 @@ const WIDGETS: WidgetMeta[] = [
     home: 'Shows below the Mood panel',
     Icon: Activity,
     statusKey: 'trade',
+  },
+  {
+    key: 'marketContext',
+    name: 'Market Context',
+    desc: 'Compact real-time bias and trend scoring overlay across multiple timeframes.',
+    home: 'Shows on the Chart panel',
+    Icon: Boxes,
   },
 ];
 

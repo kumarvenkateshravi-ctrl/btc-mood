@@ -61,6 +61,7 @@ export interface ChartToolbarProps {
   // Renko controls — only shown when chartType === 'renko'.
   renko: RenkoConfig;
   onRenkoChange: (c: RenkoConfig) => void;
+  onOpenRenkoSettings?: () => void;
   activeIndicatorIds: string[];
   onToggleIndicator: (id: string) => void;
   onClearIndicators: () => void;
@@ -104,6 +105,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onFitContent,
     renko,
     onRenkoChange,
+    onOpenRenkoSettings,
     activeIndicatorIds,
     onToggleIndicator,
     onClearIndicators,
@@ -136,9 +138,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       {/* Symbol / price / change */}
       <div className="flex shrink-0 items-center gap-2 px-2">
-        <span className="text-[14px] font-semibold tracking-tight text-ink">
-          {symbol}
-        </span>
+
         {price != null && (
           <span className="font-mono text-[14px] tabular-nums text-ink">
             {price.toLocaleString('en-US', {
@@ -175,11 +175,20 @@ export default function ChartToolbar(props: ChartToolbarProps) {
       </div>
 
       {/* Renko config (conditional) */}
-      {chartType === 'renko' && (
+      {chartType === 'renko' && onOpenRenkoSettings && (
         <>
           <ToolbarDivider />
           <div className="flex shrink-0 items-center h-full">
-            <RenkoChip renko={renko} onChange={onRenkoChange} lastPrice={price} />
+            <button
+              onClick={onOpenRenkoSettings}
+              className="flex items-center justify-center gap-1.5 h-[28px] rounded px-3 text-[12px] font-semibold tracking-wide text-ink transition hover:bg-surface-3"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              Renko Settings
+            </button>
           </div>
         </>
       )}
@@ -206,7 +215,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
           onClick={onReplayToggle}
           title="Bar Replay"
         />
-        <DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} />
+
       </div>
 
       <ToolbarDivider />

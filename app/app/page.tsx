@@ -442,7 +442,7 @@ export default function DashboardPage() {
 
                 {/* Compact Market Context widget (Phase 11) — same MarketContext
                     object as the signal gate; click opens the MTF rail. */}
-                {gridLayout.mode === 'single' && (
+                {gridLayout.mode === 'single' && widgetPrefs.marketContext && (
                   <div className="absolute right-[84px] top-[52px] z-20 hidden lg:block">
                     <MarketContextWidget
                       ctx={marketContext}

@@ -89,3 +89,12 @@ const STATUS_TONE: Record<string, Tone> = {
 export function StatusCell({ value, tone, ...rest }: CellProps & { value: string; tone?: Tone }) {
   return <Cell align="center" {...rest}><Badge tone={tone ?? STATUS_TONE[value] ?? 'neutral'}>{value}</Badge></Cell>;
 }
+
+(Cell as any).isTableCell = true;
+(PriceCell as any).isTableCell = true;
+(PnlCell as any).isTableCell = true;
+(PercentCell as any).isTableCell = true;
+(QtyCell as any).isTableCell = true;
+(ScoreCell as any).isTableCell = true;
+(TimestampCell as any).isTableCell = true;
+(StatusCell as any).isTableCell = true;

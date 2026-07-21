@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, useRef, useEffect, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Fragment, useMemo, useState, useRef, useEffect, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, isValidElement, cloneElement } from 'react';
 import { ChevronDown, ChevronUp, ChevronsUpDown, Filter, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { cx } from './util';
@@ -35,8 +35,21 @@ function TickCell({ value, children, className }: { value: any; children: ReactN
     }
   }, [value]);
 
+  const cls = cx(className, flash && 'animate-[tick-flash_0.3s_ease-out]');
+  
+  const isTd = isValidElement(children) && (
+    children.type === 'td' || 
+    (typeof children.type === 'function' && (children.type as any).isTableCell)
+  );
+
+  if (isTd) {
+    return cloneElement(children as React.ReactElement, {
+      className: cx((children.props as any).className, cls)
+    });
+  }
+
   return (
-    <td className={cx(className, flash && 'animate-[tick-flash_0.3s_ease-out]')}>
+    <td className={cls}>
       {children}
     </td>
   );
@@ -388,14 +401,28 @@ export function DataTable<T>({
                         if (c.value) {
                           return (
                             <TickCell key={c.key} value={c.value(row)} className={cellProps.className}>
+                              {/* We still have the problem that c.cell(row) might be a <td> */}
                               {c.cell(row)}
                             </TickCell>
                           );
                         }
 
+                        const cellContent = c.cell(row);
+                        const isTd = isValidElement(cellContent) && (
+                          cellContent.type === 'td' || 
+                          (typeof cellContent.type === 'function' && (cellContent.type as any).isTableCell)
+                        );
+
+                        if (isTd) {
+                          return cloneElement(cellContent as React.ReactElement, {
+                            key: c.key,
+                            className: cx((cellContent.props as any).className, cellProps.className),
+                          });
+                        }
+
                         return (
                           <td key={c.key} className={cellProps.className}>
-                            {c.cell(row)}
+                            {cellContent}
                           </td>
                         );
                       })}

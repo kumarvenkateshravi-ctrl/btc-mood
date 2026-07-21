@@ -119,7 +119,7 @@ export default function StackScorePage() {
       <StackSidebar marketState={marketState} fearGreed={weighted.overall} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
+        <header className="sticky top-0 z-50 flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-1.5"><Bitcoin className="h-4 w-4 text-regime-hot" /><span className="font-semibold">{symbol}</span></div>
           <span className="font-mono text-lg font-semibold tabular-nums">{fmtN(price, 2)}</span>
           <span className={['font-mono text-sm tabular-nums', change >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}>{change >= 0 ? '+' : ''}{fmtN(priceAbs)} ({formatPercent(change)})</span>

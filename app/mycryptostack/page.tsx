@@ -141,7 +141,7 @@ export default function MyCryptoStackPage() {
       {/* ===== MAIN ===== */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
-        <header className="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
+        <header className="sticky top-0 z-50 flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2.5">
           <div className="flex items-center gap-2 lg:hidden">
             <Layers className="h-5 w-5 text-accent" />
             <span className="font-bold">MyCryptoStack</span>

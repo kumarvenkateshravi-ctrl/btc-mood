@@ -11,6 +11,8 @@ interface IndicatorSettingsModalProps {
   activeIndicatorsContext?: { id: string; name: string; plots: { id: string; title: string }[] }[];
   onClose: () => void;
   onSave: (settings: IndicatorSettings) => void;
+  /** Which tabs to show (default: all three). */
+  tabs?: Tab[];
 }
 
 type Tab = 'Inputs' | 'Style' | 'Visibility';
@@ -178,8 +180,9 @@ export default function IndicatorSettingsModal({
   activeIndicatorsContext = [],
   onClose,
   onSave,
+  tabs: visibleTabs = ['Inputs', 'Style', 'Visibility'],
 }: IndicatorSettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('Inputs');
+  const [activeTab, setActiveTab] = useState<Tab>(visibleTabs[0] ?? 'Inputs');
   const [openColorPickerId, setOpenColorPickerId] = useState<string | null>(null);
 
   // Dragging state
@@ -334,7 +337,7 @@ export default function IndicatorSettingsModal({
     onClose();
   };
 
-  const tabs: Tab[] = ['Inputs', 'Style', 'Visibility'];
+  const tabs: Tab[] = visibleTabs;
 
   // Group inputs
   const inputGroups: Record<string, typeof indicatorDef.inputs> = { default: [] };

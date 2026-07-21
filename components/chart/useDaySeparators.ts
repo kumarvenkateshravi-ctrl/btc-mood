@@ -31,7 +31,7 @@ export function useDaySeparators(
   useEffect(() => {
     const chart = chartRef.current;
     const canvas = daySepCanvasRef.current;
-    if (!chart || !canvas || isRenko || tf === '1d') {
+    if (!chart || !canvas || (!isRenko && tf === '1d')) {
       // Clear canvas if not applicable
       const ctx = canvas?.getContext('2d');
       if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -63,8 +63,8 @@ export function useDaySeparators(
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      // Skip separators for daily chart (the days ARE the bars)
-      if (!tf || tf === '1d') return;
+      // Skip separators for daily chart (the days ARE the bars), but allow for Renko
+      if (!tf || (!isRenko && tf === '1d')) return;
 
       // Find day boundaries in the candle data
       const src = hoverInputsRef.current.src;

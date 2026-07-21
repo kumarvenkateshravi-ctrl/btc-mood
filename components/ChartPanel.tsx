@@ -923,6 +923,7 @@ export default function ChartPanel({
         onFitContent={fitContent}
         renko={renkoConfig}
         onRenkoChange={setRenkoConfig}
+        onOpenRenkoSettings={() => setShowRenkoSettings(true)}
         activeIndicatorIds={activeIndicatorIds}
         onToggleIndicator={onToggleIndicator}
         onClearIndicators={onClearIndicators}
