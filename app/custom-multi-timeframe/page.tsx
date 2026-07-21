@@ -31,10 +31,11 @@ import MarketStructureCard from '@/components/mtf/MarketStructureCard';
 import {
   MTFIntelligenceBoard, AgreementConfidencePanel, CategoryStrip, TradeContextCard,
   MarketIntelligenceVerdict, TrendLifecyclePanel, ProbabilityPanel, NarrativeEvidencePanel,
-  TradeDecisionPanel,
+  TradeDecisionPanel, MaFvgSignalCard,
 } from '@/components/mtf/MarketIntelligence';
 import { useMarketIntelligence } from '@/components/mtf/useMarketIntelligence';
 import { useTradeDecision } from '@/components/mtf/useTradeDecision';
+import { useMaFvgSignal } from '@/components/mtf/useMaFvgSignal';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import { Panel } from '@/components/ui';
@@ -168,6 +169,7 @@ export default function CustomMultiTimeframePage() {
   // ---- M9 Trade Decision (Phase 1c) — SMC confluence toggleable for live comparison ----
   const [smcOn, setSmcOn] = useState(true);
   const tradeDecision = useTradeDecision(intel.full, candlesByTf, smcByTf, smcOn);
+  const maFvgSignal = useMaFvgSignal(candlesByTf, intel.full, smcByTf);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
   const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
@@ -248,6 +250,7 @@ export default function CustomMultiTimeframePage() {
               {intel.full.layers.snapshots.length > 0 && (
                 <>
                   <MarketIntelligenceVerdict result={intel.full.result} />
+                  <MaFvgSignalCard signal={maFvgSignal} />
                   <TradeDecisionPanel decision={tradeDecision} smcEnabled={smcOn} onToggleSmc={() => setSmcOn((v) => !v)} />
                   <MTFIntelligenceBoard hierarchy={intel.full.layers.hierarchy} />
                   {intel.selected && (
