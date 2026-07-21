@@ -43,7 +43,7 @@ function TickCell({ value, children, className }: { value: any; children: ReactN
   );
 
   if (isTd) {
-    return cloneElement(children as React.ReactElement, {
+    return cloneElement(children as React.ReactElement<{ className?: string }>, {
       className: cx((children.props as any).className, cls)
     });
   }
@@ -414,7 +414,7 @@ export function DataTable<T>({
                         );
 
                         if (isTd) {
-                          return cloneElement(cellContent as React.ReactElement, {
+                          return cloneElement(cellContent as React.ReactElement<{ className?: string }>, {
                             key: c.key,
                             className: cx((cellContent.props as any).className, cellProps.className),
                           });
