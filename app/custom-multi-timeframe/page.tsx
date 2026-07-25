@@ -254,6 +254,8 @@ export default function CustomMultiTimeframePage() {
                 <MatrixTable matrix={matrix} onConfigure={setEditingId} />
               </Panel>
 
+              <MaFvgSignalCard signal={maFvgSignal} />
+
               {intel.full.layers.snapshots.length > 0 && (
                 <>
                   <BoardDecisionCard board={board} />
@@ -282,7 +284,6 @@ export default function CustomMultiTimeframePage() {
                     smcEnabled={smcOn}
                     onToggleSmc={() => setSmcOn((v) => !v)}
                   />
-                  <MaFvgSignalCard signal={maFvgSignal} />
                 </>
               )}
 
