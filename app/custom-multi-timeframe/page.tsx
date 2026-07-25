@@ -27,9 +27,10 @@ import { computeSmc } from '@/lib/smc/engine';
 import type { SmcSnapshot } from '@/lib/smc/types';
 import { evaluateSmcScreener } from '@/lib/smc/screener';
 import { createMarketStructureSnapshot } from '@/lib/mtf/structureEngine';
+import { computeBoardDecision } from '@/lib/mtf/board/boardEngine';
 import MarketStructureCard from '@/components/mtf/MarketStructureCard';
 import {
-  MTFIntelligenceBoard, AgreementConfidencePanel, CategoryStrip, TradeContextCard,
+  BoardDecisionCard, MTFIntelligenceBoard, AgreementConfidencePanel, CategoryStrip, TradeContextCard,
   MarketIntelligenceVerdict, TrendLifecyclePanel, ProbabilityPanel, NarrativeEvidencePanel,
   TradeDecisionPanel, MaFvgSignalCard,
 } from '@/components/mtf/MarketIntelligence';
@@ -100,6 +101,12 @@ export default function CustomMultiTimeframePage() {
   const matrix = useMemo(() => computeAlignmentMatrix(candlesByTf, [...TIMEFRAMES], indSettings), [candlesByTf, indSettings]);
   const consensus = useMemo(() => computeConsensus(matrix, [...TIMEFRAMES]), [matrix]);
   const weighted = useMemo(() => computeWeightedScore(matrix, [...TIMEFRAMES]), [matrix]);
+  // ---- MTF Board (Arch v2) — the sole direction authority, built from the
+  // page's own already-computed alignment grid, never from the M0-M9 stack ----
+  const board = useMemo(
+    () => computeBoardDecision(matrix, consensus, weighted, candlesByTf),
+    [matrix, consensus, weighted, candlesByTf],
+  );
   const heatmap = useMemo(() => computeHeatmap(matrix, candlesByTf, [...TIMEFRAMES]), [matrix, candlesByTf]);
   const summary = useMemo(() => buildSummary(matrix, weighted), [matrix, weighted]);
   const details = useMemo(() => computeTimeframeDetails(candlesByTf[structTf] ?? []), [candlesByTf, structTf]);
@@ -168,7 +175,7 @@ export default function CustomMultiTimeframePage() {
 
   // ---- M9 Trade Decision (Phase 1c) — SMC confluence toggleable for live comparison ----
   const [smcOn, setSmcOn] = useState(true);
-  const tradeDecision = useTradeDecision(intel.full, candlesByTf, smcByTf, smcOn);
+  const tradeDecision = useTradeDecision(board, intel.full, candlesByTf, smcByTf, smcOn);
   const maFvgSignal = useMaFvgSignal(candlesByTf, intel.full, smcByTf);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
@@ -249,6 +256,7 @@ export default function CustomMultiTimeframePage() {
 
               {intel.full.layers.snapshots.length > 0 && (
                 <>
+                  <BoardDecisionCard board={board} />
                   <MarketIntelligenceVerdict result={intel.full.result} />
                   <MaFvgSignalCard signal={maFvgSignal} />
                   <TradeDecisionPanel decision={tradeDecision} smcEnabled={smcOn} onToggleSmc={() => setSmcOn((v) => !v)} />
