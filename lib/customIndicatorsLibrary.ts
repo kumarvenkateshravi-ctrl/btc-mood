@@ -25,6 +25,7 @@ import { computeMagicSr } from './indicators/magicSr';
 import { computeFibPivot } from './indicators/fibPivot';
 import { computeSmcOverlay } from './indicators/smcOverlay';
 import { computeMaFvg } from './indicators/maFvg';
+import { computeElephantZone } from './indicators/elephantZone';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -700,5 +701,29 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     ],
     styles: [],
     compute: computeSmcOverlay,
+  },
+  {
+    id: 'elephant_zone',
+    name: 'Elephant Zone (S/R Levels)',
+    description:
+      'Best-effort reconstruction of "Elephant Edge" S/R zones — no Pine source exists, so this is NOT a verified port. Each day, 4 independent resistance zones and 4 support zones are drawn at configurable point offsets from the PREVIOUS day\'s close, held fixed until the next daily reset. Compare against the original before trusting it.',
+    inputs: [
+      { id: 'level1', name: 'Level 1', type: 'number', default: 15, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
+      { id: 'level2', name: 'Level 2', type: 'number', default: 29, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
+      { id: 'level3', name: 'Level 3', type: 'number', default: 51, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
+      { id: 'level4', name: 'Level 4', type: 'number', default: 92, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
+      { id: 'zoneWidthPoints', name: 'Zone Width (points)', type: 'number', default: 6, min: 0.1, max: 1000, step: 0.1, group: 'Elephant Zone Levels' },
+    ],
+    styles: [
+      { id: 'R1', name: 'Resistance 1', color: 'rgba(247,166,60,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'R2', name: 'Resistance 2', color: 'rgba(247,166,60,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'R3', name: 'Resistance 3', color: 'rgba(247,166,60,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'R4', name: 'Resistance 4', color: 'rgba(247,166,60,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'S1', name: 'Support 1', color: 'rgba(62,207,142,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'S2', name: 'Support 2', color: 'rgba(62,207,142,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'S3', name: 'Support 3', color: 'rgba(62,207,142,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'S4', name: 'Support 4', color: 'rgba(62,207,142,0.12)', thickness: 1, lineStyle: 'solid', display: true },
+    ],
+    compute: computeElephantZone,
   },
 ];
