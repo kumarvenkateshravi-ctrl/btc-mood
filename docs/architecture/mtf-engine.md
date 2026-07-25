@@ -127,7 +127,10 @@ versioned settings arrive with the Context Engine milestone.
 `computeAlignmentMatrix`, `AlignmentMatrix`) and now delegates scoring to the
 registry. Its 12 existing consumers — multi-timeframe page, alerts,
 Stack Score, trade setup, scanner/reports via `multiTimeframe.ts` — are
-untouched and continue to consume `AlignmentMatrix`.
+untouched and continue to consume `AlignmentMatrix`. A 13th consumer joined
+2026-07-25: the MTF Board (`lib/mtf/board/`), which formalizes this same
+independent pipeline into `BoardDecision`, the M0-M9 stack's sole direction
+authority (Arch v2) — see `docs/architecture/market-intelligence-pipeline.md`.
 
 ### How the rest of the app will consume intelligence (M1+)
 

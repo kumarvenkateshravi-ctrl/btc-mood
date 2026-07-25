@@ -450,12 +450,27 @@ RR is re-gated after refinement; omitting `smc` reproduces the core byte-for-byt
 else quarter; gate failed → none) with the **honesty cap**: while `calibration === 'prior'`, `full`
 is reduced to `half` (`TIER_CAPPED_PRIOR` signal) — model priors never justify full risk.
 
-**Invariants:** `setup === null ⟺ action === 'no_trade' ⟺ riskTier === 'none'`;
-`gate.passed ⟺ action ≠ no_trade`; direction never recomputed (echoed M8 headline bias); closed-bar
+**Invariants (Arch v2, 2026-07-25):** `setup === null ⟺ action === 'no_trade'`;
+`action === 'no_trade' ⟹ riskTier === 'none'` (one-directional now — `extreme_risk` can cap
+`riskTier` to `'none'` while `action` stays `long`/`short`, since M5-M8 may only cap sizing,
+never flip direction); `gate.passed ⟺ action ≠ no_trade`; direction/executionTf never
+recomputed (echoed `BoardDecision.bias`/`.executionTimeframe` — NOT M8 headline bias); closed-bar
 only; deterministic; banned predictive vocabulary in all text; `calibration` propagated, never hidden.
 
-**Depends on:** M8 only (`FullMarketIntelligence`), candles for pricing (M9 owns price levels —
-M7/M8 explicitly excluded them), and structurally `SmcSnapshot['objects']` when offered.
+**Depends on:** `BoardDecision` (Arch v2 — sole direction/executionTf authority, see below) for
+`direction`/`executionTf`; M8 (`FullMarketIntelligence`) ONLY for explanation + risk-tier capping,
+never for action; candles for pricing (M9 owns price levels — M7/M8 explicitly excluded them);
+structurally `SmcSnapshot['objects']` when offered.
+
+## The Board (Arch v2, 5m-only proof phase)
+
+`lib/mtf/board/` — the sole source of `direction`/`conviction`/`trendStrength`/`marketStructure`/
+`executionTimeframe` (fixed `'5m'` this phase). Built from the pre-existing, independent
+`lib/alignment.ts` + `lib/multiTimeframe.ts` pipeline — NOT part of the M0-M9 dependency chain
+above, which is what keeps M0-M4 "justify, never decide" non-circular. M5-M8 may only downgrade
+M9's `riskTier` (`riskTierOf`'s `extreme_risk`/`lifecycle_invalidated`/`prior` caps); they can
+never force `action = 'no_trade'` or change `direction`. Spec:
+`docs/superpowers/specs/2026-07-25-mtf-board-arch-v2-5m-design.md`.
 
 ---
 
@@ -500,4 +515,5 @@ setup) remain byte-identical until a milestone explicitly wires a consumer.
 - M7 probability engine: `docs/superpowers/specs/2026-07-19-m7-probability-engine-design.md`
 - M8 market intelligence: `docs/superpowers/specs/2026-07-20-m8-market-intelligence-engine-design.md`
 - M9 trade decision: `docs/superpowers/specs/2026-07-20-m9-trade-decision-engine-design.md`
+- Board Arch v2 (5m-only): `docs/superpowers/specs/2026-07-25-mtf-board-arch-v2-5m-design.md`
 - Architecture graph (navigation): `graphify-out/`
