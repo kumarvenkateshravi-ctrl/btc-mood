@@ -22,12 +22,24 @@ async function main() {
   const byTf: Partial<Record<Timeframe, Candle[]>> = {};
   for (const tf of TIMEFRAMES) byTf[tf] = await klines(tf);
 
-  const { decision, intel } = computeFullTradeDecision(byTf);
+  const { decision, intel, board } = computeFullTradeDecision(byTf);
   const m = intel.result;
   const L = intel.layers;
 
   console.log('\n=== LIVE BTC — FULL LAYER TRACE ===');
   console.log('price ~', byTf['5m']!.at(-1)!.close.toFixed(1));
+
+  console.log('\n-- BOARD (Arch v2 — sole direction authority) --');
+  console.log('direction  :', board.direction, '| bias', board.bias, '| conviction', board.conviction + '%');
+  console.log('strength   :', board.trendStrength.label, `(${board.trendStrength.score})`);
+  console.log('structure  :', board.marketStructure.label, '—', board.marketStructure.sublabel);
+  console.log('executes on:', board.executionTimeframe);
+  if (board.warnings.length) {
+    console.log('warnings   :', board.warnings.map((w) => w.message).join(' | '));
+  }
+  for (const c of board.contributors) {
+    console.log(`   ${c.timeframe.padEnd(4)}: ${c.verdict.padEnd(8)} score ${String(c.score).padStart(3)} weight ${c.weight}`);
+  }
 
   console.log('\n-- M3 agreement (controller TF) --');
   console.log('agreement  :', L.agreement.agreement + '%', '| bias', L.agreement.dominantBias, '| state', L.agreement.state, '| conflict', L.agreement.conflict);
