@@ -163,7 +163,11 @@ export function computeTradeDecision(
   });
 }
 
-/** Convenience entry point: candles → Board + the entire frozen M0–M8 stack → decision. */
+/** Convenience entry point: candles → Board + the entire frozen M0–M8 stack → decision.
+ *  Arch v2 follow-up (2026-07-25): the M0–M8 stack behind `intel` is computed on
+ *  5m candles ONLY, so M6/M7/M8's own controller/lifecycle/probability describe
+ *  the SAME timeframe the Board decided on and M9 executes on — Board itself
+ *  still consumes the full 6-TF candlesByTf (direction must stay cross-sectional). */
 export function computeFullTradeDecision(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   smc?: Pick<SmcSnapshot, 'objects'>,
@@ -173,6 +177,6 @@ export function computeFullTradeDecision(
   const consensus = computeConsensus(matrix, tfs);
   const weighted = computeWeightedScore(matrix, tfs);
   const board = computeBoardDecision(matrix, consensus, weighted, candlesByTf);
-  const intel = computeFullMarketIntelligence(candlesByTf);
+  const intel = computeFullMarketIntelligence({ '5m': candlesByTf['5m'] ?? [] });
   return { decision: computeTradeDecision(board, intel, candlesByTf, smc), intel, board };
 }

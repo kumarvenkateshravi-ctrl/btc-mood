@@ -124,14 +124,22 @@ describe('M9 orchestrator — computeTradeDecision (Arch v2: Board is the sole d
 
 describe('M9 — computeFullTradeDecision', () => {
   it('runs the Board + the whole M0-M8 stack and holds the structural invariants on real engine output', () => {
-    const { decision, intel, board } = computeFullTradeDecision({ '15m': withForming(LONG) });
+    // 5m-keyed: intel (M6-M8) is now computed on 5m candles only (Arch v2
+    // follow-up) so this exercises a non-trivial stack, not the empty-input path.
+    const { decision, intel, board } = computeFullTradeDecision({ '5m': withForming(LONG) });
     expect(intel.result.schemaVersion).toBe(1);
     expect(board.schemaVersion).toBe(1);
     expect(board.executionTimeframe).toBe('5m');
     expect(decision.calibration).toBe(intel.result.headline.calibration);
     expect(decision.executionTf).toBe(board.executionTimeframe);
     invariants(decision);
-    const again = computeFullTradeDecision({ '15m': withForming(LONG) });
+    const again = computeFullTradeDecision({ '5m': withForming(LONG) });
     expect(again.decision).toEqual(decision);
+  });
+
+  it('intel (M6-M8) is scoped to 5m only — a non-5m-only stack does not change it', () => {
+    const fiveMOnly = computeFullTradeDecision({ '5m': withForming(LONG) });
+    const withOtherTfsToo = computeFullTradeDecision({ '5m': withForming(LONG), '1d': withForming(LONG) });
+    expect(withOtherTfsToo.intel).toEqual(fiveMOnly.intel);
   });
 });

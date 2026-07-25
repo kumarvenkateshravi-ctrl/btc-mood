@@ -260,7 +260,7 @@ export default function CustomMultiTimeframePage() {
                   <MarketIntelligenceVerdict result={intel.full.result} />
                   <MaFvgSignalCard signal={maFvgSignal} />
                   <TradeDecisionPanel decision={tradeDecision} smcEnabled={smcOn} onToggleSmc={() => setSmcOn((v) => !v)} />
-                  <MTFIntelligenceBoard hierarchy={intel.full.layers.hierarchy} />
+                  <MTFIntelligenceBoard hierarchy={intel.crossTf.layers.hierarchy} />
                   {intel.selected && (
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                       <AgreementConfidencePanel

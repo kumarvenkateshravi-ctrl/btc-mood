@@ -76,3 +76,30 @@ confirmed, not a change request).
 - Generalizing `executionTimeframe` beyond `'5m'`.
 - Touching M1–M8 internal logic (only M9's consumption of M5–M8 changes).
 - SMC as a Board input (spec Phase 4 explicitly scopes SMC to M9 only).
+
+## Follow-up fix: M6-M8 must be fed 5m candles only (2026-07-25, post-implementation)
+
+Live-verified defect found right after shipping the plan: the Board correctly evaluates
+all 6 timeframes for direction, but M6/M7/M8 (`computeFullMarketIntelligence`) were still
+being fed the FULL `candlesByTf`, so M5's own `controller`-selection (unchanged, frozen
+logic) could float to any TF by authority — e.g. `15M controls` shown in the "Market
+Intelligence Verdict" panel next to a 5m Board/M9 decision. The advisory layer was
+describing a different timeframe than the one being traded, which is confusing and not
+what "explain/advise the Board's 5m call" was supposed to mean.
+
+Fix (input-shaping only, no M1-M8 engine code touched — consistent with the Non-goals
+above): `computeFullMarketIntelligence` is now called with `{ '5m': candlesByTf['5m'] }`
+wherever its result feeds M9 or the on-screen M8/M6/M7 panels
+(`decisionEngine.ts`'s `computeFullTradeDecision`, `useMarketIntelligence.ts`'s `full`).
+This forces M5's controller to trivially be `'5m'` (the only TF present), cascading
+correctly through M6's lifecycle and M7's probability. The Board's OWN direction
+computation is untouched — it still consumes the full 6-TF `candlesByTf`, since
+cross-sectional alignment is its entire purpose.
+
+The ORIGINAL full 6-TF cross-sectional hierarchy is kept alive as `useMarketIntelligence`'s
+new `crossTf` field, used only by the "Timeframe Hierarchy" panel (where a genuine
+multi-TF view — controller transfer, per-TF regime table — is the point, not a defect)
+and by `TradeContextCard`'s `deriveTradeContext`. Consequence accepted for this 5m-only
+phase: M8's risk/quality no longer surface a brewing reversal on a HIGHER timeframe (e.g.
+"1D shows reversal risk") since it now only ever looks at 5m — an acceptable simplification
+matching "prove it on 5m first," to be revisited once execution generalizes beyond 5m.
