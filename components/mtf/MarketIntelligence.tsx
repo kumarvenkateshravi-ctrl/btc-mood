@@ -12,12 +12,14 @@ import type { AgreementResult } from '@/lib/mtf/agreement/agreementTypes';
 import type { ConfidenceResult } from '@/lib/mtf/confidence/confidenceTypes';
 import type { CategoryResult } from '@/lib/mtf/categoryTypes';
 import type { HierarchyResult, OverallMarketState, RegimeType } from '@/lib/mtf/timeframe/timeframeTypes';
+import type { BoardDecision } from '@/lib/mtf/board/boardTypes';
 import type { TradeContext } from '@/lib/mtf/marketIntelligence';
 import type { TrendLifecycleResult } from '@/lib/mtf/lifecycle/lifecycleTypes';
 import type { ProbabilityResult } from '@/lib/mtf/probability/probabilityTypes';
 import type { MarketIntelligenceResult, QualityLevel, ReadinessState, RiskLevel } from '@/lib/mtf/market/marketTypes';
 import type { TradeDecisionResult } from '@/lib/mtf/decision/decisionTypes';
 import type { SignalFreshness } from '@/lib/indicators/maFvg/signals';
+import { confidenceBand } from '@/lib/indicators/maFvg/rsiOverlay';
 import type { MaFvgSignalView } from './useMaFvgSignal';
 import { Panel } from '@/components/ui';
 
@@ -46,6 +48,56 @@ function Stat({ k, v, tone }: { k: string; v: React.ReactNode; tone?: string }) 
   );
 }
 
+// ---------------------------------------------------------------- 0. Trading Board (Arch v2 — sole direction authority)
+export function BoardDecisionCard({ board }: { board: BoardDecision }) {
+  const { direction, bias, conviction, trendStrength, marketStructure, executionTimeframe, contributors } = board;
+  const dirColor = direction === 'long' ? 'text-bull-bright' : direction === 'short' ? 'text-bear-bright' : 'text-neutral';
+
+  return (
+    <Panel eyebrow title="Trading Board" badge="Direction Authority">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className={cx('text-lg font-bold uppercase', dirColor)}>{direction.replace('_', ' ')}</span>
+        <span className={cx('rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase', vColor(bias), 'bg-surface-3')}>{bias}</span>
+        <span className="text-[10px] text-ink-faint">Executes on {TF_LABEL[executionTimeframe]}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-x-4">
+        <Stat k="Conviction" v={`${conviction}%`} tone={conviction < 55 ? 'text-bear-bright' : 'text-ink'} />
+        <Stat k="Trend Strength" v={`${trendStrength.label} (${trendStrength.score})`} />
+        <Stat k="Structure" v={marketStructure.label} tone={vColor(marketStructure.verdict)} />
+      </div>
+      <div className="mt-1 text-[10px] text-ink-faint">{marketStructure.sublabel}</div>
+      {board.warnings.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {board.warnings.map((w) => (
+            <div key={w.code} className="rounded bg-regime-hot/10 px-2 py-1 text-[10px] text-regime-hot">{w.message}</div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-left text-[11px]">
+          <thead>
+            <tr className="text-[9px] uppercase tracking-wider text-ink-faint">
+              <th className="pb-1 font-medium">TF</th><th className="pb-1 font-medium">Verdict</th>
+              <th className="pb-1 text-right font-medium">Score</th><th className="pb-1 text-right font-medium">Weight</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contributors.map((c) => (
+              <tr key={c.timeframe} className="border-t border-line/40">
+                <td className="py-1 font-semibold text-ink">{TF_LABEL[c.timeframe]}</td>
+                <td className={cx('py-1', vColor(c.verdict))}><span className="inline-flex items-center gap-1"><VGlyph v={c.verdict} />{c.verdict}</span></td>
+                <td className="py-1 text-right font-mono tabular-nums">{c.score}</td>
+                <td className="py-1 text-right font-mono tabular-nums">{c.weight}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
 // ---------------------------------------------------------------- 1. MTF board
 export function MTFIntelligenceBoard({ hierarchy }: { hierarchy: HierarchyResult }) {
   const { overallMarketState, htfBias, alignment, conflict, controller, controllerAuthority, transition, perTimeframe } = hierarchy;
@@ -53,7 +105,7 @@ export function MTFIntelligenceBoard({ hierarchy }: { hierarchy: HierarchyResult
   const tfs = TF_ORDER.filter((tf) => perTimeframe[tf]);
 
   return (
-    <Panel eyebrow title="MTF Intelligence Board" badge="M2–M5">
+    <Panel eyebrow title="Timeframe Hierarchy" badge="M5 · Advisor Only">
       <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className={cx('text-lg font-bold', stateColor(overallMarketState))}>{title(overallMarketState)}</span>
         <span className={cx('rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase', vColor(htfBias), 'bg-surface-3')}>{htfBias}</span>
@@ -419,7 +471,7 @@ export function MaFvgSignalCard({ signal }: { signal: MaFvgSignalView }) {
         <div className="mb-2 rounded-lg border border-line bg-base/40 p-2.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className={cx('text-xl font-bold uppercase', latest.side === 'buy' ? 'text-bull-bright' : 'text-bear-bright')}>{latest.side}</span>
-            <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted">conf {latest.confidence}%</span>
+            <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted">conf {latest.confidence}% · {confidenceBand(latest.confidence)}</span>
             <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-mono text-ink-muted">@ {fmt(latest.price)}</span>
             <span className={cx('ml-auto inline-flex items-center gap-1 text-[11px] font-semibold', FRESH[latest.freshness].tone)}>
               <span className={cx('h-2 w-2 rounded-full', FRESH[latest.freshness].dot)} />{FRESH[latest.freshness].label}

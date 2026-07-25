@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Candle } from '@/lib/types';
 import { computeTradeDecision } from '@/lib/mtf/decision/decisionEngine';
-import { mkFullIntel, mkMarket } from '@/lib/mtf/decision/testFixtures';
+import { mkBoard, mkFullIntel, mkMarket } from '@/lib/mtf/decision/testFixtures';
 import { TradeDecisionPanel } from './MarketIntelligence';
 
 const bars = (mids: number[]): Candle[] => mids.map((m, i) => ({
@@ -18,9 +18,11 @@ const readyIntel = () => mkFullIntel(mkMarket({
   outlook: { invalidation: { invalidated: false, condition: null } },
 }));
 
+const longBoard = () => mkBoard({ direction: 'long', bias: 'bullish', executionTimeframe: '1d' });
+
 describe('Phase 1c TradeDecisionPanel', () => {
   it('renders a long proposal with levels, tier, priors chip, and the toggle', () => {
-    const decision = computeTradeDecision(readyIntel(), { '1d': bars(LONG) });
+    const decision = computeTradeDecision(longBoard(), readyIntel(), { '1d': bars(LONG) });
     const html = renderToStaticMarkup(
       <TradeDecisionPanel decision={decision} smcEnabled={true} onToggleSmc={() => {}} />,
     );
@@ -35,17 +37,15 @@ describe('Phase 1c TradeDecisionPanel', () => {
     expect(html).toContain('SMC confluence: ON');
   });
 
-  it('renders a blocked decision with the gate code and reason', () => {
-    const decision = computeTradeDecision(
-      mkFullIntel(mkMarket({ readiness: { state: 'wait', reason: 'awaiting confirmation' } })),
-      { '1d': bars(LONG) },
-    );
+  it('renders a blocked decision with the gate code and reason (Arch v2: Board no_trade, not M8 environment)', () => {
+    const board = mkBoard({ direction: 'no_trade', bias: 'neutral', conviction: 40, executionTimeframe: '1d' });
+    const decision = computeTradeDecision(board, readyIntel(), { '1d': bars(LONG) });
     const html = renderToStaticMarkup(
       <TradeDecisionPanel decision={decision} smcEnabled={false} onToggleSmc={() => {}} />,
     );
     expect(html).toContain('>no trade<');
-    expect(html).toContain('environment_wait');
-    expect(html).toContain('awaiting confirmation');
+    expect(html).toContain('board_no_trade');
+    expect(html).toContain('board bias is neutral');
     expect(html).toContain('SMC confluence: OFF');
   });
 
@@ -60,7 +60,7 @@ describe('Phase 1c TradeDecisionPanel', () => {
         }],
       },
     };
-    const decision = computeTradeDecision(readyIntel(), { '1d': bars(LONG) }, smc);
+    const decision = computeTradeDecision(longBoard(), readyIntel(), { '1d': bars(LONG) }, smc);
     const html = renderToStaticMarkup(
       <TradeDecisionPanel decision={decision} smcEnabled={true} onToggleSmc={() => {}} />,
     );
