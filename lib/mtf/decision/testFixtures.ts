@@ -8,6 +8,7 @@ import type { FullMarketIntelligence } from '../market/marketEngine';
 import type { MarketIntelligenceResult } from '../market/marketTypes';
 import { agr, conf, hier, lcyc, prob } from '../market/testFixtures';
 import type { HierarchyResult } from '../timeframe/timeframeTypes';
+import type { BoardDecision } from '../board/boardTypes';
 
 export interface MarketPatch {
   readiness?: Partial<MarketIntelligenceResult['readiness']>;
@@ -50,4 +51,20 @@ export function mkFullIntel(
       probability: prob(),
     },
   };
+}
+
+const defaultBoard = (): BoardDecision => ({
+  schemaVersion: 1,
+  direction: 'long',
+  bias: 'bullish',
+  conviction: 70,
+  trendStrength: { score: 60, label: 'moderate' },
+  marketStructure: { label: 'Bull Trend', sublabel: 'Higher Highs / Higher Lows', verdict: 'bullish' },
+  executionTimeframe: '5m',
+  contributors: [],
+  warnings: [],
+});
+
+export function mkBoard(patch: Partial<BoardDecision> = {}): BoardDecision {
+  return { ...defaultBoard(), ...patch };
 }

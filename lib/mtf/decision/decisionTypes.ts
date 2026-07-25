@@ -6,9 +6,12 @@
 
 import type { Timeframe } from '../../types';
 import type { Verdict } from '../types';
+import type { BoardDirection } from '../board/boardTypes';
 
-export type TradeAction = 'long' | 'short' | 'no_trade';
-export type TradeSide = 'long' | 'short';
+/** = BoardDirection. M9 never invents its own action union — the Board (Arch v2's
+ *  sole direction authority) is upstream of M9, so M9's type is derived from it. */
+export type TradeAction = BoardDirection;
+export type TradeSide = Exclude<TradeAction, 'no_trade'>;
 export type RiskTier = 'full' | 'half' | 'quarter' | 'none';
 export type EntryType = 'market' | 'pullback';
 export type LevelSource = 'atr' | 'swing' | 'smc_orderblock' | 'smc_fvg' | 'smc_liquidity';
@@ -57,7 +60,8 @@ export interface TradeDecisionResult {
   schemaVersion: 1;
   action: TradeAction;
   gate: GateResult;
-  /** Echoed from M8 headline.bias — NEVER recomputed. */
+  /** Echoed from BoardDecision.bias — NEVER recomputed (Arch v2: the Board is
+   *  the sole direction authority; M0-M8 only explain/advise). */
   direction: Verdict;
   executionTf: Timeframe;
   /** null ⟺ action === 'no_trade'. */

@@ -1,20 +1,25 @@
 // M9 — Trade Decision orchestrator. The first ACTIONABLE layer: consumes the
-// frozen M8 output (never recomputing lower layers), prices the setup on the
-// execution timeframe's closed bars, optionally refines via bounded SMC
-// confluence, re-checks RR after refinement, and assigns a risk tier.
+// Board's direction (Arch v2 — the SOLE source of LONG/SHORT/NO_TRADE) plus the
+// frozen M8 output (never recomputing lower layers, used only to explain and to
+// cap risk tier), prices the setup on the Board's execution timeframe's closed
+// bars, optionally refines via bounded SMC confluence, re-checks RR after
+// refinement, and assigns a risk tier.
 // Spec: docs/superpowers/specs/2026-07-20-m9-trade-decision-engine-design.md
+// Arch v2: docs/superpowers/specs/2026-07-25-mtf-board-arch-v2-5m-design.md
 
-import type { Candle, Timeframe } from '../../types';
+import { TIMEFRAMES, type Candle, type Timeframe } from '../../types';
 import type { SmcSnapshot } from '../../smc/types';
+import { computeAlignmentMatrix } from '../../alignment';
+import { computeConsensus, computeWeightedScore } from '../../multiTimeframe';
+import { computeBoardDecision } from '../board/boardEngine';
+import type { BoardDecision } from '../board/boardTypes';
 import { computeFullMarketIntelligence, type FullMarketIntelligence } from '../market/marketEngine';
 import type { MarketIntelligenceResult } from '../market/marketTypes';
-import { tfWeight } from '../timeframe/config';
-import type { HierarchyResult } from '../timeframe/timeframeTypes';
 import { DECISION_CONFIG } from './config';
 import type {
   ConfluenceNote, DecisionSignal, GateResult, TradeDecisionResult, TradeSetup, TradeSide,
 } from './decisionTypes';
-import { environmentGate } from './gate';
+import { boardGate } from './gate';
 import { buildSetup } from './levels';
 import { riskTierOf } from './riskTier';
 import { applySmcConfluence } from './smcConfluence';
@@ -25,18 +30,8 @@ export const DECISION_SCHEMA_VERSION = 1;
 /** Drop the still-forming last bar (closed-bar determinism). */
 const closed = (c: Candle[]): Candle[] => (c.length > 1 ? c.slice(0, -1) : c);
 
-/** Execution TF: highest-authority trigger → else lowest-weight entry → else
- *  controller (deliberate mirror of deriveTradeContext's selection). Exported so
- *  UI hooks can select the execution TF's SmcSnapshot before calling the engine. */
-export function executionTimeframeOf(hierarchy: HierarchyResult): Timeframe {
-  const entries = Object.values(hierarchy.perTimeframe).filter((e): e is NonNullable<typeof e> => !!e);
-  const triggers = entries.filter((e) => e.role === 'trigger');
-  if (triggers.length) return triggers.reduce((b, e) => (e.authority > b.authority ? e : b)).timeframe;
-  if (entries.length) return entries.reduce((b, e) => (tfWeight(e.timeframe) < tfWeight(b.timeframe) ? e : b)).timeframe;
-  return hierarchy.controller;
-}
-
 interface AssembleArgs {
+  board: BoardDecision;
   market: MarketIntelligenceResult;
   gate: GateResult;
   executionTf: Timeframe;
@@ -48,10 +43,10 @@ interface AssembleArgs {
 }
 
 function assembleResult(args: AssembleArgs): TradeDecisionResult {
-  const { market, gate, executionTf, setup, side, confluence, extraWarnings, diagnostics } = args;
+  const { board, market, gate, executionTf, setup, side, confluence, extraWarnings, diagnostics } = args;
   const action = gate.passed && setup && side ? side : 'no_trade';
   const calibration = market.headline.calibration;
-  const { tier, capped } = riskTierOf(market, action !== 'no_trade');
+  const { tier, capped, capReason } = riskTierOf(market, action !== 'no_trade');
   const signals: DecisionSignal[] = [];
   if (calibration === 'prior') {
     signals.push({
@@ -59,17 +54,27 @@ function assembleResult(args: AssembleArgs): TradeDecisionResult {
       message: 'Probabilities behind this decision come from model priors, not measured frequencies',
     });
   }
-  if (capped) {
+  if (capped && capReason === 'prior') {
     signals.push({
       code: 'TIER_CAPPED_PRIOR', severity: 'info',
       message: 'Risk tier capped at half while probabilities run on model priors',
+    });
+  } else if (capped && capReason === 'extreme_risk') {
+    signals.push({
+      code: 'TIER_CAPPED_RISK', severity: 'warning',
+      message: 'Risk tier capped to none — market risk is extreme (advisory only; board direction unchanged)',
+    });
+  } else if (capped && capReason === 'lifecycle_invalidated') {
+    signals.push({
+      code: 'TIER_CAPPED_LIFECYCLE', severity: 'warning',
+      message: 'Risk tier capped to quarter — trend lifecycle is invalidated (advisory only; board direction unchanged)',
     });
   }
   return {
     schemaVersion: 1,
     action,
     gate,
-    direction: market.headline.bias,
+    direction: board.bias,
     executionTf,
     setup: action === 'no_trade' ? null : setup,
     riskTier: tier,
@@ -89,27 +94,27 @@ function assembleResult(args: AssembleArgs): TradeDecisionResult {
 }
 
 export function computeTradeDecision(
+  board: BoardDecision,
   intel: FullMarketIntelligence,
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   smc?: Pick<SmcSnapshot, 'objects'>,
 ): TradeDecisionResult {
   const market = intel.result;
-  const executionTf = executionTimeframeOf(intel.layers.hierarchy);
-  const side: TradeSide | null =
-    market.headline.bias === 'bullish' ? 'long' : market.headline.bias === 'bearish' ? 'short' : null;
+  const executionTf = board.executionTimeframe;
+  const side: TradeSide | null = board.direction === 'no_trade' ? null : board.direction;
   const emptyDiag = { atr: null, swingHigh: null, swingLow: null, rawRR: null };
 
-  const env = environmentGate(market);
-  if (!env.passed || !side) {
+  const gate = boardGate(board);
+  if (!gate.passed || !side) {
     return assembleResult({
-      market, gate: env, executionTf, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
+      board, market, gate, executionTf, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
     });
   }
 
   const candles = closed(candlesByTf[executionTf] ?? []);
   if (candles.length < DECISION_CONFIG.minCandles) {
     return assembleResult({
-      market, executionTf, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
+      board, market, executionTf, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
       gate: {
         passed: false, blockedBy: 'insufficient_data',
         reason: 'not enough closed candles on the execution timeframe',
@@ -120,7 +125,7 @@ export function computeTradeDecision(
   const out = buildSetup(side, candles);
   if (out.kind === 'block') {
     return assembleResult({
-      market, executionTf, setup: null, side, confluence: [], extraWarnings: [],
+      board, market, executionTf, setup: null, side, confluence: [], extraWarnings: [],
       diagnostics: { atr: null, swingHigh: out.swingHigh, swingLow: out.swingLow, rawRR: out.rawRR },
       gate: {
         passed: false, blockedBy: out.block,
@@ -142,7 +147,7 @@ export function computeTradeDecision(
     // RR re-gate: refinement (stop extension) can lower RR below the minimum.
     if (setup.rr < DECISION_CONFIG.minRR) {
       return assembleResult({
-        market, executionTf, setup: null, side, confluence, extraWarnings,
+        board, market, executionTf, setup: null, side, confluence, extraWarnings,
         diagnostics: { atr: setup.atr, swingHigh: out.swingHigh, swingLow: out.swingLow, rawRR: setup.rr },
         gate: {
           passed: false, blockedBy: 'rr_too_low',
@@ -153,16 +158,21 @@ export function computeTradeDecision(
   }
 
   return assembleResult({
-    market, gate: env, executionTf, setup, side, confluence, extraWarnings,
+    board, market, gate, executionTf, setup, side, confluence, extraWarnings,
     diagnostics: { atr: setup.atr, swingHigh: out.swingHigh, swingLow: out.swingLow, rawRR: null },
   });
 }
 
-/** Convenience entry point: candles → the entire frozen M0–M8 stack → decision. */
+/** Convenience entry point: candles → Board + the entire frozen M0–M8 stack → decision. */
 export function computeFullTradeDecision(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   smc?: Pick<SmcSnapshot, 'objects'>,
-): { decision: TradeDecisionResult; intel: FullMarketIntelligence } {
+): { decision: TradeDecisionResult; intel: FullMarketIntelligence; board: BoardDecision } {
+  const tfs = [...TIMEFRAMES];
+  const matrix = computeAlignmentMatrix(candlesByTf, tfs);
+  const consensus = computeConsensus(matrix, tfs);
+  const weighted = computeWeightedScore(matrix, tfs);
+  const board = computeBoardDecision(matrix, consensus, weighted, candlesByTf);
   const intel = computeFullMarketIntelligence(candlesByTf);
-  return { decision: computeTradeDecision(intel, candlesByTf, smc), intel };
+  return { decision: computeTradeDecision(board, intel, candlesByTf, smc), intel, board };
 }
