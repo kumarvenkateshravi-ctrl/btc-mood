@@ -257,8 +257,24 @@ export default function CustomMultiTimeframePage() {
               {intel.full.layers.snapshots.length > 0 && (
                 <>
                   <BoardDecisionCard board={board} />
+                  {intel.selected && (
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      <CategoryStrip categories={intel.selected.categories} />
+                      <AgreementConfidencePanel
+                        agreement={intel.selected.agreement}
+                        confidence={intel.selected.confidence}
+                        timeframe={intel.selected.timeframe}
+                      />
+                    </div>
+                  )}
+                  <MTFIntelligenceBoard hierarchy={intel.crossTf.layers.hierarchy} />
+                  <TradeContextCard context={intel.tradeContext} />
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    <TrendLifecyclePanel lifecycle={intel.full.layers.lifecycle} />
+                    <ProbabilityPanel probability={intel.full.layers.probability} />
+                  </div>
                   <MarketIntelligenceVerdict result={intel.full.result} />
-                  <MaFvgSignalCard signal={maFvgSignal} />
+                  <NarrativeEvidencePanel result={intel.full.result} />
                   <TradeDecisionPanel
                     decision={tradeDecision.decision}
                     signal={tradeDecision.signal}
@@ -266,23 +282,7 @@ export default function CustomMultiTimeframePage() {
                     smcEnabled={smcOn}
                     onToggleSmc={() => setSmcOn((v) => !v)}
                   />
-                  <MTFIntelligenceBoard hierarchy={intel.crossTf.layers.hierarchy} />
-                  {intel.selected && (
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                      <AgreementConfidencePanel
-                        agreement={intel.selected.agreement}
-                        confidence={intel.selected.confidence}
-                        timeframe={intel.selected.timeframe}
-                      />
-                      <CategoryStrip categories={intel.selected.categories} />
-                    </div>
-                  )}
-                  <TradeContextCard context={intel.tradeContext} />
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                    <TrendLifecyclePanel lifecycle={intel.full.layers.lifecycle} />
-                    <ProbabilityPanel probability={intel.full.layers.probability} />
-                  </div>
-                  <NarrativeEvidencePanel result={intel.full.result} />
+                  <MaFvgSignalCard signal={maFvgSignal} />
                 </>
               )}
 
