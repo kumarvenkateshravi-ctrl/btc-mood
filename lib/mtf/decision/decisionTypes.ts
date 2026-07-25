@@ -64,6 +64,9 @@ export interface TradeDecisionResult {
    *  the sole direction authority; M0-M8 only explain/advise). */
   direction: Verdict;
   executionTf: Timeframe;
+  /** Closed bar (UNIX seconds) on executionTf this decision was computed from;
+   *  null when no closed candles exist yet on that timeframe. */
+  generatedAt: number | null;
   /** null ⟺ action === 'no_trade'. */
   setup: TradeSetup | null;
   /** 'none' ⟺ action === 'no_trade'. */

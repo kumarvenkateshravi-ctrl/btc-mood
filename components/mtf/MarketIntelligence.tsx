@@ -17,7 +17,8 @@ import type { TradeContext } from '@/lib/mtf/marketIntelligence';
 import type { TrendLifecycleResult } from '@/lib/mtf/lifecycle/lifecycleTypes';
 import type { ProbabilityResult } from '@/lib/mtf/probability/probabilityTypes';
 import type { MarketIntelligenceResult, QualityLevel, ReadinessState, RiskLevel } from '@/lib/mtf/market/marketTypes';
-import type { TradeDecisionResult } from '@/lib/mtf/decision/decisionTypes';
+import type { TradeAction, TradeDecisionResult } from '@/lib/mtf/decision/decisionTypes';
+import type { DecisionFreshness } from '@/lib/mtf/decision/freshness';
 import type { SignalFreshness } from '@/lib/indicators/maFvg/signals';
 import { confidenceBand } from '@/lib/indicators/maFvg/rsiOverlay';
 import type { MaFvgSignalView } from './useMaFvgSignal';
@@ -377,14 +378,17 @@ const SOURCE_SHORT: Record<string, string> = {
   atr: 'ATR', swing: 'swing', smc_orderblock: 'OB', smc_fvg: 'FVG', smc_liquidity: 'LIQ',
 };
 
-export function TradeDecisionPanel({ decision, smcEnabled, onToggleSmc }: {
+export function TradeDecisionPanel({ decision, signal, recent, smcEnabled, onToggleSmc }: {
   decision: TradeDecisionResult;
+  signal: { since: number; barsAgo: number; freshness: DecisionFreshness } | null;
+  recent: Array<{ action: TradeAction; barTime: number; barsAgo: number }>;
   smcEnabled: boolean;
   onToggleSmc: () => void;
 }) {
   const { action, gate, executionTf, setup, riskTier, confluence, calibration, explanation, warnings } = decision;
   const actionTone = action === 'long' ? 'text-bull-bright' : action === 'short' ? 'text-bear-bright' : 'text-neutral';
   const tierTone = riskTier === 'full' ? 'text-bull-bright' : riskTier === 'none' ? 'text-ink-faint' : 'text-regime-hot';
+  const actionPillTone = (a: TradeAction) => (a === 'long' ? 'bg-bull/15 text-bull-bright' : a === 'short' ? 'bg-bear/15 text-bear-bright' : 'bg-neutral/15 text-ink-faint');
 
   return (
     <Panel eyebrow title="Trade Decision" badge="M9 · conditional proposal">
@@ -406,6 +410,25 @@ export function TradeDecisionPanel({ decision, smcEnabled, onToggleSmc }: {
           SMC confluence: {smcEnabled ? 'ON' : 'OFF'}
         </button>
       </div>
+
+      {signal && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-muted">
+          <span>Generated: {fmtSignalTime(signal.since)} • {signal.barsAgo} {signal.barsAgo === 1 ? 'bar' : 'bars'} ago</span>
+          <span className={cx('ml-auto inline-flex items-center gap-1 font-semibold', FRESH[signal.freshness].tone)}>
+            <span className={cx('h-2 w-2 rounded-full', FRESH[signal.freshness].dot)} />{FRESH[signal.freshness].label}
+          </span>
+        </div>
+      )}
+
+      {recent.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1 text-[10px]">
+          {recent.map((r) => (
+            <span key={`${r.action}-${r.barTime}`} className={cx('rounded px-1.5 py-0.5 font-semibold', actionPillTone(r.action))}>
+              {r.action.replace('_', ' ').toUpperCase()} · {r.barsAgo}b
+            </span>
+          ))}
+        </div>
+      )}
 
       {action === 'no_trade' && (
         <div className="mb-2 rounded-lg border border-line bg-base/40 p-2">

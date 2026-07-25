@@ -24,7 +24,7 @@ describe('Phase 1c TradeDecisionPanel', () => {
   it('renders a long proposal with levels, tier, priors chip, and the toggle', () => {
     const decision = computeTradeDecision(longBoard(), readyIntel(), { '1d': bars(LONG) });
     const html = renderToStaticMarkup(
-      <TradeDecisionPanel decision={decision} smcEnabled={true} onToggleSmc={() => {}} />,
+      <TradeDecisionPanel decision={decision} signal={null} recent={[]} smcEnabled={true} onToggleSmc={() => {}} />,
     );
     expect(html).toContain('>long<');
     expect(html).toContain('1D executes');
@@ -41,7 +41,7 @@ describe('Phase 1c TradeDecisionPanel', () => {
     const board = mkBoard({ direction: 'no_trade', bias: 'neutral', conviction: 40, executionTimeframe: '1d' });
     const decision = computeTradeDecision(board, readyIntel(), { '1d': bars(LONG) });
     const html = renderToStaticMarkup(
-      <TradeDecisionPanel decision={decision} smcEnabled={false} onToggleSmc={() => {}} />,
+      <TradeDecisionPanel decision={decision} signal={null} recent={[]} smcEnabled={false} onToggleSmc={() => {}} />,
     );
     expect(html).toContain('>no trade<');
     expect(html).toContain('board_no_trade');
@@ -62,10 +62,36 @@ describe('Phase 1c TradeDecisionPanel', () => {
     };
     const decision = computeTradeDecision(longBoard(), readyIntel(), { '1d': bars(LONG) }, smc);
     const html = renderToStaticMarkup(
-      <TradeDecisionPanel decision={decision} smcEnabled={true} onToggleSmc={() => {}} />,
+      <TradeDecisionPanel decision={decision} signal={null} recent={[]} smcEnabled={true} onToggleSmc={() => {}} />,
     );
     expect(html).toContain('STOP_EXTENDED_LIQUIDITY');
     expect(html).toContain('102.3');
     expect(html).toContain('sweep risk');
+  });
+
+  it('renders the Generated timestamp, freshness badge, and recent-decision history (2026-07-25 follow-up)', () => {
+    const decision = computeTradeDecision(longBoard(), readyIntel(), { '1d': bars(LONG) });
+    const html = renderToStaticMarkup(
+      <TradeDecisionPanel
+        decision={decision}
+        signal={{ since: decision.generatedAt!, barsAgo: 3, freshness: 'active' }}
+        recent={[{ action: 'short', barTime: 1000, barsAgo: 12 }, { action: 'no_trade', barTime: 940, barsAgo: 13 }]}
+        smcEnabled={true}
+        onToggleSmc={() => {}}
+      />,
+    );
+    expect(html).toContain('Generated:');
+    expect(html).toContain('3 bars ago');
+    expect(html).toContain('Active');
+    expect(html).toContain('SHORT · 12b');
+    expect(html).toContain('NO TRADE · 13b');
+  });
+
+  it('omits the Generated line and history row when no signal has been tracked yet', () => {
+    const decision = computeTradeDecision(longBoard(), readyIntel(), { '1d': bars(LONG) });
+    const html = renderToStaticMarkup(
+      <TradeDecisionPanel decision={decision} signal={null} recent={[]} smcEnabled={true} onToggleSmc={() => {}} />,
+    );
+    expect(html).not.toContain('Generated:');
   });
 });

@@ -259,7 +259,13 @@ export default function CustomMultiTimeframePage() {
                   <BoardDecisionCard board={board} />
                   <MarketIntelligenceVerdict result={intel.full.result} />
                   <MaFvgSignalCard signal={maFvgSignal} />
-                  <TradeDecisionPanel decision={tradeDecision} smcEnabled={smcOn} onToggleSmc={() => setSmcOn((v) => !v)} />
+                  <TradeDecisionPanel
+                    decision={tradeDecision.decision}
+                    signal={tradeDecision.signal}
+                    recent={tradeDecision.recent}
+                    smcEnabled={smcOn}
+                    onToggleSmc={() => setSmcOn((v) => !v)}
+                  />
                   <MTFIntelligenceBoard hierarchy={intel.crossTf.layers.hierarchy} />
                   {intel.selected && (
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

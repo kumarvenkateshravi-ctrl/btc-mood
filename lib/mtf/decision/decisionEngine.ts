@@ -35,6 +35,7 @@ interface AssembleArgs {
   market: MarketIntelligenceResult;
   gate: GateResult;
   executionTf: Timeframe;
+  generatedAt: number | null;
   setup: TradeSetup | null;
   side: TradeSide | null;
   confluence: ConfluenceNote[];
@@ -43,7 +44,7 @@ interface AssembleArgs {
 }
 
 function assembleResult(args: AssembleArgs): TradeDecisionResult {
-  const { board, market, gate, executionTf, setup, side, confluence, extraWarnings, diagnostics } = args;
+  const { board, market, gate, executionTf, generatedAt, setup, side, confluence, extraWarnings, diagnostics } = args;
   const action = gate.passed && setup && side ? side : 'no_trade';
   const calibration = market.headline.calibration;
   const { tier, capped, capReason } = riskTierOf(market, action !== 'no_trade');
@@ -76,6 +77,7 @@ function assembleResult(args: AssembleArgs): TradeDecisionResult {
     gate,
     direction: board.bias,
     executionTf,
+    generatedAt,
     setup: action === 'no_trade' ? null : setup,
     riskTier: tier,
     confluence,
@@ -103,18 +105,20 @@ export function computeTradeDecision(
   const executionTf = board.executionTimeframe;
   const side: TradeSide | null = board.direction === 'no_trade' ? null : board.direction;
   const emptyDiag = { atr: null, swingHigh: null, swingLow: null, rawRR: null };
+  const rawArr = candlesByTf[executionTf] ?? [];
+  const generatedAt = rawArr.length > 1 ? rawArr[rawArr.length - 2].time : null;
 
   const gate = boardGate(board);
   if (!gate.passed || !side) {
     return assembleResult({
-      board, market, gate, executionTf, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
+      board, market, gate, executionTf, generatedAt, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
     });
   }
 
-  const candles = closed(candlesByTf[executionTf] ?? []);
+  const candles = closed(rawArr);
   if (candles.length < DECISION_CONFIG.minCandles) {
     return assembleResult({
-      board, market, executionTf, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
+      board, market, executionTf, generatedAt, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
       gate: {
         passed: false, blockedBy: 'insufficient_data',
         reason: 'not enough closed candles on the execution timeframe',
@@ -125,7 +129,7 @@ export function computeTradeDecision(
   const out = buildSetup(side, candles);
   if (out.kind === 'block') {
     return assembleResult({
-      board, market, executionTf, setup: null, side, confluence: [], extraWarnings: [],
+      board, market, executionTf, generatedAt, setup: null, side, confluence: [], extraWarnings: [],
       diagnostics: { atr: null, swingHigh: out.swingHigh, swingLow: out.swingLow, rawRR: out.rawRR },
       gate: {
         passed: false, blockedBy: out.block,
@@ -147,7 +151,7 @@ export function computeTradeDecision(
     // RR re-gate: refinement (stop extension) can lower RR below the minimum.
     if (setup.rr < DECISION_CONFIG.minRR) {
       return assembleResult({
-        board, market, executionTf, setup: null, side, confluence, extraWarnings,
+        board, market, executionTf, generatedAt, setup: null, side, confluence, extraWarnings,
         diagnostics: { atr: setup.atr, swingHigh: out.swingHigh, swingLow: out.swingLow, rawRR: setup.rr },
         gate: {
           passed: false, blockedBy: 'rr_too_low',
@@ -158,7 +162,7 @@ export function computeTradeDecision(
   }
 
   return assembleResult({
-    board, market, gate, executionTf, setup, side, confluence, extraWarnings,
+    board, market, gate, executionTf, generatedAt, setup, side, confluence, extraWarnings,
     diagnostics: { atr: setup.atr, swingHigh: out.swingHigh, swingLow: out.swingLow, rawRR: null },
   });
 }
