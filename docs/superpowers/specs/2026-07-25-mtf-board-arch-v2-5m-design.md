@@ -71,6 +71,29 @@ Not actionable: "trend strength is simplistic" (already a tunable v1 constant, n
 concrete fix proposed) and "keep execution separate from structure" (already true —
 confirmed, not a change request).
 
+## Amendment v2.1 — execution-primary weighting (2026-07-26)
+
+Symptom the user hit: M9 almost always showed `no_trade`. Root cause (diagnosed
+live, not guessed): the Board decided direction from `computeWeightedScore`, whose
+global `TF_WEIGHT` is higher-TF-heavy (1h+4h+1d = 0.60). On a 5m execution system
+the slow timeframes dominated the LONG/SHORT call and repeatedly dragged a leaning
+5m/15m/30m cluster to a dead-neutral score → `no_trade`. This is the SAME "higher
+timeframe controls the lower timeframe" defect the whole Arch v2 effort set out to
+fix — we'd fixed it in M9's gate but left it in the Board's own direction math.
+
+Fix: the Board now computes its OWN execution-primary weighted score from the
+alignment matrix using `BOARD_TF_WEIGHTS` (`5m` .30 / `15m` .30 / `30m` .20 /
+`1h` .10 / `4h` .06 / `1d` .04 — execution cluster = 0.80). Direction = verdictOf
+of that score; conviction = board-weighted agreement toward the bias minus the
+existing dissent penalty. Higher TFs are now **context**: they shave conviction
+(and dent it via dissent) but can never veto a leaning execution cluster into
+neutral. `computeBoardDecision` signature simplified to `(matrix, candlesByTf)` —
+it no longer consumes `consensus`/`weighted`. The global `TF_WEIGHT` /
+`computeWeightedScore` are UNCHANGED (still power the dashboard/Stack Score, which
+legitimately want higher-TF-heavy weighting). Threshold `minConviction` stays 55;
+the honest consequence is it still refuses a genuinely flat/mixed execution cluster
+(e.g. only the 15m leaning while 5m & 30m are flat) — which is correct, not a bug.
+
 ## Non-goals (this phase)
 
 - Generalizing `executionTimeframe` beyond `'5m'`.

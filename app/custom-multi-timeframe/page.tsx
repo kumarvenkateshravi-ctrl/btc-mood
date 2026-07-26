@@ -101,11 +101,12 @@ export default function CustomMultiTimeframePage() {
   const matrix = useMemo(() => computeAlignmentMatrix(candlesByTf, [...TIMEFRAMES], indSettings), [candlesByTf, indSettings]);
   const consensus = useMemo(() => computeConsensus(matrix, [...TIMEFRAMES]), [matrix]);
   const weighted = useMemo(() => computeWeightedScore(matrix, [...TIMEFRAMES]), [matrix]);
-  // ---- MTF Board (Arch v2) — the sole direction authority, built from the
-  // page's own already-computed alignment grid, never from the M0-M9 stack ----
+  // ---- MTF Board (Arch v2.1) — the sole direction authority, built from the
+  // page's own alignment grid with EXECUTION-PRIMARY weighting (5m/15m/30m decide
+  // direction; higher TFs are context), never from the M0-M9 stack ----
   const board = useMemo(
-    () => computeBoardDecision(matrix, consensus, weighted, candlesByTf),
-    [matrix, consensus, weighted, candlesByTf],
+    () => computeBoardDecision(matrix, candlesByTf),
+    [matrix, candlesByTf],
   );
   const heatmap = useMemo(() => computeHeatmap(matrix, candlesByTf, [...TIMEFRAMES]), [matrix, candlesByTf]);
   const summary = useMemo(() => buildSummary(matrix, weighted), [matrix, weighted]);

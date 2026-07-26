@@ -10,7 +10,6 @@
 import { TIMEFRAMES, type Candle, type Timeframe } from '../../types';
 import type { SmcSnapshot } from '../../smc/types';
 import { computeAlignmentMatrix } from '../../alignment';
-import { computeConsensus, computeWeightedScore } from '../../multiTimeframe';
 import { computeBoardDecision } from '../board/boardEngine';
 import type { BoardDecision } from '../board/boardTypes';
 import { computeFullMarketIntelligence, type FullMarketIntelligence } from '../market/marketEngine';
@@ -176,11 +175,8 @@ export function computeFullTradeDecision(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   smc?: Pick<SmcSnapshot, 'objects'>,
 ): { decision: TradeDecisionResult; intel: FullMarketIntelligence; board: BoardDecision } {
-  const tfs = [...TIMEFRAMES];
-  const matrix = computeAlignmentMatrix(candlesByTf, tfs);
-  const consensus = computeConsensus(matrix, tfs);
-  const weighted = computeWeightedScore(matrix, tfs);
-  const board = computeBoardDecision(matrix, consensus, weighted, candlesByTf);
+  const matrix = computeAlignmentMatrix(candlesByTf, [...TIMEFRAMES]);
+  const board = computeBoardDecision(matrix, candlesByTf);
   const intel = computeFullMarketIntelligence({ '5m': candlesByTf['5m'] ?? [] });
   return { decision: computeTradeDecision(board, intel, candlesByTf, smc), intel, board };
 }
