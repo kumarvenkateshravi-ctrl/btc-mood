@@ -34,15 +34,14 @@ export interface ElephantZoneInputs {
 export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
   level1: 15, level2: 29, level3: 51, level4: 92,
   zoneWidthPoints: 6,
-  upperColor: 'rgba(247,166,60,0.12)',
-  lowerColor: 'rgba(62,207,142,0.12)',
-  pivotColor: 'rgba(230,200,120,0.9)',
+  // Muted amber / green: the band primitive draws borders at a fixed high alpha
+  // (0.55–0.75), so a softer RGB is how we keep the zone lines from glaring.
+  upperColor: 'rgba(176,124,64,1)',
+  lowerColor: 'rgba(64,150,108,1)',
+  pivotColor: 'rgba(99,102,241,1)', // indigo
 };
 
 const SECONDS_PER_DAY = 86400;
-/** Half-height of the pivot band, in points. Small + fixed: the band is only a
- *  carrier for the dashed midline (the pivot is a line, not a zone). */
-const PIVOT_HALF = 1;
 
 interface ZoneSide {
   id: 'R1' | 'R2' | 'R3' | 'R4' | 'S1' | 'S2' | 'S3' | 'S4';
@@ -86,19 +85,34 @@ export function computeElephantZone(candles: Candle[], config?: CustomIndicatorC
       const center = anchor + sign * levels[levelIdx];
       data[i] = { upper: center + half, lower: center - half };
     }
-    return { id, title: id, color: sign === 1 ? inp.upperColor : inp.lowerColor, type: 'band', pane: 'overlay', data };
+    // A real zoneStyle switches the band primitive into bordered "zone mode"
+    // (visible border on EVERY day + a name label on the current day). Without
+    // it the band renders as a faint borderless fill (the "too light" problem).
+    // Resistance is approached from below → boundary 'lower'; support from above
+    // → 'upper' (the edge facing price carries the emphasis).
+    return {
+      id, title: id,
+      color: sign === 1 ? inp.upperColor : inp.lowerColor,
+      type: 'band', pane: 'overlay', data,
+      zoneStyle: { boundary: sign === 1 ? 'lower' : 'upper', lineStyle: 'solid', label: id, emphasis: 0 },
+    };
   });
 
-  const pivotData = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  // Pivot as a LINE series (not a band). A band's height is measured in PRICE,
+  // so a thin pivot band collapses below 1px and the primitive skips it when the
+  // chart is small (that's why it "disappeared when minimized"). A line's width
+  // is measured in PIXELS — a constant, always-visible 3px line at the anchor.
+  // Broken at each day boundary so consecutive days don't connect diagonally.
+  const pivotLine = new Array<number | null>(n).fill(null);
   for (let i = 0; i < n; i++) {
     const anchor = anchorForDay.get(dayKeys[i]);
     if (anchor == null) continue;
-    pivotData[i] = { upper: anchor + PIVOT_HALF, lower: anchor - PIVOT_HALF };
+    const dayEnds = i + 1 < n && dayKeys[i + 1] !== dayKeys[i];
+    pivotLine[i] = dayEnds ? null : anchor;
   }
   plots.push({
-    id: 'PIVOT', title: 'Pivot', color: inp.pivotColor, type: 'band', pane: 'overlay',
-    data: pivotData,
-    zoneStyle: { lineStyle: 'dashed', mid: true, label: 'Pivot' },
+    id: 'PIVOT', title: 'Pivot', color: inp.pivotColor, type: 'line', pane: 'overlay',
+    data: pivotLine, lineWidth: 3,
   });
 
   return { plots, signals };

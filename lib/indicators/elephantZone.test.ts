@@ -60,14 +60,17 @@ describe('computeElephantZone', () => {
     expect(computeElephantZone([]).plots).toEqual([]);
   });
 
-  it('produces exactly 9 band plots (R1-4, S1-4, PIVOT) with the default config', () => {
+  it('produces 8 zone bands + a PIVOT line, all on the overlay pane', () => {
     const candles = [bar(0, 100), bar(DAY, 110)];
     const { plots } = computeElephantZone(candles);
     expect(plots.map((p) => p.id).sort()).toEqual(['PIVOT', 'R1', 'R2', 'R3', 'R4', 'S1', 'S2', 'S3', 'S4']);
-    expect(plots.every((p) => p.type === 'band' && p.pane === 'overlay')).toBe(true);
+    const zones = plots.filter((p) => p.id !== 'PIVOT');
+    expect(zones.every((p) => p.type === 'band')).toBe(true);
+    expect(plots.find((p) => p.id === 'PIVOT')!.type).toBe('line');
+    expect(plots.every((p) => p.pane === 'overlay')).toBe(true);
   });
 
-  it('pivot line is centered on the day anchor (previous day close), null on the first day', () => {
+  it('pivot line carries the day anchor (previous day close) per bar, null on the first day', () => {
     const candles = [
       bar(0, 100), bar(DAY - 100, 110),          // day 0, last close = 110
       bar(DAY, 200), bar(DAY + 100, 201),        // day 1
@@ -75,10 +78,8 @@ describe('computeElephantZone', () => {
     const pivot = computeElephantZone(candles).plots.find((p) => p.id === 'PIVOT')!;
     expect(pivot.data[0]).toBeNull(); // day 0: no prior close
     expect(pivot.data[1]).toBeNull();
-    const d2 = pivot.data[2] as { upper: number; lower: number };
-    const d3 = pivot.data[3] as { upper: number; lower: number };
-    expect((d2.upper + d2.lower) / 2).toBe(110); // day 1 anchor = day 0 close
-    expect((d3.upper + d3.lower) / 2).toBe(110);
+    expect(pivot.data[2]).toBe(110); // day 1 anchor = day 0 close
+    expect(pivot.data[3]).toBe(110);
   });
 
   it('pivot resets to the new anchor at the next UTC boundary', () => {
@@ -88,15 +89,25 @@ describe('computeElephantZone', () => {
       bar(2 * DAY, 300),                   // day2
     ];
     const pivot = computeElephantZone(candles).plots.find((p) => p.id === 'PIVOT')!;
-    const day1 = pivot.data[2] as { upper: number; lower: number };
-    const day2 = pivot.data[4] as { upper: number; lower: number };
-    expect((day1.upper + day1.lower) / 2).toBe(110);
-    expect((day2.upper + day2.lower) / 2).toBe(220);
+    expect(pivot.data[2]).toBe(110); // day1 anchor
+    expect(pivot.data[4]).toBe(220); // day2 anchor
   });
 
-  it('pivot plot is a dashed, labeled centerline (reads as the ladder axis, not a zone)', () => {
+  it('pivot is a solid 3px line that scales in pixels (never collapses when the chart shrinks)', () => {
     const candles = [bar(0, 100), bar(DAY, 110)];
     const pivot = computeElephantZone(candles).plots.find((p) => p.id === 'PIVOT')!;
-    expect(pivot.zoneStyle).toEqual({ lineStyle: 'dashed', mid: true, label: 'Pivot' });
+    expect(pivot.type).toBe('line');
+    expect(pivot.lineWidth).toBe(3);
+    expect(pivot.zoneStyle).toBeUndefined();
+  });
+
+  it('zones carry a boundary + name label so they render bordered and named (not a faint fill)', () => {
+    const candles = [bar(0, 100), bar(DAY, 110)];
+    const plots = computeElephantZone(candles).plots;
+    const r1 = plots.find((p) => p.id === 'R1')!;
+    const s1 = plots.find((p) => p.id === 'S1')!;
+    // Resistance is approached from below → boundary 'lower'; support → 'upper'.
+    expect(r1.zoneStyle).toEqual({ boundary: 'lower', lineStyle: 'solid', label: 'R1', emphasis: 0 });
+    expect(s1.zoneStyle).toEqual({ boundary: 'upper', lineStyle: 'solid', label: 'S1', emphasis: 0 });
   });
 });
