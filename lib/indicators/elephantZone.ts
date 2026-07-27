@@ -27,6 +27,8 @@ export interface ElephantZoneInputs {
   zoneWidthPoints: number;
   upperColor: string;
   lowerColor: string;
+  /** Pivot centerline color. High alpha — it's a line, not a fill. */
+  pivotColor: string;
 }
 
 export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
@@ -34,9 +36,13 @@ export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
   zoneWidthPoints: 6,
   upperColor: 'rgba(247,166,60,0.12)',
   lowerColor: 'rgba(62,207,142,0.12)',
+  pivotColor: 'rgba(230,200,120,0.9)',
 };
 
 const SECONDS_PER_DAY = 86400;
+/** Half-height of the pivot band, in points. Small + fixed: the band is only a
+ *  carrier for the dashed midline (the pivot is a line, not a zone). */
+const PIVOT_HALF = 1;
 
 interface ZoneSide {
   id: 'R1' | 'R2' | 'R3' | 'R4' | 'S1' | 'S2' | 'S3' | 'S4';
@@ -81,6 +87,18 @@ export function computeElephantZone(candles: Candle[], config?: CustomIndicatorC
       data[i] = { upper: center + half, lower: center - half };
     }
     return { id, title: id, color: sign === 1 ? inp.upperColor : inp.lowerColor, type: 'band', pane: 'overlay', data };
+  });
+
+  const pivotData = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    const anchor = anchorForDay.get(dayKeys[i]);
+    if (anchor == null) continue;
+    pivotData[i] = { upper: anchor + PIVOT_HALF, lower: anchor - PIVOT_HALF };
+  }
+  plots.push({
+    id: 'PIVOT', title: 'Pivot', color: inp.pivotColor, type: 'band', pane: 'overlay',
+    data: pivotData,
+    zoneStyle: { lineStyle: 'dashed', mid: true, label: 'Pivot' },
   });
 
   return { plots, signals };
