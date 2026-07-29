@@ -27,8 +27,10 @@ export interface ElephantZoneInputs {
   zoneWidthPoints: number;
   upperColor: string;
   lowerColor: string;
-  /** Pivot centerline color. High alpha — it's a line, not a fill. */
+  /** Anchor-pivot (previous close) line color. */
   pivotColor: string;
+  /** Classic floor-trader pivot P = (H+L+C)/3 line color. */
+  pivotHlc3Color: string;
 }
 
 export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
@@ -38,7 +40,8 @@ export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
   // (0.55–0.75), so a softer RGB is how we keep the zone lines from glaring.
   upperColor: 'rgba(176,124,64,1)',
   lowerColor: 'rgba(64,150,108,1)',
-  pivotColor: 'rgba(99,102,241,1)', // indigo
+  pivotColor: 'rgba(99,102,241,1)', // indigo (anchor pivot = prev close)
+  pivotHlc3Color: 'rgba(80,190,240,1)', // cyan (classic pivot P = (H+L+C)/3)
 };
 
 const SECONDS_PER_DAY = 86400;
@@ -74,6 +77,31 @@ export function computeElephantZone(candles: Candle[], config?: CustomIndicatorC
     const day = dayKeys[i];
     if (dayKeys[i - 1] !== day && !anchorForDay.has(day)) {
       anchorForDay.set(day, candles[i - 1].close);
+    }
+  }
+
+  // Per-day OHLC aggregate (high=max, low=min, close=last bar's close), for the
+  // classic floor-trader pivot P = (H+L+C)/3 of the PREVIOUS trading day.
+  const dayAgg = new Map<number, { high: number; low: number; close: number }>();
+  for (let i = 0; i < n; i++) {
+    const d = dayKeys[i];
+    const a = dayAgg.get(d);
+    if (!a) dayAgg.set(d, { high: candles[i].high, low: candles[i].low, close: candles[i].close });
+    else {
+      a.high = Math.max(a.high, candles[i].high);
+      a.low = Math.min(a.low, candles[i].low);
+      a.close = candles[i].close;
+    }
+  }
+  // Classic pivot per day = (H+L+C)/3 of the previous trading day's aggregate.
+  // Reuses anchorForDay's boundary detection, so it skips weekend/holiday gaps
+  // the same way (previous TRADING day, not literally calendar-day-minus-one).
+  const pivotPForDay = new Map<number, number>();
+  for (let i = 1; i < n; i++) {
+    const day = dayKeys[i];
+    if (dayKeys[i - 1] !== day && !pivotPForDay.has(day)) {
+      const prev = dayAgg.get(dayKeys[i - 1])!;
+      pivotPForDay.set(day, (prev.high + prev.low + prev.close) / 3);
     }
   }
 
@@ -113,6 +141,20 @@ export function computeElephantZone(candles: Candle[], config?: CustomIndicatorC
   plots.push({
     id: 'PIVOT', title: 'Pivot', color: inp.pivotColor, type: 'line', pane: 'overlay',
     data: pivotLine, lineWidth: 3,
+  });
+
+  // Classic floor-trader pivot P = (H+L+C)/3 of the previous day — same robust
+  // pixel-width line rendering and day-boundary break as the anchor pivot.
+  const pivotPLine = new Array<number | null>(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    const p = pivotPForDay.get(dayKeys[i]);
+    if (p == null) continue;
+    const dayEnds = i + 1 < n && dayKeys[i + 1] !== dayKeys[i];
+    pivotPLine[i] = dayEnds ? null : p;
+  }
+  plots.push({
+    id: 'PIVOT_P', title: 'Pivot P', color: inp.pivotHlc3Color, type: 'line', pane: 'overlay',
+    data: pivotPLine, lineWidth: 3,
   });
 
   return { plots, signals };

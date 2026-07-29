@@ -724,6 +724,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'S3', name: 'Support 3', color: 'rgba(64,150,108,1)', thickness: 1, lineStyle: 'solid', display: true },
       { id: 'S4', name: 'Support 4', color: 'rgba(64,150,108,1)', thickness: 1, lineStyle: 'solid', display: true },
       { id: 'PIVOT', name: 'Pivot (prev close)', color: 'rgba(99,102,241,1)', thickness: 3, lineStyle: 'solid', display: true },
+      { id: 'PIVOT_P', name: 'Pivot P (HLC/3)', color: 'rgba(80,190,240,1)', thickness: 3, lineStyle: 'solid', display: true },
     ],
     compute: computeElephantZone,
   },

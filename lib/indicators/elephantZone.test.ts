@@ -9,7 +9,7 @@ describe('computeElephantZone', () => {
   it('first day in history has no previous-day anchor → all zones null', () => {
     const candles = [bar(0, 100), bar(100, 101), bar(200, 102)];
     const { plots } = computeElephantZone(candles);
-    expect(plots).toHaveLength(9);
+    expect(plots).toHaveLength(10);
     for (const p of plots) expect(p.data.every((d) => d === null)).toBe(true);
   });
 
@@ -60,13 +60,14 @@ describe('computeElephantZone', () => {
     expect(computeElephantZone([]).plots).toEqual([]);
   });
 
-  it('produces 8 zone bands + a PIVOT line, all on the overlay pane', () => {
+  it('produces 8 zone bands + 2 pivot lines (PIVOT, PIVOT_P), all on the overlay pane', () => {
     const candles = [bar(0, 100), bar(DAY, 110)];
     const { plots } = computeElephantZone(candles);
-    expect(plots.map((p) => p.id).sort()).toEqual(['PIVOT', 'R1', 'R2', 'R3', 'R4', 'S1', 'S2', 'S3', 'S4']);
-    const zones = plots.filter((p) => p.id !== 'PIVOT');
+    expect(plots.map((p) => p.id).sort()).toEqual(['PIVOT', 'PIVOT_P', 'R1', 'R2', 'R3', 'R4', 'S1', 'S2', 'S3', 'S4']);
+    const zones = plots.filter((p) => p.id !== 'PIVOT' && p.id !== 'PIVOT_P');
     expect(zones.every((p) => p.type === 'band')).toBe(true);
     expect(plots.find((p) => p.id === 'PIVOT')!.type).toBe('line');
+    expect(plots.find((p) => p.id === 'PIVOT_P')!.type).toBe('line');
     expect(plots.every((p) => p.pane === 'overlay')).toBe(true);
   });
 
@@ -99,6 +100,35 @@ describe('computeElephantZone', () => {
     expect(pivot.type).toBe('line');
     expect(pivot.lineWidth).toBe(3);
     expect(pivot.zoneStyle).toBeUndefined();
+  });
+
+  it('classic pivot P = (H+L+C)/3 of the PREVIOUS day, aggregated across ALL its bars (not just the last)', () => {
+    // bar(t,c): high=c+1, low=c-1. Day 0 bars close 100 then 112:
+    //   day-0 aggregate → high 113 (from 112), low 99 (from 100), close 112 (last)
+    //   P = (113 + 99 + 112) / 3 = 108  (last-bar-only would wrongly give 112)
+    const candles = [
+      bar(0, 100), bar(DAY - 100, 112),          // day 0
+      bar(DAY, 200), bar(DAY + 100, 201),        // day 1
+    ];
+    const pp = computeElephantZone(candles).plots.find((p) => p.id === 'PIVOT_P')!;
+    expect(pp.data[0]).toBeNull(); // day 0: no prior day
+    expect(pp.data[1]).toBeNull();
+    expect(pp.data[2]).toBe(108);
+    expect(pp.data[3]).toBe(108);
+    expect(pp.type).toBe('line');
+    expect(pp.lineWidth).toBe(3);
+  });
+
+  it('classic pivot P resets from each new prior-day aggregate at the UTC boundary', () => {
+    // day1 bars close 200 then 218 → high 219, low 199, close 218 → P = (219+199+218)/3 = 212
+    const candles = [
+      bar(0, 100), bar(DAY - 100, 112),   // day0 → P(day1) = 108
+      bar(DAY, 200), bar(DAY + 100, 218), // day1 → P(day2) = 212
+      bar(2 * DAY, 300),                   // day2
+    ];
+    const pp = computeElephantZone(candles).plots.find((p) => p.id === 'PIVOT_P')!;
+    expect(pp.data[2]).toBe(108); // day1 pivot from day0 aggregate
+    expect(pp.data[4]).toBe(212); // day2 pivot from day1 aggregate
   });
 
   it('zones carry a boundary + name label so they render bordered and named (not a faint fill)', () => {
