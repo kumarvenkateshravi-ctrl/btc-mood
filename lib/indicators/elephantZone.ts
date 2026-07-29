@@ -40,8 +40,8 @@ export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
   // (0.55–0.75), so a softer RGB is how we keep the zone lines from glaring.
   upperColor: 'rgba(176,124,64,1)',
   lowerColor: 'rgba(64,150,108,1)',
-  pivotColor: 'rgba(99,102,241,1)', // indigo (anchor pivot = prev close)
-  pivotHlc3Color: 'rgba(80,190,240,1)', // cyan (classic pivot P = (H+L+C)/3)
+  pivotColor: 'rgba(80,190,240,1)', // cyan (anchor pivot = prev close)
+  pivotHlc3Color: 'rgba(99,102,241,1)', // indigo (classic pivot P = (H+L+C)/3)
 };
 
 const SECONDS_PER_DAY = 86400;
