@@ -26,6 +26,7 @@ import { computeFibPivot } from './indicators/fibPivot';
 import { computeSmcOverlay } from './indicators/smcOverlay';
 import { computeMaFvg } from './indicators/maFvg';
 import { computeElephantZone } from './indicators/elephantZone';
+import { computeJumboZones } from './indicators/jumboZones';
 import type { Candle } from './types';
 import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
 
@@ -706,26 +707,64 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     id: 'elephant_zone',
     name: 'Elephant Zone (S/R Levels)',
     description:
-      'Best-effort reconstruction of "Elephant Edge" S/R zones — no Pine source exists, so this is NOT a verified port. Each day, 4 independent resistance zones and 4 support zones are drawn at configurable point offsets from the PREVIOUS day\'s close, held fixed until the next daily reset. Compare against the original before trusting it.',
+      'Cross-asset psychological S/R grid anchored on the PREVIOUS day\'s close. Spacing adapts by mode: volatility (step from avg daily range, default), round (round-number magnitude — works at any price), or manual. Draws R1-4 / S1-4 grid lines, a Base line, and two pivots (prev close + HLC/3). Best-effort — no Pine source; compare before trusting.',
     inputs: [
-      { id: 'level1', name: 'Level 1', type: 'number', default: 15, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
-      { id: 'level2', name: 'Level 2', type: 'number', default: 29, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
-      { id: 'level3', name: 'Level 3', type: 'number', default: 51, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
-      { id: 'level4', name: 'Level 4', type: 'number', default: 92, min: 0, max: 10000, step: 1, group: 'Elephant Zone Levels' },
-      { id: 'zoneWidthPoints', name: 'Zone Width (points)', type: 'number', default: 6, min: 0.1, max: 1000, step: 0.1, group: 'Elephant Zone Levels' },
+      { id: 'spacingMode', name: 'Spacing Mode', type: 'select', default: 'volatility', options: [{ value: 'volatility', label: 'Volatility (adaptive)' }, { value: 'round', label: 'Round numbers' }, { value: 'manual', label: 'Manual' }] },
+      { id: 'levelCount', name: 'Levels per side', type: 'number', default: 4, min: 1, max: 20, step: 1 },
+      { id: 'zoneWidthFraction', name: 'Zone width (× spacing)', type: 'number', default: 0.3, min: 0.02, max: 1, step: 0.01 },
+      { id: 'atrLength', name: 'Avg range days', type: 'number', default: 14, min: 1, max: 200, step: 1, group: 'Volatility Mode' },
+      { id: 'stepFraction', name: 'Step fraction of range', type: 'number', default: 0.25, min: 0.02, max: 2, step: 0.01, group: 'Volatility Mode' },
+      { id: 'roundBase', name: 'Round base', type: 'number', default: 1000, min: 0.00000001, max: 1000000, step: 1, group: 'Manual Mode' },
+      { id: 'stepSize', name: 'Step size', type: 'number', default: 200, min: 0.00000001, max: 1000000, step: 1, group: 'Manual Mode' },
+      { id: 'showResistance', name: 'Show resistance', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showSupport', name: 'Show support', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showBase', name: 'Show base line', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showPivot', name: 'Show pivot (prev close)', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showPivotP', name: 'Show pivot P (HLC/3)', type: 'boolean', default: true, group: 'Display' },
+      { id: 'pivotLineWidth', name: 'Pivot line width', type: 'number', default: 3, min: 1, max: 4, step: 1, group: 'Display' },
     ],
     styles: [
-      { id: 'R1', name: 'Resistance 1', color: 'rgba(176,124,64,1)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'R2', name: 'Resistance 2', color: 'rgba(176,124,64,1)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'R3', name: 'Resistance 3', color: 'rgba(176,124,64,1)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'R4', name: 'Resistance 4', color: 'rgba(176,124,64,1)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'S1', name: 'Support 1', color: 'rgba(64,150,108,1)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'S2', name: 'Support 2', color: 'rgba(64,150,108,1)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'S3', name: 'Support 3', color: 'rgba(64,150,108,1)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'S4', name: 'Support 4', color: 'rgba(64,150,108,1)', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'R1', name: 'Resistance 1', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'R2', name: 'Resistance 2', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'R3', name: 'Resistance 3', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'R4', name: 'Resistance 4', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'S1', name: 'Support 1', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'S2', name: 'Support 2', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'S3', name: 'Support 3', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'S4', name: 'Support 4', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'BASE', name: 'Base (round number)', color: 'rgba(255,255,255,0.3)', thickness: 1, lineStyle: 'dashed', display: true },
       { id: 'PIVOT', name: 'Pivot (prev close)', color: 'rgba(80,190,240,1)', thickness: 3, lineStyle: 'solid', display: true },
       { id: 'PIVOT_P', name: 'Pivot P (HLC/3)', color: 'rgba(99,102,241,1)', thickness: 3, lineStyle: 'solid', display: true },
     ],
     compute: computeElephantZone,
+  },
+  {
+    id: 'jumbo_zones',
+    name: 'Jumbo Zones',
+    description:
+      'Official Elephant Edge model: adaptive S/R zones from historical session expansion. Anchored on today\'s session OPEN, R1/R2 (resistance) and S1/S2 (support) are percentile-pair bands of the median bull/bear expansion over the last N sessions — they widen/tighten with volatility and reset each session. Cross-market (crypto/forex/indices). Separate from Elephant Zone for comparison. Best-effort reconstruction; compare before trusting.',
+    inputs: [
+      { id: 'sessionLookback', name: 'Session lookback', type: 'number', default: 20, min: 1, max: 200, step: 1 },
+      { id: 'avgMethod', name: 'Average method', type: 'select', default: 'median', options: [{ value: 'median', label: 'Median (robust)' }, { value: 'mean', label: 'Mean' }] },
+      { id: 'expansionMode', name: 'Expansion mode', type: 'select', default: 'directional', options: [{ value: 'directional', label: 'Directional (bull/bear)' }, { value: 'symmetric', label: 'Symmetric' }] },
+      { id: 'innerLow', name: 'Inner % low', type: 'number', default: 21, min: 0, max: 500, step: 1, group: 'Percentiles' },
+      { id: 'innerHigh', name: 'Inner % high', type: 'number', default: 29, min: 0, max: 500, step: 1, group: 'Percentiles' },
+      { id: 'outerLow', name: 'Outer % low', type: 'number', default: 53, min: 0, max: 500, step: 1, group: 'Percentiles' },
+      { id: 'outerHigh', name: 'Outer % high', type: 'number', default: 62, min: 0, max: 500, step: 1, group: 'Percentiles' },
+      { id: 'showResistance', name: 'Show resistance', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showSupport', name: 'Show support', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showPivot', name: 'Show pivot (prev close)', type: 'boolean', default: true, group: 'Display' },
+      { id: 'showPivotP', name: 'Show pivot P (HLC/3)', type: 'boolean', default: true, group: 'Display' },
+      { id: 'pivotLineWidth', name: 'Pivot line width', type: 'number', default: 3, min: 1, max: 4, step: 1, group: 'Display' },
+    ],
+    styles: [
+      { id: 'R1', name: 'Resistance 1 (inner)', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'R2', name: 'Resistance 2 (outer)', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'S1', name: 'Support 1 (inner)', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'S2', name: 'Support 2 (outer)', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
+      { id: 'PIVOT', name: 'Pivot (prev close)', color: 'rgba(80,190,240,1)', thickness: 3, lineStyle: 'solid', display: true },
+      { id: 'PIVOT_P', name: 'Pivot P (HLC/3)', color: 'rgba(99,102,241,1)', thickness: 3, lineStyle: 'solid', display: true },
+    ],
+    compute: computeJumboZones,
   },
 ];
