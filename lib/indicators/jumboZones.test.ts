@@ -45,28 +45,41 @@ describe('computeJumboZones', () => {
     expect(computeJumboZones([]).plots).toEqual([]);
   });
 
-  it('day-2 zones use median prior expansion + today\'s open (matches the doc example)', () => {
+  it('day-2 zones use the previous session\'s expansion + today\'s open (default 1-day lookback)', () => {
+    // Default sessionLookback = 1 → day2 uses ONLY day1 (bull 860, bear 780), open 64000.
+    // R1 = [64000+860*0.21, 64000+860*0.29] = [64180.6, 64249.4]
+    // S2 = [64000-780*0.62, 64000-780*0.53] = [63516.4, 63586.6]
     const r1 = find(CANDLES, 'R1'); const s2 = find(CANDLES, 'S2');
     expect(r1.data[0]).toBeNull(); // day0: no prior session
     expect(r1.data[1]).not.toBeNull(); // day1: has day0 prior
     const r1d2 = r1.data[2] as { upper: number; lower: number };
-    expect(r1d2.lower).toBeCloseTo(64163.8, 6);
-    expect(r1d2.upper).toBeCloseTo(64226.2, 6);
+    expect(r1d2.lower).toBeCloseTo(64180.6, 6);
+    expect(r1d2.upper).toBeCloseTo(64249.4, 6);
     const s2d2 = s2.data[2] as { upper: number; lower: number };
-    expect(s2d2.lower).toBeCloseTo(63528.8, 6);
-    expect(s2d2.upper).toBeCloseTo(63597.2, 6);
+    expect(s2d2.lower).toBeCloseTo(63516.4, 6);
+    expect(s2d2.upper).toBeCloseTo(63586.6, 6);
     expect(r1.type).toBe('band');
     expect(r1.zoneStyle).toEqual({ boundary: 'lower', lineStyle: 'solid', emphasis: 0 });
     expect(find(CANDLES, 'S1').zoneStyle).toEqual({ boundary: 'upper', lineStyle: 'solid', emphasis: 0 });
   });
 
-  it('symmetric mode uses (EB+ES)/2 both sides', () => {
-    const cfg = { expansionMode: 'symmetric' } as unknown as import('@/lib/indicatorFramework').CustomIndicatorConfig;
-    // E = (780+760)/2 = 770; R1 = [64000+770*0.21, 64000+770*0.29] = [64161.7, 64223.3]
+  it('multi-session median lookback averages prior sessions (matches the doc example)', () => {
+    // sessionLookback 2 → day2 uses day0+day1: median bull(700,860)=780, bear(740,780)=760.
+    const cfg = { sessionLookback: 2 } as unknown as import('@/lib/indicatorFramework').CustomIndicatorConfig;
     const r1 = computeJumboZones(CANDLES, cfg).plots.find((p) => p.id === 'R1')!;
     const r1d2 = r1.data[2] as { upper: number; lower: number };
-    expect(r1d2.lower).toBeCloseTo(64161.7, 6);
-    expect(r1d2.upper).toBeCloseTo(64223.3, 6);
+    expect(r1d2.lower).toBeCloseTo(64163.8, 6);
+    expect(r1d2.upper).toBeCloseTo(64226.2, 6);
+  });
+
+  it('symmetric mode uses (EB+ES)/2 both sides', () => {
+    // Default lookback 1 → day2 uses day1 (bull 860, bear 780). E = (860+780)/2 = 820.
+    // R1 = [64000+820*0.21, 64000+820*0.29] = [64172.2, 64237.8]
+    const cfg = { expansionMode: 'symmetric' } as unknown as import('@/lib/indicatorFramework').CustomIndicatorConfig;
+    const r1 = computeJumboZones(CANDLES, cfg).plots.find((p) => p.id === 'R1')!;
+    const r1d2 = r1.data[2] as { upper: number; lower: number };
+    expect(r1d2.lower).toBeCloseTo(64172.2, 6);
+    expect(r1d2.upper).toBeCloseTo(64237.8, 6);
   });
 
   it('emits R1/R2/S1/S2 bands + PIVOT/PIVOT_P lines, all overlay', () => {

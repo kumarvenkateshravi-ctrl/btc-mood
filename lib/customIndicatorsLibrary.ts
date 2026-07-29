@@ -744,7 +744,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     description:
       'Official Elephant Edge model: adaptive S/R zones from historical session expansion. Anchored on today\'s session OPEN, R1/R2 (resistance) and S1/S2 (support) are percentile-pair bands of the median bull/bear expansion over the last N sessions — they widen/tighten with volatility and reset each session. Cross-market (crypto/forex/indices). Separate from Elephant Zone for comparison. Best-effort reconstruction; compare before trusting.',
     inputs: [
-      { id: 'sessionLookback', name: 'Session lookback', type: 'number', default: 20, min: 1, max: 200, step: 1 },
+      { id: 'sessionLookback', name: 'Session lookback (days)', type: 'number', default: 1, min: 1, max: 200, step: 1 },
       { id: 'avgMethod', name: 'Average method', type: 'select', default: 'median', options: [{ value: 'median', label: 'Median (robust)' }, { value: 'mean', label: 'Mean' }] },
       { id: 'expansionMode', name: 'Expansion mode', type: 'select', default: 'directional', options: [{ value: 'directional', label: 'Directional (bull/bear)' }, { value: 'symmetric', label: 'Symmetric' }] },
       { id: 'innerLow', name: 'Inner % low', type: 'number', default: 21, min: 0, max: 500, step: 1, group: 'Percentiles' },

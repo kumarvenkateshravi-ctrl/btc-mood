@@ -74,7 +74,7 @@ export interface JumboZonesInputs {
 }
 
 export const JUMBO_ZONES_DEFAULTS: JumboZonesInputs = {
-  sessionLookback: 20,
+  sessionLookback: 1, // 1-day standard: today's zones from the previous session
   avgMethod: 'median',
   expansionMode: 'directional',
   innerLow: 21,
