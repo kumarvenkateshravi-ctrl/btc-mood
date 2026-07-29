@@ -5,13 +5,14 @@
 // output to compare against).
 // Design: docs/superpowers/specs/2026-07-25-elephant-zone-design.md
 //
-// Model: each new UTC calendar day, anchor = the PREVIOUS day's last close
-// (NOT today's open — the source chart is NIFTY, which is closed at the
-// 5:30am IST / 00:00 UTC boundary the creator says zones appear at, so
-// "today's open" doesn't exist yet at that moment). Four independent,
-// centered reaction zones are drawn above (resistance) and below (support)
-// that anchor, at each configured point offset, and held fixed until the
-// next day's anchor replaces them.
+// Model: each new UTC day, anchor = the PREVIOUS day's last close. A psychological
+// S/R GRID is drawn around a base near that anchor. Spacing is chosen by mode:
+//   volatility — step from the avg prior-day range, snapped to a nice increment
+//   round      — continuous round-number magnitude (works at any price scale)
+//   manual     — user-set roundBase + stepSize
+// Levels: R_k = base + k·step, S_k = base − k·step. Plus a Base line, the anchor
+// pivot (prev close) and the classic (H+L+C)/3 pivot. Lines, daily-reset.
+// Design: docs/superpowers/specs/2026-07-29-elephant-adaptive-grid-design.md
 
 import type { Candle } from '../types';
 import type { CustomIndicatorConfig, IndicatorPlot, IndicatorResult, SignalSide } from '../indicatorFramework';
@@ -60,46 +61,52 @@ export function gridScaleFor(
 }
 
 export interface ElephantZoneInputs {
-  level1: number;
-  level2: number;
-  level3: number;
-  level4: number;
-  /** Full width of each zone band, centered on anchor +/- level. Not present
-   *  in the source panel — an invented, tunable constant (see design doc). */
-  zoneWidthPoints: number;
+  spacingMode: SpacingMode;
+  /** Volatility mode: days of prior daily-range history to average. */
+  atrLength: number;
+  /** Volatility mode: step = niceSnap(avgDailyRange × stepFraction). */
+  stepFraction: number;
+  /** Manual mode: base snaps to this; levels step by stepSize. */
+  roundBase: number;
+  stepSize: number;
+  /** Grid levels each side of the base. */
+  levelCount: number;
+  showResistance: boolean;
+  showSupport: boolean;
+  showBase: boolean;
+  showPivot: boolean;
+  showPivotP: boolean;
   upperColor: string;
   lowerColor: string;
-  /** Anchor-pivot (previous close) line color. */
+  baseColor: string;
   pivotColor: string;
-  /** Classic floor-trader pivot P = (H+L+C)/3 line color. */
-  pivotHlc3Color: string;
+  pivotPColor: string;
+  lineWidth: number;
+  pivotLineWidth: number;
 }
 
 export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
-  level1: 15, level2: 29, level3: 51, level4: 92,
-  zoneWidthPoints: 6,
-  // Muted amber / green: the band primitive draws borders at a fixed high alpha
-  // (0.55–0.75), so a softer RGB is how we keep the zone lines from glaring.
-  upperColor: 'rgba(176,124,64,1)',
-  lowerColor: 'rgba(64,150,108,1)',
-  pivotColor: 'rgba(80,190,240,1)', // cyan (anchor pivot = prev close)
-  pivotHlc3Color: 'rgba(99,102,241,1)', // indigo (classic pivot P = (H+L+C)/3)
+  spacingMode: 'volatility',
+  atrLength: 14,
+  stepFraction: 0.25,
+  roundBase: 1000,
+  stepSize: 200,
+  levelCount: 4,
+  showResistance: true,
+  showSupport: true,
+  showBase: true,
+  showPivot: true,
+  showPivotP: true,
+  upperColor: 'rgba(176,124,64,1)',  // amber resistance
+  lowerColor: 'rgba(64,150,108,1)',  // green support
+  baseColor: 'rgba(255,255,255,0.3)',
+  pivotColor: 'rgba(80,190,240,1)',  // cyan (prev close)
+  pivotPColor: 'rgba(99,102,241,1)', // indigo (HLC/3)
+  lineWidth: 2,
+  pivotLineWidth: 3,
 };
 
 const SECONDS_PER_DAY = 86400;
-
-interface ZoneSide {
-  id: 'R1' | 'R2' | 'R3' | 'R4' | 'S1' | 'S2' | 'S3' | 'S4';
-  levelIdx: 0 | 1 | 2 | 3;
-  sign: 1 | -1;
-}
-
-const SIDES: ZoneSide[] = [
-  { id: 'R1', levelIdx: 0, sign: 1 }, { id: 'R2', levelIdx: 1, sign: 1 },
-  { id: 'R3', levelIdx: 2, sign: 1 }, { id: 'R4', levelIdx: 3, sign: 1 },
-  { id: 'S1', levelIdx: 0, sign: -1 }, { id: 'S2', levelIdx: 1, sign: -1 },
-  { id: 'S3', levelIdx: 2, sign: -1 }, { id: 'S4', levelIdx: 3, sign: -1 },
-];
 
 export function computeElephantZone(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
   const inp = resolveInputs<ElephantZoneInputs>(config, ELEPHANT_ZONE_DEFAULTS);
@@ -107,13 +114,11 @@ export function computeElephantZone(candles: Candle[], config?: CustomIndicatorC
   const signals = new Array<SignalSide>(n).fill('neutral');
   if (n === 0) return { plots: [], signals };
 
-  const levels = [inp.level1, inp.level2, inp.level3, inp.level4];
-  const half = inp.zoneWidthPoints / 2;
   const dayOf = (t: number) => Math.floor(t / SECONDS_PER_DAY);
   const dayKeys = candles.map((c) => dayOf(c.time));
+  const dayEndsAt = (i: number) => i + 1 < n && dayKeys[i + 1] !== dayKeys[i];
 
-  // Anchor per day-bucket = close of the last candle in the PREVIOUS bucket.
-  // The first bucket in the provided history never gets an anchor (no prior day).
+  // Anchor per day = the previous day's last close.
   const anchorForDay = new Map<number, number>();
   for (let i = 1; i < n; i++) {
     const day = dayKeys[i];
@@ -122,82 +127,82 @@ export function computeElephantZone(candles: Candle[], config?: CustomIndicatorC
     }
   }
 
-  // Per-day OHLC aggregate (high=max, low=min, close=last bar's close), for the
-  // classic floor-trader pivot P = (H+L+C)/3 of the PREVIOUS trading day.
+  // Per-day OHLC aggregate + chronological day list (for HLC/3 pivot + avg range).
   const dayAgg = new Map<number, { high: number; low: number; close: number }>();
+  const orderedDays: number[] = [];
   for (let i = 0; i < n; i++) {
     const d = dayKeys[i];
     const a = dayAgg.get(d);
-    if (!a) dayAgg.set(d, { high: candles[i].high, low: candles[i].low, close: candles[i].close });
-    else {
-      a.high = Math.max(a.high, candles[i].high);
-      a.low = Math.min(a.low, candles[i].low);
-      a.close = candles[i].close;
-    }
+    if (!a) { dayAgg.set(d, { high: candles[i].high, low: candles[i].low, close: candles[i].close }); orderedDays.push(d); }
+    else { a.high = Math.max(a.high, candles[i].high); a.low = Math.min(a.low, candles[i].low); a.close = candles[i].close; }
   }
-  // Classic pivot per day = (H+L+C)/3 of the previous trading day's aggregate.
-  // Reuses anchorForDay's boundary detection, so it skips weekend/holiday gaps
-  // the same way (previous TRADING day, not literally calendar-day-minus-one).
-  const pivotPForDay = new Map<number, number>();
-  for (let i = 1; i < n; i++) {
-    const day = dayKeys[i];
-    if (dayKeys[i - 1] !== day && !pivotPForDay.has(day)) {
-      const prev = dayAgg.get(dayKeys[i - 1])!;
-      pivotPForDay.set(day, (prev.high + prev.low + prev.close) / 3);
+  const dayIndexOf = new Map<number, number>(orderedDays.map((d, idx) => [d, idx]));
+
+  // Average daily range over the last `atrLength` PRIOR days (non-repainting).
+  const avgRangeForDay = (day: number): number | null => {
+    const p = dayIndexOf.get(day)!;
+    const from = Math.max(0, p - inp.atrLength);
+    let sum = 0, count = 0;
+    for (let q = from; q < p; q++) {
+      const a = dayAgg.get(orderedDays[q])!;
+      sum += a.high - a.low; count++;
     }
+    return count > 0 ? sum / count : null;
+  };
+
+  // Grid scale per day (cached).
+  const scaleForDay = new Map<number, { base: number; step: number }>();
+  for (const day of orderedDays) {
+    const anchor = anchorForDay.get(day);
+    if (anchor == null) continue;
+    const scale = gridScaleFor(anchor, avgRangeForDay(day), inp);
+    if (scale) scaleForDay.set(day, scale);
   }
 
-  const plots: IndicatorPlot[] = SIDES.map(({ id, levelIdx, sign }) => {
-    const data = new Array<{ upper: number; lower: number } | null>(n).fill(null);
+  const plots: IndicatorPlot[] = [];
+
+  const pushLevel = (id: string, sign: 1 | -1, k: number, color: string) => {
+    const data = new Array<number | null>(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const s = scaleForDay.get(dayKeys[i]);
+      if (!s) continue;
+      data[i] = dayEndsAt(i) ? null : s.base + sign * k * s.step;
+    }
+    plots.push({ id, title: id, color, type: 'line', pane: 'overlay', data, lineWidth: inp.lineWidth });
+  };
+  if (inp.showResistance) for (let k = 1; k <= inp.levelCount; k++) pushLevel(`R${k}`, 1, k, inp.upperColor);
+  if (inp.showSupport) for (let k = 1; k <= inp.levelCount; k++) pushLevel(`S${k}`, -1, k, inp.lowerColor);
+
+  if (inp.showBase) {
+    const data = new Array<number | null>(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const s = scaleForDay.get(dayKeys[i]);
+      if (!s) continue;
+      data[i] = dayEndsAt(i) ? null : s.base;
+    }
+    plots.push({ id: 'BASE', title: 'Base', color: inp.baseColor, type: 'line', pane: 'overlay', data, lineWidth: 1, lineStyle: 'dashed' });
+  }
+
+  if (inp.showPivot) {
+    const data = new Array<number | null>(n).fill(null);
     for (let i = 0; i < n; i++) {
       const anchor = anchorForDay.get(dayKeys[i]);
       if (anchor == null) continue;
-      const center = anchor + sign * levels[levelIdx];
-      data[i] = { upper: center + half, lower: center - half };
+      data[i] = dayEndsAt(i) ? null : anchor;
     }
-    // A real zoneStyle switches the band primitive into bordered "zone mode"
-    // (visible border on EVERY day + a name label on the current day). Without
-    // it the band renders as a faint borderless fill (the "too light" problem).
-    // Resistance is approached from below → boundary 'lower'; support from above
-    // → 'upper' (the edge facing price carries the emphasis).
-    return {
-      id, title: id,
-      color: sign === 1 ? inp.upperColor : inp.lowerColor,
-      type: 'band', pane: 'overlay', data,
-      zoneStyle: { boundary: sign === 1 ? 'lower' : 'upper', lineStyle: 'solid', label: id, emphasis: 0 },
-    };
-  });
-
-  // Pivot as a LINE series (not a band). A band's height is measured in PRICE,
-  // so a thin pivot band collapses below 1px and the primitive skips it when the
-  // chart is small (that's why it "disappeared when minimized"). A line's width
-  // is measured in PIXELS — a constant, always-visible 3px line at the anchor.
-  // Broken at each day boundary so consecutive days don't connect diagonally.
-  const pivotLine = new Array<number | null>(n).fill(null);
-  for (let i = 0; i < n; i++) {
-    const anchor = anchorForDay.get(dayKeys[i]);
-    if (anchor == null) continue;
-    const dayEnds = i + 1 < n && dayKeys[i + 1] !== dayKeys[i];
-    pivotLine[i] = dayEnds ? null : anchor;
+    plots.push({ id: 'PIVOT', title: 'Pivot', color: inp.pivotColor, type: 'line', pane: 'overlay', data, lineWidth: inp.pivotLineWidth });
   }
-  plots.push({
-    id: 'PIVOT', title: 'Pivot', color: inp.pivotColor, type: 'line', pane: 'overlay',
-    data: pivotLine, lineWidth: 3,
-  });
 
-  // Classic floor-trader pivot P = (H+L+C)/3 of the previous day — same robust
-  // pixel-width line rendering and day-boundary break as the anchor pivot.
-  const pivotPLine = new Array<number | null>(n).fill(null);
-  for (let i = 0; i < n; i++) {
-    const p = pivotPForDay.get(dayKeys[i]);
-    if (p == null) continue;
-    const dayEnds = i + 1 < n && dayKeys[i + 1] !== dayKeys[i];
-    pivotPLine[i] = dayEnds ? null : p;
+  if (inp.showPivotP) {
+    const data = new Array<number | null>(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const p = dayIndexOf.get(dayKeys[i])!;
+      if (p <= 0) continue; // no prior day
+      const prev = dayAgg.get(orderedDays[p - 1])!;
+      data[i] = dayEndsAt(i) ? null : (prev.high + prev.low + prev.close) / 3;
+    }
+    plots.push({ id: 'PIVOT_P', title: 'Pivot P', color: inp.pivotPColor, type: 'line', pane: 'overlay', data, lineWidth: inp.pivotLineWidth });
   }
-  plots.push({
-    id: 'PIVOT_P', title: 'Pivot P', color: inp.pivotHlc3Color, type: 'line', pane: 'overlay',
-    data: pivotPLine, lineWidth: 3,
-  });
 
   return { plots, signals };
 }
