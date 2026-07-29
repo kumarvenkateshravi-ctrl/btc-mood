@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../types';
-import { computeElephantZone } from './elephantZone';
+import { computeElephantZone, niceSnap, gridScaleFor } from './elephantZone';
 
 const DAY = 86400;
 const bar = (time: number, close: number): Candle => ({ time, open: close, high: close + 1, low: close - 1, close, volume: 1 });
@@ -139,5 +139,54 @@ describe('computeElephantZone', () => {
     // Resistance is approached from below → boundary 'lower'; support → 'upper'.
     expect(r1.zoneStyle).toEqual({ boundary: 'lower', lineStyle: 'solid', label: 'R1', emphasis: 0 });
     expect(s1.zoneStyle).toEqual({ boundary: 'upper', lineStyle: 'solid', label: 'S1', emphasis: 0 });
+  });
+});
+
+describe('niceSnap', () => {
+  it('snaps to the nearest 1 / 2 / 2.5 / 5 / 10 x 10^k', () => {
+    expect(niceSnap(1.3)).toBe(1);
+    expect(niceSnap(2)).toBe(2);
+    expect(niceSnap(3.4)).toBe(2.5);
+    expect(niceSnap(6)).toBe(5);
+    expect(niceSnap(8)).toBe(10);
+    expect(niceSnap(173)).toBe(200);
+    expect(niceSnap(0.006)).toBe(0.005);
+    expect(niceSnap(0.007)).toBe(0.01); // float-dust safe (6.9999… rounds to 7 → 10)
+  });
+  it('guards non-positive / non-finite input', () => {
+    expect(niceSnap(0)).toBe(0);
+    expect(niceSnap(-5)).toBe(0);
+    expect(niceSnap(NaN)).toBe(0);
+  });
+});
+
+describe('gridScaleFor', () => {
+  it('volatility mode: step = niceSnap(range x fraction), base snapped to nearest step', () => {
+    // range 16 x 0.25 = 4 -> niceSnap -> 5; base = round(110/5)*5 = 110
+    expect(gridScaleFor(110, 16, { spacingMode: 'volatility', stepFraction: 0.25, roundBase: 0, stepSize: 0 }))
+      .toEqual({ base: 110, step: 5 });
+  });
+  it('volatility mode: no range available -> null (no grid that day)', () => {
+    expect(gridScaleFor(110, null, { spacingMode: 'volatility', stepFraction: 0.25, roundBase: 0, stepSize: 0 })).toBeNull();
+    expect(gridScaleFor(110, 0, { spacingMode: 'volatility', stepFraction: 0.25, roundBase: 0, stepSize: 0 })).toBeNull();
+  });
+  it('round mode: continuous magnitude, exact round levels', () => {
+    // anchor 110 -> magnitude 100, roundBase 10, step 2, base = round(110/10)*10 = 110
+    expect(gridScaleFor(110, null, { spacingMode: 'round', stepFraction: 0.25, roundBase: 0, stepSize: 0 }))
+      .toEqual({ base: 110, step: 2 });
+  });
+  it('round mode: tiny price never collapses to base 0 (micro-cap safe)', () => {
+    const s = gridScaleFor(0.0000123, null, { spacingMode: 'round', stepFraction: 0.25, roundBase: 0, stepSize: 0 })!;
+    expect(s.base).toBeGreaterThan(0);
+    expect(s.base - 4 * s.step).toBeGreaterThan(0); // deepest support still positive
+  });
+  it('manual mode: honors roundBase + stepSize', () => {
+    // base = round(110/50)*50 = 100, step = 10
+    expect(gridScaleFor(110, null, { spacingMode: 'manual', stepFraction: 0.25, roundBase: 50, stepSize: 10 }))
+      .toEqual({ base: 100, step: 10 });
+  });
+  it('guards bad anchor / bad manual params', () => {
+    expect(gridScaleFor(0, 16, { spacingMode: 'volatility', stepFraction: 0.25, roundBase: 0, stepSize: 0 })).toBeNull();
+    expect(gridScaleFor(110, null, { spacingMode: 'manual', stepFraction: 0.25, roundBase: 0, stepSize: 10 })).toBeNull();
   });
 });

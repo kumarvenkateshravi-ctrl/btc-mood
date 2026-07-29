@@ -17,6 +17,48 @@ import type { Candle } from '../types';
 import type { CustomIndicatorConfig, IndicatorPlot, IndicatorResult, SignalSide } from '../indicatorFramework';
 import { resolveInputs } from './itsTemplates';
 
+export type SpacingMode = 'volatility' | 'round' | 'manual';
+
+/** Round a raw step to the nearest "nice" increment: 1 / 2 / 2.5 / 5 / 10 × 10^k. */
+export function niceSnap(x: number): number {
+  if (!(x > 0) || !Number.isFinite(x)) return 0;
+  const exp = Math.floor(Math.log10(x));
+  const pow = Math.pow(10, exp);
+  const f = Math.round((x / pow) * 1e6) / 1e6; // kill float dust at bucket edges
+  const nice = f < 1.5 ? 1 : f < 3 ? 2 : f < 4 ? 2.5 : f < 7 ? 5 : 10;
+  return nice * pow;
+}
+
+/** The grid's centre (base) and spacing (step) for one day's anchor, per mode.
+ *  Returns null when a grid can't be formed (bad anchor, no volatility, bad manual params). */
+export function gridScaleFor(
+  anchor: number,
+  avgDailyRange: number | null,
+  inp: { spacingMode: SpacingMode; stepFraction: number; roundBase: number; stepSize: number },
+): { base: number; step: number } | null {
+  if (!(anchor > 0) || !Number.isFinite(anchor)) return null;
+
+  if (inp.spacingMode === 'manual') {
+    const { roundBase, stepSize } = inp;
+    if (!(roundBase > 0) || !(stepSize > 0)) return null;
+    return { base: Math.round(anchor / roundBase) * roundBase, step: stepSize };
+  }
+
+  if (inp.spacingMode === 'round') {
+    const magnitude = Math.pow(10, Math.floor(Math.log10(anchor)));
+    const roundBase = magnitude / 10;
+    const step = roundBase / 5;
+    if (!(roundBase > 0) || !(step > 0)) return null;
+    return { base: Math.round(anchor / roundBase) * roundBase, step };
+  }
+
+  // volatility
+  if (avgDailyRange == null || !(avgDailyRange > 0)) return null;
+  const step = niceSnap(avgDailyRange * inp.stepFraction);
+  if (!(step > 0)) return null;
+  return { base: Math.round(anchor / step) * step, step };
+}
+
 export interface ElephantZoneInputs {
   level1: number;
   level2: number;
