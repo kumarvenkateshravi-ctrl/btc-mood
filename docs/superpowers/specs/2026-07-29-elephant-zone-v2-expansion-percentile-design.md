@@ -1,11 +1,11 @@
-# Elephant Zone v2 — expansion-percentile bands — design
+# Elephant Zone v2 (a.k.a. "Jumbo Zones") — expansion-percentile bands — design
 
-Rebuilds the level math inside the existing `elephant_zone` indicator
-(`lib/indicators/elephantZone.ts`) to match the creator's official model
-(`zonePlan.md` + the creator's website description). Replaces the psychological
-grid (2026-07-29-elephant-adaptive-grid-design.md) entirely. Indicator id and
-display name ("Elephant Zone (S/R Levels)") stay the same; the two pivot lines
-stay untouched.
+Ships as a NEW, separate indicator **"Jumbo Zones"** (`jumbo_zones`,
+`lib/indicators/jumboZones.ts`) implementing the creator's official model
+(`zonePlan.md` + the creator's website description). The existing `elephant_zone`
+(psychological-grid) indicator is left **entirely untouched**, so the two can be
+compared side by side. The two pivot lines (prev-close + HLC/3) are carried into
+Jumbo Zones as well.
 
 ## The model (creator steps 1–7 + freeze; 8–15 deferred)
 
@@ -66,14 +66,14 @@ by the band primitive. Plots:
 - `PIVOT` (cyan, prev close) and `PIVOT_P` (indigo, HLC/3) — `type: 'line'`,
   **unchanged**. (The grid's `BASE` line is removed — no base concept in v2.)
 
-## Config (replaces all grid inputs)
+## Config (new `jumbo_zones` indicator)
 
 `sessionLookback` (20), `avgMethod` (median | mean), `expansionMode`
 (directional | symmetric), `innerLow` (21), `innerHigh` (29), `outerLow` (53),
 `outerHigh` (62), `showResistance`, `showSupport`, `showPivot`, `showPivotP`,
 `upperColor`, `lowerColor`, `pivotColor`, `pivotPColor`, `pivotLineWidth`.
-Removed: spacingMode, atrLength, stepFraction, roundBase, stepSize, levelCount,
-zoneWidthFraction. Registry `styles`: `R1`, `R2`, `S1`, `S2`, `PIVOT`, `PIVOT_P`.
+Registry `styles`: `R1`, `R2`, `S1`, `S2`, `PIVOT`, `PIVOT_P`. The existing
+`elephant_zone` indicator and its inputs are unchanged.
 
 ## Out of scope (deferred to the parked Elephant Trade Engine)
 
