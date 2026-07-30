@@ -28,6 +28,7 @@ import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
+import WatchlistPanel from '@/components/WatchlistPanel';
 import { usePaperStore } from '@/lib/paperStore';
 import { deriveActivePosition } from '@/lib/trade/activePosition';
 import ActivePositionWidget from '@/components/trade/ActivePositionWidget';
@@ -487,6 +488,12 @@ export default function DashboardPage() {
             icon dock selects which panel is shown (one at a time). */}
         {rightPanel && (
           <aside className="hidden xl:flex w-[450px] shrink-0 border-l border-line bg-surface flex-col min-h-0 overflow-y-auto">
+            {rightPanel === 'watchlist' && (
+              <WatchlistPanel
+                activeSymbol={symbol}
+                onSelect={(s) => { if (isCompareSymbol(s)) setSymbol(s); }}
+              />
+            )}
             {rightPanel === 'mood' && (
               // Explicit vertical stack: btc-mood card, then the Active Trade
               // card below it, separated by a gap. Both are normal-flow blocks
