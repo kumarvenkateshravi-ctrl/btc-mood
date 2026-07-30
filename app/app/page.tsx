@@ -499,6 +499,12 @@ export default function DashboardPage() {
               // card below it, separated by a gap. Both are normal-flow blocks
               // (shrink-0) so neither can overlay the other.
               <div className="flex flex-col gap-3 p-3">
+                <div className="shrink-0 overflow-hidden rounded-lg border border-line bg-surface-2">
+                  <WatchlistPanel
+                    activeSymbol={symbol}
+                    onSelect={(s) => { if (isCompareSymbol(s)) setSymbol(s); }}
+                  />
+                </div>
                 <div className="shrink-0">
                   <MoodStrip
                     symbol={symbol}
