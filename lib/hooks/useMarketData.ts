@@ -71,6 +71,22 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
   const [lastUpdateMs, setLastUpdateMs] = useState<number>(0);
   const wsBarCountRef = useRef(0);
 
+  // Clear all candle state the instant the symbol changes. Without this the
+  // previous symbol's bars linger for the ~200ms until the new REST fetch
+  // lands — and because two symbols on the same timeframe share identical bar
+  // timestamps + count, the chart mistakes the stale bars for in-bar ticks and
+  // never fully repaints (BTC candles + BTC price scale on an ETH chart). An
+  // empty array gives the chart an unambiguous "new load" it can't misread.
+  const prevSymbolRef = useRef(symbol);
+  useEffect(() => {
+    if (prevSymbolRef.current === symbol) return;
+    prevSymbolRef.current = symbol;
+    setCandlesByTf(emptyCandles());
+    setErrorsByTf(emptyErrors());
+    setBookTicker(null);
+    setStatus('loading');
+  }, [symbol]);
+
   // ---- Historical fetch via TanStack Query ----
   const klinesQueries = useQueries({
     queries: TIMEFRAMES.map((tf) => ({
