@@ -35,6 +35,7 @@ export function useChartData(
   candles: Candle[],
   type: ChartType,
   tf: string | undefined,
+  symbol: string | undefined,
   isRenko: boolean,
   visibleResults: IndicatorRender[],
   indicatorSettingsMap: Record<string, IndicatorSettings> | undefined,
@@ -67,6 +68,10 @@ export function useChartData(
   // replay playback / live bar close: series.update instead of full setData).
   const prevCountRef = useRef(0);
   const prevFirstTimeRef = useRef<number | null>(null);
+  // The last symbol we rendered. A switch (e.g. BTC→ETH) is a new context even
+  // though tf/type and the bar timestamps are identical — undefined until the
+  // parent threads `symbol`, in which case this stays inert (no false resets).
+  const prevSymbolRef = useRef<string | undefined>(undefined);
   // Last plot-data reference pushed per series key. Indicators that cache
   // their result object (e.g. SMC) return IDENTICAL arrays on unchanged
   // closed bars — pushing those again costs O(bars x plots) per tick for
@@ -78,7 +83,8 @@ export function useChartData(
     if (!candleSeries) return;
     if (candles.length === 0) return;
 
-    const isNewContext = prevTfRef.current !== tf || prevTypeRef.current !== type;
+    const isNewContext =
+      prevTfRef.current !== tf || prevTypeRef.current !== type || prevSymbolRef.current !== symbol;
 
     if (prevTypeRef.current !== null && prevTypeRef.current !== type) {
       // Full reset when chart type changes: clear series data AND all
@@ -99,6 +105,7 @@ export function useChartData(
     }
     prevTypeRef.current = type;
     prevTfRef.current = tf ?? null;
+    prevSymbolRef.current = symbol;
 
     // LWC #2044 guard 1: strictly ascending, unique timestamps only.
     const baseCandles = ensureCleanSeries(candles);
@@ -142,7 +149,12 @@ export function useChartData(
     // count check the completed bricks would never be drawn (update() only
     // patches the final bar) and the chart falls further below live price
     // with every crossing.
+    // `!isNewContext` is load-bearing: a symbol switch (BTC→ETH) keeps the same
+    // last-bar time AND count, so without this guard it would be mistaken for an
+    // in-bar tick and only update() the last bar — leaving the old symbol's
+    // candles and price scale on screen.
     const isIncremental =
+      !isNewContext &&
       lastBarTimeRef.current === lastTime && baseCandles.length === prevCountRef.current;
     // Append-by-one: one new bar at the tail, history untouched — a replay
     // step or a live bar close. LWC's update() appends in O(1); a multi-bar
@@ -628,5 +640,5 @@ export function useChartData(
       // Defer one frame so the chart has finished laying out before we measure width.
       requestAnimationFrame(() => applyDefaultView());
     }
-  }, [candles, type, isRenko, tf, visibleResults, indicatorSettingsMap, hiddenKeys]);
+  }, [candles, type, isRenko, tf, symbol, visibleResults, indicatorSettingsMap, hiddenKeys]);
 }

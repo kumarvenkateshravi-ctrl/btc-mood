@@ -53,6 +53,10 @@ export interface ChartProps {
   candlesByTf?: Record<string, Candle[]>;
   type: ChartType;
   tf?: string;
+  /** The instrument symbol (e.g. 'BTCUSDT'). A change here is a new rendering
+   *  context — the chart must full-repaint and refit the price scale, even
+   *  when tf/type and the bar timestamps are unchanged (BTC↔ETH share both). */
+  symbol?: string;
   height?: number;
   indicatorResult?: IndicatorResult | null;
   indicatorResults?: IndicatorRender[];

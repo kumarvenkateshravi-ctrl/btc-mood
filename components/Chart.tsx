@@ -118,6 +118,7 @@ export default function Chart({
   candlesByTf,
   type,
   tf,
+  symbol,
   height,
   indicatorResult = null,
   indicatorResults,
@@ -456,7 +457,7 @@ export default function Chart({
   }, [chartSettings?.showCrosshairSnap, chartRef]);
 
   // ---- Data push + indicator stack (extracted) ----
-  useChartData(refs, candles, type, tf, isRenko, visibleResults, indicatorSettingsMap, hiddenKeys, applyDefaultView);
+  useChartData(refs, candles, type, tf, symbol, isRenko, visibleResults, indicatorSettingsMap, hiddenKeys, applyDefaultView);
 
   // ---- FX: bear hatching + pulse (extracted) ----
   useChartFx(fxPrimitiveRef, candleSeriesRef, chartRef, prevCloseRef, candles, type, renko);

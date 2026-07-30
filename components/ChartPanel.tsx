@@ -989,6 +989,7 @@ export default function ChartPanel({
               candles={baseCandlesForIndicators}
               candlesByTf={candlesByTf}
               type={type}
+              symbol={symbol}
               height={chartHeight}
               additionalPanes={additionalPanes}
               additionalPanesTotalHeight={additionalPanesTotalHeight}
