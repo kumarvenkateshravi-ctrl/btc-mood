@@ -32,7 +32,9 @@ import { getChartPalette, useThemeName, type ChartPalette } from '@/lib/chartThe
 import { ChartFxPrimitive, type FxBarRect } from '@/lib/chartFxPrimitive';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
+import { SessionVolumeProfilePrimitive } from '@/lib/sessionVolumeProfilePrimitive';
 import { IndicatorBandPrimitive } from '@/lib/indicatorBandPrimitive';
+import { IndicatorLinePrimitive } from '@/lib/indicatorLinePrimitive';
 import { PriceLinesPrimitive } from '@/lib/priceLinesPrimitive';
 import type { Candle, Timeframe } from '@/lib/types';
 import {
@@ -186,10 +188,7 @@ export default function Chart({
 
   // All active indicators are kept in structure so their panes don't collapse when hidden.
   // We simply turn off visibility of their plots.
-  const visibleResults = useMemo<IndicatorRender[]>(
-    () => renderResults,
-    [renderResults],
-  );
+  const visibleResults = renderResults;
 
   // Live style edits (color / thickness / per-plot visibility) applied to
   // existing series without a structural rebuild. Series are keyed
@@ -249,7 +248,9 @@ export default function Chart({
   const indicatorPanesRef = useRef<Map<string, IPaneApi<Time>>>(new Map());
   const indicatorSigRef = useRef<string>('');
   const indicatorGradientRef = useRef<Map<string, GradientZonePrimitive>>(new Map());
+  const indicatorProfileRef = useRef<Map<string, SessionVolumeProfilePrimitive>>(new Map());
   const indicatorBandRef = useRef<Map<string, IndicatorBandPrimitive>>(new Map());
+  const indicatorLineRef = useRef<Map<string, IndicatorLinePrimitive>>(new Map());
   const indicatorMarkersRef = useRef<Map<string, ISeriesMarkersPluginApi<Time>>>(new Map());
   const priceLinesPrimitiveRef = useRef<PriceLinesPrimitive | null>(null);
   const [, setHasSeparatePane] = useState(false);
@@ -322,8 +323,14 @@ export default function Chart({
       const toIndex = totalBars - 1 + rightGap;
       const fromIndex = toIndex - visibleBars;
 
+      // IMPORTANT: enable autoScale on BOTH axes BEFORE calling setVisibleLogicalRange.
+      // LWC computes the price-axis range during the layout pass that
+      // setVisibleLogicalRange triggers. If autoScale is applied after that pass,
+      // the new symbol's price range is never used — the old symbol's locked
+      // y-axis persists (e.g. BTC 95k range when ETH ~1900 is loaded).
+      try { chart.priceScale('right').applyOptions({ autoScale: true }); } catch {}
+      try { chart.priceScale('left').applyOptions({ autoScale: true }); } catch {}
       timeScale.setVisibleLogicalRange({ from: fromIndex, to: toIndex });
-      chart.priceScale('right').applyOptions({ autoScale: true });
     } catch (err) {
       console.warn('Fail-safe recovery in applyDefaultView:', err);
     }
@@ -351,7 +358,7 @@ export default function Chart({
       overlayPrimitiveRef, fxPrimitiveRef, daySepCanvasRef, daySepRafRef,
       separatePaneRef,
       indicatorSeriesRef, indicatorPanesRef, indicatorSigRef,
-      indicatorGradientRef, indicatorBandRef, indicatorMarkersRef, priceLinesPrimitiveRef,
+      indicatorGradientRef, indicatorProfileRef, indicatorBandRef, indicatorLineRef, indicatorMarkersRef, priceLinesPrimitiveRef,
       paletteRef,
       hoverInputsRef, lastBarTimeRef, firstBarTimeRef,
       prevTypeRef, prevTfRef, prevOpenRef, prevCloseRef, lastCandleTimeRef,

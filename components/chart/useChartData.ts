@@ -15,7 +15,9 @@ import {
 } from 'lightweight-charts';
 import { IndicatorFillPrimitive } from '@/lib/indicatorFillPrimitive';
 import { GradientZonePrimitive } from '@/lib/gradientZonePrimitive';
+import { SessionVolumeProfilePrimitive } from '@/lib/sessionVolumeProfilePrimitive';
 import { IndicatorBandPrimitive } from '@/lib/indicatorBandPrimitive';
+import { IndicatorLinePrimitive } from '@/lib/indicatorLinePrimitive';
 import type { Candle } from '@/lib/types';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { shiftTime, getTfMinutes, ensureCleanSeries, type ChartType, type IndicatorRender } from './types';
@@ -51,7 +53,9 @@ export function useChartData(
     indicatorPanesRef,
     indicatorSigRef,
     indicatorGradientRef,
+    indicatorProfileRef,
     indicatorBandRef,
+    indicatorLineRef,
     indicatorMarkersRef,
     separatePaneRef,
     hoverInputsRef,
@@ -98,6 +102,21 @@ export function useChartData(
         try { s.setData([]); } catch {}
       });
       // Reset all state-tracking refs so the next render does a clean setData.
+      lastBarTimeRef.current = null;
+      firstBarTimeRef.current = null;
+      prevCountRef.current = 0;
+      prevFirstTimeRef.current = null;
+    } else if (prevSymbolRef.current !== undefined && prevSymbolRef.current !== symbol) {
+      // Symbol switch (BTC→ETH or vice-versa): clear the old symbol's data so
+      // LWC forgets its internal price-axis range. Without this, setData() with
+      // the new symbol's prices still renders against the old y-axis bounds
+      // (e.g. ETH ~1900 displayed on a 0–100k BTC scale — candles invisible).
+      // Enable autoScale on both price scales BEFORE clearing so the layout
+      // pass triggered by setData([]) already has autoScale enabled.
+      try { chartRef.current?.priceScale('right').applyOptions({ autoScale: true }); } catch {}
+      try { chartRef.current?.priceScale('left').applyOptions({ autoScale: true }); } catch {}
+      try { candleSeries.setData([]); } catch {}
+      try { markersRef.current?.setMarkers([]); } catch {}
       lastBarTimeRef.current = null;
       firstBarTimeRef.current = null;
       prevCountRef.current = 0;
@@ -259,7 +278,7 @@ export function useChartData(
       }
 
       const candleData: CandlestickData<Time>[] = [];
-      let renderIdx = 0;
+      const renderIdx = 0;
       for (let ci = 0; ci < baseCandles.length; ci++) {
         const c = baseCandles[ci];
         if (!isRenderable(c)) continue;
@@ -303,7 +322,6 @@ export function useChartData(
         return;
       }
     }
-
     // Re-anchor the view after a prepend so the chart doesn't jump.
     if (prependedBars > 0 && visRangeBefore) {
       try {
@@ -320,6 +338,14 @@ export function useChartData(
     // panes is expensive and order-sensitive, so we only rebuild when the stack
     // *structure* changes (a signature of keys + plot shapes); per-tick we only
     // push fresh data into the already-created series.
+    let indicatorStructureChanged = false;
+    const refreshIndicatorPrimitives = () => {
+      indicatorGradientRef.current.forEach((primitive) => primitive.updateAllViews());
+      indicatorProfileRef.current.forEach((primitive) => primitive.updateAllViews());
+      indicatorBandRef.current.forEach((primitive) => primitive.updateAllViews());
+      indicatorLineRef.current.forEach((primitive) => primitive.updateAllViews());
+    };
+
     if (chartRef.current) {
       const chart = chartRef.current;
       const existing = indicatorSeriesRef.current;
@@ -330,11 +356,12 @@ export function useChartData(
           const settings = indicatorSettingsMap?.[r.key];
           const settingsSig = settings ? JSON.stringify({ styles: settings.styles, labelsOnPriceScale: settings.labelsOnPriceScale }) : '';
           const isHidden = hiddenKeys.has(r.key);
-          return `${r.key}#${settingsSig}#${isHidden}#${r.result.plots.map((p) => `${p.id}:${p.type}:${p.pane ?? 'overlay'}`).join(',')}`;
+          return `${r.key}#${settingsSig}#${isHidden}#${r.result.plots.map((p) => `${p.id}:${p.type}:${p.pane ?? 'overlay'}`).join(',')}#L${r.result.lineSegments?.length ?? 0}`;
         })
         .join('|');
 
       if (signature !== indicatorSigRef.current) {
+        indicatorStructureChanged = true;
         indicatorSigRef.current = signature;
         try { chart.clearCrosshairPosition(); } catch {}
 
@@ -345,12 +372,21 @@ export function useChartData(
         }
         existing.clear();
         indicatorGradientRef.current.clear();
+        // Volume profiles also live on the candle series — detach before dropping.
+        for (const [, pp] of indicatorProfileRef.current) {
+          try { candleSeriesRef.current?.detachPrimitive(pp); } catch {}
+        }
+        indicatorProfileRef.current.clear();
         // Band primitives live on the candle series (which survives teardown),
         // so detach them explicitly before dropping the refs.
         for (const [, bp] of indicatorBandRef.current) {
           try { candleSeriesRef.current?.detachPrimitive(bp); } catch {}
         }
         indicatorBandRef.current.clear();
+        for (const [, lp] of indicatorLineRef.current) {
+          try { candleSeriesRef.current?.detachPrimitive(lp); } catch {}
+        }
+        indicatorLineRef.current.clear();
         // Marker plugins live on the CANDLE series (which survives this
         // teardown) — clearing the map alone leaves their labels rendering
         // forever ("Bullish CHoCH" ghosts after removing the indicator).
@@ -499,6 +535,25 @@ export function useChartData(
             }
           }
 
+          // Volume profiles are price-indexed and own no plot series, so they
+          // hang off the candle series (which always has data and shares the
+          // main price scale) rather than `mainSeries`, which is undefined here.
+          if (result.profiles && result.profiles.length > 0 && candleSeriesRef.current) {
+            try {
+              const pp = new SessionVolumeProfilePrimitive();
+              candleSeriesRef.current.attachPrimitive(pp);
+              indicatorProfileRef.current.set(key, pp);
+            } catch {}
+          }
+
+          if (result.lineSegments && result.lineSegments.length > 0 && candleSeriesRef.current) {
+            try {
+              const lp = new IndicatorLinePrimitive();
+              candleSeriesRef.current.attachPrimitive(lp);
+              indicatorLineRef.current.set(key, lp);
+            } catch {}
+          }
+
           // Pane markers. Anchor: separate-pane indicators pin markers to
           // their own first series (e.g. divergence labels on the RSI line);
           // overlay indicators pin to the CANDLE series — an overlay's first
@@ -611,6 +666,41 @@ export function useChartData(
           }
         }
 
+        // Volume profiles: the compute layer emits RAW candle time (it is
+        // deliberately UI-agnostic), so shift session + level-extension times
+        // into chart time here, at the same boundary every other series uses.
+        const pp = indicatorProfileRef.current.get(key);
+        if (pp && result.profiles && result.profileStyle) {
+          const shiftMaybe = (t: number | null | undefined) =>
+            t == null ? t : (shiftTime(t) as number);
+          const shifted = result.profiles.map((prof) => ({
+            ...prof,
+            startTime: shiftTime(prof.startTime) as number,
+            endTime: shiftTime(prof.endTime) as number,
+            pocExtendTo: shiftMaybe(prof.pocExtendTo),
+            vahExtendTo: shiftMaybe(prof.vahExtendTo),
+            valExtendTo: shiftMaybe(prof.valExtendTo),
+          }));
+          const visible = hiddenKeys.has(key);
+          try { pp.setData(visible ? [] : shifted, result.profileStyle); } catch {}
+        }
+
+        const lp = indicatorLineRef.current.get(key);
+        if (lp && result.lineSegments && lastPushedPlotRef.current.get('line::' + key) !== result.lineSegments) {
+          lastPushedPlotRef.current.set('line::' + key, result.lineSegments);
+          const st = indicatorSettingsMap?.[key]?.styles?.['regression_line'];
+          const segments = hiddenKeys.has(key) || st?.display === false ? [] : result.lineSegments.map((segment) => ({
+            ...segment,
+            startTime: shiftTime(segment.startTime) as number,
+            endTime: shiftTime(segment.endTime) as number,
+            // Keep the regression segment slope color (rising/falling) intact.
+            color: segment.color,
+            lineWidth: st?.thickness || segment.lineWidth,
+            lineStyle: (st?.lineStyle || segment.lineStyle || 'solid') as 'solid' | 'dashed' | 'dotted',
+          }));
+          try { lp.setData(segments, true); } catch {}
+        }
+
         // Pane markers (e.g. divergence Bull/Bear).
         const mk = indicatorMarkersRef.current.get(key);
         if (mk && result.markers && lastPushedPlotRef.current.get(`mk::${key}`) !== result.markers) {
@@ -636,9 +726,15 @@ export function useChartData(
 
     lastBarTimeRef.current = lastTime;
 
-    if (isNewContext && chartRef.current) {
-      // Defer one frame so the chart has finished laying out before we measure width.
-      requestAnimationFrame(() => applyDefaultView());
+    if ((isNewContext || indicatorStructureChanged) && chartRef.current) {
+      // The first primitive paint can happen before Lightweight Charts has
+      // established the final visible range. Refresh once after the range
+      // settles so overlays are correct on the first render, not only after
+      // the next market-data tick.
+      requestAnimationFrame(() => {
+        if (isNewContext) applyDefaultView();
+        requestAnimationFrame(refreshIndicatorPrimitives);
+      });
     }
   }, [candles, type, isRenko, tf, symbol, visibleResults, indicatorSettingsMap, hiddenKeys]);
 }

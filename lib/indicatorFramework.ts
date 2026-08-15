@@ -188,6 +188,99 @@ export interface CandleColorOverride {
   borderColor: (string | null)[];
 }
 
+export interface IndicatorLineSegment {
+  /** A time-indexed line object for Pine line.new overlays. */
+  id: string;
+  startTime: number;
+  endTime: number;
+  startValue: number;
+  endValue: number;
+  color: string;
+  lineWidth?: number;
+  lineStyle?: 'solid' | 'dashed' | 'dotted';
+  extendRight?: boolean;
+}
+
+// ---- Volume profile -------------------------------------------------------
+// A volume profile is PRICE-indexed (rows are price buckets), unlike every
+// IndicatorPlot in this file, which is time-indexed 1:1 with candles. It
+// therefore travels as its own payload and is drawn by
+// SessionVolumeProfilePrimitive rather than a series.
+//
+// Structurally compatible with `VolumeProfile` in lib/indicators/
+// sessionVolumeProfile.ts — declared here (rather than imported) to keep the
+// framework free of dependencies on individual indicators.
+
+export interface VolumeProfileRow {
+  low: number;
+  high: number;
+  mid: number;
+  total: number;
+  up: number;
+  down: number;
+  delta: number;
+  inValueArea: boolean;
+}
+
+export interface VolumeProfileRender {
+  /** Session bounds in CHART time (already shifted by the caller). */
+  startTime: number;
+  endTime: number;
+  low: number;
+  high: number;
+  rows: VolumeProfileRow[];
+  poc: number;
+  vah: number;
+  val: number;
+  totalVolume: number;
+  maxRowVolume: number;
+  /** Per-profile visibility overrides used by lightweight POC-only overlays. */
+  showRows?: boolean;
+  showPoc?: boolean;
+  pocColor?: string;
+  showVah?: boolean;
+  showVal?: boolean;
+  showShapeLabel?: boolean;
+  /**
+   * Chart time at which an extended level is crossed by a later bar, per
+   * TradingView's "Extend … Right". `null` = never crossed, so the line runs
+   * to the pane edge. `undefined` = extension disabled.
+   */
+  pocExtendTo?: number | null;
+  vahExtendTo?: number | null;
+  valExtendTo?: number | null;
+  /** Classification output (see lib/indicators/profileShape.ts). */
+  shapeGlyph?: string;
+  shapeLabel?: string;
+  confidence?: number;
+}
+
+export interface VolumeProfileStyle {
+  volumeMode: 'total' | 'updown' | 'delta';
+  placement: 'left' | 'right';
+  /** When false, render only the POC level and hide profile rows / VAH / VAL. */
+  showProfileBoxes: boolean;
+  /** Histogram width as a percentage of the session box. */
+  widthPct: number;
+  showValues: boolean;
+  upColor: string;
+  downColor: string;
+  vaUpColor: string;
+  vaDownColor: string;
+  pocColor: string;
+  vahColor: string;
+  valColor: string;
+  showPoc: boolean;
+  showVah: boolean;
+  showVal: boolean;
+  extendPoc: boolean;
+  extendVah: boolean;
+  extendVal: boolean;
+  showShapeLabel: boolean;
+  shapeLabelBg: string;
+  shapeLabelInk: string;
+}
+
 export interface IndicatorResult {
   plots: IndicatorPlot[];
   // Buy/Sell/Neutral status per candle
@@ -200,12 +293,18 @@ export interface IndicatorResult {
   gradientFills?: IndicatorGradientFill[];
   /** Pane labels/markers (e.g. divergence Bull/Bear). */
   markers?: IndicatorMarker[];
+  /** Optional line objects for overlays whose source uses Pine line.new. */
+  lineSegments?: IndicatorLineSegment[];
   /**
    * Per-bar candle series color overrides. When set, the chart merges these
    * colors into the CandlestickData before calling setData, letting indicators
    * color individual candle bodies/wicks without a separate overlay primitive.
    */
   candleColors?: CandleColorOverride;
+  /** Price-indexed volume profiles, drawn by SessionVolumeProfilePrimitive. */
+  profiles?: VolumeProfileRender[];
+  /** Render settings for `profiles`. Ignored when `profiles` is absent. */
+  profileStyle?: VolumeProfileStyle;
 }
 
 export interface CustomIndicatorConfig {
