@@ -136,31 +136,6 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* Symbol / price / change */}
-      <div className="flex shrink-0 items-center gap-2 px-2">
-
-        {price != null && (
-          <span className="font-mono text-[14px] tabular-nums text-ink">
-            {price.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        )}
-        {change != null && (
-          <span
-            className={[
-              'font-mono text-[12px] tabular-nums',
-              change >= 0 ? 'text-bull-bright' : 'text-bear-bright',
-            ].join(' ')}
-          >
-            {change >= 0 ? '+' : ''}
-            {change.toFixed(2)}%
-          </span>
-        )}
-      </div>
-
-      <ToolbarDivider />
 
       {/* Timeframes Quick-Row */}
       <div className="flex shrink-0 items-center h-full">

@@ -45,7 +45,7 @@ describe('positionSizeFor', () => {
 });
 
 const trade = (pnl: number, over: Partial<PaperTrade> = {}): PaperTrade => ({
-  id: 't', positionId: 'p', side: 'sell', units: 1, price: 100, fee: 0,
+  id: 't', positionId: 'p', symbol: 'BTCUSDT', side: 'sell', units: 1, price: 100, fee: 0,
   realizedPnl: pnl, ts: 1000, entryTs: 400, entryPrice: 100, exitPrice: 100 + pnl, sl: 95,
   ...over,
 });

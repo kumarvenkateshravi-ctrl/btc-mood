@@ -35,6 +35,10 @@ describe('replay state machine', () => {
     expect(getReplayState()).toMatchObject({ phase: 'finished', playIndex: 99 });
     replayActions.scrubTo(40, 100); // back off the end
     expect(getReplayState()).toMatchObject({ phase: 'paused', playIndex: 40 });
+    replayActions.play();
+    replayActions.stepBy(10, 100);
+    replayActions.scrubTo(20, 100); // a backward move must halt playback before reconstruction
+    expect(getReplayState()).toMatchObject({ phase: 'paused', playIndex: 20 });
     replayActions.stepBy(-1000, 100); // clamp low
     expect(getReplayState().playIndex).toBe(1);
   });

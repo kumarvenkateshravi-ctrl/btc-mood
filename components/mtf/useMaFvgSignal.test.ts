@@ -59,6 +59,7 @@ describe('buildMaFvgSignalView', () => {
     expect(view.context.smc).toEqual({ trend: 'bullish', zone: 'discount', lastEvent: { type: 'CHoCH', direction: 'bullish' } });
   });
 
+
   it('handles missing 5m data / missing layers gracefully', () => {
     const empty = buildMaFvgSignalView({}, mkFullIntel(mkMarket(), hier()), {});
     expect(empty.latest).toBeNull();

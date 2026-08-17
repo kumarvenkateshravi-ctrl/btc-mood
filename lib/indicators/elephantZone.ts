@@ -71,6 +71,9 @@ export interface ElephantZoneInputs {
   stepSize: number;
   /** Grid levels each side of the base. */
   levelCount: number;
+  /** Zone band thickness as a fraction of the level spacing (step). All zones
+   *  equal; scales with the adaptive grid so it's sensible on every asset. */
+  zoneWidthFraction: number;
   showResistance: boolean;
   showSupport: boolean;
   showBase: boolean;
@@ -81,7 +84,6 @@ export interface ElephantZoneInputs {
   baseColor: string;
   pivotColor: string;
   pivotPColor: string;
-  lineWidth: number;
   pivotLineWidth: number;
 }
 
@@ -92,6 +94,7 @@ export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
   roundBase: 1000,
   stepSize: 200,
   levelCount: 4,
+  zoneWidthFraction: 0.3,
   showResistance: true,
   showSupport: true,
   showBase: true,
@@ -102,7 +105,6 @@ export const ELEPHANT_ZONE_DEFAULTS: ElephantZoneInputs = {
   baseColor: 'rgba(255,255,255,0.3)',
   pivotColor: 'rgba(80,190,240,1)',  // cyan (prev close)
   pivotPColor: 'rgba(99,102,241,1)', // indigo (HLC/3)
-  lineWidth: 2,
   pivotLineWidth: 3,
 };
 
@@ -161,14 +163,23 @@ export function computeElephantZone(candles: Candle[], config?: CustomIndicatorC
 
   const plots: IndicatorPlot[] = [];
 
+  // Each level is drawn as a filled ZONE (band) of equal thickness = a fraction
+  // of the step. Bands are grouped into per-day runs by the primitive (no
+  // day-boundary null needed). A zoneStyle with `boundary` is required for the
+  // primitive to render a visible bordered band (without it, it's a faint fill).
   const pushLevel = (id: string, sign: 1 | -1, k: number, color: string) => {
-    const data = new Array<number | null>(n).fill(null);
+    const data = new Array<{ upper: number; lower: number } | null>(n).fill(null);
     for (let i = 0; i < n; i++) {
       const s = scaleForDay.get(dayKeys[i]);
       if (!s) continue;
-      data[i] = dayEndsAt(i) ? null : s.base + sign * k * s.step;
+      const level = s.base + sign * k * s.step;
+      const half = (s.step * inp.zoneWidthFraction) / 2;
+      data[i] = { upper: level + half, lower: level - half };
     }
-    plots.push({ id, title: id, color, type: 'line', pane: 'overlay', data, lineWidth: inp.lineWidth });
+    plots.push({
+      id, title: id, color, type: 'band', pane: 'overlay', data,
+      zoneStyle: { boundary: sign === 1 ? 'lower' : 'upper', lineStyle: 'solid', emphasis: 0 },
+    });
   };
   if (inp.showResistance) for (let k = 1; k <= inp.levelCount; k++) pushLevel(`R${k}`, 1, k, inp.upperColor);
   if (inp.showSupport) for (let k = 1; k <= inp.levelCount; k++) pushLevel(`S${k}`, -1, k, inp.lowerColor);

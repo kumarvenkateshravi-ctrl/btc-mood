@@ -7,6 +7,7 @@ import { cx } from '@/components/ui/util';
 import {
   replayOpenWithRisk,
   setPendingLevels,
+  setReplayActionContext,
   sessionBalance,
   type ReplaySessionState,
 } from '@/lib/replaySession';
@@ -31,11 +32,13 @@ export default function SessionHud({
   lastClose,
   lastTime,
   atr,
+  replayBarIndex,
 }: {
   session: ReplaySessionState;
   lastClose: number;
   lastTime: number;
   atr: number;
+  replayBarIndex: number;
 }) {
   const cfg = session.config!;
   const sym = currencySymbol(cfg.currency);
@@ -58,8 +61,9 @@ export default function SessionHud({
   const effectiveTp = tp ?? suggestedLevels.tp;
 
   useEffect(() => {
+    setReplayActionContext(replayBarIndex, lastTime);
     setPendingLevels(effectiveSl, effectiveTp);
-  }, [effectiveSl, effectiveTp]);
+  }, [effectiveSl, effectiveTp, replayBarIndex, lastTime]);
 
   const balance = sessionBalance(session);
   const sizing = useMemo(() => positionSizeFor(cfg, balance, side, lastClose, effectiveSl), [cfg, balance, side, lastClose, effectiveSl]);
@@ -74,6 +78,7 @@ export default function SessionHud({
 
   const execute = (s: Side) => {
     selectSide(s);
+    setReplayActionContext(replayBarIndex, lastTime);
     const r = replayOpenWithRisk(s, lastClose, lastTime);
     if (r.blocked === 'position-open') setNotice('Finish current trade first.');
     else if (!r.ok) setNotice(REASON_TEXT[r.reason]);

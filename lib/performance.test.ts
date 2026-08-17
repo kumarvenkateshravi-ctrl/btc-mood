@@ -5,6 +5,7 @@ import type { PaperTrade } from './paper';
 const t = (pnl: number, id = ''): PaperTrade => ({
   id: id || `t_${Math.random().toString(36).slice(2, 8)}`,
   positionId: 'p1',
+  symbol: 'BTCUSDT',
   side: pnl >= 0 ? 'sell' : 'buy',
   units: 0.1,
   price: 100,

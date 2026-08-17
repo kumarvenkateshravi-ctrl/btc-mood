@@ -3,8 +3,6 @@
 
 export const COMPARE_SYMBOLS = [
   { symbol: 'BTCUSDT', label: 'BTC / USDT' },
-  { symbol: 'ETHUSDT', label: 'ETH / USDT' },
-  { symbol: 'SOLUSDT', label: 'SOL / USDT' },
 ] as const;
 
 export type CompareSymbol = (typeof COMPARE_SYMBOLS)[number]['symbol'];

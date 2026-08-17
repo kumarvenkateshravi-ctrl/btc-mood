@@ -67,16 +67,33 @@ export function crossSignals(
 export interface SignalEvent {
   index: number;
   side: 'buy' | 'sell';
-  /** How far the strength line sits beyond the NEARER of the two lines, as a
-   *  percent of price — a conviction read for later ranking. */
+  /** 0–100 conviction: the strength line's separation beyond the NEARER
+   *  confirmation line, measured in the RSI's OWN oscillator space (not price)
+   *  and capped at 100. Higher = more decisive cross. See CONFIDENCE_FULL_SEP_OSC. */
   confidence: number;
+}
+
+/** Separation (in RSI oscillator points) that maps to 100% confidence. A cross
+ *  with ~this much daylight above/below the confirmation lines is "very strong".
+ *  Conservative default; tuned during practice; API stable. */
+export const CONFIDENCE_FULL_SEP_OSC = 20;
+
+export type ConfidenceBand = 'very strong' | 'strong' | 'moderate' | 'weak';
+export function confidenceBand(c: number): ConfidenceBand {
+  if (c >= 90) return 'very strong';
+  if (c >= 70) return 'strong';
+  if (c >= 50) return 'moderate';
+  return 'weak';
 }
 
 /**
  * Confirmed Buy/Sell events with two noise controls on top of the base
- * strength-crosses-BOTH-lines rule (all in price space):
+ * strength-crosses-BOTH-lines rule:
  *   - `cooldownBars`: suppress a signal within N bars of the previous one.
  *   - `trendFilter`: BUY only when close > ma; SELL only when close < ma.
+ * Confidence is the separation beyond the nearer confirmation line, divided by
+ * `normalizer` (the RSI price-range per bar → oscillator space), scaled by
+ * CONFIDENCE_FULL_SEP_OSC and capped at 100 — an intuitive 0–100 conviction.
  * Null-guarded (JS coerces null→0 in comparisons), never fires on bar 0, and
  * loops only up to `end` (exclusive) so the forming bar is excluded by the caller.
  */
@@ -85,12 +102,11 @@ export function emitCrossSignals(
   vwap: (number | null)[],
   ma: (number | null)[],
   closes: number[],
-  opts: { cooldownBars?: number; trendFilter?: boolean; end?: number } = {},
+  opts: { cooldownBars?: number; trendFilter?: boolean; end?: number; normalizer?: (number | null)[] } = {},
 ): SignalEvent[] {
-  const { cooldownBars = 0, trendFilter = false, end = strength.length } = opts;
+  const { cooldownBars = 0, trendFilter = false, end = strength.length, normalizer } = opts;
   const out: SignalEvent[] = [];
   let lastSignalBar = -Infinity;
-  const r2 = (x: number) => Math.round(x * 100) / 100;
 
   for (let i = 1; i < end; i++) {
     const s0 = strength[i - 1]; const s1 = strength[i];
@@ -104,10 +120,13 @@ export function emitCrossSignals(
     if (i - lastSignalBar < cooldownBars) continue;
     if (trendFilter && (buy ? !(closes[i] > m1) : !(closes[i] < m1))) continue;
 
-    const conf = buy
-      ? r2((Math.min(s1 - v1, s1 - m1) / s1) * 100)
-      : r2((Math.min(v1 - s1, m1 - s1) / s1) * 100);
-    out.push({ index: i, side: buy ? 'buy' : 'sell', confidence: conf });
+    // Separation beyond the NEARER line, in the RSI's oscillator space.
+    const gap = buy ? Math.min(s1 - v1, s1 - m1) : Math.min(v1 - s1, m1 - s1);
+    const pr = normalizer?.[i] ?? null;
+    const sepOsc = pr != null && pr > 0 ? (gap / pr) * 100 : 0;
+    const confidence = Math.min(100, Math.max(0, Math.round((sepOsc / CONFIDENCE_FULL_SEP_OSC) * 100)));
+
+    out.push({ index: i, side: buy ? 'buy' : 'sell', confidence });
     lastSignalBar = i;
   }
   return out;

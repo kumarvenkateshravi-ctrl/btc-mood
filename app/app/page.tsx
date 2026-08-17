@@ -33,6 +33,7 @@ import { usePaperStore } from '@/lib/paperStore';
 import { deriveActivePosition } from '@/lib/trade/activePosition';
 import ActivePositionWidget from '@/components/trade/ActivePositionWidget';
 import WidgetsPanel, { DEFAULT_WIDGET_PREFS, type WidgetKey, type WidgetPrefs } from '@/components/WidgetsPanel';
+import DailyOrderFlowWidget from '@/components/DailyOrderFlowWidget';
 import { useDrawings, getDrawings, setDrawings } from '@/lib/drawings';
 import { useSharedIndicators } from '@/lib/useSharedIndicators';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
@@ -41,7 +42,7 @@ import {
   isCompareSymbol,
   type CompareSymbol,
 } from '@/lib/compare';
-import { TIMEFRAMES, type Timeframe } from '@/lib/types';
+import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
 import type { ChartType } from '@/components/Chart';
 import type { WorkspaceConfig } from '@/lib/workspaces';
 import {
@@ -55,12 +56,16 @@ import { useHistoryWindow } from '@/lib/hooks/useHistoryWindow';
 import { useAlerts } from '@/lib/hooks/useAlerts';
 import { useGridState } from '@/lib/hooks/useGridState';
 import { useReplayCut } from '@/lib/replay/replayCut';
+import { useReplayDataset } from '@/lib/replay/replayDataset';
 import { planDeepLoad } from '@/lib/replay/deepLoad';
 import { useAnalyticsWindow } from '@/lib/hooks/useAnalyticsWindow';
 import { sliceCandlesByTf } from '@/lib/replay/replaySlice';
 import { useLayoutMigrationToast } from '@/components/useLayoutMigrationToast';
 import { useKeyboardShortcuts } from '@/lib/hooks/useKeyboardShortcuts';
 import { useMarketState } from '@/lib/hooks/useMarketState';
+import { computeUtcDayChange } from '@/lib/utcDayChange';
+import { isPriceExecutionTrusted } from '@/lib/marketDataIntegrity';
+import { setMarketDataReplayActive } from '@/lib/marketDataTrust';
 
 export default function DashboardPage() {
   // ---- Core view state ----
@@ -263,7 +268,7 @@ export default function DashboardPage() {
   });
 
   // ---- Market data pipeline ----
-  const { candlesByTf, status, bookTicker, ticker24h, loadOlder, loadHistoryUntil, wsStatus, lastUpdateMs } =
+  const { candlesByTf, status, integrity, bookTicker, ticker24h, loadOlder, loadHistoryUntil, wsStatus, lastUpdateMs } =
     useMarketData(symbol);
 
   // Deep backfill for replay practice: load the selected TF (and everything
@@ -272,17 +277,20 @@ export default function DashboardPage() {
     async (
       targetMs: number,
       onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void,
+      signal?: AbortSignal,
     ) => {
       const steps = planDeepLoad(selected, targetMs, Date.now());
       for (const step of steps) {
-        await loadHistoryUntil(step.tf, step.untilMs, step.maxPages, onProgress);
+        if (signal?.aborted) return;
+        await loadHistoryUntil(step.tf, step.untilMs, step.maxPages, onProgress, signal);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [selected, loadHistoryUntil],
   );
 
-  const dataState = useMarketState({ wsStatus, lastUpdateMs, hasData: true });
+  const hasMarketData = TIMEFRAMES.some((tf) => candlesByTf[tf].length > 0);
+  const dataState = useMarketState({ wsStatus, lastUpdateMs, hasData: hasMarketData });
 
   // ---- Replay Prime Invariant ----
   // While Bar Replay is active, every ANALYTICS consumer (mood engine, market
@@ -291,12 +299,23 @@ export default function DashboardPage() {
   // stored (fully formed) history. The chart itself keeps the full eval-TF
   // array: the replay machinery (selector, scrubber) needs it.
   const replayCut = useReplayCut();
+  const replayDataset = useReplayDataset();
+  const replaySnapshotCandlesByTf = useMemo(
+    () => Object.fromEntries(TIMEFRAMES.map((tf) => [tf, (replayDataset.candlesByTf[tf] ?? []).slice()])) as Record<Timeframe, Candle[]>,
+    [replayDataset],
+  );
+  const replaySourceCandlesByTf = replayDataset.active ? replaySnapshotCandlesByTf : candlesByTf;
+  const executionIntegrity = replayCut.active ? 'replay' : integrity;
+  useEffect(() => {
+    setMarketDataReplayActive(replayCut.active);
+    return () => setMarketDataReplayActive(false);
+  }, [replayCut.active]);
   const analyticsCandlesByTfFull = useMemo(
     () =>
       replayCut.active && replayCut.cutBar
-        ? sliceCandlesByTf(candlesByTf, replayCut.evalTf, replayCut.cutBar)
-        : candlesByTf,
-    [candlesByTf, replayCut],
+        ? sliceCandlesByTf(replaySourceCandlesByTf, replayCut.evalTf, replayCut.cutBar)
+        : replaySourceCandlesByTf,
+    [replaySourceCandlesByTf, replayCut],
   );
   // Live-edge analytics window (mood/context/scanner/signals): capped tails
   // with referential stability — a lazy-load prepend of old bars produces the
@@ -305,7 +324,7 @@ export default function DashboardPage() {
   const analyticsCandlesByTf = useAnalyticsWindow(analyticsCandlesByTfFull);
 
   // ---- Mood engine ----
-  const { prices, changes, snapshots, mood, indicatorRows } = useMoodEngine(
+  const { prices, snapshots, mood, indicatorRows } = useMoodEngine(
     analyticsCandlesByTf,
     activeIndicatorIds,
   );
@@ -320,7 +339,9 @@ export default function DashboardPage() {
   }, [historyCandles, loadOlderHistory, loadOlder, selected]);
 
   // ---- Derived display values ----
-  const currentCandles = candlesByTf[selected];
+  const currentCandles = replayDataset.active
+    ? replaySnapshotCandlesByTf[selected]
+    : (historyCandles ?? candlesByTf[selected]);
 
   // One Market Context for the whole app (chart gate + widget + rail share it).
   const marketContext = useMarketContext(analyticsCandlesByTf);
@@ -334,12 +355,22 @@ export default function DashboardPage() {
     [analyticsCandlesByTf, symbol, selected],
   );
 
-  const currentPrice = ticker24h ? ticker24h.price : prices[selected];
+  const currentPrice = replayCut.active
+    ? (replayCut.cutBar?.close ?? prices[selected])
+    : (ticker24h ? ticker24h.price : prices[selected]);
+
+  // Binance's ticker change is a rolling 24-hour value. The dashboard display
+  // uses the UTC calendar-day session instead: current price versus the candle
+  // that opened at 00:00 UTC today.
+  const utcDayChange = useMemo(
+    () => computeUtcDayChange(currentPrice, candlesByTf),
+    [currentPrice, candlesByTf],
+  );
 
   // Live active-position cockpit (right drawer). Hidden during replay —
   // Bar Replay has its own isolated session HUD.
   const paper = usePaperStore();
-  const livePosition = paper.position;
+  const livePosition = paper.positions[symbol] ?? null;
   const activeView =
     livePosition && !replayCut.active && currentPrice != null
       ? deriveActivePosition(livePosition, currentPrice, Date.now())
@@ -359,10 +390,12 @@ export default function DashboardPage() {
       // user immediately sees btc-mood WITH the widget docked below it
       // (its home) — otherwise clicking Show gives no visible feedback.
       if (key === 'activeTrade' && next.activeTrade) setRightPanel('mood');
+      if (key === 'dailyOrderFlow' && next.dailyOrderFlow) setRightPanel('mood');
       return next;
     });
   }, []);
-  const currentChange = ticker24h ? ticker24h.change : changes[selected];
+  const currentChange = utcDayChange?.percent ?? null;
+  const currentChangeAbs = utcDayChange?.absolute ?? null;
   const mid = useMemo(
     () => (currentCandles.length > 0 ? currentCandles[currentCandles.length - 1].close : 0),
     [currentCandles],
@@ -373,7 +406,15 @@ export default function DashboardPage() {
   const bottomPanelRef = useRef<PanelImperativeHandle>(null);
 
   // ---- Alerts ----
-  useAlerts(symbol, snapshots, bid, ask, currentPrice, replayCut.active);
+  useAlerts(
+    symbol,
+    snapshots,
+    bid,
+    ask,
+    currentPrice,
+    replayCut.active,
+    isPriceExecutionTrusted(executionIntegrity),
+  );
 
   // ---- Render ----
   return (
@@ -404,7 +445,7 @@ export default function DashboardPage() {
                       />
                     ) : undefined}
                     onDeepLoadHistory={deepLoadHistory}
-                    candles={historyCandles ?? currentCandles}
+                    candles={currentCandles}
                     candlesByTf={analyticsCandlesByTf}
                     type={toolbarType}
                     onTypeChange={onToolbarSelectType}
@@ -414,6 +455,7 @@ export default function DashboardPage() {
                     price={currentPrice}
                     change={currentChange}
                     status={status}
+                    marketIntegrity={integrity}
                     showVolume={showVolume}
                     onQuickTrade={() => { setTab('trade'); setRightPanel('signals'); }}
                     bid={bid}
@@ -498,7 +540,7 @@ export default function DashboardPage() {
               // Explicit vertical stack: btc-mood card, then the Active Trade
               // card below it, separated by a gap. Both are normal-flow blocks
               // (shrink-0) so neither can overlay the other.
-              <div className="flex flex-col gap-3 p-3">
+              <div className="flex flex-col gap-4 p-4">
                 <div className="shrink-0">
                   <MoodStrip
                     symbol={symbol}
@@ -507,6 +549,8 @@ export default function DashboardPage() {
                     dataState={dataState}
                     price={currentPrice}
                     change={currentChange}
+                    changeAbs={currentChangeAbs}
+                    volume={ticker24h?.volume ?? null}
                     mood={mood}
                     snapshots={snapshots}
                     timeframes={TIMEFRAMES}
@@ -518,6 +562,16 @@ export default function DashboardPage() {
                     onSelect={(s) => { if (isCompareSymbol(s)) setSymbol(s); }}
                   />
                 </div>
+                {widgetPrefs.dailyOrderFlow && (
+                  <div className="shrink-0">
+                    {/* Keyed so a symbol switch remounts with a clean day accumulator. */}
+                    <DailyOrderFlowWidget
+                      key={symbol}
+                      symbol={symbol}
+                      candles={(replayDataset.active ? replayDataset.candlesByTf['5m'] ?? [] : candlesByTf['5m']).slice()}
+                    />
+                  </div>
+                )}
                 {widgetPrefs.activeTrade && activeView && livePosition && (
                   <div className="shrink-0">
                     <ActivePositionWidget
@@ -571,5 +625,4 @@ export default function DashboardPage() {
     </div>
   );
 }
-
 

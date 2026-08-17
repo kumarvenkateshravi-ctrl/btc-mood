@@ -33,14 +33,14 @@ interface DrawingToolbarProps {
 }
 
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode }[] = [
-  { tool: 'cursor', label: 'Cursor (select)', icon: <MousePointer2 className="h-4 w-4" /> },
-  { tool: 'horizontal', label: 'Horizontal line', icon: <Minus className="h-4 w-4" /> },
-  { tool: 'trendline', label: 'Trend line', icon: <TrendingUp className="h-4 w-4" /> },
-  { tool: 'ray', label: 'Ray', icon: <MoveUpRight className="h-4 w-4" /> },
-  { tool: 'rectangle', label: 'Rectangle / zone', icon: <Square className="h-4 w-4" /> },
-  { tool: 'fib', label: 'Fib retracement', icon: <span className="text-[13px] font-semibold leading-none">φ</span> },
-  { tool: 'measure', label: 'Measure', icon: <Ruler className="h-4 w-4" /> },
-  { tool: 'text', label: 'Text', icon: <Type className="h-4 w-4" /> },
+  { tool: 'cursor', label: 'Cursor (select)', icon: <MousePointer2 className="h-5 w-5" /> },
+  { tool: 'horizontal', label: 'Horizontal line', icon: <Minus className="h-5 w-5" /> },
+  { tool: 'trendline', label: 'Trend line', icon: <TrendingUp className="h-5 w-5" /> },
+  { tool: 'ray', label: 'Ray', icon: <MoveUpRight className="h-5 w-5" /> },
+  { tool: 'rectangle', label: 'Rectangle / zone', icon: <Square className="h-5 w-5" /> },
+  { tool: 'fib', label: 'Fib retracement', icon: <span className="text-[17px] font-semibold leading-none">φ</span> },
+  { tool: 'measure', label: 'Measure', icon: <Ruler className="h-5 w-5" /> },
+  { tool: 'text', label: 'Text', icon: <Type className="h-5 w-5" /> },
 ];
 
 export default function DrawingToolbar({
@@ -73,28 +73,28 @@ export default function DrawingToolbar({
       <div className="my-1 h-px w-5 bg-line" />
 
       <RailButton label={magnet ? 'Magnet on (snap to OHLC)' : 'Magnet off'} active={magnet} onClick={onMagnetToggle}>
-        <Magnet className="h-4 w-4" />
+        <Magnet className="h-5 w-5" />
       </RailButton>
       <RailButton label={locked ? 'Drawings locked' : 'Lock drawings'} active={locked} onClick={onLockToggle}>
-        {locked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+        {locked ? <Lock className="h-5 w-5" /> : <LockOpen className="h-5 w-5" />}
       </RailButton>
       <RailButton label={hidden ? 'Show drawings' : 'Hide drawings'} active={hidden} onClick={onHiddenToggle}>
-        {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        {hidden ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
       </RailButton>
       <RailButton label={`Clear all${count ? ` (${count})` : ''}`} onClick={onClear} disabled={count === 0} danger>
-        <Trash2 className="h-4 w-4" />
+        <Trash2 className="h-5 w-5" />
       </RailButton>
 
       <div className="my-1 h-px w-5 bg-line" />
 
-      <div className="flex flex-col items-center gap-1 py-0.5">
+      <div className="flex flex-col items-center gap-1.5 py-0.5">
         {DRAWING_COLORS.map((c) => (
           <button
             key={c}
             onClick={() => onColorChange(c)}
             aria-label={`Color ${c}`}
             className={[
-              'h-3.5 w-3.5 rounded-full border transition',
+              'h-4 w-4 rounded-full border transition',
               color === c ? 'border-ink ring-1 ring-ink/40' : 'border-transparent hover:scale-110',
             ].join(' ')}
             style={{ background: c }}

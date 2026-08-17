@@ -4,7 +4,7 @@ import type { MaFvgSignalView } from './useMaFvgSignal';
 import { MaFvgSignalCard } from './MarketIntelligence';
 
 const base: MaFvgSignalView = {
-  latest: { side: 'buy', confidence: 0.42, barTime: 1_600_002_100, barsAgo: 2, freshness: 'active', price: 66210.5 },
+  latest: { side: 'buy', confidence: 72, barTime: 1_600_002_100, barsAgo: 2, freshness: 'active', price: 66210.5 },
   recent: [
     { side: 'buy', barTime: 1_600_002_100, barsAgo: 2 },
     { side: 'sell', barTime: 1_600_000_900, barsAgo: 6 },
@@ -20,6 +20,7 @@ describe('MaFvgSignalCard', () => {
     const html = renderToStaticMarkup(<MaFvgSignalCard signal={base} />);
     expect(html).toContain('Moving Averages &amp; FVG');
     expect(html).toContain('>buy<');
+    expect(html).toContain('conf 72% · strong');
     expect(html).toContain('2 bars ago');
     expect(html).toContain('Generated:');
     expect(html).toContain('Active');

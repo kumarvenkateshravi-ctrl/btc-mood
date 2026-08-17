@@ -7,6 +7,12 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+  /**
+   * Taker-buy base volume for the bar, when the source provides it (Binance
+   * klines do). Sell volume is `volume - takerBuyVolume`. Optional because
+   * synthetic/WS-merged candles don't carry it. See lib/dailyOrderFlow.ts.
+   */
+  takerBuyVolume?: number;
 }
 
 export interface Signal {

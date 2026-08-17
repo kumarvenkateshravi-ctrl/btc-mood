@@ -8,6 +8,7 @@
 // effects) can read the phase instead of scattered booleans.
 
 import { useSyncExternalStore } from 'react';
+import { clearReplayDataset } from './replayDataset';
 
 export type ReplayPhase = 'idle' | 'selecting' | 'ready' | 'playing' | 'paused' | 'finished';
 
@@ -104,6 +105,7 @@ export const replayActions = {
     return transition('finished');
   },
   exit(): boolean {
+    clearReplayDataset();
     if (state.phase === 'idle') return false;
     state = IDLE;
     emit();
@@ -121,6 +123,8 @@ export const replayActions = {
     let phase = state.phase;
     if (atEnd && phase === 'playing') phase = 'finished';
     if (!atEnd && phase === 'finished') phase = 'paused';
+    // Rewinding needs an atomic session reconstruction, never another tick.
+    if (clamped < state.playIndex && phase === 'playing') phase = 'paused';
     if (clamped === state.playIndex && phase === state.phase) return;
     state = { ...state, playIndex: clamped, phase };
     emit();

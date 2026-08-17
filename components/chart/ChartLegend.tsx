@@ -4,6 +4,7 @@ import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import IndicatorSettingsModal from '../trade/IndicatorSettingsModal';
 import type { IndicatorRender } from './types';
 import { TvSettingsIcon } from './TvSettingsIcon';
+import { formatNumber } from '@/lib/format';
 
 /** Accent color for the open/active indicator legend row (TradingView blue).
  *  Behaviour-preserving: the original Chart.tsx hardcoded this across all themes. */
@@ -78,7 +79,7 @@ export function ChartLegend({
               return {
                 id: p.id,
                 color: st?.color || p.color || LEGEND_ACCENT,
-                text: Number(v).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 }),
+                text: formatNumber(Number(v)),
               };
             })
             .filter((v): v is NonNullable<typeof v> => v !== null);

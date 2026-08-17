@@ -20,8 +20,8 @@ describe('computeMaFvgSignals — parity with the composite', () => {
     const composite = computeMaFvg(bars, { showSignals: true } as never);
     // Rebuild {index, side} from the composite markers and from the events.
     const fromMarkers = (composite.markers ?? [])
-      .filter((m) => m.text === 'BUY' || m.text === 'SELL')
-      .map((m) => ({ index: m.index, side: m.text === 'BUY' ? 'buy' : 'sell', confidence: m.value }));
+      .filter((m) => m.text === 'BUY' || m.text === 'SELL' || m.text === '𝗕𝗨𝗬' || m.text === '𝗦𝗘𝗟𝗟')
+      .map((m) => ({ index: m.index, side: (m.text === 'BUY' || m.text === '𝗕𝗨𝗬') ? 'buy' : 'sell', confidence: m.value }));
     const fromEvents = events.map((e) => ({ index: e.index, side: e.side, confidence: e.confidence }));
     expect(fromEvents).toEqual(fromMarkers);
     expect(fromEvents.length).toBeGreaterThan(0); // the fixture actually produces signals
@@ -29,8 +29,8 @@ describe('computeMaFvgSignals — parity with the composite', () => {
 
   it('config (cooldown) flows through identically to both', () => {
     const a = computeMaFvgSignals(bars, { showSignals: true, signalCooldownBars: 30 } as never).map((e) => e.index);
-    const b = (computeMaFvg(bars, { showSignals: true, signalCooldownBars: 30 } as never).markers ?? [])
-      .filter((m) => m.text === 'BUY' || m.text === 'SELL').map((m) => m.index);
+    const b = (composite => (composite.markers ?? [])
+      .filter((m) => m.text === 'BUY' || m.text === 'SELL' || m.text === '𝗕𝗨𝗬' || m.text === '𝗦𝗘𝗟𝗟').map((m) => m.index))(computeMaFvg(bars, { showSignals: true, signalCooldownBars: 30 } as never));
     expect(a).toEqual(b);
   });
 });
@@ -45,3 +45,4 @@ describe('freshnessOf', () => {
     expect(freshnessOf(42)).toBe('stale');
   });
 });
+

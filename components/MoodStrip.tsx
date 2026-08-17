@@ -10,6 +10,31 @@ import type { MarketLifecycleState } from '@/lib/hooks/useMarketState';
 type Status = 'live' | 'demo' | 'loading';
 type Side = 'bullish' | 'bearish' | 'neutral';
 
+const fmtPrice = (n: number | null | undefined) =>
+  n != null && Number.isFinite(n)
+    ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—';
+
+const fmtSigned = (n: number | null | undefined) =>
+  n != null && Number.isFinite(n)
+    ? `${n >= 0 ? '+' : ''}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '—';
+
+const fmtPct = (n: number | null | undefined) =>
+  n != null && Number.isFinite(n)
+    ? `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+    : '—';
+
+/** Compact volume, e.g. 9820 -> "9.82K", 1_200_000 -> "1.20M". */
+const fmtVol = (n: number | null | undefined) => {
+  if (n == null || !Number.isFinite(n)) return '—';
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e3) return `${(n / 1e3).toFixed(2)}K`;
+  return n.toFixed(2);
+};
+
 interface MoodStripProps {
   symbol: CompareSymbol;
   onSymbolChange: (s: CompareSymbol) => void;
@@ -17,6 +42,8 @@ interface MoodStripProps {
   dataState?: MarketLifecycleState;
   price: number | null;
   change: number | null;
+  changeAbs?: number | null;
+  volume?: number | null;
   mood: MoodVerdict;
   snapshots: Record<Timeframe, TFSnapshot | null>;
   timeframes: Timeframe[];
@@ -68,6 +95,8 @@ export default function MoodStrip({
   dataState,
   price,
   change,
+  changeAbs,
+  volume,
   mood,
   snapshots,
   timeframes,
@@ -89,7 +118,7 @@ export default function MoodStrip({
   return (
     <section
       aria-label="Market mood"
-      className="panel relative overflow-hidden rounded-2xl px-4 py-3.5 sm:px-5 sm:py-4"
+      className="panel relative overflow-hidden rounded-2xl px-6 py-7 sm:px-7 sm:py-8"
     >
       {/* Flip sweep — a single graze of light, then gone. */}
       {flipKey > 0 && (
@@ -104,64 +133,87 @@ export default function MoodStrip({
         />
       )}
 
-      <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Left: instrument identity + price */}
-        <div className="flex min-w-0 flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
+      <div className="relative flex flex-col gap-5">
+        {/* Row 1 — Symbol (left) · Section title (center) · Status (right) */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
             <SymbolSwitch value={symbol} onChange={onSymbolChange} />
             {dataState ? <DataStateIndicator state={status === 'demo' ? 'loading' : dataState} showLabel /> : <StatusPill status={status} />}
           </div>
-          <div className="flex items-end gap-3">
-            <span className="font-mono text-2xl leading-none tracking-tight text-ink tabular-nums sm:text-3xl">
-              {price != null
-                ? price.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : '—'}
-            </span>
-            {change != null && (
-              <span
-                className={[
-                  'mb-1 inline-flex items-center gap-1 font-mono text-sm tabular-nums',
-                  change >= 0 ? 'text-bull-bright' : 'text-bear-bright',
-                ].join(' ')}
-              >
-                <span aria-hidden>{change >= 0 ? '▲' : '▼'}</span>
-                {change >= 0 ? '+' : ''}
-                {change.toFixed(2)}%
-              </span>
-            )}
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-faint whitespace-nowrap">
+            Multi-timeframe mood
           </div>
+          <div className="w-[88px] shrink-0" aria-hidden />
         </div>
 
-        {/* Right: the verdict (most emphasized). */}
-        <div className="flex flex-col gap-3 lg:items-end">
-          <div className="flex items-center gap-5">
-            <ConfluenceMeter
-              snapshots={snapshots}
-              timeframes={timeframes}
-              side={display.side}
-              flipKey={flipKey}
-            />
-            <div className="flex flex-col items-end text-right">
-              <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-ink-faint">
-                Multi-timeframe mood
-              </span>
+        {/* Row 2 — Candles (left) · Verdict (right) */}
+        <div className="flex items-center justify-between gap-6 min-h-[52px]">
+          <ConfluenceMeter
+            snapshots={snapshots}
+            timeframes={timeframes}
+            side={display.side}
+            flipKey={flipKey}
+          />
+          <span
+            className={[
+              'text-2xl font-bold leading-none tracking-tight sm:text-3xl whitespace-nowrap',
+              SIDE_INK[display.side],
+            ].join(' ')}
+          >
+            {display.headline}
+          </span>
+        </div>
+
+        {/* Row 3 — Timeframe labels under the candles (left) · Tagline (right) */}
+        <div className="flex items-center justify-between gap-4 min-h-[20px] pt-0.5">
+          <div className="flex items-end gap-[12px]">
+            {timeframes.map((tf) => (
               <span
-                className={[
-                  'text-2xl font-semibold leading-tight tracking-tight sm:text-3xl',
-                  SIDE_INK[display.side],
-                ].join(' ')}
+                key={tf}
+                className="w-[20px] text-center text-[11px] font-semibold font-mono uppercase tracking-wide text-ink-muted"
               >
-                {display.headline}
+                {tf}
               </span>
-              <span className="mt-0.5 font-mono text-xs text-ink-muted tabular-nums">
-                {display.count} of {mood.totalCount} timeframes
-                <span className="text-ink-faint"> · higher TFs weighted</span>
-              </span>
-            </div>
+            ))}
           </div>
+          <span className="font-mono text-sm text-ink-muted tabular-nums whitespace-nowrap leading-5">
+            <span className="text-ink-muted">{display.count}/{mood.totalCount} bull</span>
+            <span className="text-ink-faint"> · HTF</span>
+          </span>
+        </div>
+
+        {/* Row 4 — Price · abs change · % change · 24h volume (single line) */}
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-1 min-h-[28px]">
+          <span className="font-mono text-2xl leading-tight tracking-tight text-ink tabular-nums sm:text-3xl">
+            {fmtPrice(price)}
+          </span>
+          {changeAbs != null && (
+            <span
+              className={[
+                'font-mono text-sm font-semibold tabular-nums leading-5',
+                changeAbs >= 0 ? 'text-bull-bright' : 'text-bear-bright',
+              ].join(' ')}
+            >
+              {fmtSigned(changeAbs)}
+            </span>
+          )}
+          {change != null && (
+            <span
+              className={[
+                'inline-flex items-center gap-1 font-mono text-sm font-semibold tabular-nums leading-5',
+                change >= 0 ? 'text-bull-bright' : 'text-bear-bright',
+              ].join(' ')}
+            >
+              <span aria-hidden className="text-base">{change >= 0 ? '▲' : '▼'}</span>
+              {fmtPct(change)}
+            </span>
+          )}
+          {volume != null && (
+            <span className="font-mono text-sm text-ink-muted tabular-nums leading-5">
+              <span className="text-ink-faint">24h vol </span>
+              {fmtVol(volume)}
+            </span>
+          )}
         </div>
       </div>
     </section>
@@ -234,11 +286,11 @@ function ConfluenceMeter({
   side: Side;
   flipKey: number;
 }) {
-  // Higher timeframes draw taller, making the weighting legible at a
-  // glance. Direction is color AND height position, never hue alone.
+  // Bars only. Timeframe labels are rendered separately in row 3 so the
+  // meter can occupy a single, predictable horizontal slot.
   return (
     <div
-      className="relative flex items-end gap-1"
+      className="relative flex items-end gap-[12px] shrink-0"
       role="img"
       aria-label={`Per-timeframe signals: ${timeframes
         .map((tf) => `${tf} ${snapshots[tf]?.signal.side ?? 'neutral'}`)
@@ -255,15 +307,14 @@ function ConfluenceMeter({
       {timeframes.map((tf, i) => {
         const s = snapshots[tf]?.signal.side ?? 'neutral';
         const fresh = snapshots[tf]?.signal.fresh === true;
-        const h = 14 + i * 4; // 14..34px, taller = higher timeframe
+        const h = 30 + i * 4; // 30..50px, taller = higher timeframe
         return (
-          <span key={tf} className="flex flex-col items-center gap-1" title={`${tf}: ${s}`}>
-            <span
-              className={`w-1.5 rounded-full ${SEG_BG[s]} ${fresh ? '' : 'opacity-55'}`}
-              style={{ height: h }}
-            />
-            <span className="text-[8px] font-mono uppercase text-ink-faint">{tf}</span>
-          </span>
+          <span
+            key={tf}
+            className={`w-2.5 rounded-full ${SEG_BG[s]} ${fresh ? '' : 'opacity-55'}`}
+            style={{ height: h }}
+            title={`${tf}: ${s}`}
+          />
         );
       })}
     </div>

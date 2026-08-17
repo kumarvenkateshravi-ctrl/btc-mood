@@ -138,7 +138,7 @@ export function computeMaFvg(
   });
 
   // ── RSI overlay + Buy/Sell signals ─────────────────────────
-  const { baseline: baselineArr, scaledRsi, scaledStrength, scaledSignal } =
+  const { baseline: baselineArr, scaledRsi, scaledStrength, scaledSignal, priceRange } =
     scaledRsiLines(candles, cfg, computedSources);
   // RSI fill (the Pine's fill(p_rsi, h_50, ...)): ONE band between the scaled RSI
   // line (upper) and the baseline (lower), drawn two-tone — teal where RSI > 50
@@ -171,6 +171,7 @@ export function computeMaFvg(
       cooldownBars: cfg.signalCooldownBars,
       trendFilter: cfg.signalTrendFilter,
       end: lastConfirmed, // never signal the still-forming bar
+      normalizer: priceRange,
     });
     for (const ev of events) {
       signals[ev.index] = ev.side;

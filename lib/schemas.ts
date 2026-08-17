@@ -9,6 +9,8 @@ export const CandleSchema = z.object({
   low: z.number().finite().nonnegative(),
   close: z.number().finite().nonnegative(),
   volume: z.number().finite().nonnegative(),
+  // Optional: only the klines proxy supplies it (see lib/types.ts Candle).
+  takerBuyVolume: z.number().finite().nonnegative().optional(),
 });
 export type CandleT = z.infer<typeof CandleSchema>;
 
@@ -43,6 +45,9 @@ export function parseCandlesFromBinance(raw: unknown): CandleT[] {
     low: Number(r[3]),
     close: Number(r[4]),
     volume: Number(r[5]),
+    // Index 9 = taker buy base asset volume. Previously validated then dropped;
+    // it is what lets the daily order-flow widget reconstruct the day on load.
+    takerBuyVolume: Number(r[9]),
   }));
 }
 

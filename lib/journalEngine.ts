@@ -88,14 +88,14 @@ export function generateSampleEntries(n = 268, seed = 42, now = Date.now()): Jou
 
 /** Map real closed paper trades into journal entries (derive what we can). */
 export function mapPaperTrades(trades: PaperTrade[], symbol: string): JournalEntry[] {
-  return trades.map((t, i) => {
+  return trades.filter((t) => t.symbol === symbol).map((t, i) => {
     const dir = tradeDirection(t);
     const rr = tradeRR(t) ?? (t.realizedPnl >= 0 ? 1 : -1);
     const oc = tradeOutcome(t);
     const followedTpSl = oc === 'TP' || oc === 'SL';
     const checks: DisciplineChecks = { entry: true, stop: t.sl != null, takeProfit: t.tp != null, riskOk: true, checklist: true, noEmotionalExit: followedTpSl };
     return {
-      id: t.id ?? `p${i}`, date: (t.ts ?? Math.floor(Date.now() / 1000)) * 1000, asset: symbol,
+      id: t.id ?? `p${i}`, date: (t.ts ?? Math.floor(Date.now() / 1000)) * 1000, asset: t.symbol,
       direction: dir === 'long' ? 'Long' : 'Short', setup: 'Trend Continuation', timeframe: '1H', regime: 'Trending',
       entry: t.entryPrice ?? t.price, exit: tradeExit(t), rr: +rr.toFixed(2), pnl: +t.realizedPnl.toFixed(2),
       holdingMin: t.entryTs && t.ts ? Math.max(1, Math.round((t.ts - t.entryTs) / 60)) : 60,

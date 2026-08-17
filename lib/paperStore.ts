@@ -15,6 +15,7 @@ import {
   type PaperTrade,
   type Side,
 } from './paper';
+import { canExecutePriceDependentLiveAction, setMarketDataIntegrityForTest } from './marketDataTrust';
 
 // ----- Store state (persisted to localStorage; survives reload) -------
 
@@ -55,6 +56,16 @@ interface PersistedState {
   balance: number;
   initialBalance: number;
 }
+function migratePersistedTrades(trades: unknown): PaperTrade[] {
+  if (!Array.isArray(trades)) return [];
+  return trades.map((trade) => {
+    const persisted = trade as PaperTrade;
+    return {
+      ...persisted,
+      symbol: typeof persisted.symbol === 'string' && persisted.symbol ? persisted.symbol : 'BTCUSDT',
+    };
+  });
+}
 
 function loadPersisted(): State {
   if (typeof window === 'undefined') return initialState;
@@ -66,7 +77,7 @@ function loadPersisted(): State {
       ...initialState,
       positions: p.positions ?? {},
       pending: p.pending ?? [],
-      trades: p.trades ?? [],
+      trades: migratePersistedTrades(p.trades),
       balance: typeof p.balance === 'number' ? p.balance : INITIAL_PAPER_BALANCE,
       initialBalance:
         typeof p.initialBalance === 'number' ? p.initialBalance : INITIAL_PAPER_BALANCE,
@@ -104,7 +115,7 @@ let pendingEmit = false;
 // forming candle's accumulated high/low (which includes action from before
 // the position opened and, on higher TFs, the whole day's range). Seeded when
 // an order is placed so the first post-entry tick can't retroactively fill.
-let liveTickCursor: number | null = null;
+const liveTickCursors = new Map<string, number>();
 
 const subscribe = (l: () => void) => {
   listeners.add(l);
@@ -201,6 +212,8 @@ export function newOrderId(): string {
 
 /** Test-only: reset the singleton state. */
 export function __resetForTest() {
+  liveTickCursors.clear();
+  setMarketDataIntegrityForTest('live');
   setState({ ...initialState });
 }
 
@@ -212,6 +225,7 @@ export function __getStateForTest(): State {
 /** Test-only: reload the module state from localStorage (simulates a page
  *  refresh — the module re-reads persisted state at load in the browser). */
 export function __rehydrateForTest() {
+  liveTickCursors.clear();
   setState(loadPersisted());
 }
 
@@ -235,7 +249,15 @@ export interface PlaceOrderInput {
   ts?: number;
 }
 
+const MARKET_DATA_TRUST_ERROR = 'Market data is not trustworthy for live execution';
+
+function rejectUntrustedPriceExecution(): { ok: false; error: string } {
+  patch((s) => ({ ...s, lastError: MARKET_DATA_TRUST_ERROR }));
+  return { ok: false, error: MARKET_DATA_TRUST_ERROR };
+}
+
 export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: string } {
+  if (!canExecutePriceDependentLiveAction()) return rejectUntrustedPriceExecution();
   const order: PaperOrder = {
     id: newOrderId(),
     symbol: input.symbol,
@@ -292,7 +314,7 @@ export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: strin
       lastFill: fill,
       balance: state.balance - needed + balanceDelta,
     });
-    liveTickCursor = fillPrice; // reset the cursor to the fresh entry
+    liveTickCursors.set(input.symbol, fillPrice); // reset this symbol's cursor to the fresh entry
     pushToast(
       `Filled ${input.side.toUpperCase()} ${input.units} @ ${fillPrice.toFixed(1)}`,
       input.side,
@@ -302,8 +324,8 @@ export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: strin
 
   // Limit / stop parked below: seed the cursor from the current price so a
   // pending order is only checked against movement from here on.
-  if (liveTickCursor == null && Number.isFinite(input.midPrice) && input.midPrice > 0) {
-    liveTickCursor = input.midPrice;
+  if (!liveTickCursors.has(input.symbol) && Number.isFinite(input.midPrice) && input.midPrice > 0) {
+    liveTickCursors.set(input.symbol, input.midPrice);
   }
 
   // Limit / stop: park in pending. Deduct margin now.
@@ -358,8 +380,11 @@ export function cancelOrder(id: string) {
   pushToast('Order cancelled', 'info');
 }
 
-export function closePosition(midPrice: number, symbol?: string) {
-  const sym = symbol ?? 'BTCUSDT';
+export function closePosition(midPrice: number, sym: string) {
+  if (!canExecutePriceDependentLiveAction()) {
+    rejectUntrustedPriceExecution();
+    return;
+  }
   const pos = posFor(state, sym);
   if (!pos || pos.side === 'flat' || pos.units <= 0) return;
   _closeUnits(pos, sym, pos.units, midPrice);
@@ -367,6 +392,10 @@ export function closePosition(midPrice: number, symbol?: string) {
 
 /** Close a fraction (0..1) of the open position. */
 export function partialClose(symbol: string, fraction: number, midPrice: number) {
+  if (!canExecutePriceDependentLiveAction()) {
+    rejectUntrustedPriceExecution();
+    return;
+  }
   const pos = posFor(state, symbol);
   if (!pos || pos.side === 'flat' || pos.units <= 0) return;
   const qty = pos.units * Math.min(1, Math.max(0, fraction));
@@ -424,6 +453,7 @@ export function cancelAll() {
 }
 
 export function resetAll() {
+  liveTickCursors.clear();
   setState({
     positions: {},
     pending: [],
@@ -491,10 +521,10 @@ export function setTakeProfit(_orderId: string | null, price: number | null) {
   setPositionOverlay('tp', price);
 }
 
-/** Replay a single new bar against the working book. Iterates every
- *  open position so multi-symbol portfolios stay in sync. (Bar Replay
- *  uses a separate isolated account in lib/replaySession.ts, so this only
- *  ever sees live bars.) */
+/** Reconcile one live bar only against that symbol's working book.
+ *  Bar Replay uses a separate isolated account in lib/replaySession.ts,
+ *  so this store receives live-symbol bars only.
+ */
 /**
  * Live reconciliation from a price tick. Builds a minimal bar covering only the
  * movement between the previous tick and this one, so SL/TP and pending orders
@@ -502,12 +532,12 @@ export function setTakeProfit(_orderId: string | null, price: number | null) {
  * candle's range. This fixes freshly-placed positions vanishing instantly
  * because a higher-TF forming candle's low/high already spanned their exits.
  */
-export function reconcileLiveTick(price: number, ts: number) {
+export function reconcileLiveTick(symbol: string, price: number, ts: number) {
   if (typeof window === 'undefined' || !Number.isFinite(price) || price <= 0) return;
-  const prev = liveTickCursor;
-  liveTickCursor = price;
+  const prev = liveTickCursors.get(symbol);
+  liveTickCursors.set(symbol, price);
   if (prev == null || prev === price) return; // seed only / no movement
-  reconcileBar({
+  reconcileBar(symbol, {
     time: ts,
     open: prev,
     high: Math.max(prev, price),
@@ -517,15 +547,13 @@ export function reconcileLiveTick(price: number, ts: number) {
   });
 }
 
-export function reconcileBar(bar: import('./types').Candle) {
+export function reconcileBar(symbol: string, bar: import('./types').Candle) {
   if (typeof window === 'undefined') return;
   let nextState = state;
   let changed = false;
 
-  // Collect all symbols that have pending orders or open positions.
-  const symbols = new Set(Object.keys(nextState.positions));
-  for (const o of nextState.pending) symbols.add(o.symbol);
-  if (symbols.size === 0) return;
+  // A market event may reconcile only its own symbol's book.
+  const symbols = new Set([symbol]);
 
   for (const sym of symbols) {
     const pos = posFor(nextState, sym);
@@ -609,8 +637,6 @@ export function usePaperStore() {
       toast: s.toast,
       balance: s.balance,
       initialBalance: s.initialBalance,
-      // Convenience: the BTCUSDT position (the app trades one symbol on-chart).
-      position: posFor(s, 'BTCUSDT'),
       setPositionOverlay,
       placeOrder,
       cancelOrder,

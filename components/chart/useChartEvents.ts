@@ -31,20 +31,36 @@ export function useChartEvents(refs: ChartRefs) {
     if (!chart || !container) return;
 
     // ---- Crosshair Sync ----
+    // Pointer drag can emit crosshair events for every pixel. The tooltip does
+    // not need a React update for sub-pixel movement, so keep a tiny position
+    // cache and publish at most once per two-pixel move (or bar change).
+    let lastTooltipPoint: { x: number; y: number; time: number } | null = null;
+    const clearTooltip = () => {
+      lastTooltipPoint = null;
+      setTooltipPos(null);
+    };
+    const publishTooltip = (point: { x: number; y: number }, time: number, hover: HoverPayload) => {
+      if (lastTooltipPoint
+        && lastTooltipPoint.time === time
+        && Math.abs(lastTooltipPoint.x - point.x) < 2
+        && Math.abs(lastTooltipPoint.y - point.y) < 2) return;
+      lastTooltipPoint = { x: point.x, y: point.y, time };
+      setTooltipPos({ x: point.x, y: point.y, time, hover });
+    };
     const onCrosshair = (param: MouseEventParams) => {
       const cs = candleSeriesRef.current;
       const { src, base: baseCandles, isRenko: renko } = hoverInputsRef.current;
       if (!cs || baseCandles.length === 0 || !param.time || param.point === undefined) {
         setHover(null);
         lastCrosshairRef.current = null;
-        if (isPointerDownRef.current) setTooltipPos(null);
+        if (isPointerDownRef.current) clearTooltip();
         return;
       }
       const timeSec = param.time as number | string;
       if (typeof timeSec !== 'number') {
         setHover(null);
         lastCrosshairRef.current = null;
-        if (isPointerDownRef.current) setTooltipPos(null);
+        if (isPointerDownRef.current) clearTooltip();
         return;
       }
       const data = param.seriesData.get(cs) as
@@ -53,7 +69,7 @@ export function useChartEvents(refs: ChartRefs) {
       if (!data) {
         setHover(null);
         lastCrosshairRef.current = null;
-        if (isPointerDownRef.current) setTooltipPos(null);
+        if (isPointerDownRef.current) clearTooltip();
         return;
       }
       const idx =
@@ -64,14 +80,14 @@ export function useChartEvents(refs: ChartRefs) {
       if (!base) {
         setHover(null);
         lastCrosshairRef.current = null;
-        if (isPointerDownRef.current) setTooltipPos(null);
+        if (isPointerDownRef.current) clearTooltip();
         return;
       }
       const srcCandle = renko ? base : src[idx];
       if (!srcCandle) {
         setHover(null);
         lastCrosshairRef.current = null;
-        if (isPointerDownRef.current) setTooltipPos(null);
+        if (isPointerDownRef.current) clearTooltip();
         return;
       }
       const prevIdx = idx > 0 ? idx - 1 : -1;
@@ -83,26 +99,33 @@ export function useChartEvents(refs: ChartRefs) {
       };
       
       if (lastCrosshairRef.current?.payload.base !== base || lastCrosshairRef.current?.time !== timeSec) {
-        setHover(payload);
+        if (!isPointerDownRef.current) setHover(payload);
         lastCrosshairRef.current = { point: param.point, time: timeSec, payload };
         if (isCandlePointerDown) {
-          setTooltipPos({ x: param.point.x, y: param.point.y, time: timeSec, hover: payload });
+          publishTooltip(param.point, timeSec, payload);
         }
       } else {
         lastCrosshairRef.current.point = param.point;
         if (isCandlePointerDown) {
-          setTooltipPos({ x: param.point.x, y: param.point.y, time: timeSec, hover: payload });
+          publishTooltip(param.point, timeSec, payload);
         }
       }
     };
     chart.subscribeCrosshairMove(onCrosshair);
 
     // ---- Lazy Load & Logical Range ----
+    // Time-scale callbacks fire for every drag frame. Avoid scheduling a React
+    // update when the user is still on the same side of the real-time edge.
+    let lastScrolledBack: boolean | null = null;
     const onLogicalRange = (range: LogicalRange | null) => {
       if (range && range.from < 10) onLoadOlderRef.current?.();
       const ts = chartRef.current?.timeScale();
       if (ts) {
-        setIsScrolledBack(ts.scrollPosition() < 0);
+        const nextScrolledBack = ts.scrollPosition() < 0;
+        if (nextScrolledBack !== lastScrolledBack) {
+          lastScrolledBack = nextScrolledBack;
+          setIsScrolledBack(nextScrolledBack);
+        }
       }
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onLogicalRange);

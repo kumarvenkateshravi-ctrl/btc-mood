@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import type { Candle, Timeframe } from '../types';
 import { TIMEFRAMES } from '../types';
-import { synthCandles } from '../binance';
 import {
   fetchKlinesTyped,
   fetchKlinesBefore,
@@ -16,6 +15,9 @@ import { subscribeKlines, subscribeBookTicker, type BookTicker, type WSStatus } 
 import { reconcileLiveTick } from '../paperStore';
 import { POLL_MS } from '../dashboardUrl';
 import type { CompareSymbol } from '../compare';
+import { HistoricalRequestGate, type HistoricalRequest } from '../historicalRequestIdentity';
+import { deriveMarketDataIntegrity, type MarketDataIntegrity } from '../marketDataIntegrity';
+import { setMarketDataIntegrity } from '../marketDataTrust';
 
 type CandlesByTf = Record<Timeframe, Candle[]>;
 type ErrorsByTf = Record<Timeframe, string | null>;
@@ -29,14 +31,27 @@ function emptyErrors(): ErrorsByTf {
   return Object.fromEntries(TIMEFRAMES.map((tf) => [tf, null])) as ErrorsByTf;
 }
 
+function linkAbortSignal(request: HistoricalRequest, signal?: AbortSignal) {
+  if (!signal) return () => {};
+  const abort = () => request.abort();
+  if (signal.aborted) abort();
+  else signal.addEventListener('abort', abort, { once: true });
+  return () => signal.removeEventListener('abort', abort);
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 export interface MarketData {
   candlesByTf: CandlesByTf;
   setCandlesByTf: React.Dispatch<React.SetStateAction<CandlesByTf>>;
   errorsByTf: ErrorsByTf;
   status: 'live' | 'demo' | 'loading';
+  integrity: MarketDataIntegrity;
   wsStatus: WSStatus;
   bookTicker: BookTicker | null;
-  ticker24h: { price: number; change: number } | null;
+  ticker24h: { price: number; change: number; changeAbs: number; volume: number } | null;
   wsBarCount: number;
   lastUpdateMs: number;
   /** Lazy-load older history for a TF (scroll-to-left-edge). */
@@ -46,6 +61,7 @@ export interface MarketData {
     untilMs: number,
     maxPages: number,
     onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void,
+    signal?: AbortSignal,
   ) => Promise<void>;
 }
 
@@ -65,11 +81,27 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
   const [candlesByTf, setCandlesByTf] = useState<CandlesByTf>(emptyCandles);
   const [errorsByTf, setErrorsByTf] = useState<ErrorsByTf>(emptyErrors);
   const [status, setStatus] = useState<'live' | 'demo' | 'loading'>('loading');
+  const [integrity, setIntegrity] = useState<MarketDataIntegrity>('loading');
+  const [integrityRefresh, setIntegrityRefresh] = useState(0);
   const [wsStatus, setWsStatus] = useState<WSStatus>('closed');
   const [bookTicker, setBookTicker] = useState<BookTicker | null>(null);
-  const [ticker24h, setTicker24h] = useState<{ price: number; change: number } | null>(null);
+  const [ticker24h, setTicker24h] = useState<{ price: number; change: number; changeAbs: number; volume: number } | null>(null);
   const [lastUpdateMs, setLastUpdateMs] = useState<number>(0);
   const wsBarCountRef = useRef(0);
+
+  const historicalGateRef = useRef(new HistoricalRequestGate());
+  const requestContextRef = useRef({ symbol, generation: 0 });
+  const loadingOlderRef = useRef<Record<string, number>>({});
+  const noMoreOlderRef = useRef<Record<string, boolean>>({});
+  if (requestContextRef.current.symbol !== symbol) {
+    requestContextRef.current = {
+      symbol,
+      generation: requestContextRef.current.generation + 1,
+    };
+    historicalGateRef.current.invalidate();
+    loadingOlderRef.current = {};
+    setMarketDataIntegrity('loading');
+  }
 
   // Clear all candle state the instant the symbol changes. Without this the
   // previous symbol's bars linger for the ~200ms until the new REST fetch
@@ -84,10 +116,15 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     setCandlesByTf(emptyCandles());
     setErrorsByTf(emptyErrors());
     setBookTicker(null);
+    setLastUpdateMs(0);
     setStatus('loading');
+    setIntegrity('loading');
+    setMarketDataIntegrity('loading');
   }, [symbol]);
 
   // ---- Historical fetch via TanStack Query ----
+
+  useEffect(() => () => historicalGateRef.current.invalidate(), []);
   const klinesQueries = useQueries({
     queries: TIMEFRAMES.map((tf) => ({
       queryKey: klinesQueryKey(symbol, tf),
@@ -117,19 +154,20 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     .join('|');
 
   useEffect(() => {
+    const requestContext = requestContextRef.current;
+    const isCurrentContext = () => requestContext === requestContextRef.current;
+    if (!isCurrentContext()) return;
+
     setCandlesByTf((prev) => {
+      if (!isCurrentContext()) return prev;
       const next = { ...prev } as CandlesByTf;
       const nextErrors = emptyErrors();
       let anyLive = false;
-      let anyPending = false;
 
       for (let i = 0; i < TIMEFRAMES.length; i++) {
         const tf = TIMEFRAMES[i];
         const q = klinesQueries[i];
-        if (q.isPending) {
-          anyPending = true;
-          continue;
-        }
+        if (q.isPending) continue;
         if (q.isSuccess && q.data) {
           const incoming = q.data;
           const existing = prev[tf];
@@ -145,15 +183,12 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
         if (q.isError) {
           const msg = q.error instanceof Error ? q.error.message : 'fetch failed';
           nextErrors[tf] = msg;
-          if (next[tf].length === 0) {
-            const seed = 42 + TIMEFRAMES.indexOf(tf);
-            next[tf] = synthCandles(500, seed);
-          }
         }
       }
 
+      if (!isCurrentContext()) return prev;
       setErrorsByTf(nextErrors);
-      setStatus(anyLive ? 'live' : anyPending ? 'loading' : 'demo');
+      setStatus(anyLive ? 'live' : 'loading');
       let changed = false;
       for (const tf of TIMEFRAMES) {
         if (next[tf] !== prev[tf]) {
@@ -164,7 +199,7 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [querySignature]);
+  }, [querySignature, symbol]);
 
   // ---- WebSocket: kline streams for all 6 TFs ----
   useEffect(() => {
@@ -176,7 +211,7 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
         // Reconcile paper positions against the price MOVEMENT (tick close),
         // never the forming candle's accumulated high/low — the latter closed
         // fresh positions instantly (esp. via the daily candle's full range).
-        reconcileLiveTick(bar.close, bar.time);
+        reconcileLiveTick(symbol, bar.close, bar.time);
         setCandlesByTf((prev) => {
           const next = { ...prev } as CandlesByTf;
           const arr = next[tf];
@@ -199,12 +234,38 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
           return next;
         });
         setLastUpdateMs(Date.now());
-        setStatus((s) => (s === 'demo' ? 'live' : s));
       },
       setWsStatus,
     );
     return dispose;
   }, [symbol]);
+
+  // Re-evaluate exactly when a fresh live tick becomes stale; avoid a periodic
+  // dashboard re-render while still guaranteeing stale data cannot trade.
+  useEffect(() => {
+    if (wsStatus !== 'open' || lastUpdateMs <= 0) return;
+    const delay = Math.max(0, lastUpdateMs + 15_000 - Date.now());
+    const timeout = window.setTimeout(() => setIntegrityRefresh((n) => n + 1), delay + 1);
+    return () => window.clearTimeout(timeout);
+  }, [wsStatus, lastUpdateMs]);
+
+  // Production candles retain their exchange provenance. A transient REST or
+  // socket failure keeps prior validated bars, but downgrades their integrity
+  // instead of fabricating replacement data.
+  useEffect(() => {
+    const next = deriveMarketDataIntegrity({
+      hasAnyCandles: TIMEFRAMES.some((tf) => candlesByTf[tf].length > 0),
+      hasAllTimeframes: TIMEFRAMES.every((tf) => candlesByTf[tf].length > 0),
+      hasErrors: TIMEFRAMES.some((tf) => errorsByTf[tf] != null),
+      isLoading: klinesQueries.some((q) => q.isPending),
+      wsStatus,
+      lastUpdateMs,
+      nowMs: Date.now(),
+    });
+    setIntegrity(next);
+    setMarketDataIntegrity(next);
+    setStatus(next === 'live' ? 'live' : 'loading');
+  }, [candlesByTf, errorsByTf, querySignature, wsStatus, lastUpdateMs, integrityRefresh]);
 
   // ---- WebSocket: bookTicker for real-time bid/ask ----
   useEffect(() => {
@@ -216,21 +277,26 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
   }, [symbol]);
 
   // ---- Lazy-load older history ----
-  const loadingOlderRef = useRef<Record<string, boolean>>({});
-  const noMoreOlderRef = useRef<Record<string, boolean>>({});
 
   // Fetch ONE page older than `beforeMs`, prepend it, and return the new
   // oldest ms (or null when history is exhausted). The `before` cursor is
   // tracked locally by callers — state updates are async, so reading
   // candlesByTf inside a loop would see stale values.
-  const fetchAndPrependPage = async (tf: Timeframe, beforeMs: number): Promise<number | null> => {
-    const key = `${symbol}:${tf}`;
-    const older = await fetchKlinesBefore(tf, symbol, beforeMs, 1000);
+  const fetchAndPrependPage = async (
+    tf: Timeframe,
+    beforeMs: number,
+    request: HistoricalRequest,
+  ): Promise<number | null> => {
+    const requestSymbol = request.identity.symbol as CompareSymbol;
+    const key = `${requestSymbol}:${tf}`;
+    const older = await fetchKlinesBefore(tf, requestSymbol, beforeMs, 1000, request.signal);
+    if (!request.isCurrent()) return null;
     if (older.length === 0) {
       noMoreOlderRef.current[key] = true;
       return null;
     }
     setCandlesByTf((prev) => {
+      if (!request.isCurrent()) return prev;
       const cur = prev[tf];
       if (!cur || cur.length === 0) return prev;
       const cutoff = cur[0].time;
@@ -255,12 +321,14 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     if (loadingOlderRef.current[key] || noMoreOlderRef.current[key]) return;
     const arr = candlesByTf[tf];
     if (!arr || arr.length === 0) return;
-    loadingOlderRef.current[key] = true;
+    const request = historicalGateRef.current.begin(symbol, tf, 'lazy');
+    loadingOlderRef.current[key] = request.identity.requestId;
     try {
       let before = arr[0].time * 1000;
       const chunks: Candle[][] = []; // newest chunk first
       for (let page = 0; page < 3; page++) {
-        const older = await fetchKlinesBefore(tf, symbol, before, 1000);
+        const older = await fetchKlinesBefore(tf, symbol, before, 1000, request.signal);
+        if (!request.isCurrent()) return;
         if (older.length === 0) {
           noMoreOlderRef.current[key] = true;
           break;
@@ -275,6 +343,7 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
       if (chunks.length === 0) return;
       const olderAll = chunks.reverse().flat(); // oldest -> newest
       setCandlesByTf((prev) => {
+        if (!request.isCurrent()) return prev;
         const cur = prev[tf];
         if (!cur || cur.length === 0) return prev;
         const cutoff = cur[0].time;
@@ -288,7 +357,10 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     } catch {
       // Leave the guard cleared so a later scroll can retry.
     } finally {
-      loadingOlderRef.current[key] = false;
+      if (loadingOlderRef.current[key] === request.identity.requestId) {
+        delete loadingOlderRef.current[key];
+      }
+      request.finish();
     }
   };
 
@@ -302,24 +374,41 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     untilMs: number,
     maxPages: number,
     onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void,
+    signal?: AbortSignal,
   ) => {
     const key = `${symbol}:${tf}`;
-    if (loadingOlderRef.current[key]) return;
+    // A deliberate deep backfill supersedes an older lazy request for this book.
     const arr = candlesByTf[tf];
     if (!arr || arr.length === 0) return;
-    loadingOlderRef.current[key] = true;
+    const request = historicalGateRef.current.begin(symbol, tf, 'deep');
+    const unlinkAbort = linkAbortSignal(request, signal);
+    if (!request.isCurrent()) {
+      unlinkAbort();
+      request.finish();
+      return;
+    }
+    loadingOlderRef.current[key] = request.identity.requestId;
     try {
       let before: number | null = arr[0].time * 1000;
       for (let page = 0; page < maxPages; page++) {
-        if (before == null || before <= untilMs || noMoreOlderRef.current[key]) break;
-        before = await fetchAndPrependPage(tf, before);
-        if (before != null) onProgress?.({ tf, pages: page + 1, oldestMs: before });
+        if (!request.isCurrent() || before == null || before <= untilMs || noMoreOlderRef.current[key]) break;
+        before = await fetchAndPrependPage(tf, before, request);
+        if (!request.isCurrent()) return;
+        if (before != null) {
+          request.ifCurrent(() => onProgress?.({ tf, pages: page + 1, oldestMs: before! }));
+        }
         await new Promise((r) => setTimeout(r, 150));
       }
-    } catch {
-      // Partial history is still useful; the caller proceeds with whatever loaded.
+    } catch (error) {
+      if (!isAbortError(error) && request.isCurrent()) {
+        // Partial history is still useful; the caller proceeds with whatever loaded.
+      }
     } finally {
-      loadingOlderRef.current[key] = false;
+      if (loadingOlderRef.current[key] === request.identity.requestId) {
+        delete loadingOlderRef.current[key];
+      }
+      unlinkAbort();
+      request.finish();
     }
   };
 
@@ -334,6 +423,8 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
           setTicker24h({
             price: Number(data.lastPrice),
             change: Number(data.priceChangePercent),
+            changeAbs: Number(data.priceChange),
+            volume: Number(data.volume),
           });
         }
       })
@@ -348,6 +439,8 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
           setTicker24h({
             price: Number(data.c),
             change: Number(data.P),
+            changeAbs: Number(data.p),
+            volume: Number(data.v),
           });
           setLastUpdateMs(Date.now());
         }
@@ -369,6 +462,7 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
     setCandlesByTf,
     errorsByTf,
     status,
+    integrity,
     wsStatus,
     bookTicker,
     ticker24h,

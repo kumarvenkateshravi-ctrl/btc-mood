@@ -5,17 +5,18 @@
 // (e.g. the Active Trade widget shows below the Mood infographics). Extensible:
 // add an entry to WIDGETS and a render site keyed off the same pref.
 
-import { Boxes, Activity, Check } from 'lucide-react';
+import { Boxes, Activity, Check, BarChart3 } from 'lucide-react';
 import { cx } from '@/components/ui/util';
 
-export type WidgetKey = 'activeTrade' | 'marketContext';
+export type WidgetKey = 'activeTrade' | 'marketContext' | 'dailyOrderFlow';
 
 export interface WidgetPrefs {
   activeTrade: boolean;
   marketContext: boolean;
+  dailyOrderFlow: boolean;
 }
 
-export const DEFAULT_WIDGET_PREFS: WidgetPrefs = { activeTrade: false, marketContext: false };
+export const DEFAULT_WIDGET_PREFS: WidgetPrefs = { activeTrade: false, marketContext: false, dailyOrderFlow: false };
 
 interface WidgetMeta {
   key: WidgetKey;
@@ -35,6 +36,13 @@ const WIDGETS: WidgetMeta[] = [
     home: 'Shows below the Mood panel',
     Icon: Activity,
     statusKey: 'trade',
+  },
+  {
+    key: 'dailyOrderFlow',
+    name: 'Daily Order Flow',
+    desc: "Cumulative taker buy vs sell volume for the UTC day, with delta and a cumulative-delta sparkline — shows whether buyers or sellers are in control.",
+    home: 'Shows in the right rail',
+    Icon: BarChart3,
   },
   {
     key: 'marketContext',

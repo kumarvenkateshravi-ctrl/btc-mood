@@ -31,7 +31,16 @@ describe('parseCandlesFromBinance', () => {
       low: 95.3,
       close: 105.0,
       volume: 12.5,
+      takerBuyVolume: 6.0,
     });
+  });
+
+  it('reads taker-buy volume from kline index 9, not the quote-asset field', () => {
+    // Index 9 is taker-buy BASE volume; index 10 is its quote equivalent (600.0).
+    // Daily order flow splits buy/sell off this, so an off-by-one is silent and wrong.
+    const row = [...validKline];
+    row[9] = '7.25';
+    expect(parseCandlesFromBinance([row])[0].takerBuyVolume).toBe(7.25);
   });
 
   it('rejects a row where the open price is not a string', () => {

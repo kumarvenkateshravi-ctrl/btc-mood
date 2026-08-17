@@ -65,6 +65,7 @@ export default function TradeHistory() {
             <thead className="sticky top-0 bg-surface-2/80 text-[10px] uppercase tracking-wider text-ink-faint backdrop-blur">
               <tr>
                 <Th>Dir</Th>
+                <Th>Symbol</Th>
                 <Th>Qty</Th>
                 <Th className="text-right">Entry</Th>
                 <Th className="text-right">Exit</Th>
@@ -92,6 +93,7 @@ export default function TradeHistory() {
                         {dir === 'long' ? 'LONG' : 'SHORT'}
                       </span>
                     </Td>
+                    <Td className="font-mono text-ink-muted">{t.symbol}</Td>
                     <Td className="font-mono tabular-nums text-ink-muted">{t.units}</Td>
                     <Td className="text-right font-mono tabular-nums text-ink-muted">
                       {t.entryPrice != null ? t.entryPrice.toFixed(1) : '—'}

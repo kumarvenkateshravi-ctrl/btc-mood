@@ -299,6 +299,44 @@ export function tr(candles: TrueRangeInput[]): (number | null)[] {
   return out;
 }
 
+export const trSeries = tr;
+
+/**
+ * Commodity Channel Index (CCI) series: (src - SMA(src, length)) / (0.015 * meanDev)
+ * Matching TradingView's ta.cci.
+ */
+export function cciSeries(src: (number | null)[], length: number): (number | null)[] {
+  const out = new Array<number | null>(src.length).fill(null);
+  if (length <= 0) return out;
+
+  for (let i = length - 1; i < src.length; i++) {
+    let sum = 0;
+    let valid = true;
+    for (let j = 0; j < length; j++) {
+      const val = src[i - j];
+      if (val === null) {
+        valid = false;
+        break;
+      }
+      sum += val;
+    }
+    if (!valid) continue;
+
+    const mean = sum / length;
+    let devSum = 0;
+    for (let j = 0; j < length; j++) {
+      const val = src[i - j] as number;
+      devSum += Math.abs(val - mean);
+    }
+    const meanDev = devSum / length;
+    const currentVal = src[i] as number;
+
+    out[i] = meanDev === 0 ? 0 : (currentVal - mean) / (0.015 * meanDev);
+  }
+
+  return out;
+}
+
 // PineScript ta.linreg(src, length, offset):
 //   Least-squares linear regression over `length` points,
 //   evaluated at `offset` bars ago. offset=0 returns the regression

@@ -5,7 +5,7 @@ import { tradeDirection, tradeExit, tradePnlPct, tradeRR, tradeOutcome } from '.
 const CSV_HEADER = 'time,open,high,low,close,volume';
 
 const TRADE_HEADER =
-  '#,Side,Entry Price,Exit Price,Entry Time,Exit Time,Quantity,R:R,P&L ($),P&L (%),Outcome';
+  '#,Symbol,Side,Entry Price,Exit Price,Entry Time,Exit Time,Quantity,R:R,P&L ($),P&L (%),Outcome';
 
 const isoOrBlank = (sec?: number) => (sec ? new Date(sec * 1000).toISOString() : '');
 
@@ -18,6 +18,7 @@ export function tradesToCsv(trades: PaperTrade[]): string {
     rows.push(
       [
         i + 1,
+        t.symbol,
         tradeDirection(t).toUpperCase(),
         t.entryPrice ?? '',
         tradeExit(t),

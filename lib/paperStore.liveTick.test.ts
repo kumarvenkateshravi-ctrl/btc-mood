@@ -1,15 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { placeOrder, reconcileLiveTick, closePosition, __getStateForTest as getState } from './paperStore';
+import { placeOrder, reconcileLiveTick, __resetForTest, __getStateForTest as getState } from './paperStore';
 
 // The bug: a freshly-placed market position vanished instantly because the
 // live path reconciled against a forming candle's full high/low (incl. the
 // daily candle's whole-day range), retroactively filling SL/TP.
 
 function reset() {
-  // flatten any leftover position from a previous test
-  const st = getState();
-  for (const sym of Object.keys(st.positions)) closePosition(65000, sym);
+  __resetForTest();
 }
 
 describe('reconcileLiveTick', () => {
@@ -22,8 +20,8 @@ describe('reconcileLiveTick', () => {
     });
     expect(getState().positions['BTCUSDT']?.side).toBe('long');
     // a normal live tick near entry must not touch the far-away SL/TP
-    reconcileLiveTick(65010, 1000);
-    reconcileLiveTick(64990, 1001);
+    reconcileLiveTick('BTCUSDT', 65010, 1000);
+    reconcileLiveTick('BTCUSDT', 64990, 1001);
     expect(getState().positions['BTCUSDT']?.side).toBe('long');
   });
 
@@ -34,8 +32,8 @@ describe('reconcileLiveTick', () => {
     });
     // simulate the old failure input: the daily forming candle's low was 62000,
     // but we now feed TICKS. Price ticks up, never reaching 63000.
-    reconcileLiveTick(65200, 2000);
-    reconcileLiveTick(65500, 2001);
+    reconcileLiveTick('BTCUSDT', 65200, 2000);
+    reconcileLiveTick('BTCUSDT', 65500, 2001);
     expect(getState().positions['BTCUSDT']?.side).toBe('long');
   });
 
@@ -44,9 +42,9 @@ describe('reconcileLiveTick', () => {
       symbol: 'BTCUSDT', side: 'buy', type: 'market', units: 0.01, price: null,
       tp: 66000, sl: 63000, reduceOnly: false, postOnly: false, leverage: 10, midPrice: 65000,
     });
-    reconcileLiveTick(64000, 3000); // still above stop
+    reconcileLiveTick('BTCUSDT', 64000, 3000); // still above stop
     expect(getState().positions['BTCUSDT']?.side).toBe('long');
-    reconcileLiveTick(62950, 3001); // ticks through 63000
+    reconcileLiveTick('BTCUSDT', 62950, 3001); // ticks through 63000
     const pos = getState().positions['BTCUSDT'];
     expect(pos == null || pos.side === 'flat').toBe(true);
   });
@@ -56,7 +54,7 @@ describe('reconcileLiveTick', () => {
       symbol: 'BTCUSDT', side: 'buy', type: 'market', units: 0.01, price: null,
       tp: 66000, sl: 63000, reduceOnly: false, postOnly: false, leverage: 10, midPrice: 65000,
     });
-    reconcileLiveTick(66050, 4000); // through TP
+    reconcileLiveTick('BTCUSDT', 66050, 4000); // through TP
     const pos = getState().positions['BTCUSDT'];
     expect(pos == null || pos.side === 'flat').toBe(true);
   });

@@ -45,7 +45,7 @@ export const TOOL_POINTS: Record<DrawingType, 1 | 2> = {
 
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 
-export const DRAWING_COLORS = ['#5aa2e6', '#f5b13b', '#22d39a', '#fb5168', '#a855f7', '#e9eef7'];
+export const DRAWING_COLORS = ['#5aa2e6', '#f5b13b', '#22d39a', '#fb5168', '#e9eef7'];
 
 export function newDrawingId(): string {
   return `dw_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;

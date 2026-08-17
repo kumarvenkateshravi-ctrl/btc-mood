@@ -51,11 +51,12 @@ describe('analyzeJournal', () => {
 
 describe('mapPaperTrades', () => {
   it('maps a closed paper trade into a journal entry', () => {
-    const t: PaperTrade = { id: 'x', positionId: 'p', side: 'sell', units: 1, price: 110, fee: 0, realizedPnl: 10, ts: 2000, direction: 'long', entryPrice: 100, exitPrice: 110, entryTs: 1400, tp: 120, sl: 90 };
+    const t: PaperTrade = { id: 'x', positionId: 'p', symbol: 'BTCUSDT', side: 'sell', units: 1, price: 110, fee: 0, realizedPnl: 10, ts: 2000, direction: 'long', entryPrice: 100, exitPrice: 110, entryTs: 1400, tp: 120, sl: 90 };
     const [e] = mapPaperTrades([t], 'BTCUSDT');
     expect(e.direction).toBe('Long');
     expect(e.outcome).toBe('Win');
     expect(e.asset).toBe('BTCUSDT');
     expect(e.holdingMin).toBe(10);
+    expect(mapPaperTrades([{ ...t, symbol: 'XAUUSD' }], 'BTCUSDT')).toEqual([]);
   });
 });

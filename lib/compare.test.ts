@@ -10,15 +10,15 @@ describe('compare', () => {
     expect(DEFAULT_COMPARE_SYMBOL).toBe('BTCUSDT');
   });
 
-  it('COMPARE_SYMBOLS lists BTC, ETH, SOL against USDT', () => {
+  it('COMPARE_SYMBOLS lists BTC against USDT', () => {
     const symbols = COMPARE_SYMBOLS.map((c) => c.symbol);
-    expect(symbols).toEqual(['BTCUSDT', 'ETHUSDT', 'SOLUSDT']);
+    expect(symbols).toEqual(['BTCUSDT']);
   });
 
-  it('isCompareSymbol returns true only for the known symbols', () => {
+  it('isCompareSymbol returns true only for known symbols', () => {
     expect(isCompareSymbol('BTCUSDT')).toBe(true);
-    expect(isCompareSymbol('ETHUSDT')).toBe(true);
-    expect(isCompareSymbol('SOLUSDT')).toBe(true);
+    expect(isCompareSymbol('ETHUSDT')).toBe(false);
+    expect(isCompareSymbol('SOLUSDT')).toBe(false);
     expect(isCompareSymbol('DOGEUSDT')).toBe(false);
     expect(isCompareSymbol('btcusdt')).toBe(false);
     expect(isCompareSymbol('')).toBe(false);

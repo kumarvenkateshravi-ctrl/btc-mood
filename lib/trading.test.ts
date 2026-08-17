@@ -14,6 +14,7 @@ function mkTrade(over: Partial<PaperTrade>): PaperTrade {
   return {
     id: 't',
     positionId: 'p',
+    symbol: 'BTCUSDT',
     side: 'sell',
     units: 1,
     price: 110,

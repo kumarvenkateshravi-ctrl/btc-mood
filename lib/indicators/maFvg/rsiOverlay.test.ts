@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../../types';
 import { computeRsi } from '../rsi';
-import { rawRsi, scaleToPrice, crossSignals, emitCrossSignals } from './rsiOverlay';
+import { rawRsi, scaleToPrice, crossSignals, emitCrossSignals, confidenceBand, CONFIDENCE_FULL_SEP_OSC } from './rsiOverlay';
 
 describe('rawRsi', () => {
   it('matches the golden-tested computeRsi engine (parity)', () => {
@@ -55,11 +55,16 @@ describe('emitCrossSignals (cooldown / trend filter / confidence)', () => {
   const M = [12, 12, 12, 12, 12, 12];
   const closes = [100, 100, 100, 100, 100, 100];
 
-  it('fires a BUY on the fresh cross above both, with a % confidence over the nearer line', () => {
-    // strength: 9 (below) → 15 (above both). BUY at i=1.
-    // confidence = min(15-10, 15-12)/15 * 100 = 3/15*100 = 20.
-    const ev = emitCrossSignals([9, 15, 15, 15, 15, 15], V, M, closes);
-    expect(ev).toEqual([{ index: 1, side: 'buy', confidence: 20 }]);
+  it('fires a BUY on the fresh cross above both, confidence in RSI oscillator space', () => {
+    // strength 9 (below) → 15 (above both). BUY at i=1. gap = min(15-10,15-12) = 3.
+    // normalizer 30 → sepOsc = 3/30*100 = 10 → confidence = round(10/20*100) = 50.
+    const norm = [null, 30, 30, 30, 30, 30];
+    expect(emitCrossSignals([9, 15, 15, 15, 15, 15], V, M, closes, { normalizer: norm }))
+      .toEqual([{ index: 1, side: 'buy', confidence: 50 }]);
+    // A wider gap (11 → sepOsc 36.67 → 183 capped) saturates at 100.
+    expect(emitCrossSignals([9, 23, 23, 23, 23, 23], V, M, closes, { normalizer: norm })[0].confidence).toBe(100);
+    // No normalizer → separation can't be measured → 0 (not a fake price %).
+    expect(emitCrossSignals([9, 15, 15, 15, 15, 15], V, M, closes)[0].confidence).toBe(0);
   });
 
   it('null-guards warm-up (no coercion signals) and never fires on bar 0', () => {
@@ -87,5 +92,19 @@ describe('emitCrossSignals (cooldown / trend filter / confidence)', () => {
     const s = [9, 9, 9, 9, 9, 15];
     expect(emitCrossSignals(s, V, M, closes, { end: 5 })).toEqual([]);
     expect(emitCrossSignals(s, V, M, closes).map((e) => e.index)).toEqual([5]);
+  });
+});
+
+describe('confidenceBand', () => {
+  it('maps 0–100 confidence to the trader-facing labels', () => {
+    expect(CONFIDENCE_FULL_SEP_OSC).toBe(20);
+    expect(confidenceBand(95)).toBe('very strong');
+    expect(confidenceBand(90)).toBe('very strong');
+    expect(confidenceBand(89)).toBe('strong');
+    expect(confidenceBand(70)).toBe('strong');
+    expect(confidenceBand(69)).toBe('moderate');
+    expect(confidenceBand(50)).toBe('moderate');
+    expect(confidenceBand(49)).toBe('weak');
+    expect(confidenceBand(0)).toBe('weak');
   });
 });

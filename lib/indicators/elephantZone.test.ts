@@ -13,9 +13,10 @@ describe('computeElephantZone (adaptive grid)', () => {
     expect(computeElephantZone([]).plots).toEqual([]);
   });
 
-  it('volatility mode: day 1 grid from day 0 range; base snapped, R/S at base ± k·step', () => {
+  it('volatility mode: R/S drawn as equal-width bands centered on base ± k·step', () => {
     // day 0: closes 96 & 110 → high 111, low 95, range 16; avg range(day1)=16
     // step = niceSnap(16·0.25)=niceSnap(4)=5; anchor(day1)=110; base=round(110/5)*5=110
+    // zone half-width = (step · 0.3)/2 = (5·0.3)/2 = 0.75
     const candles = [
       bar(0, 96), bar(DAY - 100, 110),       // day 0
       bar(DAY, 200), bar(DAY + 100, 201),    // day 1
@@ -23,19 +24,25 @@ describe('computeElephantZone (adaptive grid)', () => {
     const r1 = find(candles, 'R1'); const s1 = find(candles, 'S1'); const base = find(candles, 'BASE');
     expect(r1.data[0]).toBeNull(); // day 0 has no prior day → no grid
     expect(r1.data[1]).toBeNull();
-    expect(r1.data[2]).toBe(115); // 110 + 1*5
-    expect(r1.data[3]).toBe(115);
-    expect(s1.data[2]).toBe(105); // 110 - 1*5
-    expect(base.data[2]).toBe(110);
-    expect(r1.type).toBe('line');
+    expect(r1.data[2]).toEqual({ upper: 115.75, lower: 114.25 }); // level 115 ± 0.75
+    expect(r1.data[3]).toEqual({ upper: 115.75, lower: 114.25 });
+    expect(s1.data[2]).toEqual({ upper: 105.75, lower: 104.25 }); // level 105 ± 0.75
+    expect(base.data[2]).toBe(110); // base stays a line
+    expect(r1.type).toBe('band');
+    expect(r1.zoneStyle).toEqual({ boundary: 'lower', lineStyle: 'solid', emphasis: 0 });
+    expect(s1.zoneStyle).toEqual({ boundary: 'upper', lineStyle: 'solid', emphasis: 0 });
     expect(base.lineStyle).toBe('dashed');
   });
 
-  it('emits R1-4, S1-4, BASE, PIVOT, PIVOT_P (default levelCount 4), all overlay lines', () => {
+  it('emits R1-4/S1-4 as bands, BASE/PIVOT/PIVOT_P as lines, all on the overlay pane', () => {
     const candles = [bar(0, 96), bar(DAY - 100, 110), bar(DAY, 200)];
-    const ids = computeElephantZone(candles).plots.map((p) => p.id).sort();
-    expect(ids).toEqual(['BASE', 'PIVOT', 'PIVOT_P', 'R1', 'R2', 'R3', 'R4', 'S1', 'S2', 'S3', 'S4']);
-    expect(computeElephantZone(candles).plots.every((p) => p.type === 'line' && p.pane === 'overlay')).toBe(true);
+    const plots = computeElephantZone(candles).plots;
+    expect(plots.map((p) => p.id).sort()).toEqual(['BASE', 'PIVOT', 'PIVOT_P', 'R1', 'R2', 'R3', 'R4', 'S1', 'S2', 'S3', 'S4']);
+    for (const p of plots) {
+      const expected = (p.id === 'BASE' || p.id === 'PIVOT' || p.id === 'PIVOT_P') ? 'line' : 'band';
+      expect(p.type).toBe(expected);
+      expect(p.pane).toBe('overlay');
+    }
   });
 
   it('anchor pivot = previous close; HLC/3 pivot = prev-day aggregate (H+L+C)/3', () => {
@@ -52,9 +59,9 @@ describe('computeElephantZone (adaptive grid)', () => {
       bar(2 * DAY, 200),                        // day2
     ];
     // day2 anchor = 120; avg range over days 0,1 = (16+14)/2 = 15; step=niceSnap(15*0.25=3.75)=2.5
-    // base = round(120/2.5)*2.5 = 120
+    // base = round(120/2.5)*2.5 = 120; R1 level 122.5 ± (2.5·0.3)/2 = ±0.375
     expect(find(candles, 'BASE').data[4]).toBe(120);
-    expect(find(candles, 'R1').data[4]).toBe(122.5);
+    expect(find(candles, 'R1').data[4]).toEqual({ upper: 122.875, lower: 122.125 });
   });
 
   it('round mode produces exact round-number levels', () => {
@@ -63,9 +70,9 @@ describe('computeElephantZone (adaptive grid)', () => {
     const plots = computeElephantZone(candles, round).plots;
     const base = plots.find((p) => p.id === 'BASE')!;
     const r1 = plots.find((p) => p.id === 'R1')!;
-    // anchor 110 → roundBase 10, step 2, base 110
+    // anchor 110 → roundBase 10, step 2, base 110; R1 level 112 ± (2·0.3)/2 = ±0.3
     expect(base.data[2]).toBe(110);
-    expect(r1.data[2]).toBe(112);
+    expect(r1.data[2]).toEqual({ upper: 112.3, lower: 111.7 });
   });
 
   it('respects show toggles (hide support + pivots)', () => {

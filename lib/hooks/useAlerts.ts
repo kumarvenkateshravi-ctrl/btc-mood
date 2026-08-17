@@ -44,11 +44,13 @@ export function useAlerts(
    * Price alerts keep firing: they track the LIVE book, not history.
    */
   muted = false,
+  /** Only fresh live exchange data may trigger live alert delivery. */
+  priceTrusted = true,
 ): void {
   // ---- Signal-alert firing ----
   const lastFiredSideRef = useRef<Record<string, AlertSide | null>>({});
   useEffect(() => {
-    if (muted) return;
+    if (muted || !priceTrusted) return;
     const rules = loadRules();
     if (rules.length === 0) return;
     const sigMap = Object.fromEntries(
@@ -68,13 +70,13 @@ export function useAlerts(
     const next: Record<string, AlertSide | null> = { ...lastFiredSideRef.current };
     for (const r of toFire) next[r.id] = r.side;
     lastFiredSideRef.current = next;
-  }, [snapshots, symbol, muted]);
+  }, [snapshots, symbol, muted, priceTrusted]);
 
   // ---- Price-alert firing ----
   const prevPriceRef = useRef<number | null>(null);
   useEffect(() => {
     const last = bid != null && ask != null ? (bid + ask) / 2 : currentPrice;
-    if (last == null || !Number.isFinite(last)) return;
+    if (!priceTrusted || last == null || !Number.isFinite(last)) return;
     const prev = prevPriceRef.current;
     prevPriceRef.current = last;
     if (prev == null) return;
@@ -86,5 +88,5 @@ export function useAlerts(
       notify(msg);
     }
     markPriceAlertsFired(fired.map((a) => a.id));
-  }, [bid, ask, currentPrice, symbol]);
+  }, [bid, ask, currentPrice, symbol, priceTrusted]);
 }

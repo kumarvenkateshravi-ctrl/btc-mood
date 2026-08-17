@@ -156,21 +156,26 @@ export function ensureCleanSeries(candles: Candle[]): Candle[] {
   return [...byTime.values()].sort((a, b) => (a.time as number) - (b.time as number));
 }
 
+/** Cached once at module load — avoids calling new Date() inside the tight
+ *  per-candle / per-plot loops that call shiftTime thousands of times per tick.
+ *  DST staleness risk: ≤1 h/year at clock-change, fully acceptable. */
+const _TZ_OFFSET_SEC = new Date().getTimezoneOffset() * 60;
+
 /** Offsets a unix-seconds timestamp by the local timezone so lightweight-charts
  *  (which treats timestamps as UTC) renders bars at local wall-clock positions. */
 export function shiftTime(t: number): Time {
-  const tzOffset = new Date().getTimezoneOffset() * 60;
-  return (t - tzOffset) as Time;
+  return (t - _TZ_OFFSET_SEC) as Time;
 }
 
 /** Minutes per supported timeframe — used by the candle-close countdown + future whitespace. */
 export function getTfMinutes(tfStr: string): number {
   switch (tfStr) {
-    case '5m': return 5;
+    case '5m':  return 5;
     case '15m': return 15;
-    case '1h': return 60;
-    case '4h': return 240;
-    case '1d': return 1440;
-    default: return 15;
+    case '30m': return 30;   // P3-B fix: was falling through to default (15), off by 2×
+    case '1h':  return 60;
+    case '4h':  return 240;
+    case '1d':  return 1440;
+    default:    return 15;
   }
 }

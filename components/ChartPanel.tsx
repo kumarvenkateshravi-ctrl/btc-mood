@@ -20,6 +20,8 @@ import {
   replayReconcileBar,
   replaySetOverlay,
   replayClose,
+  rebuildReplaySessionAt,
+  setReplayActionContext,
 } from '@/lib/replaySession';
 import { usePriceAlerts, removePriceAlert, updatePriceAlertPrice } from '@/lib/priceAlertsStore';
 import DrawingLayer from './DrawingLayer';
@@ -34,14 +36,15 @@ import { FALLBACK_HEIGHT } from '@/lib/chartHeight';
 import { useChartSettings } from './chart/useChartSettings';
 import { CHART_SETTINGS_SHORTCUTS } from './chart/chartSettingsKeys';
 import { featureFlags } from '@/lib/featureFlags';
-import type { Candle, Timeframe } from '@/lib/types';
+import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
+import type { MarketDataIntegrity } from '@/lib/marketDataIntegrity';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { useBaseCandles } from '@/lib/chartHelpers';
 import { setReplayCut, clearReplayCut } from '@/lib/replay/replayCut';
 import { validateReplayData } from '@/lib/replay/validate';
-import { replayActions, useReplayState, isReplayActive, getReplayState } from '@/lib/replay/replayState';
-import { replayIndexForTime, TF_SECONDS } from '@/lib/replay/replaySlice';
+import { replayActions, useReplayState, isReplayActive } from '@/lib/replay/replayState';
+import { replayIndexForTime, sliceCandlesByTf, TF_SECONDS } from '@/lib/replay/replaySlice';
 import { earliestReplayDateMs } from '@/lib/replay/deepLoad';
 import { verifyReplayIntegrity, type IntegrityReport } from '@/lib/replay/verify';
 import { buildTrainingReport, type TrainingReport } from '@/lib/replay/trainingReport';
@@ -52,6 +55,8 @@ import SessionReportModal from '@/components/replay/SessionReportModal';
 import { vdAtr } from '@/lib/indicators/vdEngine';
 import type { SessionConfig, TradeBehavior } from '@/lib/replay/sessionSim';
 import type { PaperTrade } from '@/lib/paper';
+import { HistoricalRequestGate } from '@/lib/historicalRequestIdentity';
+import { canStartReplayFromIntegrity, captureReplayDataset, clearReplayDataset, clearReplayDatasetForSymbol, useReplayDataset } from '@/lib/replay/replayDataset';
 
 interface ChartPanelProps {
   candles: Candle[];
@@ -63,6 +68,7 @@ interface ChartPanelProps {
   price: number | null;
   change: number | null;
   status: 'live' | 'demo' | 'loading';
+  marketIntegrity?: MarketDataIntegrity;
   showVolume?: boolean;
   onQuickTrade?: (side: 'buy' | 'sell') => void;
   bid?: number | null;
@@ -74,7 +80,7 @@ interface ChartPanelProps {
   /** Lazy-load older history for the selected timeframe. */
   onLoadOlder?: () => void;
   /** Deep-backfill history to a target date (replay practice from years back). */
-  onDeepLoadHistory?: (targetMs: number, onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void) => Promise<void>;
+  onDeepLoadHistory?: (targetMs: number, onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void, signal?: AbortSignal) => Promise<void>;
   /** Jump-to-date: a focused historical window is being shown. */
   historyActive?: boolean;
   onJumpToDate?: (ms: number) => void;
@@ -132,6 +138,7 @@ export default function ChartPanel({
   price,
   change,
   status,
+  marketIntegrity = 'live',
   showVolume: parentShowVolume,
   onQuickTrade,
   bid = null,
@@ -158,6 +165,16 @@ export default function ChartPanel({
   onLayoutChange,
 }: ChartPanelProps) {
   const primaryId = activeIndicatorIds[0] ?? '';
+  const deepRequestGateRef = useRef(new HistoricalRequestGate());
+  const deepRequestContextRef = useRef({ symbol, selected });
+  if (
+    deepRequestContextRef.current.symbol !== symbol ||
+    deepRequestContextRef.current.selected !== selected
+  ) {
+    deepRequestContextRef.current = { symbol, selected };
+    deepRequestGateRef.current.invalidate();
+  }
+
 
 
   // BUY/SELL signal markers on the chart, on by default.
@@ -200,56 +217,71 @@ export default function ChartPanel({
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [bookmarks, setBookmarks] = useState<number[]>([]);
 
-  // Reset replay only when the SYMBOL changes. A timeframe change REBASES
-  // instead (Phase 3 multi-TF replay): the wall-clock moment is preserved
-  // and the head indices are re-derived on the new TF's candles.
+  const replayDataset = useReplayDataset();
+  const executionTf = replayDataset.active ? replayDataset.executionTf : selected;
+  const snapshotCandlesByTf = useMemo(
+    () => Object.fromEntries(TIMEFRAMES.map((tf) => [tf, (replayDataset.candlesByTf[tf] ?? []).slice()])) as Record<Timeframe, Candle[]>,
+    [replayDataset],
+  );
+  const executionCandles = replayDataset.active ? snapshotCandlesByTf[executionTf] : candles;
+  const visualCandles = replayDataset.active ? snapshotCandlesByTf[selected] : candles;
+  const executionReplayLast = replayActive ? executionCandles[playIndex] ?? null : null;
+  const visualPlayIndex = replayActive && executionReplayLast
+    ? replayIndexForTime(visualCandles, selected, executionReplayLast.time + TF_SECONDS[executionTf])
+    : playIndex;
+  const replayVisibleCandlesByTf = useMemo(
+    () => replayActive && executionReplayLast
+      ? sliceCandlesByTf(snapshotCandlesByTf, executionTf, executionReplayLast)
+      : candlesByTf ?? {},
+    [replayActive, executionReplayLast, snapshotCandlesByTf, executionTf, candlesByTf],
+  );
+
+  // Symbol changes and every explicit replay exit release the snapshot.
   useEffect(() => {
+    clearReplayDatasetForSymbol(symbol);
     replayActions.exit();
+    clearReplayDataset();
     setBookmarks([]);
   }, [symbol]);
+  useEffect(() => () => clearReplayDataset(), []);
 
   const lastTfRef = useRef(selected);
   useEffect(() => {
     if (lastTfRef.current === selected) return;
     lastTfRef.current = selected;
-    setBookmarks([]); // bookmark indices are TF-specific
-    const st = getReplayState();
-    if (!isReplayActive(st.phase) || st.cutTime == null || candles.length === 0) return;
-    const head = replayIndexForTime(candles, selected, st.cutTime);
-    // TP/SL reconciliation is index-based per TF: resume from the new head
-    // instead of replaying bars that were already reconciled on the old TF.
-    lastReconciledRef.current = head;
-    replayActions.rebase(head, replayIndexForTime(candles, selected, st.startTime ?? st.cutTime));
-  }, [selected, candles]);
+    setBookmarks([]); // visual timeframe only; execution timeframe remains frozen.
+  }, [selected]);
 
-  // Keep the wall-clock moment in sync as the head moves on the eval TF.
+  // Keep the replay wall-clock moment tied to the frozen execution timeframe.
   useEffect(() => {
-    if (!replayActive) return;
-    const bar = candles[playIndex];
-    if (bar) replayActions.syncCutTime(bar.time + TF_SECONDS[selected]);
-  }, [replayActive, playIndex, candles, selected]);
+    if (!replayActive || !executionReplayLast) return;
+    replayActions.syncCutTime(executionReplayLast.time + TF_SECONDS[executionTf]);
+  }, [replayActive, executionReplayLast, executionTf]);
 
-  // Advance one candle per tick while playing; the machine flips to
-  // 'finished' when the head reaches the last bar.
+  // Playback, bounds, and session reconciliation are always indexed against the
+  // execution-timeframe snapshot, never the visual timeframe or live cache.
   useEffect(() => {
     if (!replayPlaying) return;
     const interval = Math.max(40, 600 / replaySpeed);
-    const id = setInterval(() => replayActions.stepBy(1, candles.length), interval);
+    const id = setInterval(() => replayActions.stepBy(1, executionCandles.length), interval);
     return () => clearInterval(id);
-  }, [replayPlaying, replaySpeed, candles.length]);
+  }, [replayPlaying, replaySpeed, executionCandles.length]);
 
-  // Candles fed to the chart: full unless replay is armed (then sliced).
   const replayCandles = useMemo(() => {
     if (!replayActive) return candles;
-    const end = Math.max(2, Math.min(playIndex + 1, candles.length));
-    return candles.slice(0, end);
-  }, [replayActive, playIndex, candles]);
+    const end = Math.max(2, Math.min(visualPlayIndex + 1, visualCandles.length));
+    return visualCandles.slice(0, end);
+  }, [replayActive, visualPlayIndex, visualCandles, candles]);
 
-  // Data problems surface instead of silently replaying corrupt history.
+  // Data problems surface instead of silently replaying unavailable/demo data.
   const [replayDataError, setReplayDataError] = useState<string | null>(null);
 
   const onReplayToggle = () => {
     if (replayPhase === 'idle') {
+      if (!canStartReplayFromIntegrity(marketIntegrity)) {
+        setReplayDataError('Replay cannot start — market data is unavailable or demo data.');
+        return;
+      }
       const v = validateReplayData(candles, selected);
       if (!v.ok) {
         setReplayDataError(`Replay cannot start — ${v.problems.join(' ')}`);
@@ -264,15 +296,31 @@ export default function ChartPanel({
 
   const lastReconciledRef = useRef(-1);
   const onReplayPick = (index: number) => {
-    const start = Math.max(1, Math.min(index, candles.length - 1));
-    lastReconciledRef.current = start; // don't reconcile bars before the cut
-    startReplaySession(symbol); // fresh isolated account for this replay
+    const dataset = captureReplayDataset({
+      symbol,
+      executionTf: selected,
+      // `candles` is the exact chart series, including deep/history-window bars.
+      candlesByTf: { ...(candlesByTf ?? {}), [selected]: candles } as Partial<Record<Timeframe, Candle[]>>,
+    });
+    const execution = dataset.candlesByTf[selected] ?? [];
+    const start = Math.max(1, Math.min(index, execution.length - 1));
+    const startBar = execution[start];
+    if (!startBar) {
+      clearReplayDataset();
+      setReplayDataError('Replay cannot start — execution history is unavailable.');
+      replayActions.exit();
+      return;
+    }
+    lastReconciledRef.current = start;
+    startReplaySession(symbol, { startIndex: start, executionTf: selected });
+    setReplayActionContext(start, startBar.time);
     setSessionSkipped(false);
     setBookmarks([]);
-    replayActions.startAt(start, candles[start] ? candles[start].time + TF_SECONDS[selected] : null);
+    setReplayCut(selected, startBar);
+    replayActions.startAt(start, startBar.time + TF_SECONDS[selected]);
   };
 
-  const stepReplay = (dir: 1 | -1) => replayActions.stepBy(dir, candles.length);
+  const stepReplay = (dir: 1 | -1) => replayActions.stepBy(dir, executionCandles.length);
 
   // ---- Phase 4: blind drill + training report ----
   const [blindMode, setBlindMode] = useState(false);
@@ -290,26 +338,45 @@ export default function ChartPanel({
   // (5-year practice) with live progress, then pick against the FRESH data
   // via ref — the closure's `candles` is stale after the awaits.
   const [deepLoading, setDeepLoading] = useState<{ tf: Timeframe; pages: number; oldestMs: number } | null>(null);
+
+  useEffect(() => {
+    setDeepLoading(null);
+    return () => deepRequestGateRef.current.invalidate();
+  }, [symbol, selected]);
   const candlesForPickRef = useRef(candles);
   candlesForPickRef.current = candles;
   const onPickTime = useCallback(
     async (ms: number) => {
+      const request = deepRequestGateRef.current.begin(symbol, selected, 'deep');
       const t = Math.floor(ms / 1000);
       if (onDeepLoadHistory && candlesForPickRef.current[0] && t < candlesForPickRef.current[0].time) {
-        setDeepLoading({ tf: selected, pages: 0, oldestMs: Date.now() });
+        request.ifCurrent(() => setDeepLoading({ tf: selected, pages: 0, oldestMs: Date.now() }));
         try {
-          await onDeepLoadHistory(ms, (p) => setDeepLoading(p));
+          await onDeepLoadHistory(
+            ms,
+            (p) => request.ifCurrent(() => setDeepLoading(p)),
+            request.signal,
+          );
+        } catch {
+          request.ifCurrent(() => setDeepLoading(null));
+          request.finish();
+          return;
         } finally {
-          setDeepLoading(null);
+          request.ifCurrent(() => setDeepLoading(null));
         }
+      }
+      if (!request.isCurrent()) {
+        request.finish();
+        return;
       }
       const cur = candlesForPickRef.current;
       let idx = cur.length - 1;
       while (idx > 1 && cur[idx].time > t) idx--;
       onReplayPick(idx);
+      request.finish();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [onDeepLoadHistory, selected],
+    [onDeepLoadHistory, selected, symbol],
   );
 
   // Blind drill: random hidden start with room to trade, dates masked.
@@ -328,9 +395,14 @@ export default function ChartPanel({
   const [verification, setVerification] = useState<IntegrityReport | null>(null);
   const runVerification = useCallback(() => {
     setVerification(
-      verifyReplayIntegrity({ candles, playIndex, evalTf: selected, candlesByTf: candlesByTf ?? {} }),
+      verifyReplayIntegrity({
+        candles: executionCandles,
+        playIndex,
+        evalTf: executionTf,
+        candlesByTf: snapshotCandlesByTf,
+      }),
     );
-  }, [candles, playIndex, selected, candlesByTf]);
+  }, [executionCandles, playIndex, executionTf, snapshotCandlesByTf]);
   useEffect(() => {
     setVerification(null);
   }, [playIndex, replayPhase]);
@@ -342,25 +414,28 @@ export default function ChartPanel({
   }, [replayActive, playIndex, replayStartIndex]);
 
   const replayLast = replayCandles[replayCandles.length - 1];
-  // ATR(14) of the replay-visible candles for HUD stop prefill; keyed on the
-  // closed-bar signature so playback ticks reuse it.
+  // Trading inputs are always derived from the frozen execution timeframe.
+  // A visual timeframe switch must never alter an entry, risk level, or fill.
+  const executionVisibleCandles = useMemo(
+    () => replayActive ? executionCandles.slice(0, Math.max(2, Math.min(playIndex + 1, executionCandles.length))) : candles,
+    [replayActive, executionCandles, playIndex, candles],
+  );
   const hudAtr = useMemo(() => {
-    if (replayCandles.length < 20) return 0;
-    const a = vdAtr(replayCandles);
+    if (executionVisibleCandles.length < 20) return 0;
+    const a = vdAtr(executionVisibleCandles);
     return a[a.length - 1] ?? 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [replayCandles.length, replayCandles[replayCandles.length - 1]?.time]);
+  }, [executionVisibleCandles]);
   const displayPrice = replayActive && replayLast ? replayLast.close : price;
 
   // Publish the current mark (replay bar's close during replay, else live).
   useEffect(() => {
-    if (replayActive && replayLast) {
-      setMarkPrice(symbol, replayLast.close, replayLast.time);
+    if (replayActive && executionReplayLast) {
+      setMarkPrice(symbol, executionReplayLast.close, executionReplayLast.time);
     } else if (price != null && Number.isFinite(price)) {
       const liveLast = candles[candles.length - 1];
       setMarkPrice(symbol, price, liveLast ? liveLast.time : Math.floor(Date.now() / 1000));
     }
-  }, [replayActive, replayLast, price, symbol, candles]);
+  }, [replayActive, executionReplayLast, price, symbol, candles]);
 
   // End the isolated session when leaving replay (the live account is never
   // touched during replay — they run independently). NOTE: the unmount
@@ -379,20 +454,27 @@ export default function ChartPanel({
   // SMC, market context) can enforce the Prime Invariant: no consumer sees
   // candles beyond the current replay bar.
   useEffect(() => {
-    if (replayActive && replayLast) setReplayCut(selected, replayLast);
+    if (replayActive && executionReplayLast) setReplayCut(executionTf, executionReplayLast);
     else clearReplayCut();
-  }, [replayActive, replayLast, selected]);
+  }, [replayActive, executionReplayLast, executionTf]);
   useEffect(() => () => clearReplayCut(), []);
 
-  // As replay reveals new bars (forward only), reconcile the SESSION's position
-  // so a TP/SL hit auto-closes and logs a trade at the replay bar's time.
+  // The session follows only the frozen execution snapshot. Forward movement
+  // remains incremental; a backward movement atomically rebuilds the isolated
+  // session and drops future journal actions before any new action can branch.
   useEffect(() => {
     if (!replayActive) return;
-    for (let i = Math.max(1, lastReconciledRef.current + 1); i <= playIndex && i < candles.length; i++) {
-      replayReconcileBar(candles[i]);
+    if (playIndex < lastReconciledRef.current) {
+      replayActions.pause();
+      rebuildReplaySessionAt(playIndex);
+      lastReconciledRef.current = playIndex;
+      return;
+    }
+    for (let i = Math.max(1, lastReconciledRef.current + 1); i <= playIndex && i < executionCandles.length; i++) {
+      replayReconcileBar(executionCandles[i]);
     }
     if (playIndex > lastReconciledRef.current) lastReconciledRef.current = playIndex;
-  }, [replayActive, playIndex, candles]);
+  }, [replayActive, playIndex, executionCandles]);
 
   // ---- Chart → trade wiring ----
   const LEVERAGE = 10;
@@ -420,7 +502,9 @@ export default function ChartPanel({
   const replayTrading = replayActive;
   const pos = replayTrading ? session.position : paper.positions[symbol] ?? null;
   const hasPosition = !!(pos && pos.side !== 'flat' && pos.units > 0);
-  const mid = price ?? (candles.length > 0 ? candles[candles.length - 1].close : 0);
+  const mid = replayTrading
+    ? (executionReplayLast?.close ?? 0)
+    : (price ?? (candles.length > 0 ? candles[candles.length - 1].close : 0));
 
   const [ctxMenu, setCtxMenu] = useState<{ price: number; x: number; y: number } | null>(null);
   const [resetTick, setResetTick] = useState(0);
@@ -481,7 +565,11 @@ export default function ChartPanel({
   const handleOverlayDrag = useCallback(
     (kind: OverlayKind, price: number) => {
       if (kind !== 'tp' && kind !== 'sl') return;
-      if (replayTrading) { replaySetOverlay(kind, price); return; }
+      if (replayTrading) {
+        if (executionReplayLast) setReplayActionContext(playIndex, executionReplayLast.time);
+        replaySetOverlay(kind, price);
+        return;
+      }
       setDraftTpSl((d) => ({
         tp: d?.tp ?? pos?.tp ?? null,
         sl: d?.sl ?? pos?.sl ?? null,
@@ -494,15 +582,21 @@ export default function ChartPanel({
   const handleOverlayChipClick = useCallback(
     (key: 'tp' | 'sl' | 'close') => {
       if (key === 'close') {
-        if (replayTrading) replayClose(replayLast?.close ?? mid, replayLast?.time ?? Math.floor(Date.now() / 1000));
+        if (replayTrading) {
+          if (executionReplayLast) setReplayActionContext(playIndex, executionReplayLast.time);
+          replayClose(executionReplayLast?.close ?? mid, executionReplayLast?.time ?? Math.floor(Date.now() / 1000));
+        }
         else setShowCloseConfirm(true); // confirm dialog before booking P&L
         return;
       }
       // ✕ on a TP/SL line removes that exit (staged until Confirm).
-      if (replayTrading) replaySetOverlay(key, null);
+      if (replayTrading) {
+        if (executionReplayLast) setReplayActionContext(playIndex, executionReplayLast.time);
+        replaySetOverlay(key, null);
+      }
       else setDraftTpSl((d) => ({ tp: d?.tp ?? pos?.tp ?? null, sl: d?.sl ?? pos?.sl ?? null, [key]: null }));
     },
-    [replayTrading, replayLast, mid, pos],
+    [replayTrading, executionReplayLast, mid, pos],
   );
 
   const handlePriceAlertDrag = useCallback((id: string, newPrice: number) => {
@@ -521,19 +615,19 @@ export default function ChartPanel({
   const onToggleTp = useCallback(() => {
     if (!pos) return;
     const cur = draftTpSl ? draftTpSl.tp : pos.tp;
-    const atr = atr14Last(candles) ?? pos.entryPrice * 0.005;
+    const atr = atr14Last(replayCandles) ?? pos.entryPrice * 0.005;
     const sign = pos.side === 'long' ? 1 : -1;
     const next = cur != null ? null : Number((pos.entryPrice + sign * atr * 3).toFixed(1));
     setDraftTpSl((d) => ({ tp: next, sl: d?.sl ?? pos.sl ?? null }));
-  }, [pos, draftTpSl, candles]);
+  }, [pos, draftTpSl, replayCandles]);
   const onToggleSl = useCallback(() => {
     if (!pos) return;
     const cur = draftTpSl ? draftTpSl.sl : pos.sl;
-    const atr = atr14Last(candles) ?? pos.entryPrice * 0.005;
+    const atr = atr14Last(replayCandles) ?? pos.entryPrice * 0.005;
     const sign = pos.side === 'long' ? 1 : -1;
     const next = cur != null ? null : Number((pos.entryPrice - sign * atr * 1.5).toFixed(1));
     setDraftTpSl((d) => ({ tp: d?.tp ?? pos.tp ?? null, sl: next }));
-  }, [pos, draftTpSl, candles]);
+  }, [pos, draftTpSl, replayCandles]);
   const doReverse = useCallback(() => {
     setShowReverseConfirm(false);
     if (!pos) return;
@@ -766,17 +860,17 @@ export default function ChartPanel({
           return;
         }
         if (e.key === 'ArrowRight') {
-          replayActions.stepBy(e.shiftKey ? 10 : 1, candles.length);
+          replayActions.stepBy(e.shiftKey ? 10 : 1, executionCandles.length);
           e.preventDefault();
           return;
         }
         if (e.key === 'ArrowLeft') {
-          replayActions.stepBy(e.shiftKey ? -10 : -1, candles.length);
+          replayActions.stepBy(e.shiftKey ? -10 : -1, executionCandles.length);
           e.preventDefault();
           return;
         }
         if (e.key === 'Home') {
-          replayActions.scrubTo(replayStartIndex, candles.length);
+          replayActions.scrubTo(replayStartIndex, executionCandles.length);
           e.preventDefault();
           return;
         }
@@ -796,7 +890,7 @@ export default function ChartPanel({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleFullscreen, patchChartSettings, chartSettings.invertScale, chartSettings.scaleMode, replayActive, replayPlaying, replayStartIndex, candles.length]);
+  }, [toggleFullscreen, patchChartSettings, chartSettings.invertScale, chartSettings.scaleMode, replayActive, replayPlaying, replayStartIndex, executionCandles.length]);
 
 
 
@@ -816,7 +910,7 @@ export default function ChartPanel({
     return () => cancelAnimationFrame(id);
   }, [fitSignal]);
 
-  const loading = candles.length === 0;
+  const loading = visualCandles.length === 0;
 
   // Pre-calculate synthetic/smoothed candles (Renko/Heikin Ashi) so indicators
   // align with the actual visual bricks/smoothed prices rather than raw time-based candles.
@@ -987,7 +1081,7 @@ export default function ChartPanel({
           <ChartErrorBoundary>
             <Chart
               candles={baseCandlesForIndicators}
-              candlesByTf={candlesByTf}
+              candlesByTf={replayVisibleCandlesByTf}
               type={type}
               symbol={symbol}
               height={chartHeight}
@@ -1055,7 +1149,7 @@ export default function ChartPanel({
             hidden={drawingsHidden}
             width={chartWidth}
             height={chartHeight}
-            revision={candles.length}
+            revision={replayCandles.length}
             onToolUsed={() => setDrawingTool('cursor')}
           />
         )}
@@ -1091,7 +1185,7 @@ export default function ChartPanel({
             playing={replayPlaying}
             phase={replayPhase}
             index={playIndex}
-            total={candles.length}
+            total={executionCandles.length}
             onVerify={featureFlags.replayDebug ? runVerification : undefined}
             verification={verification}
             onPickTime={onPickTime}
@@ -1105,10 +1199,10 @@ export default function ChartPanel({
             onExit={() => replayActions.exit()}
             onTogglePlay={() => (replayPlaying ? replayActions.pause() : replayActions.play())}
             onStep={stepReplay}
-            onScrub={(i) => replayActions.scrubTo(i, candles.length)}
+            onScrub={(i) => replayActions.scrubTo(i, executionCandles.length)}
             onSpeed={setReplaySpeed}
             onBookmark={() => setBookmarks((b) => (b.includes(playIndex) ? b : [...b, playIndex].sort((x, y) => x - y)))}
-            onJumpBookmark={(i) => replayActions.scrubTo(i, candles.length)}
+            onJumpBookmark={(i) => replayActions.scrubTo(i, executionCandles.length)}
             onRemoveBookmark={(i) => setBookmarks((b) => b.filter((x) => x !== i))}
           />
         </div>
@@ -1126,9 +1220,10 @@ export default function ChartPanel({
         <div className="border-t border-line bg-surface-2/40 px-3 py-2">
           <SessionHud
             session={session}
-            lastClose={replayLast.close}
-            lastTime={replayLast.time}
+            lastClose={executionReplayLast?.close ?? replayLast.close}
+            lastTime={executionReplayLast?.time ?? replayLast.time}
             atr={hudAtr}
+            replayBarIndex={playIndex}
           />
         </div>
       )}
@@ -1235,7 +1330,7 @@ function ChartSkeleton(_props: { height: number }) {
         className="h-full w-full"
         style={{
           backgroundImage:
-            'linear-gradient(90deg, transparent 0%, oklch(0.30 0.03 264 / 0.5) 50%, transparent 100%)',
+            'linear-gradient(90deg, transparent 0%, var(--surface-hover) 50%, transparent 100%)',
           backgroundSize: '200% 100%',
           animation: 'shimmer 1.5s linear infinite',
         }}

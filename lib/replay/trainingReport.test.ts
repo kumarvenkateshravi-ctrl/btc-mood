@@ -3,7 +3,7 @@ import { buildTrainingReport } from './trainingReport';
 import type { PaperTrade } from '@/lib/paper';
 
 const trade = (realizedPnl: number, ts: number): PaperTrade =>
-  ({ id: `t${ts}`, positionId: 'p', side: 'sell', units: 1, price: 100, fee: 0.1, realizedPnl, ts }) as PaperTrade;
+  ({ id: `t${ts}`, positionId: 'p', symbol: 'BTCUSDT', side: 'sell', units: 1, price: 100, fee: 0.1, realizedPnl, ts }) as PaperTrade;
 
 describe('buildTrainingReport', () => {
   it('grades a strong session A with correct stats', () => {

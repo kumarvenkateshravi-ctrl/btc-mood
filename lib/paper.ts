@@ -65,6 +65,8 @@ export interface PaperPosition {
 export interface PaperTrade {
   id: string;
   positionId: string;
+  /** Instrument whose position generated this realized trade. */
+  symbol: string;
   side: Side;
   units: number;
   price: number;
@@ -92,6 +94,23 @@ export const BTC_TICK_SIZE = 0.1; // 0.1 USD
 export const SLIPPAGE_TICKS = 1; // paper slippage in ticks
 export const LIQUIDATION_MARGIN_RATIO = 0.9; // 90% margin loss
 export const INITIAL_PAPER_BALANCE = 10_000; // starting paper USD
+/**
+ * Optional fee policy for pure execution simulations. Live paper trading
+ * continues to use the Binance-like defaults when no policy is passed.
+ */
+export interface ExecutionFeePolicy {
+  takerFeeRate?: number;
+  makerFeeRate?: number;
+}
+
+export const DEFAULT_EXECUTION_FEE_POLICY: Readonly<Required<ExecutionFeePolicy>> = Object.freeze({
+  takerFeeRate: TAKER_FEE,
+  makerFeeRate: MAKER_FEE,
+});
+
+function normalizedFeeRate(rate: number | undefined, fallback: number): number {
+  return rate != null && Number.isFinite(rate) && rate >= 0 ? rate : fallback;
+}
 
 export function marginFor(units: number, price: number, leverage: number): number {
   if (leverage <= 0) return Infinity;
@@ -162,6 +181,7 @@ export function applyFill(
   const trade: PaperTrade = {
     id: `t_${fill.orderId}`,
     positionId: pos.id,
+    symbol,
     side: fill.side,
     units: closeQty,
     price: fill.price,
@@ -220,7 +240,10 @@ export function reconcile(
   bar: Candle,
   pending: PaperOrder[],
   now: number,
+  feePolicy: ExecutionFeePolicy = DEFAULT_EXECUTION_FEE_POLICY,
 ): { position: PaperPosition | null; trades: PaperTrade[]; filled: PaperOrder[] } {
+  const takerFeeRate = normalizedFeeRate(feePolicy.takerFeeRate, TAKER_FEE);
+  const makerFeeRate = normalizedFeeRate(feePolicy.makerFeeRate, MAKER_FEE);
   let position = pos;
   const trades: PaperTrade[] = [];
   const filled: PaperOrder[] = [];
@@ -263,8 +286,8 @@ export function reconcile(
         side: position.side === 'long' ? 'sell' : 'buy',
         units: position.units,
         price: fillPrice,
-        feeRate: TAKER_FEE,
-        fee: position.units * fillPrice * TAKER_FEE,
+        feeRate: takerFeeRate,
+        fee: position.units * fillPrice * takerFeeRate,
         ts: bar.time,
         leverage: position.leverage,
       };
@@ -286,8 +309,8 @@ export function reconcile(
         side: position.side === 'long' ? 'sell' : 'buy',
         units: position.units,
         price: fillPrice,
-        feeRate: TAKER_FEE,
-        fee: position.units * fillPrice * TAKER_FEE,
+        feeRate: takerFeeRate,
+        fee: position.units * fillPrice * takerFeeRate,
         ts: bar.time,
         leverage: position.leverage,
       };
@@ -310,8 +333,8 @@ export function reconcile(
         side: position.side === 'long' ? 'sell' : 'buy',
         units: position.units,
         price: fillPrice,
-        feeRate: TAKER_FEE,
-        fee: position.units * fillPrice * TAKER_FEE,
+        feeRate: takerFeeRate,
+        fee: position.units * fillPrice * takerFeeRate,
         ts: bar.time,
         leverage: position.leverage,
       };
@@ -329,7 +352,7 @@ export function reconcile(
       const triggered =
         order.side === 'buy' ? bar.low <= order.price : bar.high >= order.price;
       if (triggered) {
-        const feeRate = order.postOnly ? MAKER_FEE : TAKER_FEE;
+        const feeRate = order.postOnly ? makerFeeRate : takerFeeRate;
         const fill: PaperFill = {
           orderId: order.id,
           side: order.side,
@@ -357,8 +380,8 @@ export function reconcile(
           side: order.side,
           units: order.units,
           price: fillPrice,
-          feeRate: TAKER_FEE,
-          fee: order.units * fillPrice * TAKER_FEE,
+          feeRate: takerFeeRate,
+          fee: order.units * fillPrice * takerFeeRate,
           ts: bar.time,
           leverage: lev,
         };

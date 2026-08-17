@@ -57,6 +57,9 @@ export interface ScaledRsiLines {
   scaledRsi: (number | null)[];
   scaledStrength: (number | null)[];
   scaledSignal: (number | null)[];
+  /** Per-bar RSI display range (the scaling denominator) — the normalizer that
+   *  converts a price gap into oscillator points for signal confidence. */
+  priceRange: (number | null)[];
 }
 
 /** RSI/strength/signal scaled onto the price axis (baseline + range/ATR). */
@@ -79,10 +82,12 @@ export function scaledRsiLines(
   const scaledRsi = new Array<number | null>(n).fill(null);
   const scaledStrength = new Array<number | null>(n).fill(null);
   const scaledSignal = new Array<number | null>(n).fill(null);
+  const priceRangeArr = new Array<number | null>(n).fill(null);
   for (let i = 0; i < n; i++) {
     const priceRange = cfg.scaleMode === 'ATR'
       ? (atr[i] === null ? null : atr[i]! * cfg.atrMultForScale)
       : (rangeHi[i] === null || rangeLo[i] === null ? null : rangeHi[i]! - rangeLo[i]!);
+    priceRangeArr[i] = priceRange;
     const b = cfg.baselineType === 'Current Price' ? candles[i].close : baseSma[i];
     baseline[i] = b;
     if (priceRange === null || b === null || b === undefined) continue;
@@ -90,7 +95,7 @@ export function scaledRsiLines(
     if (strengthRsi[i] !== null) scaledStrength[i] = scaleToPrice(strengthRsi[i]!, b, priceRange);
     if (signalRsi[i] !== null) scaledSignal[i] = scaleToPrice(signalRsi[i]!, b, priceRange);
   }
-  return { baseline, scaledRsi, scaledStrength, scaledSignal };
+  return { baseline, scaledRsi, scaledStrength, scaledSignal, priceRange: priceRangeArr };
 }
 
 /** Freshness tiers for a signal's age (5m: 1 bar = 5 min). */
@@ -116,7 +121,7 @@ export function computeMaFvgSignals(
   const cfg = resolveInputs(config, DEFAULTS);
   const n = candles.length;
   const volume = candles.map((c) => c.volume);
-  const { scaledStrength } = scaledRsiLines(candles, cfg, computedSources);
+  const { scaledStrength, priceRange } = scaledRsiLines(candles, cfg, computedSources);
   const { vwap } = anchoredVwap(candles, resolveSourceNum(candles, cfg.vwapSource, computedSources), cfg.vwapAnchor);
   const ma4 = ma(resolveSourceNum(candles, cfg.ma4Source, computedSources), cfg.ma4Length, cfg.ma4Type, volume);
   const closes = candles.map((c) => c.close);
@@ -124,5 +129,6 @@ export function computeMaFvgSignals(
     cooldownBars: cfg.signalCooldownBars,
     trendFilter: cfg.signalTrendFilter,
     end: n - 1,
+    normalizer: priceRange,
   });
 }
