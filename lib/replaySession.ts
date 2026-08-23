@@ -4,9 +4,10 @@
 // live paper store. Its accepted user actions are journaled so moving the
 // replay head backwards can rebuild this session deterministically.
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
 import {
   applyFill,
+  applyProtectionUpdate,
   reconcile,
   marketFillPrice,
   INITIAL_PAPER_BALANCE,
@@ -14,6 +15,7 @@ import {
   type PaperPosition,
   type PaperTrade,
   type Side,
+  type ProtectionUpdate,
 } from './paper';
 import type { Candle, Timeframe } from './types';
 import { intrabarSubBars } from './replay/intrabar';
@@ -55,7 +57,9 @@ type ReplayAction =
   | { id: string; kind: 'market'; barIndex: number; cutTime: number; side: Side; units: number; mark: number; ts: number; leverage: number }
   | { id: string; kind: 'risk-open'; barIndex: number; cutTime: number; side: Side; mark: number; ts: number }
   | { id: string; kind: 'overlay'; barIndex: number; cutTime: number; field: 'tp' | 'sl'; value: number | null }
-  | { id: string; kind: 'close'; barIndex: number; cutTime: number; mark: number; ts: number };
+  | { id: string; kind: 'close'; barIndex: number; cutTime: number; mark: number; ts: number }
+  | { id: string; kind: 'partial-close'; barIndex: number; cutTime: number; units: number; mark: number; ts: number }
+  | { id: string; kind: 'protection'; barIndex: number; cutTime: number; sl?: number | null; tp?: number | null; trailingSl?: boolean };
 
 type ReplayActionInput =
   | Omit<Extract<ReplayAction, { kind: 'configure' }>, 'id' | 'barIndex' | 'cutTime'>
@@ -63,7 +67,9 @@ type ReplayActionInput =
   | Omit<Extract<ReplayAction, { kind: 'market' }>, 'id' | 'barIndex' | 'cutTime'>
   | Omit<Extract<ReplayAction, { kind: 'risk-open' }>, 'id' | 'barIndex' | 'cutTime'>
   | Omit<Extract<ReplayAction, { kind: 'overlay' }>, 'id' | 'barIndex' | 'cutTime'>
-  | Omit<Extract<ReplayAction, { kind: 'close' }>, 'id' | 'barIndex' | 'cutTime'>;
+  | Omit<Extract<ReplayAction, { kind: 'close' }>, 'id' | 'barIndex' | 'cutTime'>
+  | Omit<Extract<ReplayAction, { kind: 'partial-close' }>, 'id' | 'barIndex' | 'cutTime'>
+  | Omit<Extract<ReplayAction, { kind: 'protection' }>, 'id' | 'barIndex' | 'cutTime'>;
 interface ReplayJournal {
   baseline: ReplaySessionState;
   startIndex: number;
@@ -102,10 +108,30 @@ function set(next: ReplaySessionState) {
   for (const listener of listeners) listener();
 }
 
-const subscribe = (listener: () => void) => {
+export const subscribeReplaySession = (listener: () => void) => {
   listeners.add(listener);
   return () => listeners.delete(listener);
 };
+
+export const getReplaySessionSnapshot = (): ReplaySessionState => state;
+
+export function useReplaySessionSelector<T>(selector: (snapshot: ReplaySessionState) => T, isEqual: (a: T, b: T) => boolean = Object.is): T {
+  const cacheRef = useRef<{ snapshot: ReplaySessionState; value: T } | null>(null);
+  const getSelectedSnapshot = useCallback(() => {
+    const snapshot = state;
+    const cached = cacheRef.current;
+    if (cached?.snapshot === snapshot) return cached.value;
+    const next = selector(snapshot);
+    if (cached !== null && isEqual(cached.value, next)) {
+      cacheRef.current = { snapshot, value: cached.value };
+      return cached.value;
+    }
+    cacheRef.current = { snapshot, value: next };
+    return next;
+  }, [selector, isEqual]);
+  const getSelectedServerSnapshot = useCallback(() => selector(INITIAL), [selector]);
+  return useSyncExternalStore(subscribeReplaySession, getSelectedSnapshot, getSelectedServerSnapshot);
+}
 
 function cloneConfig(config: SessionConfig): SessionConfig {
   return { ...config };
@@ -209,7 +235,7 @@ export function isReplaySessionActive(): boolean {
 
 const normalize = (position: PaperPosition): PaperPosition | null => (position.side === 'flat' ? null : position);
 
-function orderId(prefix: 'rs' | 'rsClose', actionId: string): string {
+function orderId(prefix: 'rs' | 'rsClose' | 'rsPartial', actionId: string): string {
   return `${prefix}_${actionId}`;
 }
 
@@ -282,8 +308,11 @@ function finalizeBehavior(
     if (near(trade.sl)) kind = 'sl';
     else if (near(trade.tp)) kind = 'tp';
   }
+  const lifecycleRealizedPnl = [...closedTrades, ...session.trades]
+    .filter((item) => item.positionId === session.openBehavior!.positionId)
+    .reduce((total, item) => total + item.realizedPnl, 0);
   const done: TradeBehavior = {
-    ...session.openBehavior, exitKind: kind, exitPrice: trade.exitPrice ?? trade.price, realizedPnl: trade.realizedPnl,
+    ...session.openBehavior, exitKind: kind, exitPrice: trade.exitPrice ?? trade.price, realizedPnl: lifecycleRealizedPnl,
   };
   return { openBehavior: null, behaviors: [done, ...session.behaviors] };
 }
@@ -307,19 +336,66 @@ function applyClose(session: ReplaySessionState, action: Extract<ReplayAction, {
   };
 }
 
+/**
+ * Close a deterministic quantity while preserving the surviving position's
+ * entry, brackets and trailing state. `applyFill` remains authoritative for
+ * realized P&L, fee policy and trade-record construction; it receives a
+ * close-sized view because its normal opposite-side path is full-close/reverse.
+ */
+function applyPartialClose(
+  session: ReplaySessionState,
+  action: Extract<ReplayAction, { kind: 'partial-close' }>,
+): ReplaySessionState {
+  const position = session.position;
+  if (!position || position.side === 'flat' || position.units <= 0) return session;
+  const units = Math.min(position.units, action.units);
+  if (!(units > 0)) return session;
+  const side: Side = position.side === 'long' ? 'sell' : 'buy';
+  const price = marketFillPrice(side, action.mark);
+  const fill: PaperFill = {
+    orderId: orderId('rsPartial', action.id), side, units, price,
+    feeRate: replayCommissionRate(session), fee: units * price * replayCommissionRate(session), ts: action.ts, leverage: position.leverage,
+  };
+  const closed = applyFill({ ...position, units }, fill, session.symbol, action.ts, position.leverage);
+  const fullyClosed = units >= position.units;
+  const nextPosition = fullyClosed
+    ? normalize(closed.position)
+    : {
+        ...position,
+        units: position.units - units,
+        realizedPnl: closed.position.realizedPnl,
+        feesPaid: closed.position.feesPaid,
+      };
+  const newTrades = closed.trade ? [closed.trade] : [];
+  return {
+    ...session,
+    position: nextPosition,
+    trades: closed.trade ? [closed.trade, ...session.trades] : session.trades,
+    ...finalizeBehavior(session, newTrades, nextPosition, 'manual'),
+  };
+}
+
+function applyReplayProtection(session: ReplaySessionState, input: ProtectionUpdate): ReplaySessionState {
+  const position = session.position;
+  if (!position || position.side === 'flat') return session;
+  const result = applyProtectionUpdate(position, input);
+  if (!result.ok) return session;
+  const slChanged = result.position.sl !== position.sl;
+  const openBehavior = slChanged && session.openBehavior
+    ? { ...session.openBehavior, slMoves: session.openBehavior.slMoves + 1 }
+    : session.openBehavior;
+  return { ...session, position: result.position, openBehavior };
+}
+
 function applyAction(session: ReplaySessionState, action: ReplayAction): ReplaySessionState {
   switch (action.kind) {
     case 'configure': return { ...session, config: cloneConfig(action.config), startBalance: action.config.startBalance };
     case 'pending': return { ...session, pendingSl: action.sl, pendingTp: action.tp };
     case 'market': return applyMarket(session, action);
     case 'risk-open': return riskOpen(session, action).session;
-    case 'overlay': {
-      if (!session.position || session.position.side === 'flat') return session;
-      const openBehavior = action.field === 'sl' && session.openBehavior
-        ? { ...session.openBehavior, slMoves: session.openBehavior.slMoves + 1 }
-        : session.openBehavior;
-      return { ...session, position: { ...session.position, [action.field]: action.value }, openBehavior };
-    }
+    case 'overlay': return applyReplayProtection(session, { [action.field]: action.value });
+    case 'protection': return applyReplayProtection(session, action);
+    case 'partial-close': return applyPartialClose(session, action);
     case 'close': return applyClose(session, action);
   }
 }
@@ -374,21 +450,66 @@ export function replayOpenWithRisk(side: Side, mark: number, ts: number): Sizing
   return result.sizing;
 }
 
-export function replaySetOverlay(field: 'tp' | 'sl', value: number | null) {
-  if (!state.position || state.position.side === 'flat' || state.position[field] === value) return;
-  const action = appendAction({ kind: 'overlay', field, value });
-  if (!action) return;
+export type ReplayProtectionCommandResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * The replay equivalent of the live atomic protection command. Previewing the
+ * transition before journal append ensures rejected edits never become replay
+ * actions and therefore cannot affect deterministic rewinds.
+ */
+export function replayUpdateProtection(input: ProtectionUpdate): ReplayProtectionCommandResult {
+  const position = state.position;
+  if (!state.active || !position || position.side === 'flat') {
+    return { ok: false, error: 'Protection requires an open replay position.' };
+  }
+  const preview = applyProtectionUpdate(position, input);
+  if (!preview.ok) return preview;
+  if (
+    preview.position.sl === position.sl
+    && preview.position.tp === position.tp
+    && preview.position.trailingSl === position.trailingSl
+    && preview.position.trailingBest === position.trailingBest
+  ) return { ok: true };
+  const action = appendAction({ kind: 'protection', ...input });
+  if (!action) return { ok: false, error: 'Replay protection changes require the current replay execution context.' };
   markExecutionStarted();
   set(applyAction(state, action));
+  return { ok: true };
 }
 
-export function replayClose(mark: number, ts: number) {
+/** Compatibility adapter for a one-field chart overlay edit. */
+export function replaySetOverlay(field: 'tp' | 'sl', value: number | null): ReplayProtectionCommandResult {
+  return replayUpdateProtection({ [field]: value });
+}
+
+export type ReplayPartialCloseCommandResult = { ok: true } | { ok: false; error: string };
+
+/** Close an accepted fraction of the replay position with a deterministic fill quantity. */
+export function replayPartialClose(fraction: number, mark: number, ts: number): ReplayPartialCloseCommandResult {
   const position = state.position;
-  if (!position || position.side === 'flat' || position.units <= 0) return;
-  const action = appendAction({ kind: 'close', mark, ts });
-  if (!action) return;
+  if (!state.active || !position || position.side === 'flat' || position.units <= 0) {
+    return { ok: false, error: 'Partial close requires an open replay position.' };
+  }
+  if (!Number.isFinite(fraction) || fraction <= 0 || !Number.isFinite(mark) || mark <= 0 || !Number.isFinite(ts)) {
+    return { ok: false, error: 'Partial close requires a positive fraction and market price.' };
+  }
+  const units = position.units * Math.min(1, fraction);
+  if (!(units > 0)) return { ok: false, error: 'Partial close quantity must be positive.' };
+  const action = appendAction({ kind: 'partial-close', units, mark, ts });
+  if (!action) return { ok: false, error: 'Replay partial close requires the current replay execution context.' };
   markExecutionStarted();
   set(applyAction(state, action));
+  return { ok: true };
+}
+
+export function replayClose(mark: number, ts: number): { ok: boolean; error?: string } {
+  const position = state.position;
+  if (!position || position.side === 'flat' || position.units <= 0) return { ok: false, error: 'No active replay position to close' };
+  const action = appendAction({ kind: 'close', mark, ts });
+  if (!action) return { ok: false, error: 'Replay close requires the current replay execution context.' };
+  markExecutionStarted();
+  set(applyAction(state, action));
+  return { ok: true };
 }
 
 /** Incremental forward-only execution against one newly revealed bar. */
@@ -437,7 +558,7 @@ export function rebuildReplaySessionAt(targetIndex: number): boolean {
 }
 
 export function useReplaySession(): ReplaySessionState {
-  return useSyncExternalStore(subscribe, () => state, () => INITIAL);
+  return useSyncExternalStore(subscribeReplaySession, () => state, () => INITIAL);
 }
 
 /** Test-only replay journal access. Returned entries are immutable copies. */

@@ -11,6 +11,10 @@
 // sub-timeframe bars and every downstream consumer sharpens for free.
 
 import type { Candle } from '../types';
+import type { IndicatorEvaluationContext } from '../indicatorEvaluation';
+import { createProfileDataProvider } from './profileDataProvider';
+import type { ProfileSourceProvenance } from './profileDataProvider';
+import { extractFinalizedHistoricalPocs, type HistoricalPocRecord } from './historicalPocStore';
 import type {
   CustomIndicatorConfig,
   IndicatorResult,
@@ -66,6 +70,8 @@ export interface VolumeProfile {
   totalVolume: number;
   /** Volume of the fattest row — the histogram's scale reference. */
   maxRowVolume: number;
+  /** Raw source and accuracy tier used to calculate this profile. */
+  source?: ProfileSourceProvenance;
 }
 
 export interface ProfileOptions {
@@ -385,6 +391,53 @@ export function buildProfile(
   };
 }
 
+/** Build only the information needed to draw a POC line. This deliberately
+ * avoids ProfileRow objects, value-area walking, and histogram up/down state. */
+export function buildPocOnlyProfile(
+  candles: Candle[],
+  options: Partial<ProfileOptions> = {},
+): VolumeProfile | null {
+  const opts: ProfileOptions = { ...DEFAULT_PROFILE_OPTIONS, ...options };
+  if (candles.length === 0) return null;
+  let low = Infinity;
+  let high = -Infinity;
+  let totalVolume = 0;
+  for (const c of candles) {
+    if (c.low < low) low = c.low;
+    if (c.high > high) high = c.high;
+    totalVolume += c.volume;
+  }
+  if (!Number.isFinite(low) || !Number.isFinite(high) || totalVolume <= 0) return null;
+  if (high - low <= 0) {
+    return { startTime: candles[0].time, endTime: candles[candles.length - 1].time, low, high, rows: [], poc: low, pocIndex: 0, vah: low, val: low, totalVolume, maxRowVolume: totalVolume };
+  }
+  const tickSize = opts.tickSize ?? autoTickSize(high);
+  const rowCount = resolveRowCount(high - low, tickSize, opts);
+  const rowHeight = (high - low) / rowCount;
+  const totals = new Array<number>(rowCount).fill(0);
+  for (const c of candles) {
+    if (c.volume <= 0) continue;
+    const span = c.high - c.low;
+    if (span <= 0) {
+      totals[clampIndex(Math.floor((c.low - low) / rowHeight), rowCount)] += c.volume;
+      continue;
+    }
+    const firstIdx = clampIndex(Math.floor((c.low - low) / rowHeight), rowCount);
+    const lastIdx = clampIndex(Math.floor((c.high - low) / rowHeight), rowCount);
+    for (let i = firstIdx; i <= lastIdx; i += 1) {
+      const overlap = Math.min(c.high, low + (i + 1) * rowHeight) - Math.max(c.low, low + i * rowHeight);
+      if (overlap > 0) totals[i] += c.volume * (overlap / span);
+    }
+  }
+  let pocIndex = 0;
+  let maxRowVolume = totals[0];
+  for (let i = 1; i < totals.length; i += 1) {
+    if (totals[i] > maxRowVolume) { maxRowVolume = totals[i]; pocIndex = i; }
+  }
+  const poc = low + pocIndex * rowHeight + rowHeight / 2;
+  return { startTime: candles[0].time, endTime: candles[candles.length - 1].time, low, high, rows: [], poc, pocIndex, vah: poc, val: poc, totalVolume, maxRowVolume };
+}
+
 function addVolume(row: ProfileRow, vol: number, isUp: boolean): void {
   row.total += vol;
   if (isUp) row.up += vol;
@@ -487,6 +540,15 @@ export function levelCrossTime(
 }
 
 // ---- Indicator adapter -----------------------------------------------------
+// A provider may reuse immutable completed-session profiles while rebuilding
+// only the active session. The optional `pocOnly` flag is used by the
+// historical POC overlays and the POC-only display path.
+export interface SessionProfileProvider {
+  (candles: Candle[], sessionOpts: SessionOptions, profileOpts: Partial<ProfileOptions>, pocOnly?: boolean): VolumeProfile[];
+  provenance?: ProfileSourceProvenance;
+  cacheIdentity?: string;
+}
+
 
 /** How many sessions we will draw. Beyond this the chart is unreadable anyway,
  *  and the row budget (see MAX_ROWS_PER_PROFILE) starts to bite. */
@@ -545,9 +607,13 @@ function pocStyleIdFor(mode: SessionMode): 'poc' | 'weeklyPoc' | 'dailyPoc' | 'f
 export function computeSessionVolumeProfile(
   candles: Candle[],
   config?: CustomIndicatorConfig,
+  _computedSources?: Record<string, (number | null)[]>,
+  profileProviderOrContext?: SessionProfileProvider | IndicatorEvaluationContext,
 ): IndicatorResult {
   const inputs = config?.settings?.inputs ?? {};
   const styles = config?.settings?.styles ?? {};
+  const profileProvider = typeof profileProviderOrContext === 'function' ? profileProviderOrContext : undefined;
+  const evaluationContext = typeof profileProviderOrContext === 'function' ? undefined : profileProviderOrContext;
 
   const num = (id: keyof typeof DEFAULTS, fallback: number): number => {
     const v = Number(inputs[id]);
@@ -564,28 +630,44 @@ export function computeSessionVolumeProfile(
   if (candles.length === 0) return empty;
 
   const mode = str('sessions', DEFAULTS.sessions) as SessionMode;
-  const profiles = buildSessionProfiles(
-    candles,
+  const profileData = evaluationContext
+    ? createProfileDataProvider({ context: evaluationContext, sessionTimeframe: mode })
+    : undefined;
+  const profileCandles = profileData?.source.candles ?? candles;
+  const provideProfiles: SessionProfileProvider = profileProvider ?? Object.assign(
+    (next: Candle[], sessionOpts: SessionOptions, profileOpts: Partial<ProfileOptions>, pocOnly = false) =>
+      groupIntoSessions(next, sessionOpts)
+        .map((session) => pocOnly ? buildPocOnlyProfile(session.candles, profileOpts) : buildProfile(session.candles, profileOpts))
+        .filter((profile): profile is VolumeProfile => profile !== null)
+        .map((profile) => ({ ...profile, source: profileData ? { ...profileData.provenance, sessionTimeframe: sessionOpts.mode } : undefined })),
+    { provenance: profileData?.provenance, cacheIdentity: profileData?.cacheIdentity },
+  );
+  const extendPoc = bool('extendPoc', DEFAULTS.extendPoc);
+  const extendVah = bool('extendVah', DEFAULTS.extendVah);
+  const extendVal = bool('extendVal', DEFAULTS.extendVal);
+  const showProfileBoxes = bool('showProfileBoxes', DEFAULTS.showProfileBoxes);
+  const pocOnly = !showProfileBoxes && !extendVah && !extendVal;
+  const profileOptions: Partial<ProfileOptions> = {
+    rowsLayout: str('rowsLayout', DEFAULTS.rowsLayout) as RowsLayout,
+    rowSize: num('rowSize', DEFAULTS.rowSize),
+    valueAreaVolume: num('valueAreaVolume', DEFAULTS.valueAreaVolume),
+  };
+  const configuredTickSize = Number(inputs['tickSize']);
+  if (Number.isFinite(configuredTickSize) && configuredTickSize > 0) profileOptions.tickSize = configuredTickSize;
+  const profiles = provideProfiles(
+    profileCandles,
     {
       mode,
       customStartMin: num('customStartHour', DEFAULTS.customStartHour) * 60,
       customEndMin: num('customEndHour', DEFAULTS.customEndHour) * 60,
     },
-    {
-      rowsLayout: str('rowsLayout', DEFAULTS.rowsLayout) as RowsLayout,
-      rowSize: num('rowSize', DEFAULTS.rowSize),
-      valueAreaVolume: num('valueAreaVolume', DEFAULTS.valueAreaVolume),
-    },
+    profileOptions,
+    pocOnly,
   );
   if (profiles.length === 0) return empty;
 
   // Keep the most recent N — sessions scroll off to the left anyway.
   const recent = profiles.slice(-MAX_PROFILES);
-
-  const extendPoc = bool('extendPoc', DEFAULTS.extendPoc);
-  const extendVah = bool('extendVah', DEFAULTS.extendVah);
-  const extendVal = bool('extendVal', DEFAULTS.extendVal);
-  const showProfileBoxes = bool('showProfileBoxes', DEFAULTS.showProfileBoxes);
 
   const mainPocStyleId = pocStyleIdFor(mode);
   const rendered: VolumeProfileRender[] = recent.map((p) => {
@@ -601,11 +683,12 @@ export function computeSessionVolumeProfile(
       val: p.val,
       totalVolume: p.totalVolume,
       maxRowVolume: p.maxRowVolume,
+      source: p.source ?? provideProfiles.provenance,
       pocColor: color(mainPocStyleId),
       showPoc: shown(mainPocStyleId),
-      pocExtendTo: extendPoc ? levelCrossTime(candles, p.endTime, p.poc) : undefined,
-      vahExtendTo: extendVah ? levelCrossTime(candles, p.endTime, p.vah) : undefined,
-      valExtendTo: extendVal ? levelCrossTime(candles, p.endTime, p.val) : undefined,
+      pocExtendTo: extendPoc ? levelCrossTime(profileCandles, p.endTime, p.poc) : undefined,
+      vahExtendTo: extendVah ? levelCrossTime(profileCandles, p.endTime, p.vah) : undefined,
+      valExtendTo: extendVal ? levelCrossTime(profileCandles, p.endTime, p.val) : undefined,
       shapeGlyph: SHAPE_GLYPH[cls.shape],
       shapeLabel: SHAPE_LABEL[cls.shape],
       confidence: cls.confidence,
@@ -617,18 +700,23 @@ export function computeSessionVolumeProfile(
     ['daily', bool('showDailyPocs', DEFAULTS.showDailyPocs)],
     ['4h', bool('show4hPocs', DEFAULTS.show4hPocs)],
   ];
-  const pocOnlyProfiles: VolumeProfileRender[] = additionalPocModes.flatMap(([pocMode, enabled]) => {
+  const additionalProfileSets = additionalPocModes.flatMap(([pocMode, enabled]) => {
     if (!enabled || pocMode === mode) return [];
+    return [{ mode: pocMode, profiles: provideProfiles(profileCandles, { mode: pocMode }, profileOptions, true) }];
+  });
+  const isHistoricalPocMode = (candidate: SessionMode): candidate is 'weekly' | 'daily' | '4h' =>
+    candidate === 'weekly' || candidate === 'daily' || candidate === '4h';
+  const historicalPocs: HistoricalPocRecord[] = [
+    ...(isHistoricalPocMode(mode) ? extractFinalizedHistoricalPocs(profiles, mode, provideProfiles.provenance) : []),
+    ...additionalProfileSets.flatMap(({ mode: pocMode, profiles: additionalProfiles }) =>
+      isHistoricalPocMode(pocMode)
+        ? extractFinalizedHistoricalPocs(additionalProfiles, pocMode, provideProfiles.provenance)
+        : [],
+    ),
+  ];
+  const pocOnlyProfiles: VolumeProfileRender[] = additionalProfileSets.flatMap(({ mode: pocMode, profiles: additionalProfiles }) => {
     const pocStyleId = pocStyleIdFor(pocMode);
-    return buildSessionProfiles(
-      candles,
-      { mode: pocMode },
-      {
-        rowsLayout: str('rowsLayout', DEFAULTS.rowsLayout) as RowsLayout,
-        rowSize: num('rowSize', DEFAULTS.rowSize),
-        valueAreaVolume: num('valueAreaVolume', DEFAULTS.valueAreaVolume),
-      },
-    ).slice(-MAX_PROFILES).map((p) => ({
+    return additionalProfiles.slice(-MAX_PROFILES).map((p) => ({
       startTime: p.startTime,
       endTime: p.endTime,
       low: p.low,
@@ -639,6 +727,7 @@ export function computeSessionVolumeProfile(
       val: p.val,
       totalVolume: p.totalVolume,
       maxRowVolume: p.maxRowVolume,
+      source: p.source ?? (provideProfiles.provenance ? { ...provideProfiles.provenance, sessionTimeframe: pocMode } : undefined),
       pocColor: color(pocStyleId),
       showPoc: shown(pocStyleId),
       showRows: false,
@@ -647,7 +736,6 @@ export function computeSessionVolumeProfile(
       showShapeLabel: false,
     }));
   });
-
   const profileStyle: VolumeProfileStyle = {
     volumeMode: str('volume', DEFAULTS.volume) as VolumeMode,
     placement: str('placement', DEFAULTS.placement) as 'left' | 'right',
@@ -659,6 +747,9 @@ export function computeSessionVolumeProfile(
     vaUpColor: color('valueAreaUp'),
     vaDownColor: color('valueAreaDown'),
     pocColor: color('poc'),
+    weeklyPocColor: color('weeklyPoc'),
+    dailyPocColor: color('dailyPoc'),
+    fourHourPocColor: color('fourHourPoc'),
     vahColor: color('vah'),
     valColor: color('val'),
     showPoc: shown('poc'),
@@ -676,6 +767,7 @@ export function computeSessionVolumeProfile(
     plots: [],
     signals: candles.map(() => 'neutral'),
     profiles: [...rendered, ...pocOnlyProfiles],
+    historicalPocs,
     profileStyle,
   };
 }

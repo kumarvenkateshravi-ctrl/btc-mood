@@ -29,15 +29,19 @@ import { computeElephantZone } from './indicators/elephantZone';
 import { computeJumboZones } from './indicators/jumboZones';
 import { computeSessionVolumeProfile } from './indicators/sessionVolumeProfile';
 import { computeRegressionGChannel } from './indicators/regressionGChannel';
+import { incrementalSma, incrementalObv, incrementalVwap, incrementalAtr } from './indicators/incremental';
+import { incrementalSessionVolumeProfile } from './indicators/sessionVolumeProfileIncremental';
 
-import type { Candle } from './types';
-import type { IndicatorResult, CustomIndicatorConfig, IndicatorInputDef, IndicatorStyleDef } from './indicatorFramework';
+import type { IndicatorInputDef, IndicatorStyleDef, IndicatorComputeFn, IndicatorEvaluationDeclaration } from './indicatorFramework';
+import type { IncrementalIndicatorFactory } from './incrementalIndicatorEngine';
 
 export interface CustomIndicatorDef {
   id: string;
   name: string;
   description: string;
-  compute: (candles: Candle[], config?: CustomIndicatorConfig, computedSources?: Record<string, (number | null)[]>) => IndicatorResult;
+  compute: IndicatorComputeFn;
+  evaluation?: IndicatorEvaluationDeclaration;
+  incremental?: IncrementalIndicatorFactory;
   inputs?: IndicatorInputDef[];
   styles?: IndicatorStyleDef[];
 }
@@ -49,7 +53,7 @@ const SRC_OPTS = [
   { value: 'hl2', label: 'HL2' }, { value: 'hlc3', label: 'HLC3' }, { value: 'ohlc4', label: 'OHLC4' },
 ];
 
-export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
+const RAW_CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'session_volume_profile',
     name: 'SVP HD',
@@ -106,7 +110,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
         options: [
           { value: 'total', label: 'Total' },
           { value: 'updown', label: 'Up/Down' },
-          { value: 'delta', label: 'Delta' },
+          { value: 'delta', label: 'Estimated Directional Delta' },
         ],
       },
       {
@@ -199,6 +203,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'val', name: 'VAL', color: '#787b86', thickness: 1, lineStyle: 'dashed', display: false },
     ],
     compute: computeSessionVolumeProfile,
+    incremental: incrementalSessionVolumeProfile,
   },
   {
     id: 'sma',
@@ -218,6 +223,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'smaLine', name: 'SMA', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true },
     ],
     compute: computeSma,
+    incremental: incrementalSma,
   },
   {
     id: 'sma_crossover_bb',
@@ -474,6 +480,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'atr', name: 'ATR', color: '#ef6c00', thickness: 2, lineStyle: 'solid', display: true },
     ],
     compute: computeAtr,
+    incremental: incrementalAtr,
   },
   {
     id: 'parabolic_sar',
@@ -539,6 +546,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'obv', name: 'OBV', color: '#5aa2e6', thickness: 2, lineStyle: 'solid', display: true },
     ],
     compute: computeObv,
+    incremental: incrementalObv,
   },
   {
     id: 'vwap',
@@ -567,6 +575,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'vwap', name: 'VWAP', color: '#42a5f5', thickness: 2, lineStyle: 'solid', display: true },
     ],
     compute: computeVwap,
+    incremental: incrementalVwap,
   },
   {
     id: 'adx',
@@ -687,7 +696,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'sd_signals',
     name: 'Supply / Demand Signals',
-    description: 'Complete reversal trade setup on the same Supply/Demand zones as sd_zones: draws the zones, prints strictly non-repainting BUY/SELL signals (closed-bar only), and marks entry / stop-loss / TP1 (opposing zone) / TP2 (measured move) with an explained confidence score. One indicator = one full setup. Note: historical zone strength is scored against the full zone set (not strictly as-of-formation) — a Phase-1 approximation. Paper & educational — not financial advice.',
+    description: 'Complete reversal trade setup on the same Supply/Demand zones as sd_zones: draws the zones, prints strictly non-repainting BUY/SELL signals (closed-bar only), and marks entry / stop-loss / TP1 (opposing zone) / TP2 (measured move) with an explained confidence score. One indicator = one full setup. Historical zone strength is frozen from evidence available at formation and never recalculated from future bars. Paper & educational — not financial advice.',
     inputs: [
       { id: 'tf1', name: 'Zone Timeframe 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
       { id: 'tf2', name: 'Zone Timeframe 2', type: 'select', default: '4H', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
@@ -735,7 +744,7 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
     id: 'volume_distribution_zones',
     name: 'Volume Distribution Zones',
-    description: 'Original MyCryptoStack engine: per-period (4H/D/W/M) proportional range-volume histogram finds where volume actually concentrated — supply/demand zones with Upper/Weighted-Average/Midpoint/Lower, buy/sell delta, adaptive bins & threshold, and a full zone lifecycle (health, acceptance, sweep, reaction, classification, cross-TF clustering, confidence 0-100). Strictly non-repainting: zones freeze at period close, signals on closed bars only, with TP1 (opposite wavg) / TP2 (opposite boundary) / TP3 (measured move). Paper & educational — not financial advice.',
+    description: 'Original MyCryptoStack engine: per-period (4H/D/W/M) proportional range-volume histogram finds where volume actually concentrated — supply/demand zones with Upper/Weighted-Average/Midpoint/Lower, estimated directional buy/sell allocation, adaptive bins & threshold, and a full zone lifecycle (health, acceptance, sweep, reaction, classification, cross-TF clustering, confidence 0-100). Strictly non-repainting: zones freeze at period close, signals on closed bars only, with TP1 (opposite wavg) / TP2 (opposite boundary) / TP3 (measured move). Paper & educational — not financial advice.',
     inputs: [
       { id: 'tf1', name: 'Period 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
       { id: 'tf2', name: 'Period 2', type: 'select', default: '4H', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
@@ -976,3 +985,37 @@ export const CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     compute: computeRegressionGChannel,
   },
 ];
+
+const RESET_TRIGGERS: IndicatorEvaluationDeclaration['resetTriggers'] = ['symbol', 'timeframe', 'sourceRevision', 'transform', 'replayEnter', 'replayRewind', 'replayExit', 'historyPrepend', 'settingsChange'];
+
+function registryEvaluation(sourcePolicy: IndicatorEvaluationDeclaration['sourcePolicy'], finalityPolicy: IndicatorEvaluationDeclaration['finalityPolicy'], incrementalEligibility: IndicatorEvaluationDeclaration['incrementalEligibility'], replayPolicy: IndicatorEvaluationDeclaration['replayPolicy'], volumeInterpretation: IndicatorEvaluationDeclaration['volumeInterpretation'], replayNotes?: string): IndicatorEvaluationDeclaration {
+  return { sourcePolicy, finalityPolicy, replaySafe: true, incrementalEligibility, replayPolicy, volumeInterpretation, resetTriggers: RESET_TRIGGERS, replayNotes };
+}
+
+const EVALUATION_BY_ID: Record<string, IndicatorEvaluationDeclaration> = {};
+const addEvaluation = (ids: string, ...args: Parameters<typeof registryEvaluation>) => {
+  for (const id of ids.split(',')) EVALUATION_BY_ID[id] = registryEvaluation(...args);
+};
+addEvaluation('session_volume_profile', 'raw', 'developing', 'incremental', 'snapshot-raw', 'estimated-directional-volume', 'Profile rows use raw candle volume; directional/delta allocation is estimated.');
+addEvaluation('sma', 'display', 'developing', 'incremental', 'snapshot-display', 'not-applicable');
+addEvaluation('sma_crossover_bb,squeeze_momentum', 'display', 'mixed', 'full-rebuild', 'snapshot-display', 'not-applicable');
+addEvaluation('ma_ribbon_tv', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'not-applicable');
+addEvaluation('ma_fvg', 'mixed', 'closed', 'full-rebuild', 'snapshot-mixed', 'not-applicable', 'MA/VWAP visuals use display inputs; FVG structure uses raw closed candles.');
+addEvaluation('macd,bollinger_bands,rsi,parabolic_sar,stochastic,keltner_channels,adx,williams_r', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'not-applicable');
+addEvaluation('atr', 'display', 'developing', 'incremental', 'snapshot-display', 'not-applicable');
+addEvaluation('volume', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'raw-volume');
+addEvaluation('obv', 'display', 'developing', 'incremental', 'snapshot-display', 'estimated-directional-volume', 'OBV signs raw volume by candle close direction; it is not aggressor delta.');
+addEvaluation('vwap', 'display', 'developing', 'incremental', 'snapshot-display', 'raw-volume');
+addEvaluation('supertrend,vol_spike,regression_gchannel', 'display', 'mixed', 'full-rebuild', 'snapshot-display', 'not-applicable');
+addEvaluation('vwap_bands', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'raw-volume');
+addEvaluation('sd_zones,sd_signals', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'not-applicable');
+addEvaluation('volume_distribution_zones', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'estimated-directional-volume', 'Buy/sell allocation is inferred from candle range and close location, not trade aggressor data.');
+addEvaluation('scanner_signals', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'not-applicable');
+addEvaluation('magic_sr,fib_pivot,smc,jumbo_zones', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'not-applicable');
+addEvaluation('elephant_zone', 'raw', 'closed', 'full-rebuild', 'snapshot-raw', 'not-applicable');
+
+export const CUSTOM_INDICATORS: CustomIndicatorDef[] = RAW_CUSTOM_INDICATORS.map((def) => {
+  const evaluation = EVALUATION_BY_ID[def.id];
+  if (!evaluation) throw new Error(`Missing evaluation metadata for indicator ${def.id}`);
+  return { ...def, evaluation };
+});

@@ -176,6 +176,18 @@ export function clearDrawings(symbol: string) {
   saveAll({ ...all, [symbol]: [] });
 }
 
+/** Whether a drawing-only undo action is available for this symbol. */
+export function canUndo(symbol: string): boolean {
+  loadAll();
+  return (undoStack[symbol]?.length ?? 0) > 0;
+}
+
+/** Whether a drawing-only redo action is available for this symbol. */
+export function canRedo(symbol: string): boolean {
+  loadAll();
+  return (redoStack[symbol]?.length ?? 0) > 0;
+}
+
 export function undo(symbol: string) {
   const all = loadAll();
   const current = all[symbol] ?? [];

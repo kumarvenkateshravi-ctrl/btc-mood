@@ -97,4 +97,22 @@ export class GradientZonePrimitive implements ISeriesPrimitive {
     this.zones = zones;
     this.updateAllViews();
   }
+
+  updateLast(value: number | null, time: number, zones: IndicatorGradientFill[]) {
+    if (this.values.length === 0) return false;
+    const index = this.values.length - 1;
+    this.values[index] = value;
+    this.times[index] = time;
+    this.zones = zones;
+    this.updateAllViews();
+    return true;
+  }
+
+  append(value: number | null, time: number, zones: IndicatorGradientFill[]) {
+    this.values.push(value);
+    this.times.push(time);
+    this.zones = zones;
+    this.updateAllViews();
+    return true;
+  }
 }

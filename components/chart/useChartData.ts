@@ -9,7 +9,6 @@ import {
   type SeriesType,
   type SeriesMarker,
   type CandlestickData,
-  type LineData,
   type WhitespaceData,
   type Time,
 } from 'lightweight-charts';
@@ -23,6 +22,9 @@ import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { shiftTime, getTfMinutes, ensureCleanSeries, type ChartType, type IndicatorRender } from './types';
 import { OSC, softHistogram } from './oscillatorTheme';
 import type { ChartRefs } from './refs';
+import { classifyTailMutation, writeIndicatorSeries, type IndicatorSeriesSnapshot } from './indicatorSeriesWrites';
+import { canUseChartApi } from '@/lib/chartLifecycle';
+import { analyticalColor, analyticalDecay } from '@/lib/chartAnalyticalPresentation';
 
 /**
  * The core data-push effect: feeds candle data to the chart, generates the
@@ -81,14 +83,25 @@ export function useChartData(
   // closed bars — pushing those again costs O(bars x plots) per tick for
   // nothing. Reference inequality is the only trigger for a re-push.
   const lastPushedPlotRef = useRef<Map<string, unknown>>(new Map());
+  const plotWriteSnapshotsRef = useRef<Map<string, IndicatorSeriesSnapshot>>(new Map());
+  const previousIndicatorSettingsMapRef = useRef<Record<string, IndicatorSettings> | undefined>(undefined);
+  const hasIndicatorSettingsRef = useRef(false);
+  const primitiveRawRef = useRef<Map<string, readonly unknown[]>>(new Map());
 
   useEffect(() => {
+    const lifecycleEpoch = refs.lifecycleRef.current.epoch;
+    const active = () => canUseChartApi(refs.lifecycleRef.current, lifecycleEpoch);
+    if (!active()) return;
     const candleSeries = candleSeriesRef.current;
     if (!candleSeries) return;
     if (candles.length === 0) return;
 
     const isNewContext =
       prevTfRef.current !== tf || prevTypeRef.current !== type || prevSymbolRef.current !== symbol;
+    const indicatorSettingsChanged = hasIndicatorSettingsRef.current &&
+      previousIndicatorSettingsMapRef.current !== indicatorSettingsMap;
+    previousIndicatorSettingsMapRef.current = indicatorSettingsMap;
+    hasIndicatorSettingsRef.current = true;
 
     if (prevTypeRef.current !== null && prevTypeRef.current !== type) {
       // Full reset when chart type changes: clear series data AND all
@@ -396,6 +409,8 @@ export function useChartData(
         }
         indicatorMarkersRef.current.clear();
         lastPushedPlotRef.current.clear();
+        plotWriteSnapshotsRef.current.clear();
+        primitiveRawRef.current.clear();
         for (const pane of [...panes.values()].sort((a, b) => b.paneIndex() - a.paneIndex())) {
           try { chart.removePane(pane.paneIndex()); } catch {}
         }
@@ -439,7 +454,14 @@ export function useChartData(
           for (const plot of result.plots) {
             const targetPane = plot.pane === 'separate' ? paneIndex : 0;
             const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
-            const color = st?.color || plot.color;
+            const baseColor = st?.color || plot.color;
+            // SMC structure plots are annotation segments. Fade older segments at
+            // render time so the latest CHoCH/BOS wins without mutating the
+            // analytical result or its replay/cache identity.
+            const isStructurePlot = plot.id.startsWith('struct_');
+            const firstStructureBar = isStructurePlot ? plot.data.findIndex((value) => value != null) : -1;
+            const structureAge = firstStructureBar >= 0 ? plot.data.length - 1 - firstStructureBar : 0;
+            const color = isStructurePlot ? analyticalColor(baseColor, analyticalDecay(structureAge)) : baseColor;
             // Oscillator-pane lines inherit the design-system hair-thin default
             // unless the user explicitly thickened this plot; overlays on the
             // price pane keep their own weight.
@@ -569,100 +591,137 @@ export function useChartData(
         }
       }
 
-      // Push data for every plot (every run).
+      // Line and histogram plots can use a tail update only after their
+      // historical values have been proven unchanged. This remains separate
+      // from indicator computation: even a full-computed plot earns the fast
+      // path when its previous values are byte-for-byte stable.
+      const structuralIndicatorWrite =
+        isNewContext || indicatorStructureChanged || indicatorSettingsChanged || (!isIncremental && !isAppendOne);
       for (const { key, result } of visibleResults) {
         for (const plot of result.plots) {
           if (plot.type !== 'line' && plot.type !== 'histogram') continue;
           const seriesKey = `${key}::${plot.id}`;
           const series = existing.get(seriesKey);
           if (!series) continue;
-          if (lastPushedPlotRef.current.get(seriesKey) === plot.data) continue;
-          lastPushedPlotRef.current.set(seriesKey, plot.data);
-          let lastTime = -1;
-          const formatted = plot.data
-            .map((v, i) => {
-              if (v == null || !candles[i]) return null;
-              
-              let val: number;
-              let color: string | undefined;
-              if (typeof v === 'object' && 'value' in v) {
-                if (!Number.isFinite(v.value)) return null;
-                val = v.value;
-                color = v.color;
-              } else {
-                if (!Number.isFinite(v as number)) return null;
-                val = v as number;
-              }
-              
-              const t = shiftTime(candles[i].time as number) as number;
-              if (t <= lastTime) return null; // Ensure strictly ascending time
-              lastTime = t;
-              
-              const paint = color && plot.type === 'histogram' && plot.pane === 'separate'
-                ? softHistogram(color)
-                : color;
-              return paint ? { time: t as Time, value: val, color: paint } : { time: t as Time, value: val };
-            })
-            .filter((d): d is { time: Time; value: number; color?: string } => d !== null);
-          if (formatted.length > 0) {
-            try {
-              series.setData(formatted as LineData[]);
-            } catch (err) {
-              console.error(`Failed to set indicator data for ${key}::${plot.id}:`, err);
-            }
+          try {
+            const write = writeIndicatorSeries<{ time: Time; value: number; color?: string }>({
+              series: series as unknown as {
+                setData(data: Array<{ time: Time; value: number; color?: string }>): void;
+                update(data: { time: Time; value: number; color?: string }): void;
+              },
+              raw: plot.data,
+              candles,
+              structural: structuralIndicatorWrite,
+              timeOf: (point) => point.time as number,
+              format: (value, index) => {
+                if (value == null || !candles[index]) return null;
+                let numeric: number;
+                let color: string | undefined;
+                if (typeof value === 'object' && 'value' in value) {
+                  const valued = value as { value: number; color?: string };
+                  if (!Number.isFinite(valued.value)) return null;
+                  numeric = valued.value;
+                  color = valued.color;
+                } else {
+                  if (!Number.isFinite(value as number)) return null;
+                  numeric = value as number;
+                }
+                const time = shiftTime(candles[index].time as number) as Time;
+                if (!Number.isFinite(time as number)) return null;
+                const paint = color && plot.type === 'histogram' && plot.pane === 'separate'
+                  ? softHistogram(color)
+                  : color;
+                return paint ? { time, value: numeric, color: paint } : { time, value: numeric };
+              },
+            }, plotWriteSnapshotsRef.current.get(seriesKey));
+            plotWriteSnapshotsRef.current.set(seriesKey, write.snapshot);
+          } catch (err) {
+            console.error(`Failed to write indicator data for ${key}::${plot.id}:`, err);
           }
         }
 
-        // Band plots: feed each per-bar { upper, lower } + bar times into its
-        // fill primitive (supply/demand zones etc.).
+        // Band primitives use in-place tail mutation only for simple bands.
+        // Zone bands precompute contiguous runs and therefore stay structural.
         for (const plot of result.plots) {
           if (plot.type !== 'band') continue;
           const bandKey = `band::${key}::${plot.id}`;
           const bp = indicatorBandRef.current.get(`${key}::${plot.id}`);
           if (!bp) continue;
-          if (lastPushedPlotRef.current.get(bandKey) === plot.data) continue;
-          lastPushedPlotRef.current.set(bandKey, plot.data);
-          const upper: (number | null)[] = [];
-          const lower: (number | null)[] = [];
-          for (const v of plot.data) {
-            if (v != null && typeof v === 'object' && 'upper' in v && 'lower' in v
-                && Number.isFinite(v.upper) && Number.isFinite(v.lower)) {
-              upper.push(v.upper);
-              lower.push(v.lower);
-            } else {
-              upper.push(null);
-              lower.push(null);
-            }
-          }
-          // IMPORTANT: use map (not filter+map) so times[i] stays positionally
-          // aligned with upper[i] / lower[i]. Filtering destroys the 1-to-1
-          // index mapping and causes the areaFill polygon to draw points at the
-          // wrong x-coordinates — invisible on 5m (dense bars) but very visible
-          // on higher timeframes where bars are far apart.
-          const times = candles.map((c) =>
-            c != null && Number.isFinite(c.time as number)
-              ? (shiftTime(c.time as number) as number)
-              : null
-          );
           const st = indicatorSettingsMap?.[key]?.styles?.[plot.id];
           const visible = hiddenKeys.has(key) ? false : st?.display !== false;
-          try { bp.setData(upper, lower, times, st?.color || plot.color, visible, plot.zoneStyle, plot.areaFill ?? false, plot.areaFillColors); } catch {}
+          const mutation = classifyTailMutation(
+            primitiveRawRef.current.get(bandKey),
+            plot.data,
+            structuralIndicatorWrite || plot.zoneStyle != null || candles.length !== plot.data.length,
+          );
+          const point = plot.data.at(-1);
+          const upper = point != null && typeof point === 'object' && 'upper' in point && Number.isFinite(point.upper)
+            ? point.upper : null;
+          const lower = point != null && typeof point === 'object' && 'lower' in point && Number.isFinite(point.lower)
+            ? point.lower : null;
+          const time = candles.at(-1) != null && Number.isFinite(candles.at(-1)!.time as number)
+            ? shiftTime(candles.at(-1)!.time as number) as number : null;
+          let wroteTail = false;
+          if (mutation === 'updateLast' && time != null) wroteTail = bp.updateLast(upper, lower, time, st?.color || plot.color, visible);
+          if (mutation === 'append' && time != null) wroteTail = bp.append(upper, lower, time, st?.color || plot.color, visible);
+          if (mutation === 'none') wroteTail = true;
+          if (!wroteTail) {
+            const upperData: (number | null)[] = [];
+            const lowerData: (number | null)[] = [];
+            for (const value of plot.data) {
+              if (value != null && typeof value === 'object' && 'upper' in value && 'lower' in value
+                  && Number.isFinite(value.upper) && Number.isFinite(value.lower)) {
+                upperData.push(value.upper);
+                lowerData.push(value.lower);
+              } else {
+                upperData.push(null);
+                lowerData.push(null);
+              }
+            }
+            const times = candles.map((candle) =>
+              candle != null && Number.isFinite(candle.time as number)
+                ? shiftTime(candle.time as number) as number
+                : null,
+            );
+            try { bp.setData(upperData, lowerData, times, st?.color || plot.color, visible, plot.zoneStyle, plot.areaFill ?? false, plot.areaFillColors); } catch {}
+          }
+          primitiveRawRef.current.set(bandKey, plot.data);
         }
 
-        // Gradient zones: feed the source plot's per-bar values + bar times.
+        // Gradient primitives have no LWC series, but can still avoid full
+        // value/time array replacement when their source tail is the only change.
         const gp = indicatorGradientRef.current.get(key);
         if (gp && result.gradientFills && result.gradientFills.length > 0) {
           const srcId = result.gradientFills[0].plotId;
-          const srcPlot = result.plots.find((p) => p.id === srcId);
+          const srcPlot = result.plots.find((plot) => plot.id === srcId);
           if (srcPlot) {
-            const vals = srcPlot.data.map((v) => {
-              const n = v == null ? null : typeof v === 'object' && 'value' in v ? v.value : (v as number);
-              return n != null && Number.isFinite(n) ? n : null;
-            });
-            const times = candles
-              .filter((c) => c != null && Number.isFinite(c.time as number))
-              .map((c) => shiftTime(c.time as number) as number);
-            try { gp.setData(vals, times, result.gradientFills); } catch {}
+            const gradientKey = `gradient::${key}::${srcId}`;
+            const zonesChanged = lastPushedPlotRef.current.get(gradientKey) !== result.gradientFills;
+            const mutation = classifyTailMutation(
+              primitiveRawRef.current.get(gradientKey),
+              srcPlot.data,
+              structuralIndicatorWrite || zonesChanged || candles.length !== srcPlot.data.length || gp.times.length !== srcPlot.data.length,
+            );
+            const tail = srcPlot.data.at(-1);
+            const value = tail == null ? null : typeof tail === 'object' && 'value' in tail ? tail.value : tail as number;
+            const time = candles.at(-1) != null && Number.isFinite(candles.at(-1)!.time as number)
+              ? shiftTime(candles.at(-1)!.time as number) as number : null;
+            let wroteTail = false;
+            if (mutation === 'updateLast' && time != null) wroteTail = gp.updateLast(value != null && Number.isFinite(value) ? value : null, time, result.gradientFills);
+            if (mutation === 'append' && time != null) wroteTail = gp.append(value != null && Number.isFinite(value) ? value : null, time, result.gradientFills);
+            if (mutation === 'none') wroteTail = true;
+            if (!wroteTail) {
+              const values = srcPlot.data.map((point) => {
+                const numeric = point == null ? null : typeof point === 'object' && 'value' in point ? point.value : point as number;
+                return numeric != null && Number.isFinite(numeric) ? numeric : null;
+              });
+              const times = candles
+                .filter((candle) => candle != null && Number.isFinite(candle.time as number))
+                .map((candle) => shiftTime(candle.time as number) as number);
+              try { gp.setData(values, times, result.gradientFills); } catch {}
+            }
+            primitiveRawRef.current.set(gradientKey, srcPlot.data);
+            lastPushedPlotRef.current.set(gradientKey, result.gradientFills);
           }
         }
 
@@ -670,7 +729,10 @@ export function useChartData(
         // deliberately UI-agnostic), so shift session + level-extension times
         // into chart time here, at the same boundary every other series uses.
         const pp = indicatorProfileRef.current.get(key);
-        if (pp && result.profiles && result.profileStyle) {
+        const profileKey = `profile::${key}`;
+        if (pp && result.profiles && result.profileStyle &&
+            (structuralIndicatorWrite || lastPushedPlotRef.current.get(profileKey) !== result.profiles)) {
+          lastPushedPlotRef.current.set(profileKey, result.profiles);
           const shiftMaybe = (t: number | null | undefined) =>
             t == null ? t : (shiftTime(t) as number);
           const shifted = result.profiles.map((prof) => ({
@@ -681,8 +743,13 @@ export function useChartData(
             vahExtendTo: shiftMaybe(prof.vahExtendTo),
             valExtendTo: shiftMaybe(prof.valExtendTo),
           }));
+          const shiftedHistorical = result.historicalPocs?.map((record) => ({
+            ...record,
+            sessionStart: shiftTime(record.sessionStart) as number,
+            sessionEnd: shiftTime(record.sessionEnd) as number,
+          })) ?? [];
           const visible = hiddenKeys.has(key);
-          try { pp.setData(visible ? [] : shifted, result.profileStyle); } catch {}
+          try { pp.setData(visible ? [] : shifted, result.profileStyle, visible ? [] : shiftedHistorical); } catch {}
         }
 
         const lp = indicatorLineRef.current.get(key);
@@ -731,10 +798,19 @@ export function useChartData(
       // established the final visible range. Refresh once after the range
       // settles so overlays are correct on the first render, not only after
       // the next market-data tick.
-      requestAnimationFrame(() => {
+      let firstRaf = 0;
+      firstRaf = requestAnimationFrame(() => {
+        refs.pendingAnimationFramesRef.current.delete(firstRaf);
+        if (!active()) return;
         if (isNewContext) applyDefaultView();
-        requestAnimationFrame(refreshIndicatorPrimitives);
+        let secondRaf = 0;
+        secondRaf = requestAnimationFrame(() => {
+          refs.pendingAnimationFramesRef.current.delete(secondRaf);
+          if (active()) refreshIndicatorPrimitives();
+        });
+        refs.pendingAnimationFramesRef.current.add(secondRaf);
       });
+      refs.pendingAnimationFramesRef.current.add(firstRaf);
     }
   }, [candles, type, isRenko, tf, symbol, visibleResults, indicatorSettingsMap, hiddenKeys]);
 }

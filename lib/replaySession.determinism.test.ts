@@ -106,7 +106,7 @@ describe('deterministic backward replay', () => {
 
     const actions = __getReplayActionJournalForTest();
     expect(actions.some((action) => action.barIndex === 700)).toBe(false);
-    expect(actions.at(-1)).toMatchObject({ kind: 'overlay', barIndex: 500, field: 'tp', value: 140 });
+    expect(actions.at(-1)).toMatchObject({ kind: 'protection', barIndex: 500, tp: 140 });
   });
 
   it('gives identical scripts identical state and deterministic position/trade IDs', () => {

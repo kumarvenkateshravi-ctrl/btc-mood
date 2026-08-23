@@ -83,10 +83,10 @@ export interface ChartProps {
   overlayLeverage?: number;
   /** `qty | ±USD | ✕` pills drawn on each overlay line (Task 5). */
   overlayBadges?: OverlayLineBadge[];
-  /** Immediate-place trade control row docked to the entry line. Null when flat
-   *  / during replay. TP/SL lines are always draggable; `isDirty` (a staged,
-   *  unconfirmed TP/SL change) reveals the Discard/Confirm buttons. */
+  /** Mode-aware trade presentation row docked to the entry line. Null only when
+   *  flat. Replay renders authoritative replay state with unsupported controls hidden. */
   tradeOverlay?: {
+    mode: 'live' | 'replay';
     entryPrice: number;
     side: 'long' | 'short';
     qty: number;

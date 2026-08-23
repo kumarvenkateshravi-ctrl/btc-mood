@@ -3,6 +3,8 @@
 import { Modal, Button } from '@/components/ui';
 import OrderTicket from './OrderTicket';
 import { X } from 'lucide-react';
+import type { PlaceChartOrder, TradingCommandResult } from '@/lib/chartTradingCommands';
+import type { MarketDataIntegrity } from '@/lib/marketDataIntegrity';
 
 interface OrderModalProps {
   open: boolean;
@@ -13,7 +15,10 @@ interface OrderModalProps {
   onLeverageChange: (n: number) => void;
   reduceAvailable: number;
   initialSide?: 'buy' | 'sell';
+  marketIntegrity?: MarketDataIntegrity;
+  onSubmitOrder: (input: PlaceChartOrder) => TradingCommandResult;
 }
+// The boundary prop is declared with the modal interface above.
 
 /**
  * Modal order ticket — now backed by the canonical <Modal> primitive which
@@ -28,8 +33,13 @@ export default function OrderModal(p: OrderModalProps) {
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-ink">Order Ticket</span>
           <span className="rounded-md bg-bull/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-bull-bright ring-1 ring-bull/30">
-            Paper
+            Live Paper
           </span>
+          {p.marketIntegrity && p.marketIntegrity !== 'live' && (
+            <span className="rounded-md bg-bear/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-bear-bright ring-1 ring-bear/30">
+              Data {p.marketIntegrity}
+            </span>
+          )}
         </div>
         <Button
           variant="ghost"
@@ -48,7 +58,9 @@ export default function OrderModal(p: OrderModalProps) {
         initialSide={p.initialSide}
         active={p.open}
         onPlaced={p.onClose}
+        onSubmitOrder={p.onSubmitOrder}
       />
+      {/* OrderTicket receives the mode-aware boundary above. */}
     </Modal>
   );
 }

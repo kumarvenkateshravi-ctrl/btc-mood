@@ -141,7 +141,8 @@ class OrderRenderer implements IPrimitivePaneRenderer {
 
 class OrderPaneView implements IPrimitivePaneView {
   constructor(private _api: SeriesAttachedParameter<Time, 'Candlestick'>, private _prim: OrderOverlayPrimitive) {}
-  zOrder(): 'normal' { return 'normal'; }
+  // Execution overlays must remain above analytical lines and fills.
+  zOrder(): 'top' { return 'top'; }
   renderer() { return new OrderRenderer(this._api, this._prim); }
 }
 

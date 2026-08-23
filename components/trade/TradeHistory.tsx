@@ -1,8 +1,9 @@
 'use client';
 
 import { Download } from 'lucide-react';
-import { usePaperStore } from '@/lib/paperStore';
-import { useReplaySession } from '@/lib/replaySession';
+
+
+import type { TradePresentationFacade } from '@/lib/trade/presentationFacade';
 import { tradeDirection, tradePnlPct, tradeRR, tradeOutcome, formatRR } from '@/lib/trading';
 import { tradesToCsv, downloadCsv } from '@/lib/csv';
 
@@ -24,10 +25,9 @@ const OUTCOME_CLASS: Record<string, string> = {
   BE: 'bg-surface-2 text-ink-faint',
 };
 
-export default function TradeHistory() {
-  const paper = usePaperStore();
-  const session = useReplaySession();
-  const trades = session.active ? session.trades : paper.trades;
+export default function TradeHistory({ symbol, presentation }: { symbol: string; presentation: TradePresentationFacade }) {
+  const trades = presentation.trades;
+  const historySymbol = presentation.symbol || symbol;
 
   const exportCsv = () => {
     if (trades.length === 0) return;
@@ -40,8 +40,8 @@ export default function TradeHistory() {
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
         <h2 className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-ink-faint">
           <span>Trade history</span>
-          <span className={session.active ? 'text-accent' : 'text-ink-faint'}>
-            · {session.active ? 'Replay session' : 'Live'}
+          <span className={presentation.mode === 'replay' ? 'text-accent' : 'text-ink-faint'}>
+            · {presentation.mode === 'replay' ? 'Replay session' : 'Live'} · {historySymbol}
           </span>
         </h2>
         <button

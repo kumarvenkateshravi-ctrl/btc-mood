@@ -6,6 +6,7 @@ import {
   SeriesAttachedParameter,
 } from 'lightweight-charts';
 import type { BandZoneStyle } from './indicatorFramework';
+import { analyticalDecay } from './chartAnalyticalPresentation';
 
 // Draws an indicator `band` plot. Two modes:
 //
@@ -57,6 +58,7 @@ class BandRenderer implements IPrimitivePaneRenderer {
       const halfW = Math.max(0.5, (barSpacing * hpr) / 2);
 
       const { upper, lower, times, color, zoneStyle } = this._prim;
+      const compactViewport = scope.bitmapSize.width / hpr < 520;
 
       if (!zoneStyle) {
         if (this._prim.areaFill && this._prim.areaFillColors) {
@@ -243,6 +245,10 @@ class BandRenderer implements IPrimitivePaneRenderer {
       for (const run of runs) {
         const active = run === lastRun;
         const focus = active && zoneStyle.focus === true;
+        const objectFactor = analyticalDecay(Math.max(0, times.length - 1 - run.start), focus);
+        // Presentation-only decay lets current structures and execution levels win pixels
+        // without changing analytical geometry, lifecycle, or signal data.
+        const historyFactor = analyticalDecay(Math.max(0, lastRun.start - run.start), focus);
         const yU = series.priceToCoordinate(run.upper);
         const yL = series.priceToCoordinate(run.lower);
         if (yU === null || yL === null) continue;
@@ -267,20 +273,18 @@ class BandRenderer implements IPrimitivePaneRenderer {
         const boundaryY = zoneStyle.boundary === 'lower' ? bot : top;
         const distalY = zoneStyle.boundary === 'lower' ? top : bot;
 
-        // 1. Fill — flat and glassy, but BRIGHT across all runs: historical
-        //    zones keep the same color at near-full strength so past signals
-        //    can be analysed against the zones that produced them. Focus is
-        //    only one step brighter, not the only visible zone.
-        const fillAlpha = isSubtle
+        // 1. Fill — flat and glassy. Historical zones stay visible but yield
+        //    progressively to the latest/focused decision zone.
+        const fillAlpha = (isSubtle
           ? (active ? 0.03 : 0.015)
-          : focus ? 0.16 : active ? 0.12 : 0.10;
+          : focus ? 0.16 : active ? 0.12 : 0.10) * historyFactor * objectFactor;
         ctx.fillStyle = `rgba(${rgb},${fillAlpha})`;
         ctx.fillRect(left, top, right - left, bot - top);
 
         // 2. Borders — upper + lower bounds, 1–2px, weight scales with strength.
         //    Historical borders stay clearly visible (same hue, one step down).
         if (!isSubtle) {
-          const borderAlpha = focus ? 1.0 : active ? 0.75 : 0.55;
+          const borderAlpha = (focus ? 1.0 : active ? 0.75 : 0.55) * historyFactor * objectFactor;
           const widthPx = Math.min(2, 1 + emphasis); // ★ weak 1px → ★★★★★ 2px
           ctx.strokeStyle = `rgba(${rgb},${borderAlpha})`;
           ctx.lineWidth = Math.max(1, widthPx * vpr);
@@ -307,7 +311,7 @@ class BandRenderer implements IPrimitivePaneRenderer {
 
         // 4. Label chip — solid bar at the FAR edge (away from price), inside the
         //    zone with clear padding; white text on a muted accent fill.
-        if (active && zoneStyle.label) {
+        if (active && zoneStyle.label && (focus || objectFactor >= (compactViewport ? 0.9 : 0.55))) {
           const fontPx = 10 * vpr;
           ctx.font = `500 ${fontPx}px Inter, ui-sans-serif, system-ui`;
           ctx.textBaseline = 'middle';
@@ -318,7 +322,7 @@ class BandRenderer implements IPrimitivePaneRenderer {
           const lx = Math.min(right, scope.bitmapSize.width) - w - 8 * hpr;
           const inset = 4 * vpr + h / 2;
           const ly = distalY === top ? top + inset : bot - inset;
-          ctx.fillStyle = `rgba(${rgb},${focus ? 0.9 : 0.55})`;
+          ctx.fillStyle = `rgba(${rgb},${(focus ? 0.9 : 0.55) * objectFactor})`;
           ctx.fillRect(lx, ly - h / 2, w, h);
           ctx.fillStyle = 'rgba(255,255,255,0.95)';
           ctx.fillText(text, lx + padX, ly);
@@ -330,12 +334,12 @@ class BandRenderer implements IPrimitivePaneRenderer {
             if (a < run.start || a > run.end + 1) continue; // +1: confirm bar can close just past the run
             const ax = xOf(Math.min(a, times.length - 1));
             if (ax == null) continue;
-            ctx.fillStyle = `rgba(${rgb},0.95)`;
+            ctx.fillStyle = `rgba(${rgb},${0.95 * historyFactor * objectFactor})`;
             ctx.beginPath();
             ctx.arc(ax, boundaryY, 3 * hpr, 0, Math.PI * 2);
             ctx.fill();
             const dir = zoneStyle.boundary === 'lower' ? 1 : -1;
-            ctx.strokeStyle = `rgba(${rgb},0.6)`;
+            ctx.strokeStyle = `rgba(${rgb},${0.6 * historyFactor * objectFactor})`;
             ctx.lineWidth = Math.max(1, vpr);
             ctx.beginPath();
             ctx.moveTo(ax, boundaryY);
@@ -404,6 +408,31 @@ export class IndicatorBandPrimitive implements ISeriesPrimitive {
     this.zoneStyle = zoneStyle;
     this.runs = zoneStyle ? computeRuns(upper, lower) : [];
     this.updateAllViews();
+  }
+
+  /** Safe only for non-zone bands; zone runs need a structural recomputation. */
+  updateLast(upper: number | null, lower: number | null, time: number | null, color: string, visible = true) {
+    if (this.zoneStyle || this.upper.length === 0) return false;
+    const index = this.upper.length - 1;
+    this.upper[index] = upper;
+    this.lower[index] = lower;
+    this.times[index] = time;
+    this.color = color;
+    this.visible = visible;
+    this.updateAllViews();
+    return true;
+  }
+
+  /** Safe only for non-zone bands; zone runs need a structural recomputation. */
+  append(upper: number | null, lower: number | null, time: number | null, color: string, visible = true) {
+    if (this.zoneStyle) return false;
+    this.upper.push(upper);
+    this.lower.push(lower);
+    this.times.push(time);
+    this.color = color;
+    this.visible = visible;
+    this.updateAllViews();
+    return true;
   }
 }
 

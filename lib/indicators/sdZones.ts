@@ -4,10 +4,12 @@ import * as pm from '../pineMath';
 import { priorPeriodOHLC, HTF_PERIOD_SECONDS, type HtfPeriod, type HtfBucketOHLC } from './htf';
 import {
   scoreZone, countRetests, type Zone, type ZoneStrength,
-  type ZoneStrengthWeights, type ScoreZoneCtx,
+  type ZoneStrengthWeights, DEFAULT_ZONE_STRENGTH_WEIGHTS,
 } from './zoneStrength';
 import type { IndicatorResult, IndicatorPlot, BandZoneStyle, CustomIndicatorConfig, SignalSide } from '../indicatorFramework';
 import { resolveInputs } from './itsTemplates';
+import type { IndicatorEvaluationContext } from '../indicatorEvaluation';
+import { selectIndicatorCandles } from '../indicatorEvaluation';
 
 export interface SdZonesConfig {
   tfs: HtfPeriod[];
@@ -48,20 +50,6 @@ export function buildZones(candles: Candle[], tf: HtfPeriod, targetFactor: numbe
   return zones;
 }
 
-/** Mean volume across the distinct prior periods that formed these zones. */
-function avgPeriodVolume(zones: Zone[]): number {
-  const seen = new Set<number>();
-  let sum = 0, count = 0;
-  for (const z of zones) {
-    if (!seen.has(z.formedOHLC.startTime)) {
-      seen.add(z.formedOHLC.startTime);
-      sum += z.formedOHLC.volume;
-      count++;
-    }
-  }
-  return count > 0 ? sum / count : 0;
-}
-
 /** The most-recently-formed zone of each (tf, kind) — the live zones. */
 function currentZones(zones: Zone[]): Zone[] {
   const byKey = new Map<string, Zone>();
@@ -71,6 +59,22 @@ function currentZones(zones: Zone[]): Zone[] {
     if (!cur || z.formedAtIndex > cur.formedAtIndex) byKey.set(key, z);
   }
   return [...byKey.values()];
+}
+
+/** Score a zone using only evidence available when its prior HTF period completed. */
+export function scoreZoneAtFormation(zone: Zone, candles: Candle[], allZones: Zone[], weights: Partial<ZoneStrengthWeights> = DEFAULT_ZONE_STRENGTH_WEIGHTS): ZoneStrength {
+  const asOfCandles = candles.slice(0, zone.formedAtIndex + 1);
+  const asOfZones = allZones.filter((other) => other.formedAtIndex <= zone.formedAtIndex);
+  const seen = new Set<number>(); let volumeSum = 0; let volumeCount = 0;
+  for (const other of asOfZones) {
+    if (other.tf !== zone.tf || seen.has(other.formedOHLC.startTime)) continue;
+    seen.add(other.formedOHLC.startTime); volumeSum += other.formedOHLC.volume; volumeCount++;
+  }
+  const atr = atrSeries(candles, 14);
+  return scoreZone(zone, asOfCandles, asOfZones.filter((other) => other !== zone && other.tf !== zone.tf), {
+    avgPeriodVolume: volumeCount ? volumeSum / volumeCount : 0,
+    atrAtFormation: atr[zone.formedAtIndex] ?? 0,
+  }, weights);
 }
 
 export interface ZoneSummary {
@@ -94,16 +98,11 @@ export function summarizeZones(candles: Candle[], cfg: SdZonesConfig): ZoneSumma
   const all: Zone[] = [];
   for (const tf of cfg.tfs) all.push(...buildZones(candles, tf, cfg.targetFactor));
   const current = currentZones(all);
-  const atr = atrSeries(candles, 14);
   const lastClose = candles[candles.length - 1].close;
 
   return current.map((z) => {
-    const others = current.filter((o) => o !== z && o.tf !== z.tf);
-    const ctx: ScoreZoneCtx = {
-      avgPeriodVolume: avgPeriodVolume(all.filter((a) => a.tf === z.tf)),
-      atrAtFormation: atr[z.formedAtIndex] ?? 0,
-    };
-    const strength = scoreZone(z, candles, others, ctx, cfg.weights);
+    const strength = scoreZoneAtFormation(z, candles, all, cfg.weights);
+    const others = all.filter((o) => o !== z && o.tf !== z.tf && o.formedAtIndex <= z.formedAtIndex);
     const type = z.kind === 'supply' || z.kind === 'supplyTarget' ? 'supply' : 'demand';
     const mid = (z.upper + z.lower) / 2;
     // Same exact kind on another TF (matches scoreZone's confluence rule).
@@ -153,7 +152,11 @@ const fillFor = (kind: Zone['kind'], tf: HtfPeriod): string => {
   return `rgba(${rgb},${isTarget ? 0.05 : 0.10})`;
 };
 
-export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
+export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig, computedSourcesOrContext?: Record<string, (number | null)[]> | IndicatorEvaluationContext, context?: IndicatorEvaluationContext): IndicatorResult {
+  const evaluationContext = context ?? (computedSourcesOrContext && 'rawCandles' in computedSourcesOrContext ? computedSourcesOrContext as IndicatorEvaluationContext : undefined);
+  if (evaluationContext) {
+    candles = selectIndicatorCandles(evaluationContext, 'raw', 'closed').filter((c) => !evaluationContext.replay || c.time <= evaluationContext.replay.cutTime);
+  }
   const inp = resolveInputs<SdZonesInputs>(config, SD_DEFAULTS);
   const n = candles.length;
   const signals = new Array<SignalSide>(n).fill('neutral');
@@ -179,7 +182,6 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
     confluence: inp.wConfluence, rejectionStrength: inp.wRejection, formationVolume: inp.wVolume,
     retests: inp.wRetests, zoneWidth: inp.wZoneWidth, freshness: inp.wFreshness,
   };
-  const atr = atrSeries(candles, 14);
 
   // Build every zone once (needed for confluence + per-bar active lookup).
   const allByTf = new Map<HtfPeriod, Zone[]>();
@@ -190,11 +192,7 @@ export function computeSdZones(candles: Candle[], config?: CustomIndicatorConfig
   // Score current zones (for labels + opacity + minStrength filter).
   const scored = new Map<Zone, ZoneStrength>();
   for (const z of current) {
-    const others = current.filter((o) => o !== z && o.tf !== z.tf);
-    scored.set(z, scoreZone(z, candles, others, {
-      avgPeriodVolume: avgPeriodVolume(allByTf.get(z.tf) ?? []),
-      atrAtFormation: atr[z.formedAtIndex] ?? 0,
-    }, weights));
+    scored.set(z, scoreZoneAtFormation(z, candles, allZones, weights));
   }
 
   const plots: IndicatorPlot[] = [];

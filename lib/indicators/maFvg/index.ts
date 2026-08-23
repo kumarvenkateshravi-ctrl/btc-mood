@@ -6,6 +6,7 @@
 // FVG module: LuxAlgo, CC BY-NC-SA 4.0 (NonCommercial).
 
 import type { Candle } from '../../types';
+import type { IndicatorEvaluationContext } from '../../indicatorEvaluation';
 import type {
   IndicatorResult, IndicatorPlot, IndicatorMarker, SignalSide, CustomIndicatorConfig,
   CandleColorOverride,
@@ -27,6 +28,7 @@ export function computeMaFvg(
   candles: Candle[],
   config?: CustomIndicatorConfig,
   computedSources?: Record<string, (number | null)[]>,
+  context?: IndicatorEvaluationContext,
 ): IndicatorResult {
   const cfg = resolveInputs(config, DEFAULTS);
   const n = candles.length;
@@ -123,10 +125,34 @@ export function computeMaFvg(
   // ── Fair Value Gaps ────────────────────────────────────────
   // The Pine deletes a gap's box on mitigation, so only UNMITIGATED gaps show.
   // Each open gap is a flat box from formation-2 to formation+extend.
-  const fvg = detectFvgs(candles, { thresholdPct: cfg.fvgThresholdPct, auto: cfg.fvgAuto });
+  // FVGs are structural objects: always use the raw closed prefix and project
+  // their time range onto the display index (including HA/Renko).
+  const fvgCandles = context ? context.closedCandles : candles;
+  const fvg = detectFvgs(
+    fvgCandles,
+    { thresholdPct: cfg.fvgThresholdPct, auto: cfg.fvgAuto },
+    { requireClosedBars: Boolean(context?.hasFormingBar) },
+    context ? {
+      rawCandles: context.rawCandles,
+      displayCandles: context.displayCandles,
+      hasFormingBar: context.hasFormingBar,
+      symbol: context.symbol,
+      mode: context.mode,
+      sourceRevision: context.sourceRevision,
+      replay: context.replay ? { sessionId: context.replay.sessionId, cutTime: context.replay.cutTime } : undefined,
+    } : undefined,
+  );
+  const rawToDisplayIndex = (rawIndex: number): number => {
+    if (!context || fvgCandles.length === candles.length) return Math.max(0, Math.min(n - 1, rawIndex));
+    const time = fvgCandles[rawIndex]?.time;
+    if (time == null || n === 0) return Math.max(0, n - 1);
+    let displayIndex = 0;
+    while (displayIndex + 1 < n && candles[displayIndex + 1].time <= time) displayIndex += 1;
+    return displayIndex;
+  };
   fvg.fvgs.filter((g) => g.endIndex === null).forEach((g, k) => {
-    const left = Math.max(0, g.startIndex - 2);
-    const right = Math.min(n - 1, g.startIndex + cfg.fvgExtend);
+    const left = rawToDisplayIndex(Math.max(0, g.startIndex - 2));
+    const right = Math.min(n - 1, rawToDisplayIndex(g.startIndex) + cfg.fvgExtend);
     const data = new Array<{ upper: number; lower: number } | null>(n).fill(null);
     for (let i = left; i <= right; i++) data[i] = { upper: g.top, lower: g.bottom };
     plots.push({

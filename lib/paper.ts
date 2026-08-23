@@ -27,8 +27,14 @@ export interface PaperOrder {
   /** When set, cancelling or filling this order also cancels all
    *  other orders with the same ocoGroup. */
   ocoGroup: string | null;
-}
+  /**
+   * Margin reserved by the store when a working entry was accepted.
+   * Optional so persisted orders created before reservation tracking remain
+   * readable; the store derives the legacy value from order fields.
+   */
+  reservedMargin?: number;
 
+}
 export interface PaperFill {
   orderId: string;
   side: Side;
@@ -38,6 +44,13 @@ export interface PaperFill {
   fee: number;
   ts: number;
   leverage: number;
+}
+
+export interface WorkingOrderFill {
+  order: PaperOrder;
+  fill: PaperFill;
+  positionBefore: PaperPosition | null;
+  positionAfter: PaperPosition | null;
 }
 
 export interface PaperPosition {
@@ -62,6 +75,65 @@ export interface PaperPosition {
   trailingBest: number | null;
 }
 
+/** A partial atomic update; omitted fields retain their current value. */
+export interface ProtectionUpdate {
+  sl?: number | null;
+  tp?: number | null;
+  trailingSl?: boolean;
+}
+
+export type ProtectionUpdateResult =
+  | { ok: true; position: PaperPosition }
+  | { ok: false; error: string };
+
+const hasProtectionField = (input: ProtectionUpdate, field: keyof ProtectionUpdate) =>
+  Object.prototype.hasOwnProperty.call(input, field);
+
+/**
+ * Validates and applies SL/TP/trailing changes as one indivisible position
+ * transition. Both live paper and replay call this so they cannot disagree on
+ * the execution reference level or trailing constraints.
+ */
+export function applyProtectionUpdate(position: PaperPosition, input: ProtectionUpdate): ProtectionUpdateResult {
+  const nextSl = hasProtectionField(input, 'sl') ? input.sl! : position.sl;
+  const nextTp = hasProtectionField(input, 'tp') ? input.tp! : position.tp;
+  let trailingSl = hasProtectionField(input, 'trailingSl') ? input.trailingSl! : position.trailingSl;
+  for (const [name, value] of [['SL', nextSl], ['TP', nextTp]] as const) {
+    if (value != null && (!Number.isFinite(value) || value <= 0)) {
+      return { ok: false, error: `${name} must be a positive finite price.` };
+    }
+  }
+  if (position.side === 'long') {
+    if (nextSl != null && nextSl > position.entryPrice && !position.trailingSl) return { ok: false, error: 'Long SL must be below or equal to entry price.' };
+    if (nextTp != null && nextTp <= position.entryPrice) return { ok: false, error: 'Long TP must be above entry price.' };
+  } else if (position.side === 'short') {
+    if (nextSl != null && nextSl < position.entryPrice && !position.trailingSl) return { ok: false, error: 'Short SL must be above or equal to entry price.' };
+    if (nextTp != null && nextTp >= position.entryPrice) return { ok: false, error: 'Short TP must be below entry price.' };
+  } else {
+    return { ok: false, error: 'Protection requires an open position.' };
+  }
+
+  // Clearing a trailing SL is a valid atomic operation: disabling is inferred
+  // unless the same command explicitly asks to keep trailing enabled.
+  if (trailingSl && nextSl == null) {
+    if (input.trailingSl === true) return { ok: false, error: 'Trailing stop requires a valid stop loss.' };
+    trailingSl = false;
+  }
+  if (position.trailingSl && trailingSl && position.sl != null && nextSl != null) {
+    if (position.side === 'long' && nextSl < position.sl) return { ok: false, error: 'A long trailing stop cannot loosen.' };
+    if (position.side === 'short' && nextSl > position.sl) return { ok: false, error: 'A short trailing stop cannot loosen.' };
+  }
+  return {
+    ok: true,
+    position: {
+      ...position,
+      sl: nextSl,
+      tp: nextTp,
+      trailingSl,
+      trailingBest: trailingSl ? (position.trailingBest ?? position.entryPrice) : null,
+    },
+  };
+}
 export interface PaperTrade {
   id: string;
   positionId: string;
@@ -241,12 +313,22 @@ export function reconcile(
   pending: PaperOrder[],
   now: number,
   feePolicy: ExecutionFeePolicy = DEFAULT_EXECUTION_FEE_POLICY,
-): { position: PaperPosition | null; trades: PaperTrade[]; filled: PaperOrder[] } {
+): {
+  position: PaperPosition | null;
+  trades: PaperTrade[];
+  /** Working orders that actually executed, in deterministic execution order. */
+  workingFills: WorkingOrderFill[];
+  /** OCO siblings cancelled because an order in their group executed. */
+  cancelled: PaperOrder[];
+  /** Backward-compatible store-cleanup list: executed orders plus cancellations. */
+  filled: PaperOrder[];
+} {
   const takerFeeRate = normalizedFeeRate(feePolicy.takerFeeRate, TAKER_FEE);
   const makerFeeRate = normalizedFeeRate(feePolicy.makerFeeRate, MAKER_FEE);
   let position = pos;
   const trades: PaperTrade[] = [];
   const filled: PaperOrder[] = [];
+  const workingFills: WorkingOrderFill[] = [];
 
   // 0. Trailing SL: move the SL in the trader's favor as price improves.
   if (position && position.side !== 'flat' && position.sl != null && position.trailingSl) {
@@ -353,6 +435,7 @@ export function reconcile(
         order.side === 'buy' ? bar.low <= order.price : bar.high >= order.price;
       if (triggered) {
         const feeRate = order.postOnly ? makerFeeRate : takerFeeRate;
+        const positionBefore = position;
         const fill: PaperFill = {
           orderId: order.id,
           side: order.side,
@@ -367,6 +450,7 @@ export function reconcile(
         position = out.position;
         if (out.trade) trades.push(out.trade);
         filled.push(order);
+        workingFills.push({ order, fill, positionBefore, positionAfter: position });
       }
     } else if (order.type === 'stop' && order.price != null) {
       const armed =
@@ -375,6 +459,7 @@ export function reconcile(
         // Stop becomes a market order at the stop price (slight slippage).
         const slip = SLIPPAGE_TICKS * BTC_TICK_SIZE;
         const fillPrice = order.side === 'buy' ? order.price + slip : order.price - slip;
+        const positionBefore = position;
         const fill: PaperFill = {
           orderId: order.id,
           side: order.side,
@@ -389,6 +474,7 @@ export function reconcile(
         position = out.position;
         if (out.trade) trades.push(out.trade);
         filled.push(order);
+        workingFills.push({ order, fill, positionBefore, positionAfter: position });
       }
     }
   }
@@ -396,18 +482,22 @@ export function reconcile(
   // 5. OCO cancellation: when any order in an OCO group fills,
   // cancel all sibling orders (same symbol, same ocoGroup) and
   // release their margin. Only meaningful when ocoGroup is non-null.
-  for (const f of filled) {
-    const group = pending.find((o) => o.id === f.id)?.ocoGroup;
+  const cancelled: PaperOrder[] = [];
+  const filledIds = new Set(filled.map((order) => order.id));
+  for (const workingFill of workingFills) {
+    const group = workingFill.order.ocoGroup;
     if (!group) continue;
     for (const sibling of pending) {
-      if (sibling.id === f.id) continue;
-      if (sibling.ocoGroup === group && sibling.symbol === f.symbol) {
-        filled.push(sibling); // treated as filled for the store to clean up
+      if (sibling.id === workingFill.order.id) continue;
+      if (sibling.ocoGroup === group && sibling.symbol === workingFill.order.symbol && !filledIds.has(sibling.id)) {
+        cancelled.push(sibling);
+        filled.push(sibling); // compatibility: tells the store to remove it
+        filledIds.add(sibling.id);
       }
     }
   }
 
-  return { position, trades, filled };
+  return { position, trades, workingFills, cancelled, filled };
 }
 
 /**

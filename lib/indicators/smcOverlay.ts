@@ -8,6 +8,8 @@
 // cheap mapping re-runs per render.
 
 import type { Candle } from '../types';
+import type { IndicatorEvaluationContext } from '../indicatorEvaluation';
+import { selectIndicatorCandles } from '../indicatorEvaluation';
 import type {
   CustomIndicatorConfig,
   IndicatorMarker,
@@ -118,20 +120,22 @@ const LIVE = new Set(['active', 'tested', 'partial']);
 // path is fine — the key includes length, last bar time and config).
 let cache: { key: string; snap: SmcSnapshot } | null = null;
 
-function getSnapshot(candles: Candle[], inputs: SmcOverlayInputs): SmcSnapshot {
+function contextIdentity(context?: IndicatorEvaluationContext): string {
+  if (!context) return 'direct';
+  const replay = context.replay ? `${context.replay.sessionId}:${context.replay.cutTime}:${context.replay.executionTimeframe}` : 'live';
+  return [context.mode, replay, context.symbol, context.timeframe, context.sourceRevision, context.transform].join('|');
+}
+
+function getSnapshot(candles: Candle[], inputs: SmcOverlayInputs, context?: IndicatorEvaluationContext): SmcSnapshot {
   const last = candles[candles.length - 1];
-  // Include a value fingerprint: raw vs Heikin Ashi arrays share length +
-  // last-bar time; the last CLOSED close + first open stay stable intra-bar.
   const closed = candles.length > 1 ? candles[candles.length - 2].close : 0;
-  const key = `${candles.length}:${last ? last.time : 0}:${candles[0]?.open ?? 0}:${closed}:${inputs.swingsLength}:${inputs.internalLength}`;
-  if (cache && cache.key === key) return cache.snap;
-  // Cap the analysis window: deep-loaded histories are unbounded, SMC context
-  // beyond a few thousand bars is not (and the overlay cost is O(objects)).
+  const key = `${contextIdentity(context)}:${candles.length}:${last ? last.time : 0}:${candles[0]?.open ?? 0}:${closed}:${inputs.swingsLength}:${inputs.internalLength}`;
+  if (context && cache && cache.key === key) return cache.snap;
   const snap = computeSmcWindowed(candles, 2500, {
     swingsLength: inputs.swingsLength,
     internalLength: inputs.internalLength,
-  });
-  cache = { key, snap };
+  }, context);
+  if (context) cache = { key, snap };
   return snap;
 }
 
@@ -171,23 +175,31 @@ function bandPlot(
 // lets the chart layer skip those pushes entirely (reference equality).
 let resultCache: { key: string; result: IndicatorResult } | null = null;
 
-export function computeSmcOverlay(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
+export function computeSmcOverlay(
+  candles: Candle[],
+  config?: CustomIndicatorConfig,
+  _computedSources?: Record<string, (number | null)[]>,
+  context?: IndicatorEvaluationContext,
+): IndicatorResult {
   const inputs = resolveInputs<SmcOverlayInputs>(config, DEFAULTS);
-  const lastC = candles[candles.length - 1];
-  const closedC = candles.length > 1 ? candles[candles.length - 2].close : 0;
-  const resultKey = `${candles.length}:${lastC ? lastC.time : 0}:${candles[0]?.open ?? 0}:${closedC}:${JSON.stringify(inputs)}`;
-  if (resultCache && resultCache.key === resultKey) return resultCache.result;
-  const result = buildSmcOverlay(candles, inputs);
-  resultCache = { key: resultKey, result };
+  const selected = context ? selectIndicatorCandles(context, 'raw', 'closed') : candles;
+  const analytical = context?.replay ? selected.filter((c) => c.time <= context.replay!.cutTime) : selected;
+  const evaluationContext = context ? { ...context, rawCandles: analytical, displayCandles: analytical, closedCandles: analytical, hasFormingBar: false } : undefined;
+  const lastC = analytical[analytical.length - 1];
+  const closedC = analytical.length > 1 ? analytical[analytical.length - 2].close : 0;
+  const resultKey = [contextIdentity(evaluationContext), analytical.length, lastC?.time ?? 0, analytical[0]?.open ?? 0, closedC, JSON.stringify(inputs)].join('|');
+  if (context && resultCache && resultCache.key === resultKey) return resultCache.result;
+  const result = buildSmcOverlay(analytical, inputs, evaluationContext);
+  if (context) resultCache = { key: resultKey, result };
   return result;
 }
 
-function buildSmcOverlay(candles: Candle[], inputs: SmcOverlayInputs): IndicatorResult {
+function buildSmcOverlay(candles: Candle[], inputs: SmcOverlayInputs, context?: IndicatorEvaluationContext): IndicatorResult {
   const n = candles.length;
   const signals = new Array<SignalSide>(n).fill('neutral');
   if (n === 0) return { plots: [], signals };
 
-  const snap = getSnapshot(candles, inputs);
+  const snap = getSnapshot(candles, inputs, context);
   const plots: IndicatorPlot[] = [];
   const markers: IndicatorMarker[] = [];
   const debug = inputs.debugMode;

@@ -1,18 +1,17 @@
 import { useHover } from '@/lib/chartHoverStore';
 import type { ChartType } from './types';
+import { formatChartInstrumentPrice } from '@/lib/chartInstrumentPresentation';
+import { formatPercent } from '@/lib/format';
 
-export function ChartOHLCStrip({ mode }: { mode: ChartType }) {
+export function ChartOHLCStrip({ mode, symbol = 'BTCUSDT' }: { mode: ChartType; symbol?: string }) {
   const { hover, last } = useHover();
   const active = hover ?? last;
   const isLive = hover !== null;
   const isRenko = mode === 'renko';
 
-  const fmt = (n: number | null | undefined, digits = 2): string => {
+  const fmt = (n: number | null | undefined): string => {
     if (n == null || !Number.isFinite(n)) return '—';
-    return n.toLocaleString('en-US', {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    });
+    return formatChartInstrumentPrice(symbol, n);
   };
   const fmtVol = (n: number | null | undefined): string => {
     if (n == null || !Number.isFinite(n)) return '—';
@@ -67,11 +66,7 @@ export function ChartOHLCStrip({ mode }: { mode: ChartType }) {
             {active.base.close - active.prevBase.close > 0 ? '+' : ''}
             {fmt(active.base.close - active.prevBase.close)}
             {' '}
-            {active.base.close - active.prevBase.close > 0 ? '+' : ''}
-            {fmt(
-              ((active.base.close - active.prevBase.close) / active.prevBase.close) * 100,
-              2,
-            )}%
+            {formatPercent(((active.base.close - active.prevBase.close) / active.prevBase.close) * 100)}
           </span>
         </span>
       )}

@@ -6,10 +6,12 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 interface TradeOverlayProps {
   chart: IChartApi | null;
   series: ISeriesApi<'Candlestick'> | null;
+  /** Execution owner of the values rendered by this row. */
+  mode: 'live' | 'replay';
   entryPrice: number;
   side: 'long' | 'short';
   qty: number;
-  /** Live unrealized P&L for the open position (drives the pill colour). */
+  /** Current-mode unrealized P&L for the open position (drives the pill colour). */
   pnl: number;
   /** A staged, unconfirmed TP/SL change is pending → show Discard / Confirm. */
   isDirty: boolean;
@@ -61,46 +63,53 @@ export function TradeOverlay(p: TradeOverlayProps) {
 
   const pnlStr = `${p.pnl >= 0 ? '+' : '−'}${Math.abs(p.pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
   const pillColor = p.side === 'long' ? ENTRY_BLUE : ENTRY_RED;
+  const liveControls = p.mode === 'live';
 
   return (
     <div
       className="pointer-events-auto absolute right-[120px] z-[45] flex -translate-y-1/2 items-center gap-1"
       style={{ top: y }}
     >
-      <button type="button" className={chip} style={{ borderColor: pillColor }} title="Reverse position" onClick={p.onReverse}>
-        ⇅
-      </button>
+      {liveControls && (
+        <button type="button" className={chip} style={{ borderColor: pillColor }} title="Reverse position" onClick={p.onReverse}>
+          ⇅
+        </button>
+      )}
 
-      {p.isDirty && (
+      {liveControls && p.isDirty && (
         <>
           <button type="button" className={chip} onClick={p.onDiscard}>Discard</button>
           <button type="button" className={primary} onClick={p.onConfirm}>Confirm</button>
         </>
       )}
 
-      <button
-        type="button"
-        className={`${chip} ${p.hasTp ? '' : 'border-dotted'}`}
-        style={{ color: TP_COLOR, borderColor: TP_COLOR }}
-        onClick={p.onToggleTp}
-        title={p.hasTp ? 'Remove take-profit' : 'Add take-profit'}
-      >
-        TP
-      </button>
-      <button
-        type="button"
-        className={`${chip} ${p.hasSl ? '' : 'border-dotted'}`}
-        style={{ color: SL_COLOR, borderColor: SL_COLOR }}
-        onClick={p.onToggleSl}
-        title={p.hasSl ? 'Remove stop-loss' : 'Add stop-loss'}
-      >
-        SL
-      </button>
+      {liveControls && (
+        <>
+          <button
+            type="button"
+            className={`${chip} ${p.hasTp ? '' : 'border-dotted'}`}
+            style={{ color: TP_COLOR, borderColor: TP_COLOR }}
+            onClick={p.onToggleTp}
+            title={p.hasTp ? 'Remove take-profit' : 'Add take-profit'}
+          >
+            TP
+          </button>
+          <button
+            type="button"
+            className={`${chip} ${p.hasSl ? '' : 'border-dotted'}`}
+            style={{ color: SL_COLOR, borderColor: SL_COLOR }}
+            onClick={p.onToggleSl}
+            title={p.hasSl ? 'Remove stop-loss' : 'Add stop-loss'}
+          >
+            SL
+          </button>
+        </>
+      )}
 
       {/* qty | ±P&L | ✕ pill — gapped from the chips, floats left of the axis */}
       <div className="ml-3 flex h-6 items-center overflow-hidden rounded border" style={{ borderColor: pillColor }}>
         <span className="flex h-full items-center px-2 text-[11px] font-medium leading-none text-white" style={{ background: pillColor }}>
-          {p.qty}
+          {p.mode === 'replay' ? `Replay · ${p.qty}` : p.qty}
         </span>
         <span
           className="flex h-full items-center bg-surface-1/95 px-2 font-mono text-[11px] leading-none"
@@ -111,7 +120,7 @@ export function TradeOverlay(p: TradeOverlayProps) {
         <button
           type="button"
           onClick={p.onClose}
-          title="Close trade"
+          title={p.mode === 'replay' ? 'Close replay trade' : 'Close trade'}
           className="flex h-full items-center border-l border-line bg-surface-1/95 px-1.5 text-[11px] leading-none text-ink-faint hover:text-bear-bright"
         >
           ✕

@@ -3,6 +3,7 @@ import type { MouseEventParams, LogicalRange } from 'lightweight-charts';
 import type { ChartRefs } from './refs';
 import type { HoverPayload } from '@/lib/chartHoverStore';
 import type { OverlayKind } from './types';
+import { isChartLifecycleActive } from '@/lib/chartLifecycle';
 
 export function useChartEvents(refs: ChartRefs) {
   useEffect(() => {
@@ -26,9 +27,13 @@ export function useChartEvents(refs: ChartRefs) {
       priceLinesPrimitiveRef,
     } = refs;
 
+    const lifecycleEpoch = refs.lifecycleRef.current.epoch;
+    const active = () => isChartLifecycleActive(refs.lifecycleRef.current, lifecycleEpoch);
     const chart = chartRef.current;
     const container = containerRef.current;
-    if (!chart || !container) return;
+    if (!chart || !container || !active()) return;
+    // eslint-disable-next-line react-hooks/immutability
+    refs.listenerCountRef.current += 1;
 
     // ---- Crosshair Sync ----
     // Pointer drag can emit crosshair events for every pixel. The tooltip does
@@ -48,6 +53,7 @@ export function useChartEvents(refs: ChartRefs) {
       setTooltipPos({ x: point.x, y: point.y, time, hover });
     };
     const onCrosshair = (param: MouseEventParams) => {
+      if (!active()) return;
       const cs = candleSeriesRef.current;
       const { src, base: baseCandles, isRenko: renko } = hoverInputsRef.current;
       if (!cs || baseCandles.length === 0 || !param.time || param.point === undefined) {
@@ -118,6 +124,7 @@ export function useChartEvents(refs: ChartRefs) {
     // update when the user is still on the same side of the real-time edge.
     let lastScrolledBack: boolean | null = null;
     const onLogicalRange = (range: LogicalRange | null) => {
+      if (!active()) return;
       if (range && range.from < 10) onLoadOlderRef.current?.();
       const ts = chartRef.current?.timeScale();
       if (ts) {
@@ -132,6 +139,7 @@ export function useChartEvents(refs: ChartRefs) {
 
     // ---- Instant Price-axis (Y) wheel zoom ----
     const onAxisWheel = (e: WheelEvent) => {
+      if (!active()) return;
       const c = chartRef.current;
       if (!c) return;
       const rect = container.getBoundingClientRect();
@@ -220,6 +228,7 @@ export function useChartEvents(refs: ChartRefs) {
       k === 'entry' || k === 'tp' || k === 'sl';
 
     const onPointerDown = (e: PointerEvent) => {
+      if (!active()) return;
       isPointerDownRef.current = true;
       isCandlePointerDown = false;
       if (lastCrosshairRef.current && candleSeriesRef.current) {
@@ -315,6 +324,7 @@ export function useChartEvents(refs: ChartRefs) {
     };
 
     const onOverlayMove = (e: PointerEvent) => {
+      if (!active()) return;
       if (cancelPointerId !== null && cancelPointerId === e.pointerId) {
         // Moved beyond a small threshold — this is a drag/pan gesture, not a
         // click, so don't fire the ✕ action on pointer-up.
@@ -363,6 +373,7 @@ export function useChartEvents(refs: ChartRefs) {
     };
 
     const endDrag = (e: PointerEvent) => {
+      if (!active()) return;
       if (priceLineDragId !== null && priceLineDragPointerId === e.pointerId) {
         priceLineDragId = null;
         priceLineDragPointerId = null;
@@ -392,6 +403,7 @@ export function useChartEvents(refs: ChartRefs) {
     };
 
     const onBodyPanMove = (e: PointerEvent) => {
+      if (!active()) return;
       if (bodyPanPointerId !== e.pointerId || !bodyPanStartRange) return;
       const c = chartRef.current;
       const series = candleSeriesRef.current;
@@ -416,6 +428,7 @@ export function useChartEvents(refs: ChartRefs) {
     };
     
     const onBodyPanUp = (e: PointerEvent) => {
+      if (!active()) return;
       isPointerDownRef.current = false;
       isCandlePointerDown = false;
       setTooltipPos(null);
@@ -432,6 +445,7 @@ export function useChartEvents(refs: ChartRefs) {
     // mouse outside the window swallows pointerup, leaving the drag state
     // locked (frozen panning, erratic crosshair). Any focus change resets it.
     const onFocusLost = () => {
+      if (!active()) return;
       isPointerDownRef.current = false;
       isCandlePointerDown = false;
       bodyPanPointerId = null;
@@ -441,6 +455,7 @@ export function useChartEvents(refs: ChartRefs) {
     document.addEventListener('visibilitychange', onFocusLost);
 
     const onHover = (e: PointerEvent) => {
+      if (!active()) return;
       if (dragKind !== null) return;
       const prim = overlayPrimitiveRef.current;
       const series = candleSeriesRef.current;
@@ -480,9 +495,10 @@ export function useChartEvents(refs: ChartRefs) {
       });
     };
     
-    const onLeave = () => setHoverLine(null);
+    const onLeave = () => { if (active()) setHoverLine(null); };
     
     const onContextMenu = (e: MouseEvent) => {
+      if (!active()) return;
       const series = candleSeriesRef.current;
       const c = chartRef.current;
       if (!series || !c) return;
@@ -505,6 +521,8 @@ export function useChartEvents(refs: ChartRefs) {
     container.addEventListener('contextmenu', onContextMenu, { capture: true });
 
     return () => {
+      // eslint-disable-next-line react-hooks/immutability
+      refs.listenerCountRef.current = Math.max(0, refs.listenerCountRef.current - 1);
       window.removeEventListener('blur', onFocusLost);
       document.removeEventListener('visibilitychange', onFocusLost);
       container.removeEventListener('wheel', onAxisWheel, { capture: true });

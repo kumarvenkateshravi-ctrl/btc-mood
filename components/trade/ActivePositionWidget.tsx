@@ -15,6 +15,8 @@ import type { ActivePositionView } from '@/lib/trade/activePosition';
 import { formatHeld } from '@/lib/trade/activePosition';
 
 interface Props {
+  /** Identifies the authoritative execution account behind `view`. */
+  mode: 'live' | 'replay';
   view: ActivePositionView;
   onMoveBreakEven: () => void;
   onClosePartial: (fraction: number) => void;
@@ -30,7 +32,7 @@ const price = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits
 const pct = (v: number, signed = true) => `${signed && v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
 
 export default function ActivePositionWidget({
-  view, onMoveBreakEven, onClosePartial, onToggleTrailing, onCloseFull,
+  mode, view, onMoveBreakEven, onClosePartial, onToggleTrailing, onCloseFull,
 }: Props) {
   const up = view.pnlUsd >= 0;
   const isLong = view.side === 'long';
@@ -44,8 +46,9 @@ export default function ActivePositionWidget({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-line/70 pb-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Active Position</span>
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-bull-bright">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-bull-bright" /> Live
+        <span className={cx('inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider', mode === 'replay' ? 'text-accent' : 'text-bull-bright')}>
+          <span className={cx('h-1.5 w-1.5 animate-pulse rounded-full', mode === 'replay' ? 'bg-accent' : 'bg-bull-bright')} />
+          {mode === 'replay' ? 'Replay' : 'Live'}
         </span>
       </div>
 

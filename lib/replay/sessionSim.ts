@@ -6,7 +6,7 @@
 // state and the fills.
 
 import type { PaperTrade } from '../paper';
-import { marginFor } from '../paper';
+import { sizeRiskPosition, type RiskSizingResult } from '../riskSizing';
 
 // ---- Session configuration --------------------------------------------------
 
@@ -48,14 +48,8 @@ export function currencySymbol(code: SessionCurrencyCode): string {
 
 // ---- Position sizing (spec step 4: how professionals size) -----------------
 
-export interface SizingResult {
-  ok: boolean;
-  units: number;
-  riskAmount: number;
-  margin: number;
-  /** Why the trade is blocked (pre-trade validation / risk guardrails). */
-  reason: 'ok' | 'no-stop' | 'stop-on-wrong-side' | 'insufficient-margin' | 'bad-input';
-}
+/** Compatibility name for the shared risk-sizing result used by replay. */
+export type SizingResult = RiskSizingResult;
 
 /**
  * riskAmount / |entry − stop| = units. Guardrails: a stop is required
@@ -70,18 +64,14 @@ export function positionSizeFor(
   entry: number,
   stop: number | null,
 ): SizingResult {
-  const none = (reason: SizingResult['reason']): SizingResult => ({ ok: false, units: 0, riskAmount: 0, margin: 0, reason });
-  if (!(entry > 0) || !(balance > 0)) return none('bad-input');
-  if (stop == null || !(stop > 0)) return none('no-stop');
-  if (side === 'buy' ? stop >= entry : stop <= entry) return none('stop-on-wrong-side');
-  const riskAmount = (balance * cfg.riskPct) / 100;
-  const perUnit = Math.abs(entry - stop);
-  const units = riskAmount / perUnit;
-  const margin = marginFor(units, entry, cfg.leverage);
-  // Epsilon absorbs float noise from the entry−stop subtraction so a trade
-  // that exactly fills the account isn't rejected by the 12th decimal.
-  if (margin > balance * (1 + 1e-9)) return none('insufficient-margin');
-  return { ok: true, units, riskAmount, margin, reason: 'ok' };
+  return sizeRiskPosition({
+    side,
+    entryPrice: entry,
+    stopPrice: stop,
+    equity: balance,
+    riskPct: cfg.riskPct,
+    leverage: cfg.leverage,
+  });
 }
 
 // ---- Behavioral tracking (spec step 14) -------------------------------------

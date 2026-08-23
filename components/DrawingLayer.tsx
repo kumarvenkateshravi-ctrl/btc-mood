@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChartApi } from './Chart';
 import {
   useDrawings,
@@ -31,6 +31,7 @@ interface DrawingLayerProps {
   revision: number;
   /** Called after a drawing commits, so the parent can reset the tool to cursor. */
   onToolUsed: () => void;
+  onSelectionChange?: (id: string | null) => void;
 }
 
 interface ScreenPt {
@@ -57,12 +58,19 @@ export default function DrawingLayer({
   width,
   height,
   onToolUsed,
+  onSelectionChange,
 }: DrawingLayerProps) {
   const drawings = useDrawings(symbol);
   const svgRef = useRef<SVGSVGElement>(null);
+  const activePointerId = useRef<number | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ type: Exclude<Tool, 'cursor'>; points: DPoint[] } | null>(null);
+  const selectDrawing = useCallback((id: string | null) => {
+    setSelectedId(id);
+    onSelectionChange?.(id);
+  }, [onSelectionChange]);
+
   const [drag, setDrag] = useState<
     { id: string; handle: number | 'all'; startData: DPoint; startPoints: DPoint[]; live: DPoint[] } | null
   >(null);
@@ -76,14 +84,14 @@ export default function DrawingLayer({
 
   // Reset transient state when the symbol changes (different drawing set).
   useEffect(() => {
-    setSelectedId(null);
+    selectDrawing(null);
     setDraft(null);
     setDrag(null);
-  }, [symbol]);
+  }, [symbol, selectDrawing]);
 
   // Latest values for the window-level pointer/key handlers.
-  const ctx = useRef({ api, symbol, color, magnet, locked, tool, onToolUsed, draft, drag, selectedId });
-  ctx.current = { api, symbol, color, magnet, locked, tool, onToolUsed, draft, drag, selectedId };
+  const ctx = useRef({ api, symbol, color, magnet, locked, tool, onToolUsed, onSelectionChange, draft, drag, selectedId });
+  ctx.current = { api, symbol, color, magnet, locked, tool, onToolUsed, onSelectionChange, draft, drag, selectedId };
 
   const sx = (t: number): number | null => api?.timeToX(t) ?? null;
   const sy = (p: number): number | null => api?.priceToY(p) ?? null;
@@ -111,6 +119,7 @@ export default function DrawingLayer({
     const onMove = (e: PointerEvent) => {
       const { draft: dr, drag: dg } = ctx.current;
       if (!dr && !dg) return;
+      if (activePointerId.current != null && e.pointerId !== activePointerId.current) return;
       const { x, y } = local(e.clientX, e.clientY);
       const p = screenToData(x, y);
       if (!p) return;
@@ -129,14 +138,15 @@ export default function DrawingLayer({
       }
     };
 
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
+      if (activePointerId.current != null && e.pointerId !== activePointerId.current) return;
       const { draft: dr, drag: dg, symbol: sym, color: col, onToolUsed: used } = ctx.current;
       if (dr) {
         const [a, b] = dr.points;
         if (Math.abs(a.time - b.time) > 1e-9 || Math.abs(a.price - b.price) > 1e-9) {
           const d: Drawing = { id: newDrawingId(), type: dr.type, points: dr.points, color: col };
           addDrawing(sym, d);
-          setSelectedId(d.id);
+          selectDrawing(d.id);
         }
         setDraft(null);
         used();
@@ -149,14 +159,19 @@ export default function DrawingLayer({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      const { selectedId: sel, symbol: sym, locked: lk } = ctx.current;
+      const { selectedId: sel, symbol: sym, locked: lk, draft: dr, drag: dg } = ctx.current;
       if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !lk) {
         removeDrawing(sym, sel);
-        setSelectedId(null);
+        selectDrawing(null);
         e.preventDefault();
-      } else if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
+      } else if (e.key === 'Escape' && (dr || dg || sel)) {
         setDraft(null);
-        setSelectedId(null);
+        setDrag(null);
+        selectDrawing(null);
+        activePointerId.current = null;
+        e.preventDefault();
+        e.stopImmediatePropagation();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) {
           redo(sym);
@@ -164,22 +179,25 @@ export default function DrawingLayer({
           undo(sym);
         }
         e.preventDefault();
+        e.stopImmediatePropagation();
       }
     };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     return () => {
+      activePointerId.current = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
     };
-  }, []);
+  }, [selectDrawing]);
 
-  const startCreate = (lx: number, ly: number) => {
+  const startCreate = (lx: number, ly: number, pointerId: number) => {
+    activePointerId.current = pointerId;
     const p = screenToData(lx, ly);
-    if (!p || tool === 'cursor') return;
+    if (!p || tool === 'cursor') { activePointerId.current = null; return; }
     if (TOOL_POINTS[tool] === 1) {
       let text: string | undefined;
       if (tool === 'text') {
@@ -188,7 +206,7 @@ export default function DrawingLayer({
       }
       const d: Drawing = { id: newDrawingId(), type: tool, points: [p], color, ...(text != null ? { text } : {}) };
       addDrawing(symbol, d);
-      setSelectedId(d.id);
+      selectDrawing(d.id);
       onToolUsed();
     } else {
       setDraft({ type: tool, points: [p, p] });
@@ -196,10 +214,11 @@ export default function DrawingLayer({
   };
 
   const onDrawingDown = (e: React.PointerEvent, d: Drawing) => {
-    if (tool !== 'cursor' || locked || e.button !== 0) return;
+    if (tool !== 'cursor' || locked || e.button !== 0 || !e.isPrimary) return;
+    activePointerId.current = e.pointerId;
     e.stopPropagation();
     const { x, y } = local(e.clientX, e.clientY);
-    setSelectedId(d.id);
+    selectDrawing(d.id);
     const pts = d.points.map((p) => ({ x: sx(p.time) ?? -9999, y: sy(p.price) ?? -9999 }));
     let handle: number | 'all' = 'all';
     for (let i = 0; i < pts.length; i++) {
@@ -227,10 +246,10 @@ export default function DrawingLayer({
       className="absolute inset-0 z-20"
       style={{ pointerEvents: tool === 'cursor' ? 'none' : 'auto', cursor: tool === 'cursor' ? 'default' : 'crosshair' }}
       onPointerDown={(e) => {
-        if (tool === 'cursor' || e.button !== 0) return;
+        if (tool === 'cursor' || e.button !== 0 || !e.isPrimary) return;
         e.stopPropagation();
         const { x, y } = local(e.clientX, e.clientY);
-        startCreate(x, y);
+        startCreate(x, y, e.pointerId);
       }}
     >
       {drawings.map((d0) => {

@@ -74,4 +74,24 @@ describe('shared bookTicker channel', () => {
     d1(); d2();
     vi.advanceTimersByTime(6000);
   });
+
+  it('rejects lower/equal update ids and establishes a new baseline after reconnect', () => {
+    const ids: number[] = [];
+    const dispose = subscribeBookTicker('ORDERUSDT', (t) => ids.push(t.bid));
+    const first = FakeWS.instances[0];
+    first.onmessage?.({ data: JSON.stringify({ stream: 'orderusdt@bookTicker', data: { u: 7, s: 'OTHERUSDT', b: '200', B: '1', a: '201', A: '1' } }) });
+    first.onmessage?.({ data: JSON.stringify({ stream: 'orderusdt@bookTicker', data: { u: 7, s: 'ORDERUSDT', b: '100', B: '1', a: '101', A: '1' } }) });
+    first.onmessage?.({ data: JSON.stringify({ stream: 'orderusdt@bookTicker', data: { u: 7, s: 'ORDERUSDT', b: '99', B: '1', a: '100', A: '1' } }) });
+    first.onmessage?.({ data: JSON.stringify({ stream: 'orderusdt@bookTicker', data: { u: 6, s: 'ORDERUSDT', b: '98', B: '1', a: '99', A: '1' } }) });
+    expect(ids).toEqual([100]);
+
+    first.onclose?.();
+    vi.advanceTimersByTime(30_000);
+    const second = FakeWS.instances[1];
+    first.onmessage?.({ data: JSON.stringify({ stream: 'orderusdt@bookTicker', data: { u: 8, s: 'ORDERUSDT', b: '200', B: '1', a: '201', A: '1' } }) });
+    second.onmessage?.({ data: JSON.stringify({ stream: 'orderusdt@bookTicker', data: { u: 1, s: 'ORDERUSDT', b: '102', B: '1', a: '103', A: '1' } }) });
+    expect(ids).toEqual([100, 102]);
+    dispose();
+    vi.advanceTimersByTime(6000);
+  });
 });

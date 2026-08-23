@@ -3,15 +3,14 @@
 // app/app/page.tsx so the page component is a thin orchestrator.
 
 import type { Timeframe } from './types';
-import { TIMEFRAMES } from './types';
 import type { ChartType } from '@/components/Chart';
 import { CUSTOM_INDICATORS } from './customIndicatorsLibrary';
 import {
   DEFAULT_COMPARE_SYMBOL,
-  isCompareSymbol,
   type CompareSymbol,
 } from './compare';
 import type { Drawing } from './drawings';
+import { CHART_CONFIG_STORAGE_KEY, DEFAULT_CHART_CONFIG, parsePersistedChartConfig, resolveChartConfig, type ChartConfigPatch } from './chartConfig';
 
 export const POLL_MS = 30_000;
 export const INDICATORS_KEY = 'btc-mood:chart-indicators:v1';
@@ -38,6 +37,7 @@ export interface InitialDashboardState {
   symbol: CompareSymbol;
   indicators: string[] | null;
   drawings: Drawing[] | null;
+  rightPanel: 'mood' | 'signals' | 'orderflow' | 'scanner' | 'widgets' | 'watchlist' | null;
 }
 
 // Compact serialization for drawings
@@ -79,37 +79,72 @@ function decompressDrawings(data: string): Drawing[] | null {
   }
 }
 
-export function readInitialState(): InitialDashboardState {
+export function readInitialState(workspace?: ChartConfigPatch): InitialDashboardState {
+  const defaults = DEFAULT_CHART_CONFIG;
   if (typeof window === 'undefined') {
-    return { tf: '15m', type: 'candlestick', symbol: DEFAULT_COMPARE_SYMBOL, indicators: null, drawings: null };
+    return { tf: defaults.timeframe, type: defaults.chartType, symbol: defaults.symbol, indicators: null, drawings: null, rightPanel: defaults.rightPanel };
   }
+
   const sp = new URLSearchParams(window.location.search);
-  let tfParam = sp.get('tf');
-  let typeParam = sp.get('type');
-  let symbolParam = sp.get('symbol');
-  let indParam = sp.get('ind');
+  const url: ChartConfigPatch = {};
+  const persisted: ChartConfigPatch = {};
+  const tfParam = sp.get('tf');
+  const typeParam = sp.get('type');
+  const symbolParam = sp.get('symbol');
+  const indParam = sp.get('ind');
 
-  // Fallback to localStorage if not in URL
-  if (!tfParam && typeof localStorage !== 'undefined') tfParam = localStorage.getItem('btc-mood:tf');
-  if (!typeParam && typeof localStorage !== 'undefined') typeParam = localStorage.getItem('btc-mood:type');
-  if (!symbolParam && typeof localStorage !== 'undefined') symbolParam = localStorage.getItem('btc-mood:symbol');
-  
-  symbolParam = symbolParam ?? DEFAULT_COMPARE_SYMBOL;
+  // URL/active-session values outrank workspaces, which outrank these legacy
+  // preference keys. Values are still validated by resolveChartConfig.
+  if (tfParam) url.timeframe = tfParam;
+  if (typeParam) url.chartType = parseChartType(typeParam);
+  if (symbolParam) url.symbol = symbolParam;
+  if (indParam != null) url.indicatorIds = indParam ? indParam.split(',') : [];
 
-  const tf: Timeframe = (TIMEFRAMES as string[]).includes(tfParam ?? '')
-    ? (tfParam as Timeframe)
-    : '15m';
-  const type: ChartType = parseChartType(typeParam) ?? 'candlestick';
-  const symbol: CompareSymbol = isCompareSymbol(symbolParam) ? symbolParam : DEFAULT_COMPARE_SYMBOL;
-  
-  const indicators = indParam
-    ? indParam.split(',').filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id))
-    : null;
+  const isValidIndicator = (id: string) => CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0]);
+
+  try {
+    Object.assign(persisted, parsePersistedChartConfig(localStorage.getItem(CHART_CONFIG_STORAGE_KEY), isValidIndicator));
+    const storedTf = localStorage.getItem('btc-mood:tf');
+    const storedType = localStorage.getItem('btc-mood:type');
+    const storedSymbol = localStorage.getItem('btc-mood:symbol');
+    if (storedTf) persisted.timeframe = storedTf;
+    if (storedType) persisted.chartType = parseChartType(storedType);
+    if (storedSymbol) persisted.symbol = storedSymbol;
+
+    const rawIndicators = localStorage.getItem(INDICATORS_KEY);
+    if (rawIndicators) {
+      const parsed: unknown = JSON.parse(rawIndicators);
+      if (Array.isArray(parsed)) persisted.indicatorIds = parsed;
+    }
+    const rawPanel = localStorage.getItem('rightPanel');
+    if (rawPanel === 'mood' || rawPanel === 'signals' || rawPanel === 'orderflow' || rawPanel === 'scanner' || rawPanel === 'widgets' || rawPanel === 'watchlist') persisted.rightPanel = rawPanel;
+    else if (rawPanel === 'none') persisted.rightPanel = null;
+  } catch {
+    // A malformed/blocked browser value simply falls through to the next
+    // valid source and ultimately the defaults.
+  }
+
+  const resolved = resolveChartConfig({
+    defaults,
+    persisted,
+    workspace,
+    url,
+    validIndicator: isValidIndicator,
+  });
   const drawParam = sp.get('draw');
   const drawings = drawParam ? decompressDrawings(drawParam) : null;
-  return { tf, type, symbol, indicators, drawings };
+  const indicators = (sp.has('ind') || Object.prototype.hasOwnProperty.call(persisted, 'indicatorIds'))
+    ? resolved.indicatorIds
+    : null;
+  return {
+    tf: resolved.timeframe,
+    type: resolved.chartType,
+    symbol: resolved.symbol,
+    indicators,
+    drawings,
+    rightPanel: resolved.rightPanel,
+  };
 }
-
 export function writeUrlState(
   tf: Timeframe,
   type: ChartType,

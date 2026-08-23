@@ -145,8 +145,15 @@ export interface SmcScores {
   institutional: number;
 }
 
+export interface SmcEvaluationIdentity {
+  symbol: string;
+  timeframe: string;
+  mode: 'live' | 'replay';
+  sourceRevision: string;
+  replay?: { sessionId: string; cutTime: number; executionTimeframe: string };
+}
 export interface SmcSnapshot {
-  metadata: { version: string; config: SmcConfig };
+  metadata: { version: string; config: SmcConfig; context?: SmcEvaluationIdentity };
   state: {
     swingTrend: Bias;
     internalTrend: Bias;

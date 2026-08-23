@@ -5,8 +5,11 @@ import Chart, { type ChartType, type PriceScaleModeOption, type ChartOverlay, ty
 import ChartErrorBoundary from '@/components/chart/ChartErrorBoundary';
 import { type RenkoConfig, DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import ChartContextMenu from './trade/ChartContextMenu';
-import { usePaperStore, setPositionOverlay } from '@/lib/paperStore';
+
 import { projectedPnl, unrealizedPnl } from '@/lib/paper';
+import type { TradePresentationFacade } from '@/lib/trade/presentationFacade';
+import type { ChartTradingCommands } from '@/lib/chartTradingCommands';
+import { deriveChartSession } from '@/lib/chartSession';
 import ReverseConfirmDialog from '@/components/trade/ReverseConfirmDialog';
 import CloseConfirmDialog from '@/components/trade/CloseConfirmDialog';
 import type { OverlayLineBadge } from '@/lib/orderOverlayPrimitive';
@@ -18,29 +21,34 @@ import {
   startReplaySession,
   endReplaySession,
   replayReconcileBar,
-  replaySetOverlay,
-  replayClose,
   rebuildReplaySessionAt,
   setReplayActionContext,
 } from '@/lib/replaySession';
 import { usePriceAlerts, removePriceAlert, updatePriceAlertPrice } from '@/lib/priceAlertsStore';
 import DrawingLayer from './DrawingLayer';
 import DrawingToolbar from './DrawingToolbar';
-import { useDrawings, clearDrawings, DRAWING_COLORS, type Tool } from '@/lib/drawings';
+import { useDrawings, clearDrawings, canUndo as canUndoDrawings, canRedo as canRedoDrawings, removeDrawing, undo as undoDrawings, redo as redoDrawings, DRAWING_COLORS, type Tool } from '@/lib/drawings';
 import ReplayBar from './ReplayBar';
 import ReplaySelector from './ReplaySelector';
 import ChartToolbar from './ChartToolbar';
 import RenkoSettingsModal from './trade/RenkoSettingsModal';
 import OrderModal from '@/components/trade/OrderModal';
+import MobileTradeExperience from '@/components/trade/MobileTradeExperience';
 import { FALLBACK_HEIGHT } from '@/lib/chartHeight';
 import { useChartSettings } from './chart/useChartSettings';
 import { CHART_SETTINGS_SHORTCUTS } from './chart/chartSettingsKeys';
 import { featureFlags } from '@/lib/featureFlags';
 import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
 import type { MarketDataIntegrity } from '@/lib/marketDataIntegrity';
-import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
+import type { WSStatus } from '@/lib/ws';
+import { useChartIndicatorController } from '@/lib/chartIndicatorController';
+import { deriveExecutionOverlaySession, draftForSession } from '@/lib/executionOverlaySession';
+import { createDrawingSessionAdapter } from '@/lib/drawingSessionAdapter';
+
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import { useBaseCandles } from '@/lib/chartHelpers';
+
+
 import { setReplayCut, clearReplayCut } from '@/lib/replay/replayCut';
 import { validateReplayData } from '@/lib/replay/validate';
 import { replayActions, useReplayState, isReplayActive } from '@/lib/replay/replayState';
@@ -65,10 +73,19 @@ interface ChartPanelProps {
   selected: Timeframe;
   onSelectTf: (tf: Timeframe) => void;
   symbol: string;
+  /** Active-session symbol setter, owned by the chart shell. */
+  onSelectSymbol?: (symbol: string) => void;
   price: number | null;
+  /** UTC-session absolute price change, used by the chart context only. */
+  changeAbs?: number | null;
   change: number | null;
   status: 'live' | 'demo' | 'loading';
   marketIntegrity?: MarketDataIntegrity;
+  /** Presentation-only transport state for recovery wording. */
+  connectionStatus?: WSStatus;
+  /** The single controller composed by the active chart-session root. */
+  tradingCommands: ChartTradingCommands;
+  tradePresentation: TradePresentationFacade;
   showVolume?: boolean;
   onQuickTrade?: (side: 'buy' | 'sell') => void;
   bid?: number | null;
@@ -135,12 +152,16 @@ export default function ChartPanel({
   selected,
   onSelectTf,
   symbol,
+  onSelectSymbol,
   price,
+  changeAbs,
   change,
   status,
   marketIntegrity = 'live',
+  connectionStatus,
+  tradingCommands,
+  tradePresentation,
   showVolume: parentShowVolume,
-  onQuickTrade,
   bid = null,
   ask = null,
   activeIndicatorIds,
@@ -165,6 +186,7 @@ export default function ChartPanel({
   onLayoutChange,
 }: ChartPanelProps) {
   const primaryId = activeIndicatorIds[0] ?? '';
+
   const deepRequestGateRef = useRef(new HistoricalRequestGate());
   const deepRequestContextRef = useRef({ symbol, selected });
   if (
@@ -205,13 +227,20 @@ export default function ChartPanel({
   const [magnet, setMagnet] = useState(false);
   const [drawingsLocked, setDrawingsLocked] = useState(false);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
+  const [drawingToolsOpen, setDrawingToolsOpen] = useState(false);
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
   const [chartApi, setChartApi] = useState<ChartApi | null>(null);
   const [chartWidth, setChartWidth] = useState(0);
   const chartBoxRef = useRef<HTMLDivElement>(null);
-  const drawingsForSymbol = useDrawings(symbol);
+  // Drawings remain symbol-scoped across timeframe and live/replay transitions.
+  const drawingSession = useMemo(() => createDrawingSessionAdapter(symbol), [symbol]);
+  const drawingsForSymbol = useDrawings(drawingSession.scopeKey);
+  const hasDrawingUndo = canUndoDrawings(drawingSession.scopeKey);
+  const hasDrawingRedo = canRedoDrawings(drawingSession.scopeKey);
 
   // ---- Bar Replay (state machine: lib/replay/replayState.ts) ----
-  const { phase: replayPhase, playIndex, startIndex: replayStartIndex } = useReplayState();
+  const { phase: replayPhase, playIndex, startIndex: replayStartIndex, cutTime: replayCutTime } = useReplayState();
   const replayActive = isReplayActive(replayPhase);
   const replayPlaying = replayPhase === 'playing';
   const [replaySpeed, setReplaySpeed] = useState(1);
@@ -242,8 +271,15 @@ export default function ChartPanel({
     replayActions.exit();
     clearReplayDataset();
     setBookmarks([]);
+    setDrawingToolsOpen(false);
+    setSelectedDrawingId(null);
+    setDrawingTool('cursor');
   }, [symbol]);
   useEffect(() => () => clearReplayDataset(), []);
+  useEffect(() => {
+    setDrawingToolsOpen(false);
+    setDrawingTool('cursor');
+  }, [replayActive]);
 
   const lastTfRef = useRef(selected);
   useEffect(() => {
@@ -299,6 +335,7 @@ export default function ChartPanel({
     const dataset = captureReplayDataset({
       symbol,
       executionTf: selected,
+      sessionId: ['replay', symbol, selected, index].join(':'),
       // `candles` is the exact chart series, including deep/history-window bars.
       candlesByTf: { ...(candlesByTf ?? {}), [selected]: candles } as Partial<Record<Timeframe, Candle[]>>,
     });
@@ -478,7 +515,6 @@ export default function ChartPanel({
 
   // ---- Chart → trade wiring ----
   const LEVERAGE = 10;
-  const paper = usePaperStore();
   const session = useReplaySession();
 
   // Training report: whenever replay ends (Exit button, Esc, toolbar toggle,
@@ -498,13 +534,16 @@ export default function ChartPanel({
     }
   }, [replayPhase, session.trades]);
   // During replay the chart reflects the ISOLATED session's position; otherwise
-  // the live account's.
+  // the live account's. The active chart root supplies the shared facade.
   const replayTrading = replayActive;
-  const pos = replayTrading ? session.position : paper.positions[symbol] ?? null;
+  const presentation = tradePresentation;
+  const pos = presentation.position;
   const hasPosition = !!(pos && pos.side !== 'flat' && pos.units > 0);
   const mid = replayTrading
     ? (executionReplayLast?.close ?? 0)
     : (price ?? (candles.length > 0 ? candles[candles.length - 1].close : 0));
+
+
 
   const [ctxMenu, setCtxMenu] = useState<{ price: number; x: number; y: number } | null>(null);
   const [resetTick, setResetTick] = useState(0);
@@ -515,10 +554,10 @@ export default function ChartPanel({
   // (right-dock trade tab), since the ticket doesn't stage replay orders.
   const handleQuickTrade = useCallback(
     (side: 'buy' | 'sell') => {
-      if (replayTrading) { onQuickTrade?.(side); return; }
-      setTicketSide(side);
+      const result = tradingCommands.openOrderTicket(symbol);
+      if (result.status === 'accepted') setTicketSide(side);
     },
-    [replayTrading, onQuickTrade],
+    [symbol, tradingCommands, setTicketSide],
   );
 
   // ---- Immediate-place trade overlay (position-driven, TV-style) ----
@@ -530,21 +569,45 @@ export default function ChartPanel({
   const [draftTpSl, setDraftTpSl] = useState<{ tp: number | null; sl: number | null } | null>(null);
   const [showReverseConfirm, setShowReverseConfirm] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [draftSessionKey, setDraftSessionKey] = useState<string | null>(null);
+
+  const executionOverlaySession = useMemo(
+    () => deriveExecutionOverlaySession({
+      mode: replayTrading ? 'replay' : 'live',
+      symbol,
+      presentation,
+    }),
+    [replayTrading, symbol, presentation],
+  );
+
+  // Drafts are bound to the exact execution-overlay session. This prevents a
+  // stale level edit from flashing onto a new symbol, mode, or position.
+  const stageDraft = useCallback(
+    (next: { tp: number | null; sl: number | null } | null | ((current: { tp: number | null; sl: number | null } | null) => { tp: number | null; sl: number | null } | null)) => {
+      setDraftSessionKey(executionOverlaySession.resetKey);
+      setDraftTpSl(next);
+    },
+    [executionOverlaySession.resetKey],
+  );
+  const clearDraft = useCallback(() => {
+    setDraftSessionKey(null);
+    setDraftTpSl(null);
+  }, []);
+  const effectiveDraftTpSl = draftForSession(draftTpSl, draftSessionKey, executionOverlaySession);
 
   // Effective TP/SL shown on the chart: the draft when editing, else committed.
-  const effTp = draftTpSl ? draftTpSl.tp : pos?.tp ?? null;
-  const effSl = draftTpSl ? draftTpSl.sl : pos?.sl ?? null;
+  const effTp = effectiveDraftTpSl ? effectiveDraftTpSl.tp : pos?.tp ?? null;
+  const effSl = effectiveDraftTpSl ? effectiveDraftTpSl.sl : pos?.sl ?? null;
   // "Dirty" once a staged draft differs from the committed levels.
-  const isDirty = !!draftTpSl && (draftTpSl.tp !== (pos?.tp ?? null) || draftTpSl.sl !== (pos?.sl ?? null));
+  const isDirty = !!effectiveDraftTpSl && (effectiveDraftTpSl.tp !== (pos?.tp ?? null) || effectiveDraftTpSl.sl !== (pos?.sl ?? null));
 
-  // Leaving a position clears any pending edit + dialogs.
+  // A mode, symbol, flat, or reversal transition must discard UI-only draft state.
+  // The execution stores remain the source of truth for every visible level.
   useEffect(() => {
-    if (!hasPosition) {
-      setDraftTpSl(null);
-      setShowReverseConfirm(false);
-      setShowCloseConfirm(false);
-    }
-  }, [hasPosition]);
+    clearDraft();
+    setShowReverseConfirm(false);
+    setShowCloseConfirm(false);
+  }, [executionOverlaySession.resetKey, clearDraft]);
 
   // A placed order shows only the entry line — no auto TP/SL. The trader adds
   // exits on demand with the TP/SL chips (each seeds an ATR-based default line
@@ -566,37 +629,37 @@ export default function ChartPanel({
     (kind: OverlayKind, price: number) => {
       if (kind !== 'tp' && kind !== 'sl') return;
       if (replayTrading) {
-        if (executionReplayLast) setReplayActionContext(playIndex, executionReplayLast.time);
-        replaySetOverlay(kind, price);
+        const replayContext = executionReplayLast ? { barIndex: playIndex, cutTime: executionReplayLast.time } : undefined;
+        tradingCommands.setOverlay({ symbol, field: kind, value: price, replayContext });
         return;
       }
-      setDraftTpSl((d) => ({
+      stageDraft((d) => ({
         tp: d?.tp ?? pos?.tp ?? null,
         sl: d?.sl ?? pos?.sl ?? null,
         [kind]: price,
       }));
     },
-    [replayTrading, pos],
+    [replayTrading, pos, executionReplayLast, playIndex, symbol, tradingCommands, stageDraft],
   );
 
   const handleOverlayChipClick = useCallback(
     (key: 'tp' | 'sl' | 'close') => {
       if (key === 'close') {
         if (replayTrading) {
-          if (executionReplayLast) setReplayActionContext(playIndex, executionReplayLast.time);
-          replayClose(executionReplayLast?.close ?? mid, executionReplayLast?.time ?? Math.floor(Date.now() / 1000));
+          const replayContext = executionReplayLast ? { barIndex: playIndex, cutTime: executionReplayLast.time } : undefined;
+          if (executionReplayLast) tradingCommands.close({ symbol, mark: executionReplayLast.close, ts: executionReplayLast.time, replayContext });
         }
         else setShowCloseConfirm(true); // confirm dialog before booking P&L
         return;
       }
       // ✕ on a TP/SL line removes that exit (staged until Confirm).
       if (replayTrading) {
-        if (executionReplayLast) setReplayActionContext(playIndex, executionReplayLast.time);
-        replaySetOverlay(key, null);
+        const replayContext = executionReplayLast ? { barIndex: playIndex, cutTime: executionReplayLast.time } : undefined;
+        if (executionReplayLast) tradingCommands.setOverlay({ symbol, field: key, value: null, replayContext });
       }
-      else setDraftTpSl((d) => ({ tp: d?.tp ?? pos?.tp ?? null, sl: d?.sl ?? pos?.sl ?? null, [key]: null }));
+      else stageDraft((d) => ({ tp: d?.tp ?? pos?.tp ?? null, sl: d?.sl ?? pos?.sl ?? null, [key]: null }));
     },
-    [replayTrading, executionReplayLast, mid, pos],
+    [replayTrading, executionReplayLast, mid, pos, playIndex, symbol, tradingCommands, stageDraft],
   );
 
   const handlePriceAlertDrag = useCallback((id: string, newPrice: number) => {
@@ -605,45 +668,44 @@ export default function ChartPanel({
 
   // ---- Overlay actions (live account only) ----
   const onOverlayConfirm = useCallback(() => {
-    if (draftTpSl) {
-      setPositionOverlay('tp', draftTpSl.tp, symbol);
-      setPositionOverlay('sl', draftTpSl.sl, symbol);
+    if (effectiveDraftTpSl) {
+      tradingCommands.setProtection({ symbol, protection: { tp: effectiveDraftTpSl.tp, sl: effectiveDraftTpSl.sl } });
     }
-    setDraftTpSl(null);
-  }, [draftTpSl, symbol]);
-  const onOverlayDiscard = useCallback(() => setDraftTpSl(null), []);
+    clearDraft();
+  }, [effectiveDraftTpSl, symbol, tradingCommands, clearDraft]);
+  const onOverlayDiscard = clearDraft;
   const onToggleTp = useCallback(() => {
     if (!pos) return;
-    const cur = draftTpSl ? draftTpSl.tp : pos.tp;
+    const cur = effectiveDraftTpSl ? effectiveDraftTpSl.tp : pos.tp;
     const atr = atr14Last(replayCandles) ?? pos.entryPrice * 0.005;
     const sign = pos.side === 'long' ? 1 : -1;
     const next = cur != null ? null : Number((pos.entryPrice + sign * atr * 3).toFixed(1));
-    setDraftTpSl((d) => ({ tp: next, sl: d?.sl ?? pos.sl ?? null }));
-  }, [pos, draftTpSl, replayCandles]);
+    stageDraft((d) => ({ tp: next, sl: d?.sl ?? pos.sl ?? null }));
+  }, [pos, effectiveDraftTpSl, replayCandles, stageDraft]);
   const onToggleSl = useCallback(() => {
     if (!pos) return;
-    const cur = draftTpSl ? draftTpSl.sl : pos.sl;
+    const cur = effectiveDraftTpSl ? effectiveDraftTpSl.sl : pos.sl;
     const atr = atr14Last(replayCandles) ?? pos.entryPrice * 0.005;
     const sign = pos.side === 'long' ? 1 : -1;
     const next = cur != null ? null : Number((pos.entryPrice - sign * atr * 1.5).toFixed(1));
-    setDraftTpSl((d) => ({ tp: d?.tp ?? pos.tp ?? null, sl: next }));
-  }, [pos, draftTpSl, replayCandles]);
+    stageDraft((d) => ({ tp: d?.tp ?? pos.tp ?? null, sl: next }));
+  }, [pos, effectiveDraftTpSl, replayCandles, stageDraft]);
   const doReverse = useCallback(() => {
     setShowReverseConfirm(false);
     if (!pos) return;
     const newSide = pos.side === 'long' ? 'sell' : 'buy';
     // Reverse = flatten current + open the opposite of equal size (2× units at
     // market). The new position opens with no exits — add TP/SL via the chips.
-    paper.placeOrder({
+    tradingCommands.reverse({
       symbol, side: newSide, type: 'market', units: pos.units * 2, price: null,
       tp: null, sl: null, reduceOnly: false, postOnly: false, leverage: pos.leverage, midPrice: mid,
     });
-    setDraftTpSl(null);
-  }, [pos, symbol, mid, paper]);
+    clearDraft();
+  }, [pos, symbol, mid, tradingCommands, clearDraft]);
   const doClose = useCallback(() => {
     setShowCloseConfirm(false);
-    paper.closePosition(mid, symbol);
-  }, [paper, mid, symbol]);
+    tradingCommands.close({ symbol, mark: mid });
+  }, [mid, symbol, tradingCommands, setShowCloseConfirm]);
 
   const overlaySide = hasPosition && pos ? (pos.side === 'long' ? 'buy' : 'sell') : null;
   const overlayEntryPrice = hasPosition && pos ? pos.entryPrice : null;
@@ -666,16 +728,18 @@ export default function ChartPanel({
     return b;
   }, [hasPosition, pos, effTp, effSl]);
 
-  // Data for the on-chart TradeOverlay control row (null when flat / replay).
+  // The on-chart trade row always reflects the current execution owner. Replay
+  // uses the same position values, but its unsupported management controls are hidden.
   const tradeOverlay = useMemo(
     () =>
-      hasPosition && pos && !replayTrading
+      hasPosition && pos
         ? {
+            mode: replayTrading ? 'replay' as const : 'live' as const,
             entryPrice: pos.entryPrice,
             side: pos.side as 'long' | 'short', // hasPosition guarantees non-flat
             qty: pos.units,
             pnl: unrealizedPnl(pos, mid),
-            isDirty,
+            isDirty: replayTrading ? false : isDirty,
             hasTp: effTp != null,
             hasSl: effSl != null,
           }
@@ -768,6 +832,8 @@ export default function ChartPanel({
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
+
+  const toggleFocusMode = useCallback(() => setFocusMode((value) => !value), []);
 
   const toggleFullscreen = useCallback(() => {
     const el = sectionRef.current;
@@ -874,23 +940,24 @@ export default function ChartPanel({
           e.preventDefault();
           return;
         }
-        if (e.key === 'Escape') {
-          replayActions.exit();
-          e.preventDefault();
-          return;
-        }
       }
 
-      if (e.key.toLowerCase() === 'f') {
+      if (e.key.toLowerCase() === 'f' && e.shiftKey) {
+        toggleFocusMode();
+        e.preventDefault();
+      } else if (e.key.toLowerCase() === 'f') {
         toggleFullscreen();
         e.preventDefault();
       } else if (e.key === 'Escape' && document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
+      } else if (e.key === 'Escape' && focusMode) {
+        setFocusMode(false);
+        e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleFullscreen, patchChartSettings, chartSettings.invertScale, chartSettings.scaleMode, replayActive, replayPlaying, replayStartIndex, executionCandles.length]);
+  }, [toggleFocusMode, toggleFullscreen, patchChartSettings, chartSettings.invertScale, chartSettings.scaleMode, replayActive, replayPlaying, replayStartIndex, executionCandles.length, focusMode]);
 
 
 
@@ -917,7 +984,110 @@ export default function ChartPanel({
   // Fed from replayCandles so Bar Replay actually truncates the chart AND the
   // indicator stack (no future data leaks into calculations during replay);
   // outside replay, replayCandles === candles.
-  const baseCandlesForIndicators = useBaseCandles(replayCandles, type, renkoOptions);
+  const rawCandlesForIndicators = replayCandles;
+  const baseCandlesForIndicators = useBaseCandles(rawCandlesForIndicators, type, renkoOptions);
+  const indicatorControllerSources = useMemo(() => {
+    const last = rawCandlesForIndicators.at(-1);
+    const closed = rawCandlesForIndicators.length > 1 ? rawCandlesForIndicators.at(-2) : last;
+    const sourceRevision = [
+      replayDataset.active ? replayDataset.sessionId : 'live',
+      rawCandlesForIndicators.length,
+      rawCandlesForIndicators[0]?.time ?? 0,
+      last?.time ?? 0,
+      closed?.open ?? 0,
+      closed?.high ?? 0,
+      closed?.low ?? 0,
+      closed?.close ?? 0,
+      closed?.volume ?? 0,
+    ].join(':');
+    return {
+      rawCandles: rawCandlesForIndicators,
+      displayCandles: baseCandlesForIndicators,
+      symbol,
+      timeframe: selected,
+      mode: replayActive ? 'replay' as const : 'live' as const,
+      replay: replayActive && executionReplayLast
+        ? {
+            sessionId: replayDataset.sessionId,
+            cutTime: executionReplayLast.time + TF_SECONDS[executionTf],
+            executionTimeframe: executionTf,
+          }
+        : undefined,
+      transform: type === 'heikinAshi' || type === 'renko' ? type : 'candlestick' as const,
+      sourceRevision,
+      provenance: {
+        raw: replayActive ? 'replay-snapshot' as const : 'market' as const,
+        display: type === 'heikinAshi' || type === 'renko' ? type : 'raw' as const,
+      },
+    };
+  }, [
+    rawCandlesForIndicators,
+    baseCandlesForIndicators,
+    replayDataset.active,
+    replayDataset.sessionId,
+    symbol,
+    selected,
+    replayActive,
+    executionReplayLast,
+    executionTf,
+    type,
+  ]);
+  const indicatorController = useChartIndicatorController({
+    activeIndicatorIds,
+    indicatorSettings,
+    loading,
+    sources: indicatorControllerSources,
+  });
+  const indicatorEvaluationContext = indicatorController.evaluationContext;
+  const indicatorResults = indicatorController.results;
+
+
+  // One derived, read-only answer to "what chart session is active right now?".
+  // The source arrays still belong to the live market-data/replay owners; this
+  // model only composes them for chart consumers and cache identity.
+  const chartSession = useMemo(() => deriveChartSession({
+    symbol,
+    visualTimeframe: selected,
+    transform: type,
+    mode: replayTrading ? 'replay' : 'live',
+    source: {
+      rawCandles: rawCandlesForIndicators,
+      displayCandles: baseCandlesForIndicators,
+      visibleCandles: baseCandlesForIndicators,
+      markPrice: replayTrading ? (executionReplayLast?.close ?? null) : price,
+      marketDataIntegrity: replayTrading ? 'replay' : marketIntegrity,
+      indicatorContext: indicatorEvaluationContext,
+    },
+    replay: replayTrading && replayDataset.active
+      ? {
+          sessionId: replayDataset.sessionId,
+          cutTime: replayCutTime ?? (executionReplayLast ? executionReplayLast.time + TF_SECONDS[executionTf] : null),
+          executionTimeframe: executionTf,
+        }
+      : null,
+    tradePresentation: presentation,
+    tradingCommands,
+    drawingScopeIdentity: drawingSession.scopeIdentity,
+    chartSettings,
+  }), [
+    symbol,
+    selected,
+    replayTrading,
+    rawCandlesForIndicators,
+    baseCandlesForIndicators,
+    executionReplayLast,
+    price,
+    marketIntegrity,
+    indicatorEvaluationContext,
+    replayDataset.active,
+    replayDataset.sessionId,
+    replayCutTime,
+    executionTf,
+    presentation,
+    tradingCommands,
+    drawingSession,
+    chartSettings,
+  ]);
 
   // Multi-pane: the main candle pane counts as pane #1, so a "N panes
   // stacked" layout needs N-1 additional panes. v1: all panes share the
@@ -938,46 +1108,6 @@ export default function ChartPanel({
 
 
 
-  // The whole indicator stack, computed once per candle/settings change.
-  // We process sequentially so that indicators can use prior indicators as inputs.
-  const indicatorResults = useMemo(() => {
-    if (loading) return [];
-    
-    const computedSources: Record<string, (number | null)[]> = {};
-    const results: Array<{ key: string; result: NonNullable<ReturnType<typeof CUSTOM_INDICATORS[number]['compute']>> }> = [];
-    
-    activeIndicatorIds.forEach((id) => {
-      const def = CUSTOM_INDICATORS.find((d) => d.id === id.split('::')[0]);
-      if (!def) return;
-      
-      let result;
-      try {
-        result = def.compute(baseCandlesForIndicators, { id, settings: indicatorSettings[id] }, computedSources);
-      } catch (err) {
-        // One indicator throwing must not blank the entire chart.
-        console.error(`Indicator "${id}" failed to compute:`, err);
-        result = { plots: [], signals: Array.from({ length: baseCandlesForIndicators.length }, () => 'neutral' as const) };
-      }
-
-      // Feed line/histogram plot outputs into the computed sources for downstream indicators
-      result.plots.forEach(plot => {
-        if (plot.type === 'line' || plot.type === 'histogram') {
-          const dataArr = plot.data.map(d => {
-            if (typeof d === 'number') return d;
-            if (!d) return null;
-            if ('value' in d) return d.value;
-            return null;
-          });
-          computedSources[`${id}:${plot.id}`] = dataArr;
-        }
-      });
-      
-      results.push({ key: id, result });
-    });
-    
-    return results;
-  }, [baseCandlesForIndicators, loading, activeIndicatorIds, indicatorSettings]);
-
   // The primary (first) indicator still drives the legend + settings modal.
   const indicatorResult = indicatorResults[0]?.result ?? null;
 
@@ -996,16 +1126,24 @@ export default function ChartPanel({
   return (
     <section
       ref={sectionRef}
+      data-focus-mode={focusMode ? 'true' : 'false'}
       className={[
         'flex flex-col flex-1 min-h-0 w-full overflow-hidden',
         isFullscreen ? 'fixed inset-0 z-50 bg-base' : '',
+        focusMode ? 'ring-1 ring-accent/20' : '',
       ].join(' ')}
     >
       <ChartToolbar
         symbol={symbol}
+        onSelectSymbol={onSelectSymbol}
         price={displayPrice}
+        changeAbs={changeAbs}
         change={change}
         status={status}
+        marketIntegrity={replayTrading ? 'replay' : marketIntegrity}
+        connectionStatus={connectionStatus}
+        executionMode={replayTrading ? 'replay' : 'live'}
+        positionSide={hasPosition && pos && pos.side !== 'flat' ? pos.side : null}
         selected={selected}
         onSelectTf={onSelectTf}
         chartType={type}
@@ -1014,6 +1152,8 @@ export default function ChartPanel({
         onToggleSignals={toggleSignals}
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
+        isFocusMode={focusMode}
+        onToggleFocus={toggleFocusMode}
         onFitContent={fitContent}
         renko={renkoConfig}
         onRenkoChange={setRenkoConfig}
@@ -1034,12 +1174,13 @@ export default function ChartPanel({
         onWorkspaceApply={onWorkspaceApply}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={onToggleSidebar}
+        onOpenDrawings={() => setDrawingToolsOpen(true)}
         chartSettings={featureFlags.chartSettings ? chartSettings : undefined}
         onChartSettingsPatch={featureFlags.chartSettings ? patchChartSettings : undefined}
         onChartSettingsReset={featureFlags.chartSettings ? resetChartSettings : undefined}
       />
       <div className="flex min-h-0 flex-1">
-        <DrawingToolbar
+        <DrawingToolbar key={drawingSession.scopeKey}
           tool={drawingTool}
           onToolChange={setDrawingTool}
           color={drawingColor}
@@ -1050,8 +1191,17 @@ export default function ChartPanel({
           onLockToggle={() => setDrawingsLocked((v) => !v)}
           hidden={drawingsHidden}
           onHiddenToggle={() => setDrawingsHidden((v) => !v)}
-          onClear={() => clearDrawings(symbol)}
+          onClear={() => clearDrawings(drawingSession.scopeKey)}
           count={drawingsForSymbol.length}
+          onUndo={() => undoDrawings(drawingSession.scopeKey)}
+          onRedo={() => redoDrawings(drawingSession.scopeKey)}
+          canUndo={hasDrawingUndo}
+          canRedo={hasDrawingRedo}
+          selected={selectedDrawingId != null}
+          onDeleteSelected={() => { if (selectedDrawingId) { removeDrawing(drawingSession.scopeKey, selectedDrawingId); setSelectedDrawingId(null); } }}
+          mobileOpen={drawingToolsOpen}
+          onMobileClose={() => setDrawingToolsOpen(false)}
+          scopeLabel={symbol}
         />
         <div ref={chartBoxRef} className="relative min-h-0 min-w-0 flex-1">
         {loading && <ChartSkeleton height={chartHeight} />}
@@ -1080,10 +1230,10 @@ export default function ChartPanel({
         {!loading && !multiChartSlot && (
           <ChartErrorBoundary>
             <Chart
-              candles={baseCandlesForIndicators}
+              candles={chartSession.data.displayCandles as Candle[]}
               candlesByTf={replayVisibleCandlesByTf}
-              type={type}
-              symbol={symbol}
+              type={chartSession.chart.transform}
+              symbol={chartSession.chart.symbol}
               height={chartHeight}
               additionalPanes={additionalPanes}
               additionalPanesTotalHeight={additionalPanesTotalHeight}
@@ -1141,7 +1291,7 @@ export default function ChartPanel({
         {!loading && !multiChartSlot && (
           <DrawingLayer
             api={chartApi}
-            symbol={symbol}
+            symbol={drawingSession.scopeKey}
             tool={drawingTool}
             color={drawingColor}
             magnet={magnet}
@@ -1150,7 +1300,8 @@ export default function ChartPanel({
             width={chartWidth}
             height={chartHeight}
             revision={replayCandles.length}
-            onToolUsed={() => setDrawingTool('cursor')}
+            onToolUsed={() => { setDrawingTool('cursor'); setSelectedDrawingId(null); }}
+            onSelectionChange={setSelectedDrawingId}
           />
         )}
         {!loading && replayPhase === 'selecting' && (
@@ -1193,6 +1344,11 @@ export default function ChartPanel({
             deepLoading={deepLoading}
             onDrill={onDrill}
             blind={blindMode}
+            replayTime={replayCutTime}
+            executionTimeframe={executionTf}
+            visualTimeframe={selected}
+            endOfData={executionCandles.length > 0 && playIndex >= executionCandles.length - 1}
+            replayLoading={deepLoading ? `Preparing ${deepLoading.tf} replay history…` : null}
             onToggleBlind={() => setBlindMode((v) => !v)}
             speed={replaySpeed}
             bookmarks={bookmarks}
@@ -1224,7 +1380,9 @@ export default function ChartPanel({
             lastTime={executionReplayLast?.time ?? replayLast.time}
             atr={hudAtr}
             replayBarIndex={playIndex}
+            commands={tradingCommands}
           />
+          {/* Replay HUD commands resolve through the current-mode boundary. */}
         </div>
       )}
 
@@ -1278,6 +1436,15 @@ export default function ChartPanel({
         />
       )}
 
+      <MobileTradeExperience
+        symbol={symbol}
+        presentation={presentation}
+        commands={tradingCommands}
+        leverage={LEVERAGE}
+        integrity={marketIntegrity}
+        replayContext={executionReplayLast ? { barIndex: playIndex, cutTime: executionReplayLast.time } : undefined}
+      />
+
       {ctxMenu && (
         <ChartContextMenu
           price={ctxMenu.price}
@@ -1286,13 +1453,16 @@ export default function ChartPanel({
           symbol={symbol}
           midPrice={mid}
           leverage={LEVERAGE}
+          executionMode={replayTrading ? 'replay' : 'live'}
+          marketIntegrity={marketIntegrity}
           onClose={() => setCtxMenu(null)}
+          onSubmitOrder={tradingCommands.submitOrder}
           onResetChart={() => setResetTick(t => t + 1)}
         />
       )}
 
       <OrderModal
-        open={ticketSide !== null}
+        open={!replayTrading && ticketSide !== null}
         onClose={() => setTicketSide(null)}
         symbol={symbol}
         midPrice={mid}
@@ -1300,6 +1470,8 @@ export default function ChartPanel({
         onLeverageChange={() => {}}
         reduceAvailable={hasPosition && pos ? pos.units : 0}
         initialSide={ticketSide ?? undefined}
+        marketIntegrity={marketIntegrity}
+        onSubmitOrder={tradingCommands.submitOrder}
       />
 
       <ReverseConfirmDialog

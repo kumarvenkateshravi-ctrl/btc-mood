@@ -1,4 +1,5 @@
 import type { WSStatus } from './ws';
+import { summarizeFeedHealth, type FeedHealthSnapshot } from './marketData/feedHealth';
 
 /**
  * The provenance/freshness of the dashboard's market data.  This is kept
@@ -26,6 +27,8 @@ export interface MarketDataIntegrityInput {
   staleAfterMs?: number;
   replayActive?: boolean;
   demo?: boolean;
+  /** Optional Stage 3 evidence; without it the legacy derivation is retained. */
+  feedHealth?: FeedHealthSnapshot;
 }
 
 export const MARKET_DATA_STALE_AFTER_MS = 15_000;
@@ -41,10 +44,21 @@ export function deriveMarketDataIntegrity({
   staleAfterMs = MARKET_DATA_STALE_AFTER_MS,
   replayActive = false,
   demo = false,
+  feedHealth,
 }: MarketDataIntegrityInput): MarketDataIntegrity {
   if (replayActive) return 'replay';
   if (demo) return 'demo';
   if (!hasAnyCandles) return isLoading ? 'loading' : 'unavailable';
+  if (feedHealth) {
+    const health = summarizeFeedHealth(feedHealth, nowMs, staleAfterMs);
+    if (!hasAllTimeframes) return 'partial';
+    if (health.anyRequiredKlineUnavailable) return health.hasLiveSynchronizationAttempt ? 'partial' : 'historical';
+    if (hasErrors || health.anyRequiredKlineStale) return 'stale';
+    if (health.anyRequiredKlineSynchronizing || !health.allRequiredKlinesLive || !health.tickerLive) {
+      return health.hasLiveSynchronizationAttempt ? 'partial' : 'historical';
+    }
+    return 'live';
+  }
   if (hasErrors && !hasAllTimeframes) return 'partial';
   if (!hasAllTimeframes) return 'partial';
   if (hasErrors) return 'stale';

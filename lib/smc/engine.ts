@@ -5,6 +5,7 @@
 // itself is pure and allocates all state per call.
 
 import type { Candle } from '@/lib/types';
+import type { IndicatorEvaluationContext } from '@/lib/indicatorEvaluation';
 import {
   resolveSmcConfig,
   biasToDirection,
@@ -32,14 +33,34 @@ const RECENT_EVENT_BARS = 20;
 /** "Approaching" = within this many ATRs of a qualifying object. */
 const APPROACH_ATR = 2;
 
-export function computeSmc(candles: Candle[], config?: Partial<SmcConfig>): SmcSnapshot {
+export function computeSmc(
+  inputCandles: Candle[],
+  config?: Partial<SmcConfig>,
+  context?: IndicatorEvaluationContext,
+): SmcSnapshot {
+  const contextualCandles = context ? context.closedCandles : inputCandles;
+  const candles = context?.replay ? contextualCandles.filter((c) => c.time <= context.replay!.cutTime) : contextualCandles;
   const t0 = performance.now();
   const cfg = resolveSmcConfig(config);
   const warnings: string[] = [];
   const events: SmcEvent[] = [];
 
   const empty: SmcSnapshot = {
-    metadata: { version: cfg.version, config: cfg },
+    metadata: {
+      version: cfg.version,
+      config: cfg,
+      context: context ? {
+        symbol: context.symbol,
+        timeframe: context.timeframe,
+        mode: context.mode,
+        sourceRevision: context.sourceRevision,
+        replay: context.replay ? {
+          sessionId: context.replay.sessionId,
+          cutTime: context.replay.cutTime,
+          executionTimeframe: context.replay.executionTimeframe,
+        } : undefined,
+      } : undefined,
+    },
     state: {
       swingTrend: 0,
       internalTrend: 0,
@@ -62,7 +83,7 @@ export function computeSmc(candles: Candle[], config?: Partial<SmcConfig>): SmcS
   const structure = createStructureEngine(candles, cfg, events);
   const orderBlocks = createOrderBlockEngine(candles, cfg, vol, events);
   const liquidity = createLiquidityEngine(candles, cfg, vol.atr200, events);
-  const fvg = createFvgEngine(candles, cfg, events);
+  const fvg = createFvgEngine(candles, cfg, events, context);
 
   let zone: ZoneName = 'equilibrium';
   let zoneObjects: SmcObject[] = [];
@@ -304,11 +325,13 @@ export function computeSmcWindowed(
   candles: Parameters<typeof computeSmc>[0],
   maxBars: number,
   config?: Parameters<typeof computeSmc>[1],
+  context?: Parameters<typeof computeSmc>[2],
 ): SmcSnapshot {
-  if (candles.length <= maxBars) return computeSmc(candles, config);
+  if (candles.length <= maxBars) return computeSmc(candles, config, context);
   const slice = candles.slice(-maxBars);
   const off = candles.length - slice.length;
-  const snap = computeSmc(slice, config);
+  const sliceContext = context ? { ...context, rawCandles: context.rawCandles.slice(-slice.length), displayCandles: context.displayCandles.slice(-slice.length), closedCandles: context.closedCandles.slice(-slice.length), hasFormingBar: false } : undefined;
+  const snap = computeSmc(slice, config, sliceContext);
   const shiftObj = <T extends { createdAtBar: number; updatedAtBar: number }>(o: T): T => ({
     ...o,
     createdAtBar: o.createdAtBar + off,
@@ -316,6 +339,10 @@ export function computeSmcWindowed(
   });
   return {
     ...snap,
+    diagnostics: {
+      ...snap.diagnostics,
+      warnings: [...snap.diagnostics.warnings, 'SMC evaluated on trailing ' + maxBars + '-bar window; earlier structure is intentionally excluded.'],
+    },
     objects: {
       orderBlocks: snap.objects.orderBlocks.map(shiftObj),
       fvgs: snap.objects.fvgs.map(shiftObj),

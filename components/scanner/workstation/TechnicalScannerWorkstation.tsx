@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Archive, BarChart3, Bell, Boxes, CheckCircle2, Clock,
   Copy, GitCompareArrows, Layers, LineChart, Pause, Play, Plus,
@@ -43,6 +43,9 @@ import type {
 import { isCondition } from '@/lib/scanner/types';
 import type { ScannerSnapshot } from '@/lib/scanner/engine';
 import type { MarketContext } from '@/lib/context/types';
+import { createChartTradingController, type ChartTradingControllerSession } from '@/lib/chartTradingController';
+import { closePosition, partialClose, placeOrder, updatePositionProtection } from '@/lib/paperStore';
+import { useActiveTradePresentation } from '@/lib/trade/presentationFacade';
 
 const ChartPanel = dynamic(() => import('@/components/ChartPanel'), {
   ssr: false,
@@ -329,6 +332,28 @@ export default function TechnicalScannerWorkstation() {
 
   const currentCandles = candlesByTf[selectedTf] ?? [];
   const currentPrice = ticker24h?.price ?? currentCandles[currentCandles.length - 1]?.close ?? null;
+  const tradePresentation = useActiveTradePresentation({ mode: 'live', symbol, markPrice: currentPrice, markTrusted: Number.isFinite(currentPrice) });
+  const chartTradingSessionRef = useRef<ChartTradingControllerSession>({ mode: 'live', symbol });
+  chartTradingSessionRef.current = { mode: 'live', symbol };
+  const tradingCommands = useMemo(
+    () => createChartTradingController({
+      getSession: () => chartTradingSessionRef.current,
+      live: { placeOrder, closePosition, updateProtection: updatePositionProtection, partialClose },
+      replay: {
+        setActionContext: () => {},
+        setPendingLevels: () => {},
+        openWithRisk: () => ({ ok: false, blocked: 'no-session' }),
+        updateProtection: () => ({ ok: false, error: 'Replay is unavailable in the scanner workspace' }),
+        close: () => ({ ok: false, error: 'Replay is unavailable in the scanner workspace' }),
+        partialClose: () => ({ ok: false, error: 'Replay is unavailable in the scanner workspace' }),
+      },
+    }),
+    [symbol],
+  );
+  useEffect(() => {
+    tradingCommands.activate();
+    return () => tradingCommands.dispose();
+  }, [tradingCommands]);
   const currentChange = ticker24h?.change ?? null;
   const bid = bookTicker?.bid ?? null;
   const ask = bookTicker?.ask ?? null;
@@ -421,6 +446,8 @@ export default function TechnicalScannerWorkstation() {
       price={currentPrice}
       change={currentChange}
       status={status}
+      tradingCommands={tradingCommands}
+      tradePresentation={tradePresentation}
       showVolume
       bid={bid}
       ask={ask}

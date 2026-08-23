@@ -93,11 +93,11 @@ export default function OrderFlowPanel({ symbol, tf }: OrderFlowPanelProps) {
         </span>
       </div>
 
-      {/* Cumulative delta for the current candle */}
+      {/* Cumulative taker delta for the current candle */}
       <div className="border-b border-line px-3 py-2">
         <div className="flex items-baseline justify-between">
           <span className="text-[10px] uppercase tracking-wider text-ink-faint">
-            Delta · {tf}
+            Taker Delta · {tf}
           </span>
           <span
             className={['font-mono text-sm font-semibold tabular-nums', d >= 0 ? 'text-bull-bright' : 'text-bear-bright'].join(' ')}

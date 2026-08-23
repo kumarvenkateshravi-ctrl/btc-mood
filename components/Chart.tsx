@@ -70,6 +70,8 @@ import { useChartEvents } from './chart/useChartEvents';
 import { useCountdownTimer } from './chart/useCountdownTimer';
 import { useChartApi } from './chart/useChartApi';
 import { useAdditionalPanes } from './chart/useAdditionalPanes';
+import type { ChartLifecycle } from '@/lib/chartLifecycle';
+import { getChartPriceFormat } from '@/lib/chartInstrumentPresentation';
 
 export type { ChartType, PriceScaleModeOption, ChartApi, ChartOverlay, OverlayKind, IndicatorRender } from './chart/types';
 
@@ -82,14 +84,16 @@ type TooltipHandle = {
 };
 
 function TooltipContainer({
-  handle,
+  handleRef,
   mode,
+  symbol,
   activeFlips,
   hasDivergenceIndicator,
   divMarkersPayloads,
 }: {
-  handle: React.MutableRefObject<TooltipHandle>;
+  handleRef: React.MutableRefObject<TooltipHandle>;
   mode: ChartType;
+  symbol?: string;
   activeFlips: any;
   hasDivergenceIndicator: boolean;
   divMarkersPayloads: any;
@@ -99,16 +103,16 @@ function TooltipContainer({
   // Safely assign and unassign the handle. If this component is unmounted,
   // we clean up the reference to prevent executing state changes on dead components.
   useEffect(() => {
-    handle.current = { setPos };
+    handleRef.current = { setPos };
     return () => {
-      handle.current = { setPos: () => { } };
+      handleRef.current = { setPos: () => { } };
     };
-  }, [handle]);
+  }, [handleRef]);
 
   if (!pos) return null;
   return (
     <>
-      <FloatingChartTooltip pos={pos} mode={mode} />
+      <FloatingChartTooltip pos={pos} mode={mode} symbol={symbol} />
       <SignalExplainer pos={pos} flips={activeFlips} />
       <DivergenceExplainer pos={pos} payloads={hasDivergenceIndicator ? divMarkersPayloads : []} />
     </>
@@ -177,6 +181,14 @@ export default function Chart({
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [isLegendExpanded, setIsLegendExpanded] = useState<boolean>(true);
   const [isScrolledBack, setIsScrolledBack] = useState<boolean>(false);
+  const instrumentPriceFormat = useMemo(() => getChartPriceFormat(symbol ?? 'BTCUSDT'), [symbol]);
+
+  // A symbol presentation change updates only price-axis precision. It does
+  // not recreate the chart, resubscribe data, or alter candle/trade values.
+  useEffect(() => {
+    try { candleSeriesRef.current?.applyOptions({ priceFormat: instrumentPriceFormat }); } catch { }
+    try { dummySeriesRef.current?.applyOptions({ priceFormat: instrumentPriceFormat }); } catch { }
+  }, [instrumentPriceFormat]);
 
   // Normalize the single + stack props into one render list. Effects below
   // iterate this so one or many indicators render through the same path.
@@ -257,6 +269,9 @@ export default function Chart({
   const fxPrimitiveRef = useRef<ChartFxPrimitive | null>(null);
   const daySepCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const daySepRafRef = useRef<number>(0);
+  const lifecycleRef = useRef<ChartLifecycle>({ epoch: 0, state: 'idle', apiReady: false });
+  const pendingAnimationFramesRef = useRef<Set<number>>(new Set());
+  const listenerCountRef = useRef(0);
 
   const [hover, setHoverLine] = useState<{
     kind: OverlayKind;
@@ -268,9 +283,9 @@ export default function Chart({
   // The data payload (OHLC) is passed directly so it persists when clicked.
   // Using a plain mutable ref object instead of forwardRef to avoid the
   // Turbopack "Value is null" error during strict-mode double-invocation.
-  const tooltipHandle = useRef<TooltipHandle>({ setPos: () => { } });
+  const tooltipHandleRef = useRef<TooltipHandle>({ setPos: () => { } });
   const setTooltipPos = useCallback((pos: { x: number; y: number; time?: number; hover: HoverPayload } | null) => {
-    tooltipHandle.current.setPos(pos);
+    tooltipHandleRef.current.setPos(pos);
   }, []);
 
   const onOverlayDragRef = useRef<typeof onOverlayDrag>(onOverlayDrag);
@@ -356,6 +371,7 @@ export default function Chart({
       containerRef, priceCardRef, priceTextRef, countdownTextRef,
       chartRef, candleSeriesRef, dummySeriesRef, markersRef,
       overlayPrimitiveRef, fxPrimitiveRef, daySepCanvasRef, daySepRafRef,
+      lifecycleRef, pendingAnimationFramesRef, listenerCountRef,
       separatePaneRef,
       indicatorSeriesRef, indicatorPanesRef, indicatorSigRef,
       indicatorGradientRef, indicatorProfileRef, indicatorBandRef, indicatorLineRef, indicatorMarkersRef, priceLinesPrimitiveRef,
@@ -507,6 +523,8 @@ export default function Chart({
     tf,
     isRenko,
     palette,
+    lifecycleRef,
+    pendingAnimationFramesRef,
   );
 
   // ==========================================
@@ -581,6 +599,7 @@ export default function Chart({
         <TradeOverlay
           chart={chartRef.current}
           series={candleSeriesRef.current}
+          mode={tradeOverlay.mode}
           entryPrice={tradeOverlay.entryPrice}
           side={tradeOverlay.side}
           qty={tradeOverlay.qty}
@@ -611,8 +630,9 @@ export default function Chart({
 
       {/* --- Overlay UI --- */}
       <TooltipContainer
-        handle={tooltipHandle}
+        handleRef={tooltipHandleRef}
         mode={type}
+        symbol={symbol}
         activeFlips={activeFlips}
         hasDivergenceIndicator={hasDivergenceIndicator}
         divMarkersPayloads={divMarkersData.payloads}
@@ -622,6 +642,7 @@ export default function Chart({
 
       <ChartFloatingControls
         type={type}
+        symbol={symbol}
         onQuickTrade={onQuickTrade}
         onOpenRenkoSettings={onOpenRenkoSettings}
         bid={bid}

@@ -18,6 +18,8 @@ import type {
   VolumeProfileRender,
   VolumeProfileStyle,
 } from '@/lib/indicatorFramework';
+import { buildHistoricalPocIndex, pocRecordKey, selectVisibleHistoricalPocs, type HistoricalPocIndex, type HistoricalPocRecord } from '@/lib/indicators/historicalPocStore';
+import { analyticalDecay } from '@/lib/chartAnalyticalPresentation';
 
 /** Rows thinner than this collapse to a hairline rather than vanishing. */
 const MIN_ROW_PX = 1;
@@ -42,8 +44,8 @@ class ProfileRenderer implements IPrimitivePaneRenderer {
   ) {}
 
   draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]) {
-    const { profiles, style } = this._prim;
-    if (!style || profiles.length === 0) return;
+    const { style } = this._prim;
+    if (!style || (this._prim.profiles.length === 0 && this._prim.historicalPocs.length === 0)) return;
 
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
@@ -52,6 +54,11 @@ class ProfileRenderer implements IPrimitivePaneRenderer {
       const paneW = scope.bitmapSize.width;
       const series = this._api.series;
       const ts = this._api.chart.timeScale();
+      const visibleRange = ts.getVisibleRange();
+      const range = visibleRange && typeof visibleRange.from === 'number' && typeof visibleRange.to === 'number'
+        ? { from: visibleRange.from, to: visibleRange.to }
+        : null;
+      const profiles = this._prim.visibleProfiles(range);
 
       const priceToY = (p: number): number | null => {
         const y = series.priceToCoordinate(p);
@@ -79,12 +86,12 @@ class ProfileRenderer implements IPrimitivePaneRenderer {
         const bx0 = x0 * hpr;
         const bx1 = x1 * hpr;
         const boxW = bx1 - bx0;
-        if (boxW < MIN_BOX_PX) continue;
+        const canDrawBox = boxW >= MIN_BOX_PX;
 
         const maxBarW = boxW * (clamp(style.widthPct, 1, 100) / 100);
         const anchorLeft = style.placement === 'left';
 
-        if (style.showProfileBoxes && profile.showRows !== false) {
+        if (canDrawBox && style.showProfileBoxes && profile.showRows !== false) {
           this._drawRows(ctx, profile, style, {
             bx0, bx1, maxBarW, anchorLeft, priceToY, vpr, hpr,
           });
@@ -94,7 +101,7 @@ class ProfileRenderer implements IPrimitivePaneRenderer {
           bx0, bx1, paneW, priceToY, hpr,
         });
 
-        if (style.showShapeLabel && profile.showShapeLabel !== false && profile.shapeLabel) {
+        if (canDrawBox && style.showShapeLabel && profile.showShapeLabel !== false && profile.shapeLabel) {
           this._drawShapeLabel(ctx, profile, style, {
             bx0, bx1, priceToY, hpr, vpr, paneH: scope.bitmapSize.height,
           });
@@ -318,7 +325,9 @@ class ProfilePaneView implements IPrimitivePaneView {
 
 export class SessionVolumeProfilePrimitive implements ISeriesPrimitive {
   public profiles: VolumeProfileRender[] = [];
+  public historicalPocs: HistoricalPocRecord[] = [];
   public style: VolumeProfileStyle | null = null;
+  private historicalIndex: HistoricalPocIndex = { records: [] };
   private _api: SeriesAttachedParameter<Time> | null = null;
 
   attached(api: SeriesAttachedParameter<Time>) {
@@ -327,6 +336,8 @@ export class SessionVolumeProfilePrimitive implements ISeriesPrimitive {
   detached() {
     this._api = null;
     this.profiles = [];
+    this.historicalPocs = [];
+    this.historicalIndex = { records: [] };
   }
   updateAllViews() {
     this._api?.requestUpdate();
@@ -336,13 +347,84 @@ export class SessionVolumeProfilePrimitive implements ISeriesPrimitive {
     return [new ProfilePaneView(this._api, this)];
   }
 
-  setData(profiles: VolumeProfileRender[], style: VolumeProfileStyle) {
+  setData(profiles: VolumeProfileRender[], style: VolumeProfileStyle, historicalPocs: HistoricalPocRecord[] = []) {
     this.profiles = profiles;
+    this.historicalPocs = historicalPocs;
+    this.historicalIndex = buildHistoricalPocIndex(historicalPocs);
     this.style = style;
     this.updateAllViews();
   }
+
+  visibleProfiles(range: { from: number; to: number } | null): VolumeProfileRender[] {
+    if (!this.style) return this.profiles;
+    const current = new Set(this.profiles.flatMap((profile) => profileRecordKey(profile)));
+    const historicalRecords = selectVisibleHistoricalPocs(this.historicalIndex, range)
+      .filter((record) => !current.has(pocRecordKey(record)));
+    const latestEnd = Math.max(
+      ...this.profiles.map((profile) => profile.endTime),
+      ...historicalRecords.map((record) => record.sessionEnd),
+      0,
+    );
+    const historical = historicalRecords.map((record) => {
+      const ageDays = Math.max(0, (latestEnd - record.sessionEnd) / 86_400);
+      return historicalPocProfile(record, this.style!, analyticalDecay(ageDays));
+    });
+    return [...this.profiles, ...historical];
+  }
 }
 
+function profileRecordKey(profile: VolumeProfileRender): string[] {
+  const sessionType = profile.source?.sessionTimeframe;
+  if (!profile.source || (sessionType !== '4h' && sessionType !== 'daily' && sessionType !== 'weekly')) return [];
+  return [pocRecordKey({
+    symbol: profile.source.symbol,
+    sessionType,
+    sessionStart: profile.startTime,
+    sessionEnd: profile.endTime,
+    poc: profile.poc,
+    source: profile.source,
+    finalized: true,
+  })];
+}
+
+function historicalPocProfile(record: HistoricalPocRecord, style: VolumeProfileStyle, presentationAlpha = 1): VolumeProfileRender {
+  const pocColor = record.sessionType === 'weekly'
+    ? style.weeklyPocColor
+    : record.sessionType === 'daily'
+      ? style.dailyPocColor
+      : style.fourHourPocColor;
+  return {
+    startTime: record.sessionStart,
+    endTime: record.sessionEnd,
+    low: record.poc,
+    high: record.poc,
+    rows: [],
+    poc: record.poc,
+    vah: record.poc,
+    val: record.poc,
+    totalVolume: 0,
+    maxRowVolume: 0,
+    source: record.source,
+    pocColor: withAlpha(pocColor, presentationAlpha),
+    showRows: false,
+    showPoc: true,
+    showVah: false,
+    showVal: false,
+    showShapeLabel: false,
+  };
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const clamped = Math.max(0, Math.min(1, alpha));
+  const rgba = color.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*[\d.]+)?\s*\)$/i);
+  if (rgba) return 'rgba(' + rgba[1] + ',' + rgba[2] + ',' + rgba[3] + ',' + clamped + ')';
+  const hex = color.match(/^#([0-9a-f]{6})$/i);
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + clamped + ')';
+  }
+  return color;
+}
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }

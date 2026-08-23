@@ -55,6 +55,11 @@ interface ReplayBarProps {
   /** Blind mode: hide progress numbers and the scrubber (no future spoilers). */
   blind?: boolean;
   onToggleBlind?: () => void;
+  replayTime?: number | null;
+  executionTimeframe?: string;
+  visualTimeframe?: string;
+  endOfData?: boolean;
+  replayLoading?: string | null;
 }
 
 const PHASE_LABEL: Partial<Record<ReplayPhase, string>> = {
@@ -91,15 +96,20 @@ export default function ReplayBar({
   onDrill,
   blind = false,
   onToggleBlind,
+  replayTime,
+  executionTimeframe,
+  visualTimeframe,
+  endOfData = false,
+  replayLoading,
 }: ReplayBarProps) {
   if (selecting) {
     return (
-      <div className="elev-1 rounded-xl p-3">
+      <div data-testid="replay-selector" className="elev-1 rounded-xl p-3">
         <ReplayHeader phase="selecting" blind={blind} onExit={onExit} />
         {deepLoading && (
           <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-[11px] text-accent">
             <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-            Loading {deepLoading.tf} history, page {deepLoading.pages}, reached {new Date(deepLoading.oldestMs).toLocaleDateString()}
+            Loading {deepLoading.tf} history, page {deepLoading.pages}, reached {formatReplayUtc(deepLoading.oldestMs)}
           </div>
         )}
         <div className="mt-3 grid gap-2 md:grid-cols-3">
@@ -134,18 +144,18 @@ export default function ReplayBar({
   const progress = total > 1 ? (Math.min(index, total - 1) / (total - 1)) * 100 : 0;
 
   return (
-    <div className="elev-1 rounded-xl p-3">
-      <ReplayHeader phase={phase} blind={blind} onExit={onExit} />
+    <div data-testid="replay-controller" className="elev-1 rounded-xl p-3">
+      <ReplayHeader phase={phase} blind={blind} onExit={onExit} replayTime={replayTime} executionTimeframe={executionTimeframe} visualTimeframe={visualTimeframe} />
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 rounded-lg border border-line bg-base p-1">
-          <IconBtn label="Step back" onClick={() => onStep(-1)} disabled={index <= 1}>
+          <IconBtn label="Previous bar" onClick={() => onStep(-1)} disabled={index <= 1}>
             <SkipBack className="h-3.5 w-3.5" />
           </IconBtn>
           <IconBtn label={playing ? 'Pause' : 'Play'} onClick={onTogglePlay} disabled={atEnd} primary>
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </IconBtn>
-          <IconBtn label="Step forward" onClick={() => onStep(1)} disabled={atEnd}>
+          <IconBtn label="Next bar" onClick={() => onStep(1)} disabled={atEnd}>
             <SkipForward className="h-3.5 w-3.5" />
           </IconBtn>
         </div>
@@ -187,13 +197,13 @@ export default function ReplayBar({
           </button>
         )}
 
-        <div className="inline-flex items-center rounded-md border border-line bg-base p-0.5 text-[11px] font-mono">
+        <div className="inline-flex items-center rounded-md border border-line bg-base p-0.5 text-[11px] font-mono" aria-label="Playback speed">
           {SPEEDS.map((s) => (
             <button
               key={s}
               onClick={() => onSpeed(s)}
               aria-pressed={speed === s}
-              className={cx('focus-ring rounded px-1.5 py-0.5 transition', speed === s ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink')}
+              className={cx('focus-ring min-h-11 min-w-9 rounded px-1.5 py-0.5 transition sm:min-h-0 sm:min-w-0', speed === s ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink')}
             >
               {s}x
             </button>
@@ -201,7 +211,23 @@ export default function ReplayBar({
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
+      {replayLoading && (
+        <div role="status" className="mt-2 inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px] text-accent">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          {replayLoading}
+        </div>
+      )}
+      {(endOfData || atEnd) && (
+        <div role="status" className="mt-2 rounded-md border border-line bg-base px-2.5 py-1.5 text-[11px] text-ink-muted">
+          End of replay data
+        </div>
+      )}
+      {!endOfData && index <= 1 && (
+        <div role="status" className="mt-2 rounded-md border border-line bg-base px-2.5 py-1.5 text-[11px] text-ink-faint">
+          Beginning of replay data
+        </div>
+      )}
+      <div className="mt-2 hidden flex-wrap items-center gap-2 border-t border-line pt-2 sm:flex">
         {SHORTCUTS.map((shortcut) => (
           <span key={shortcut} className="rounded bg-base px-1.5 py-0.5 text-[10px] text-ink-faint">{shortcut}</span>
         ))}
@@ -267,32 +293,60 @@ export default function ReplayBar({
   );
 }
 
-function ReplayHeader({ phase, blind, onExit }: { phase?: ReplayPhase; blind?: boolean; onExit: () => void }) {
+function ReplayHeader({
+  phase,
+  blind,
+  onExit,
+  replayTime,
+  executionTimeframe,
+  visualTimeframe,
+}: {
+  phase?: ReplayPhase;
+  blind?: boolean;
+  onExit: () => void;
+  replayTime?: number | null;
+  executionTimeframe?: string;
+  visualTimeframe?: string;
+}) {
   const current = phase === 'selecting' ? 1 : phase === 'finished' ? 3 : 2;
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="flex min-w-[180px] flex-col">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-accent">Practice Mode</span>
-          <Badge tone="accent">Replay session</Badge>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">REPLAY</span>
+          <Badge tone="accent">Snapshot data</Badge>
           {blind && <Badge tone="warn">Blind</Badge>}
         </div>
-        <span className="mt-1 text-[11px] text-ink-faint">Future candles hidden. Live account untouched.</span>
+        <span className="mt-1 text-[11px] text-ink-faint">Simulated execution · live paper account untouched</span>
       </div>
-      <div className="flex flex-1 items-center gap-1.5">
+      <div className="hidden flex-1 items-center gap-1.5 sm:flex">
         <Step n={1} label="Setup" active={current === 1} done={current > 1} />
         <Rail />
         <Step n={2} label={PHASE_LABEL[phase ?? 'ready'] ?? 'Replay'} active={current === 2} done={current > 2} />
         <Rail />
         <Step n={3} label="Review" active={current === 3} />
       </div>
+      <div className="flex flex-1 flex-wrap items-center justify-end gap-2 text-[11px] text-ink-faint">
+        {replayTime != null && <span className="font-mono tabular-nums text-ink" title="Replay time in UTC">{formatReplayUtc(replayTime)}</span>}
+        {executionTimeframe && <span className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-accent">Exec {executionTimeframe}</span>}
+        {visualTimeframe && executionTimeframe && visualTimeframe !== executionTimeframe && (
+          <span className="rounded border border-line bg-base px-1.5 py-0.5">Viewing: {visualTimeframe}</span>
+        )}
+      </div>
       <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={onExit}>
-        Exit
+        Exit Replay
       </Button>
     </div>
   );
 }
 
+function formatReplayUtc(value: number): string {
+  const ms = value > 10_000_000_000 ? value : value * 1000;
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
+  }).format(new Date(ms)).replace(',', ' ·') + ' UTC';
+}
 function Step({ n, label, active, done }: { n: number; label: string; active?: boolean; done?: boolean }) {
   return (
     <span className={cx('inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px]', active ? 'bg-accent/15 text-accent' : done ? 'text-ink-muted' : 'text-ink-faint')}>
@@ -375,7 +429,7 @@ function IconBtn({
       aria-label={label}
       title={label}
       className={cx(
-        'focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md transition disabled:opacity-30',
+        'focus-ring inline-flex h-11 w-11 touch-manipulation items-center justify-center rounded-md transition disabled:opacity-30 sm:h-8 sm:w-8',
         primary ? 'bg-accent text-white hover:bg-accent-bright' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
       )}
     >

@@ -90,6 +90,17 @@ export const BookTickerEnvelopeSchema = z.object({
   data: BinanceBookTickerMessageSchema.optional(),
 });
 
+
+// Binance single-stream @ticker 24-hour rolling price statistics.
+export const BinanceTickerMessageSchema = z.object({
+  E: z.number(),
+  s: z.string(),
+  c: z.string(),
+  P: z.string(),
+  p: z.string(),
+  v: z.string(),
+});
+
 // Binance @aggTrade — aggregated taker trades. `m` = "is the buyer the
 // market maker?": true → the aggressor SOLD (hit the bid); false → BOUGHT.
 export const BinanceAggTradeMessageSchema = z.object({

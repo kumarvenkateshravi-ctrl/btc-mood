@@ -10,13 +10,14 @@ describe('compare', () => {
     expect(DEFAULT_COMPARE_SYMBOL).toBe('BTCUSDT');
   });
 
-  it('COMPARE_SYMBOLS lists BTC against USDT', () => {
+  it('COMPARE_SYMBOLS lists the focused BTC and Gold instruments', () => {
     const symbols = COMPARE_SYMBOLS.map((c) => c.symbol);
-    expect(symbols).toEqual(['BTCUSDT']);
+    expect(symbols).toEqual(['BTCUSDT', 'XAUUSD']);
   });
 
   it('isCompareSymbol returns true only for known symbols', () => {
     expect(isCompareSymbol('BTCUSDT')).toBe(true);
+    expect(isCompareSymbol('XAUUSD')).toBe(true);
     expect(isCompareSymbol('ETHUSDT')).toBe(false);
     expect(isCompareSymbol('SOLUSDT')).toBe(false);
     expect(isCompareSymbol('DOGEUSDT')).toBe(false);

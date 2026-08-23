@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ShieldCheck, TrendingDown, TrendingUp } from 'lucide-react';
 import { usePaperStore } from '@/lib/paperStore';
+import type { PlaceChartOrder, TradingCommandResult } from '@/lib/chartTradingCommands';
+import { feedbackForTradingCommand, shouldDismissTradingControl } from '@/lib/tradeCommandFeedback';
 import { Tabs, Tab } from '@/components/ui';
 import {
   BTC_TICK_SIZE,
@@ -24,6 +26,8 @@ interface OrderTicketProps {
    *  (OrderModal) wires this to its own onClose so the ticket card
    *  closes once the order has been sent to the store. */
   onPlaced?: () => void;
+  /** Mode-aware chart command boundary. The ticket never chooses an account. */
+  onSubmitOrder: (input: PlaceChartOrder) => TradingCommandResult;
 }
 
 /** Tick-offset choices for the Exits (TP/SL) dropdowns, matching the
@@ -43,7 +47,10 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function OrderTicket(p: OrderTicketProps) {
-  const { placeOrder, lastError, balance } = usePaperStore();
+  const { lastError, balance } = usePaperStore();
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [tab, setTab] = useState<Tab>('market');
   const [side, setSide] = useState<Side>(p.initialSide ?? 'buy');
   const [units, setUnits] = useState<string>('0.10');
@@ -193,22 +200,41 @@ export default function OrderTicket(p: OrderTicketProps) {
   };
 
   const handleSubmit = () => {
-    if (!canSubmit) return;
-    const res = placeOrder({
-      symbol: p.symbol,
-      side,
-      type: tab,
-      units: effectiveUnits,
-      price: tab === 'market' ? null : priceN,
-      tp: resolveLevel(tpEnabled, tp, suggestTp),
-      sl: resolveLevel(slEnabled, sl, suggestSl),
-      reduceOnly,
-      postOnly,
-      leverage: p.leverage,
-      midPrice: p.midPrice,
-      ocoGroup: ocoEnabled ? (ocoGroupRef.current ?? (ocoGroupRef.current = `oco_${crypto.randomUUID().slice(0, 10)}`)) : null,
-    });
-    if (res.ok) p.onPlaced?.();
+    if (!canSubmit) {
+      setCommandError('Enter a valid order size and price before submitting.');
+      return;
+    }
+    if (submittingRef.current) {
+      setCommandError('Duplicate or in-flight trading command was ignored');
+      return;
+    }
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      const res = p.onSubmitOrder({
+        symbol: p.symbol,
+        side,
+        type: tab,
+        units: effectiveUnits,
+        price: tab === 'market' ? null : priceN,
+        tp: resolveLevel(tpEnabled, tp, suggestTp),
+        sl: resolveLevel(slEnabled, sl, suggestSl),
+        reduceOnly,
+        postOnly,
+        leverage: p.leverage,
+        midPrice: p.midPrice,
+        ocoGroup: ocoEnabled ? (ocoGroupRef.current ?? (ocoGroupRef.current = `oco_${crypto.randomUUID().slice(0, 10)}`)) : null,
+      });
+      if (shouldDismissTradingControl(res)) {
+        setCommandError(null);
+        p.onPlaced?.();
+      } else {
+        setCommandError(feedbackForTradingCommand(res).message);
+      }
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   // Keyboard trading: B/S flips side, Enter submits.
@@ -243,7 +269,7 @@ export default function OrderTicket(p: OrderTicketProps) {
       // <button> would also trigger, and an input's Enter should
       // pass through for IME commit etc.).
       if (k === 'Enter' && !inField) {
-        if (canSubmit) {
+        if (!e.repeat && canSubmit && !submittingRef.current) {
           handleSubmit();
           e.preventDefault();
         }
@@ -465,9 +491,9 @@ export default function OrderTicket(p: OrderTicketProps) {
           <Row label="Reduce avail." value={fmt(p.reduceAvailable, 4)} unit="BTC" />
         </dl>
 
-        {lastError && (
+        {(commandError ?? lastError) && (
           <p className="rounded-md border border-bear/30 bg-bear/10 px-2 py-1 text-xs text-bear-bright">
-            {lastError}
+            {commandError ?? lastError}
           </p>
         )}
 
@@ -475,13 +501,13 @@ export default function OrderTicket(p: OrderTicketProps) {
           <button
             ref={ctaRef}
             onClick={handleSubmit}
-            disabled={!canSubmit}
+            disabled={!canSubmit || isSubmitting}
             className={[
               'focus-ring relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200',
               side === 'buy'
                 ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
                 : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
-              !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
+              (!canSubmit || isSubmitting) ? 'cursor-not-allowed opacity-50 grayscale' : '',
             ].join(' ')}
             aria-label={`${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} at market`}
           >
@@ -502,13 +528,13 @@ export default function OrderTicket(p: OrderTicketProps) {
           <button
             ref={ctaRef}
             onClick={handleSubmit}
-            disabled={!canSubmit}
+            disabled={!canSubmit || isSubmitting}
             className={[
               'focus-ring relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg px-3 py-3 text-sm font-semibold transition-all duration-200',
               side === 'buy'
                 ? 'bg-gradient-to-b from-bull-bright to-bull-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(40,185,161,0.2)] border border-bull/70 hover:brightness-105 active:scale-95'
                 : 'bg-gradient-to-b from-bear-bright to-bear-dim text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_0_rgba(0,0,0,0.4),0_8px_24px_rgba(242,54,69,0.22)] border border-bear/70 hover:brightness-105 active:scale-95',
-              !canSubmit ? 'cursor-not-allowed opacity-50 grayscale' : '',
+              (!canSubmit || isSubmitting) ? 'cursor-not-allowed opacity-50 grayscale' : '',
             ].join(' ')}
             aria-label={`${side === 'buy' ? 'Buy' : 'Sell'} ${effectiveUnits} ${p.symbol} at ${tab} ${priceN}`}
           >

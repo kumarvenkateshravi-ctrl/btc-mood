@@ -1,9 +1,11 @@
 import { ChevronsRight } from 'lucide-react';
 import type { ChartType, PriceScaleModeOption } from './types';
 import { ChartOHLCStrip } from './ChartOHLCStrip';
+import { formatChartInstrumentPrice } from '@/lib/chartInstrumentPresentation';
 
 interface ChartFloatingControlsProps {
   type: ChartType;
+  symbol?: string;
   onQuickTrade?: (side: 'buy' | 'sell') => void;
   onOpenRenkoSettings?: () => void;
   bid?: number | null;
@@ -16,6 +18,7 @@ interface ChartFloatingControlsProps {
 
 export function ChartFloatingControls({
   type,
+  symbol = 'BTCUSDT',
   onQuickTrade,
   onOpenRenkoSettings,
   bid,
@@ -40,7 +43,7 @@ export function ChartFloatingControls({
                   >
                     <span className="font-semibold text-bear-bright text-[13px]">Sell</span>
                     {ask != null && Number.isFinite(ask) && (
-                      <span className="font-mono text-[11px] text-bear-bright/80">{ask.toFixed(1)}</span>
+                      <span className="font-mono text-[11px] text-bear-bright/80">{formatChartInstrumentPrice(symbol, ask)}</span>
                     )}
                   </button>
                   <button
@@ -49,14 +52,14 @@ export function ChartFloatingControls({
                   >
                     <span className="font-semibold text-bull-bright text-[13px]">Buy</span>
                     {bid != null && Number.isFinite(bid) && (
-                      <span className="font-mono text-[11px] text-bull-bright/80">{bid.toFixed(1)}</span>
+                      <span className="font-mono text-[11px] text-bull-bright/80">{formatChartInstrumentPrice(symbol, bid)}</span>
                     )}
                   </button>
                 </div>
               )}
             </div>
           )}
-          <ChartOHLCStrip mode={type} />
+          <ChartOHLCStrip mode={type} symbol={symbol} />
         </div>
       </div>
 

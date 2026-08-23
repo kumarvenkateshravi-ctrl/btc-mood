@@ -29,8 +29,10 @@ import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
 import WatchlistPanel from '@/components/WatchlistPanel';
-import { usePaperStore } from '@/lib/paperStore';
+import { closePosition, partialClose, placeOrder, updatePositionProtection } from '@/lib/paperStore';
 import { deriveActivePosition } from '@/lib/trade/activePosition';
+import { useActiveTradePresentation } from '@/lib/trade/presentationFacade';
+import { createChartTradingController, type ChartTradingControllerSession } from '@/lib/chartTradingController';
 import ActivePositionWidget from '@/components/trade/ActivePositionWidget';
 import WidgetsPanel, { DEFAULT_WIDGET_PREFS, type WidgetKey, type WidgetPrefs } from '@/components/WidgetsPanel';
 import DailyOrderFlowWidget from '@/components/DailyOrderFlowWidget';
@@ -57,6 +59,7 @@ import { useAlerts } from '@/lib/hooks/useAlerts';
 import { useGridState } from '@/lib/hooks/useGridState';
 import { useReplayCut } from '@/lib/replay/replayCut';
 import { useReplayDataset } from '@/lib/replay/replayDataset';
+import { replayClose, replayOpenWithRisk, replayPartialClose, replayUpdateProtection, setPendingLevels, setReplayActionContext } from '@/lib/replaySession';
 import { planDeepLoad } from '@/lib/replay/deepLoad';
 import { useAnalyticsWindow } from '@/lib/hooks/useAnalyticsWindow';
 import { sliceCandlesByTf } from '@/lib/replay/replaySlice';
@@ -188,6 +191,9 @@ export default function DashboardPage() {
 
   useLayoutMigrationToast({ migrated: layoutMigrated, previousCount: layoutPreviousCount });
 
+  // Explicit workspace application is a user command: it intentionally applies the
+  // workspace snapshot immediately. Initial hydration uses URL > workspace >
+  // persisted > default; no persisted write can override this command.
   const applyWorkspace = useCallback((cfg: WorkspaceConfig) => {
     if (cfg.chartType === 'candlestick' || cfg.chartType === 'heikinAshi' || cfg.chartType === 'renko') {
       setChartType(cfg.chartType);
@@ -207,28 +213,10 @@ export default function DashboardPage() {
     setSymbol(init.symbol);
     setSelected(init.tf);
     setChartType(init.type);
+    setRightPanel(init.rightPanel);
     if (init.indicators && init.indicators.length) {
-      setActiveIndicatorIds(init.indicators.map(id => id.includes('::') ? id : `${id}::default`).filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0])));
-    } else {
-      try {
-        const raw = localStorage.getItem(INDICATORS_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            const valid = parsed.map((id: string) => id.includes('::') ? id : `${id}::default`).filter(
-              (id) => typeof id === 'string' && CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0]),
-            );
-            if (valid.length) setActiveIndicatorIds(valid);
-          }
-        }
-      } catch {}
+      setActiveIndicatorIds(init.indicators.map(id => id.includes('::') ? id : id + '::default').filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0])));
     }
-    try {
-      const rp = localStorage.getItem('rightPanel');
-      if (rp === 'mood' || rp === 'signals' || rp === 'orderflow' || rp === 'scanner') setRightPanel(rp);
-      else if (rp === 'none') setRightPanel(null);
-    } catch {}
-
     if (init.drawings && init.drawings.length > 0) {
       const existing = getDrawings(init.symbol);
       if (existing.length === 0) {
@@ -367,13 +355,54 @@ export default function DashboardPage() {
     [currentPrice, candlesByTf],
   );
 
-  // Live active-position cockpit (right drawer). Hidden during replay —
-  // Bar Replay has its own isolated session HUD.
-  const paper = usePaperStore();
-  const livePosition = paper.positions[symbol] ?? null;
+  // Active-position cockpit reads the current execution owner, never a cached
+  // live position. Replay can therefore present its isolated session safely.
+  const activePresentation = useActiveTradePresentation({
+    mode: replayCut.active ? 'replay' : 'live',
+    symbol,
+    markPrice: currentPrice,
+    markTrusted: isPriceExecutionTrusted(executionIntegrity),
+  });
+  const activeTradeCommandContextRef = useRef<ChartTradingControllerSession>({ mode: 'live', symbol });
+  activeTradeCommandContextRef.current = { mode: replayCut.active ? 'replay' : 'live', symbol };
+  // One controller per active chart session. The controller is recreated for
+  // mode/symbol/visual-session replacement and the prior reference is disposed
+  // by the effect cleanup, so stale chart callbacks cannot remain usable.
+  const chartControllerSessionKey = [
+    replayCut.active ? 'replay' : 'live',
+    symbol,
+    toolbarTf,
+    toolbarType,
+    replayDataset.active ? replayDataset.sessionId : 'live',
+  ].join(':');
+  const activeTradeCommands = useMemo(
+    () => createChartTradingController({
+      getSession: () => activeTradeCommandContextRef.current,
+      live: {
+        placeOrder,
+        closePosition,
+        updateProtection: updatePositionProtection,
+        partialClose,
+      },
+      replay: {
+        setActionContext: setReplayActionContext,
+        setPendingLevels,
+        openWithRisk: replayOpenWithRisk,
+        updateProtection: replayUpdateProtection,
+        close: replayClose,
+        partialClose: replayPartialClose,
+      },
+    }),
+    [chartControllerSessionKey],
+  );
+  useEffect(() => {
+    activeTradeCommands.activate();
+    return () => activeTradeCommands.dispose();
+  }, [activeTradeCommands]);
+  const activePosition = activePresentation.position;
   const activeView =
-    livePosition && !replayCut.active && currentPrice != null
-      ? deriveActivePosition(livePosition, currentPrice, Date.now())
+    activePosition && currentPrice != null
+      ? deriveActivePosition(activePosition, currentPrice, Date.now())
       : null;
   const [widgetPrefs, setWidgetPrefs] = useState<WidgetPrefs>(DEFAULT_WIDGET_PREFS);
   useEffect(() => {
@@ -452,10 +481,15 @@ export default function DashboardPage() {
                     selected={toolbarTf}
                     onSelectTf={onToolbarSelectTf}
                     symbol={symbol}
+                    onSelectSymbol={(next) => { if (isCompareSymbol(next)) setSymbol(next); }}
                     price={currentPrice}
+                    changeAbs={currentChangeAbs}
                     change={currentChange}
                     status={status}
                     marketIntegrity={integrity}
+                    connectionStatus={wsStatus}
+                    tradingCommands={activeTradeCommands}
+                    tradePresentation={activePresentation}
                     showVolume={showVolume}
                     onQuickTrade={() => { setTab('trade'); setRightPanel('signals'); }}
                     bid={bid}
@@ -503,6 +537,8 @@ export default function DashboardPage() {
               <BottomDock
                 tf={selected}
                 candles={currentCandles}
+                symbol={symbol}
+                tradePresentation={activePresentation}
                 activeIndicators={activeIndicators}
                 onToggleIndicator={handleToggleIndicator}
                 onAddIndicator={handleAddIndicator}
@@ -572,14 +608,15 @@ export default function DashboardPage() {
                     />
                   </div>
                 )}
-                {widgetPrefs.activeTrade && activeView && livePosition && (
+                {widgetPrefs.activeTrade && activeView && activePosition && (
                   <div className="shrink-0">
                     <ActivePositionWidget
+                      mode={activePresentation.mode}
                       view={activeView}
-                      onMoveBreakEven={() => paper.setPositionOverlay('sl', livePosition.entryPrice)}
-                      onClosePartial={(f) => paper.partialClose(symbol, f, currentPrice ?? livePosition.entryPrice)}
-                      onToggleTrailing={() => paper.toggleTrailingSl(symbol, !livePosition.trailingSl)}
-                      onCloseFull={() => paper.closePosition(currentPrice ?? livePosition.entryPrice, symbol)}
+                      onMoveBreakEven={() => activeTradeCommands.setOverlay({ symbol, field: 'sl', value: activePosition.entryPrice })}
+                      onClosePartial={(f) => activeTradeCommands.partialClose({ symbol, fraction: f, mark: currentPrice ?? activePosition.entryPrice })}
+                      onToggleTrailing={() => activeTradeCommands.toggleTrailing({ symbol, enabled: !activePosition.trailingSl })}
+                      onCloseFull={() => activeTradeCommands.close({ symbol, mark: currentPrice ?? activePosition.entryPrice })}
                     />
                   </div>
                 )}
@@ -600,6 +637,7 @@ export default function DashboardPage() {
                 tab={tab}
                 onTabChange={setTab}
                 signals={signalEvents}
+                tradePresentation={activePresentation}
               />
             )}
             {rightPanel === 'orderflow' && <OrderFlowPanel symbol={symbol} tf={selected} />}

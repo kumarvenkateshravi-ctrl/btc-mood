@@ -2,9 +2,11 @@
 import type { Candle } from '../types';
 import type { CustomIndicatorConfig, IndicatorResult, IndicatorLevel, IndicatorPlot, SignalSide } from '../indicatorFramework';
 import type { HtfPeriod } from './htf';
-import { buildZones, atrSeries, computeSdZones } from './sdZones';
-import { scoreZone, countRetests, DEFAULT_ZONE_STRENGTH_WEIGHTS, type Zone } from './zoneStrength';
+import { buildZones, atrSeries, computeSdZones, scoreZoneAtFormation } from './sdZones';
+import { countRetests, DEFAULT_ZONE_STRENGTH_WEIGHTS, type Zone } from './zoneStrength';
 import { resolveInputs } from './itsTemplates';
+import type { IndicatorEvaluationContext } from '../indicatorEvaluation';
+import { evaluationIdentity, selectIndicatorCandles } from '../indicatorEvaluation';
 import {
   generateSignals, DEFAULT_SIGNAL_CONFIG,
   type SignalEngineConfig, type SignalContext, type ConfirmationMode, type SlBufferMode,
@@ -39,54 +41,36 @@ const SD_SIGNALS_DEFAULTS: SdSignalsInputs = {
   showConfidence: true, showRRBox: true,
 };
 
-const avgPeriodVolume = (zones: Zone[]): number => {
-  const seen = new Set<number>(); let sum = 0, n = 0;
-  for (const z of zones) if (!seen.has(z.formedOHLC.startTime)) { seen.add(z.formedOHLC.startTime); sum += z.formedOHLC.volume; n++; }
-  return n ? sum / n : 0;
-};
-
-/**
- * Build + score every zone across the configured TFs (all history).
- *
- * PHASE-1 APPROXIMATION (documented in the user-facing indicator description
- * and spec §16): zone strength/confluence is computed against the full set of
- * zones rather than only those that existed at the zone's formation bar. This
- * is faithful enough to validate the signal engine and never repaints (the
- * inputs are fixed once bars close), but it can differ slightly from a strict
- * as-of-formation score.
- * TODO(phase-2): score each zone using only information available at
- * `formedAtIndex` (as-of-formation confluence) for maximally faithful history.
- */
+/** Build and score zones using immutable formation-time evidence. */
 export function buildScoredZones(candles: Candle[], tfs: HtfPeriod[], targetFactor: number): ScoredZone[] {
   if (candles.length === 0) return [];
-  const atr = atrSeries(candles, 14);
   const byTf = new Map<HtfPeriod, Zone[]>();
   for (const tf of tfs) byTf.set(tf, buildZones(candles, tf, targetFactor));
   const all = [...byTf.values()].flat();
 
   return all.map((z) => {
     const zoneType: 'supply' | 'demand' = z.kind === 'supply' || z.kind === 'supplyTarget' ? 'supply' : 'demand';
-    const others = all.filter((o) => o !== z && o.tf !== z.tf);
-    const isConfluence = others.some((o) => o.kind === z.kind && z.lower <= o.upper && z.upper >= o.lower);
+    const asOfZones = all.filter((o) => o.formedAtIndex <= z.formedAtIndex);
+    const isConfluence = asOfZones.some((o) => o !== z && o.tf !== z.tf && o.kind === z.kind && z.lower <= o.upper && z.upper >= o.lower);
     const strength = z.kind === 'demand' || z.kind === 'supply'
-      ? scoreZone(z, candles, others, { avgPeriodVolume: avgPeriodVolume(byTf.get(z.tf) ?? []), atrAtFormation: atr[z.formedAtIndex] ?? 0 }, DEFAULT_ZONE_STRENGTH_WEIGHTS)
+      ? scoreZoneAtFormation(z, candles, all, DEFAULT_ZONE_STRENGTH_WEIGHTS)
       : { score: 0, tier: 'weak' as const, factors: { formationVolume: 0, rejectionStrength: 0, retests: 0, freshness: 0, confluence: 0, zoneWidth: 0 } };
     return {
       kind: z.kind, zoneType, tf: z.tf, upper: z.upper, lower: z.lower, mid: (z.upper + z.lower) / 2,
       formedAtIndex: z.formedAtIndex, formedTime: z.formedOHLC.startTime,
-      strength, isConfluence, retestCount: countRetests(z, candles),
+      strength, formationEvidence: strength, isConfluence, retestCount: countRetests(z, candles.slice(0, z.formedAtIndex + 1)),
     };
   });
 }
 
-function toEngineConfig(inp: SdSignalsInputs): SignalEngineConfig {
+function toEngineConfig(inp: SdSignalsInputs, hasFormingBar = true): SignalEngineConfig {
   return {
     ...DEFAULT_SIGNAL_CONFIG,
     confirmation: inp.confirmation, minTier: inp.minTier,
     confidenceFloor: inp.confidenceFloor, minRR: inp.minRR,
     slBufferMode: inp.slBufferMode, slBuffer: inp.slBuffer, tickSize: inp.tickSize,
     maxBarsToTrigger: inp.maxBarsToTrigger, maxBarsInTrade: inp.maxBarsInTrade,
-    closedBarOnly: inp.signalOn === 'close',
+    closedBarOnly: inp.signalOn === 'close' && hasFormingBar,
   };
 }
 
@@ -101,11 +85,12 @@ const resolveTfs = (inp: SdSignalsInputs): HtfPeriod[] =>
 // changes) or the config/context changes.
 const _eventCache = new Map<string, SdSignal[]>();
 
-function eventCacheKey(candles: Candle[], inp: SdSignalsInputs, ctx: SignalContext): string {
+function eventCacheKey(candles: Candle[], inp: SdSignalsInputs, ctx: SignalContext, evaluationContext?: IndicatorEvaluationContext): string {
+  if (evaluationContext) candles = selectIndicatorCandles(evaluationContext, 'raw', 'closed').filter((c) => !evaluationContext.replay || c.time <= evaluationContext.replay.cutTime);
   const n = candles.length;
   const firstTime = n > 0 ? candles[0].time : 0;
   const lastClosedTime = n > 1 ? candles[n - 2].time : 0; // penultimate = last closed bar
-  return `${n}|${firstTime}|${lastClosedTime}|${ctx.symbol}|${ctx.timeframe}|${JSON.stringify(inp)}`;
+  return `${n}|${firstTime}|${lastClosedTime}|${ctx.symbol}|${ctx.timeframe}|${evaluationContext ? evaluationIdentity(evaluationContext) : 'legacy'}|${JSON.stringify(inp)}`;
 }
 
 /** Emission boundary — every consumer (chart, dashboard, backtester, future
@@ -115,18 +100,24 @@ export function computeSdSignalEvents(
   candles: Candle[],
   config?: CustomIndicatorConfig,
   ctx: SignalContext = { symbol: '', timeframe: '' },
+  evaluationContext?: IndicatorEvaluationContext,
 ): SdSignal[] {
   const inp = resolveInputs<SdSignalsInputs>(config, SD_SIGNALS_DEFAULTS);
+  const sourceCandles = evaluationContext
+    ? selectIndicatorCandles(evaluationContext, 'raw', 'closed').filter((c) => !evaluationContext.replay || c.time <= evaluationContext.replay.cutTime)
+    : candles;
   const tfs = resolveTfs(inp);
-  if (candles.length === 0 || tfs.length === 0) return [];
+  if (sourceCandles.length === 0 || tfs.length === 0) return [];
 
-  const key = eventCacheKey(candles, inp, ctx);
+  const effectiveCtx = evaluationContext ? { symbol: evaluationContext.symbol, timeframe: evaluationContext.timeframe } : ctx;
+  const key = eventCacheKey(sourceCandles, inp, effectiveCtx, evaluationContext);
   const cached = _eventCache.get(key);
   if (cached) return cached;
 
-  const zones = buildScoredZones(candles, tfs, inp.targetFactor);
-  const atr = atrSeries(candles, 14);
-  const events = generateSignals(candles, zones, atr, toEngineConfig(inp), ctx);
+  const zones = buildScoredZones(sourceCandles, tfs, inp.targetFactor);
+  const atr = atrSeries(sourceCandles, 14);
+  const engineConfig = toEngineConfig(inp, evaluationContext ? evaluationContext.hasFormingBar : true);
+  const events = generateSignals(sourceCandles, zones, atr, engineConfig, effectiveCtx);
 
   if (_eventCache.size > 8) _eventCache.clear(); // bound memory; keys rotate as bars close
   _eventCache.set(key, events);
@@ -142,8 +133,10 @@ const LIVE = new Set<SdSignal['status']>(['triggered', 'tp1']);
  * lines for the most-recent signal — so one indicator gives the full context.
  * All parts are individually toggleable.
  */
-export function computeSdSignals(candles: Candle[], config?: CustomIndicatorConfig): IndicatorResult {
+export function computeSdSignals(candles: Candle[], config?: CustomIndicatorConfig, computedSourcesOrContext?: Record<string, (number | null)[]> | IndicatorEvaluationContext, context?: IndicatorEvaluationContext): IndicatorResult {
+  const evaluationContext = context ?? (computedSourcesOrContext && 'rawCandles' in computedSourcesOrContext ? computedSourcesOrContext as IndicatorEvaluationContext : undefined);
   const inp = resolveInputs<SdSignalsInputs>(config, SD_SIGNALS_DEFAULTS);
+  if (evaluationContext) candles = selectIndicatorCandles(evaluationContext, 'raw', 'closed').filter((c) => !evaluationContext.replay || c.time <= evaluationContext.replay.cutTime);
   const n = candles.length;
   const signals = new Array<SignalSide>(n).fill('neutral');
   const levels: IndicatorLevel[] = [];
@@ -157,7 +150,7 @@ export function computeSdSignals(candles: Candle[], config?: CustomIndicatorConf
       tf1: inp.tf1, tf2: inp.tf2, tf3: inp.tf3, targetFactor: inp.targetFactor,
       showLabels: inp.showConfidence, showStrength: inp.showConfidence, minStrength: 0,
     } },
-  } as unknown as CustomIndicatorConfig);
+  } as unknown as CustomIndicatorConfig, evaluationContext);
 
   const plots: IndicatorPlot[] = zoneResult.plots.map((p) => {
     const show = p.id.includes(' Su') ? inp.showSupply : inp.showDemand;
@@ -165,7 +158,7 @@ export function computeSdSignals(candles: Candle[], config?: CustomIndicatorConf
   });
 
   // 2. Signals over ALL history — arrows via the per-bar signals[] path.
-  const events = computeSdSignalEvents(candles, config);
+  const events = computeSdSignalEvents(candles, config, { symbol: evaluationContext?.symbol ?? '', timeframe: evaluationContext?.timeframe ?? '' }, evaluationContext);
   const triggered = events.filter((e) => e.triggeredIndex != null && TRIGGERED.has(e.status));
   if (inp.showSignals) {
     for (const e of triggered) signals[e.triggeredIndex as number] = e.side;

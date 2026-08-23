@@ -12,6 +12,7 @@
 // Mitigation: bull filled when close < bottom; bear filled when close > top.
 
 import type { Candle } from '../../types';
+import { computeFvgDomain, type FvgEvaluationOptions, type FvgPolicy } from '../../fvg/domain';
 
 export interface Fvg {
   isBull: boolean;
@@ -31,51 +32,40 @@ export interface FvgResult {
   bearMitigated: number;
 }
 
+/** Explicit MA/FVG policy. The legacy Pine threshold and close mitigation are
+ * retained as policy values rather than hidden in a second implementation. */
+export function maFvgPolicy(opts: { thresholdPct?: number; auto?: boolean } = {}, overrides: Partial<FvgPolicy> = {}): FvgPolicy {
+  return {
+    source: 'raw',
+    requireClosedBars: false,
+    threshold: {
+      method: opts.auto ? 'autoRange' : opts.thresholdPct ? 'percentGap' : 'none',
+      value: opts.thresholdPct ?? 0,
+    },
+    mitigation: 'close',
+    partialFill: 'track',
+    mitigationTiming: 'beforeCreation',
+    maxHistory: 500,
+    ...overrides,
+  };
+}
+
 export function detectFvgs(
   candles: Candle[],
   opts: { thresholdPct?: number; auto?: boolean } = {},
+  policyOverrides: Partial<FvgPolicy> = {},
+  evaluationOptions?: FvgEvaluationOptions,
 ): FvgResult {
-  const { thresholdPct = 0, auto = false } = opts;
-  const n = candles.length;
-  const fvgs: Fvg[] = [];
-  let bullCount = 0;
-  let bearCount = 0;
-  let bullMitigated = 0;
-  let bearMitigated = 0;
-
-  let cumRange = 0; // Σ (high-low)/low, for the auto threshold's running mean.
-
-  for (let i = 0; i < n; i++) {
-    const c = candles[i];
-    cumRange += (c.high - c.low) / c.low;
-
-    // Mitigation check runs every bar against all still-open gaps.
-    for (const g of fvgs) {
-      if (g.endIndex !== null) continue;
-      if (g.isBull ? c.close < g.bottom : c.close > g.top) {
-        g.endIndex = i;
-        if (g.isBull) bullMitigated += 1;
-        else bearMitigated += 1;
-      }
-    }
-
-    if (i < 2) continue;
-    const threshold = auto ? cumRange / i : thresholdPct / 100;
-    const h2 = candles[i - 2].high;
-    const l2 = candles[i - 2].low;
-    const prevClose = candles[i - 1].close;
-
-    const bull = c.low > h2 && prevClose > h2 && (c.low - h2) / h2 > threshold;
-    const bear = c.high < l2 && prevClose < l2 && (l2 - c.high) / c.high > threshold;
-
-    if (bull) {
-      fvgs.push({ isBull: true, top: c.low, bottom: h2, startIndex: i, endIndex: null });
-      bullCount += 1;
-    } else if (bear) {
-      fvgs.push({ isBull: false, top: l2, bottom: c.high, startIndex: i, endIndex: null });
-      bearCount += 1;
-    }
-  }
-
-  return { fvgs, bullCount, bearCount, bullMitigated, bearMitigated };
+  const domain = computeFvgDomain(candles, maFvgPolicy(opts, policyOverrides), evaluationOptions);
+  const fvgs = domain.map((g) => ({
+    isBull: g.direction === 'bullish', top: g.top, bottom: g.bottom,
+    startIndex: g.createdIndex, endIndex: g.endIndex,
+  }));
+  return {
+    fvgs,
+    bullCount: fvgs.filter((g) => g.isBull).length,
+    bearCount: fvgs.filter((g) => !g.isBull).length,
+    bullMitigated: fvgs.filter((g) => g.isBull && g.endIndex !== null).length,
+    bearMitigated: fvgs.filter((g) => !g.isBull && g.endIndex !== null).length,
+  };
 }

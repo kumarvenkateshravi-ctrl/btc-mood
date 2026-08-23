@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Bell, GripVertical, Zap } from 'lucide-react';
-import { placeOrder, executeOrder } from '@/lib/paperStore';
+import type { PlaceChartOrder, TradingCommandResult } from '@/lib/chartTradingCommands';
 import { addPriceAlert } from '@/lib/priceAlertsStore';
 import { sideForLevel } from '@/lib/priceAlerts';
 import type { Side } from '@/lib/paper';
+import { feedbackForTradingCommand, shouldDismissTradingControl } from '@/lib/tradeCommandFeedback';
+import type { MarketDataIntegrity } from '@/lib/marketDataIntegrity';
 
 interface ChartContextMenuProps {
   /** Price at the click point. */
@@ -22,6 +24,10 @@ interface ChartContextMenuProps {
   leverage?: number;
   /** Default order size (units). */
   size?: number;
+  /** Mode-aware chart command boundary. This menu never writes paperStore directly. */
+  onSubmitOrder: (input: PlaceChartOrder) => TradingCommandResult;
+  executionMode: 'live' | 'replay';
+  marketIntegrity?: MarketDataIntegrity;
   onClose: () => void;
   onResetChart?: () => void;
 }
@@ -33,10 +39,15 @@ export default function ChartContextMenu({
   symbol,
   midPrice,
   leverage = 10,
+  onSubmitOrder,
+  executionMode,
+  marketIntegrity,
   size = 0.1,
   onClose,
   onResetChart,
 }: ChartContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [commandFeedback, setCommandFeedback] = useState<string | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -46,9 +57,11 @@ export default function ChartContextMenu({
   }, [onClose]);
 
   useEffect(() => {
-    const onClick = () => onClose();
-    // Small delay so the right-click that opened it doesn't immediately
-    // close it via the same event bubbling.
+    const onClick = (event: MouseEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      onClose();
+    };
+    // Delay avoids treating the right-click that opened the menu as an outside click.
     const t = setTimeout(() => window.addEventListener('click', onClick), 0);
     return () => {
       clearTimeout(t);
@@ -59,7 +72,7 @@ export default function ChartContextMenu({
   // Immediate-place: a limit/stop from the menu becomes a working order at the
   // clicked price right away (no staging).
   const placeWorking = (side: Side, type: 'limit' | 'stop') => {
-    placeOrder({
+    const result = onSubmitOrder({
       symbol,
       side,
       type,
@@ -72,19 +85,26 @@ export default function ChartContextMenu({
       leverage,
       midPrice,
     });
-    onClose();
+    if (shouldDismissTradingControl(result)) onClose();
+    else setCommandFeedback(feedbackForTradingCommand(result).message);
   };
 
   const market = (side: Side) => {
-    executeOrder({
-      type: side === 'buy' ? 'BUY' : 'SELL',
-      size,
-      orderType: 'MARKET',
+    const result = onSubmitOrder({
       symbol,
+      side,
+      type: 'market',
+      units: size,
+      price: null,
+      tp: null,
+      sl: null,
+      reduceOnly: false,
+      postOnly: false,
       midPrice,
       leverage,
     });
-    onClose();
+    if (shouldDismissTradingControl(result)) onClose();
+    else setCommandFeedback(feedbackForTradingCommand(result).message);
   };
 
   const alertHere = () => {
@@ -108,6 +128,7 @@ export default function ChartContextMenu({
 
   return (
     <div
+      ref={menuRef}
       role="menu"
       className="fixed z-50 w-[180px] overflow-hidden rounded-xl border border-line bg-surface-1 shadow-2xl backdrop-blur-md"
       style={{
@@ -122,6 +143,19 @@ export default function ChartContextMenu({
           ${displayPrice}
         </span>
       </div>
+      <div className="flex items-center justify-between gap-2 border-b border-line px-2.5 py-1 text-[10px]">
+        <span className={executionMode === 'replay' ? 'text-accent' : 'text-bull-bright'}>
+          {executionMode === 'replay' ? 'Replay' : 'Live Paper'}
+        </span>
+        {executionMode === 'live' && marketIntegrity && marketIntegrity !== 'live' && (
+          <span className="text-bear-bright">Data {marketIntegrity}</span>
+        )}
+      </div>
+      {commandFeedback && (
+        <p role="alert" className="mx-1 mt-1 rounded-md border border-bear/30 bg-bear/10 px-2 py-1 text-[10px] text-bear-bright">
+          {commandFeedback}
+        </p>
+      )}
 
       <div className="p-1">
         <MenuItem

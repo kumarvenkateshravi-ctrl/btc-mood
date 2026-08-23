@@ -20,6 +20,9 @@ import {
   Calculator,
   LayoutDashboard,
   ScanLine,
+  MoreHorizontal,
+  Focus,
+  PenLine,
 } from 'lucide-react';
 import Link from 'next/link';
 import { type Timeframe } from '@/lib/types';
@@ -37,6 +40,12 @@ import { ChartSettingsButton } from './chart/ChartSettingsButton';
 import { ChartSettingsPopover } from './chart/ChartSettingsPopover';
 import type { ChartSettingsState } from './chart/useChartSettings';
 import { featureFlags } from '@/lib/featureFlags';
+import Num from '@/components/ui/Num';
+import type { MarketDataIntegrity } from '@/lib/marketDataIntegrity';
+import type { PositionSide } from '@/lib/paper';
+import type { WSStatus } from '@/lib/ws';
+import { CHART_INSTRUMENTS, getChartInstrumentPresentation } from '@/lib/chartInstrumentPresentation';
+import { ALL_CHART_TIMEFRAMES, MOBILE_PRIMARY_TIMEFRAMES } from '@/lib/chartNavigation';
 
 
 export type ToolbarChartType = 'candlestick' | 'heikinAshi' | 'renko';
@@ -44,9 +53,21 @@ export type ToolbarPriceScaleMode = 'normal' | 'log' | 'percent';
 
 export interface ChartToolbarProps {
   symbol: string;
+  /** Presentation-level selection only; transport ownership remains above the chart. */
+  onSelectSymbol?: (symbol: string) => void;
   price: number | null;
+  /** UTC-session absolute price change, when the active feed provides it. */
+  changeAbs?: number | null;
   change: number | null;
   status: 'live' | 'demo' | 'loading';
+  /** Presentation-only view of the authoritative Stage 3 integrity gate. */
+  marketIntegrity?: MarketDataIntegrity;
+  /** Transport status informs recovery wording only; it never grants trust. */
+  connectionStatus?: WSStatus;
+  /** Derived from the active Stage 6 chart session. */
+  executionMode?: 'live' | 'replay';
+  /** Current-symbol position from the shared presentation facade. */
+  positionSide?: Exclude<PositionSide, 'flat'> | null;
   selected: Timeframe;
   onSelectTf: (tf: Timeframe) => void;
   chartType: ToolbarChartType;
@@ -57,6 +78,8 @@ export interface ChartToolbarProps {
 
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  isFocusMode?: boolean;
+  onToggleFocus?: () => void;
   onFitContent: () => void;
   // Renko controls — only shown when chartType === 'renko'.
   renko: RenkoConfig;
@@ -83,6 +106,7 @@ export interface ChartToolbarProps {
   // Layout toggles
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  onOpenDrawings?: () => void;
   // TV-style chart settings (gear popover). When the feature flag is off,
   // the button is not rendered.
   chartSettings?: ChartSettingsState;
@@ -93,8 +117,15 @@ export interface ChartToolbarProps {
 export default function ChartToolbar(props: ChartToolbarProps) {
   const {
     symbol,
+    onSelectSymbol,
     price,
+    changeAbs,
     change,
+    status,
+    marketIntegrity: suppliedIntegrity,
+    connectionStatus,
+    executionMode: suppliedExecutionMode,
+    positionSide = null,
     selected,
     onSelectTf,
     chartType,
@@ -102,6 +133,8 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
     isFullscreen,
     onToggleFullscreen,
+    isFocusMode = false,
+    onToggleFocus,
     onFitContent,
     renko,
     onRenkoChange,
@@ -127,17 +160,28 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onChartSettingsReset,
   } = props;
 
+  const marketIntegrity = suppliedIntegrity ?? (status === 'live' ? 'live' : status === 'demo' ? 'demo' : 'loading');
+  const executionMode = suppliedExecutionMode ?? (replayActive ? 'replay' : 'live');
+
   return (
-    <div className="flex h-[40px] w-full shrink-0 flex-nowrap items-center gap-0.5 overflow-visible border-b border-line bg-base px-2">
-      {/* App Logo / Back to Home */}
-      <Link href="/" className="flex shrink-0 items-center justify-center px-1 pr-3 hover:opacity-80 transition-opacity" title="Back to Dashboard">
-        <Bitcoin className="h-5 w-5 text-regime-hot" />
-      </Link>
+    <>
+    <div data-testid="desktop-chart-toolbar" className="hidden h-[40px] w-full shrink-0 flex-nowrap items-center gap-0.5 overflow-hidden border-b border-line bg-base px-2 md:flex md:max-lg:h-[44px]">
+      <ChartContext
+        symbol={symbol}
+        onSelectSymbol={onSelectSymbol}
+        price={price}
+        changeAbs={changeAbs}
+        change={change}
+        integrity={marketIntegrity}
+        connectionStatus={connectionStatus}
+        executionMode={executionMode}
+        positionSide={positionSide}
+      />
 
       <ToolbarDivider />
 
 
-      {/* Timeframes Quick-Row */}
+      {/* Immediate timeframe access is intentionally kept in the primary chart row. */}
       <div className="flex shrink-0 items-center h-full">
         <TimeframeChip value={selected} onChange={onSelectTf} />
       </div>
@@ -195,8 +239,8 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* Layout switcher (new) or legacy GridChip (flag off) */}
-      <div className="flex shrink-0 items-center h-full">
+      {/* Layout and workspaces are secondary below laptop width. */}
+      <div className="hidden shrink-0 items-center h-full lg:flex">
         {featureFlags.layoutSwitcher && layout && onLayoutChange ? (
           <LayoutSwitcherToolbarMount
             layout={layout}
@@ -209,7 +253,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
       </div>
 
       {/* Workspace chip */}
-      <div className="flex shrink-0 items-center h-full">
+      <div className="hidden shrink-0 items-center h-full lg:flex">
         <WorkspaceChip current={workspaceCurrent} onApply={onWorkspaceApply} />
       </div>
 
@@ -218,7 +262,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         <Link
           href="/technical-scanner"
           title="Technical Scanner"
-          className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
+          className="focus-ring hidden min-[1600px]:inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
         >
           <ScanLine className="h-3.5 w-3.5" />
           Scanner
@@ -226,7 +270,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         <Link
           href="/mycryptostack"
           title="MyCryptoStack — multi-timeframe intelligence dashboard"
-          className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
+          className="focus-ring hidden min-[1600px]:inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
         >
           <LayoutDashboard className="h-3.5 w-3.5" />
           Dashboard
@@ -234,7 +278,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         <Link
           href="/mystack"
           title="MyStack — risk & position-size cockpit"
-          className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
+          className="focus-ring hidden min-[1600px]:inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-1 px-2.5 text-[12px] font-medium text-ink-muted transition hover:border-line-strong hover:bg-surface-2 hover:text-ink"
         >
           <Calculator className="h-3.5 w-3.5" />
           MyStack
@@ -272,12 +316,24 @@ export default function ChartToolbar(props: ChartToolbarProps) {
             </svg>
           </button>
         )}
+        {onToggleFocus && (
+          <button
+            type="button"
+            onClick={onToggleFocus}
+            aria-label={isFocusMode ? 'Exit Focus' : 'Focus chart'}
+            aria-pressed={isFocusMode}
+            title={isFocusMode ? 'Exit Focus' : 'Focus chart (Shift+F)'}
+            className={`focus-ring hidden h-full items-center justify-center px-2 transition hover:text-ink lg:inline-flex ${isFocusMode ? 'text-accent' : 'text-ink-faint'}`}
+          >
+            <Focus className="h-4 w-4" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onToggleFullscreen}
           aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F)'}
-          className="focus-ring inline-flex h-full px-2 items-center justify-center text-ink-faint transition hover:text-ink"
+          className="focus-ring hidden h-full px-2 items-center justify-center text-ink-faint transition hover:text-ink lg:inline-flex"
         >
           {isFullscreen ? (
             <Minimize2 className="h-4 w-4" />
@@ -295,6 +351,12 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         )}
       </div>
     </div>
+    <MobileChartToolbar
+      {...props}
+      effectiveIntegrity={marketIntegrity}
+      effectiveExecutionMode={executionMode}
+    />
+    </>
   );
 }
 
@@ -342,6 +404,283 @@ function ChartSettingsButtonWithPopover({
   );
 }
 
+function MobileChartToolbar({
+  symbol,
+  onSelectSymbol,
+  price,
+  changeAbs,
+  change,
+  connectionStatus,
+  selected,
+  onSelectTf,
+  chartType,
+  onSelectType,
+  activeIndicatorIds,
+  onToggleIndicator,
+  onClearIndicators,
+  replayActive,
+  onReplayToggle,
+  isFullscreen,
+  onToggleFullscreen,
+  isFocusMode,
+  onToggleFocus,
+  onFitContent,
+  gridCount,
+  onGridChange,
+  workspaceCurrent,
+  onWorkspaceApply,
+  chartSettings,
+  onChartSettingsPatch,
+  onChartSettingsReset,
+  onOpenDrawings,
+  effectiveIntegrity,
+  effectiveExecutionMode,
+}: ChartToolbarProps & {
+  effectiveIntegrity: MarketDataIntegrity;
+  effectiveExecutionMode: 'live' | 'replay';
+}) {
+  const [sheet, setSheet] = useState<'timeframes' | 'controls' | null>(null);
+  useEffect(() => {
+    if (!sheet) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setSheet(null);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [sheet]);
+  const instrument = getChartInstrumentPresentation(symbol);
+  const hasPrice = price != null && Number.isFinite(price);
+  const hasChange = change != null && Number.isFinite(change);
+  const hasChangeAbs = changeAbs != null && Number.isFinite(changeAbs);
+  const health = integrityPresentation(effectiveIntegrity, connectionStatus);
+
+  return (
+    <div data-testid="mobile-chart-toolbar" className="flex h-[88px] w-full shrink-0 flex-col border-b border-line bg-base md:hidden">
+      <div data-priority="P1" className="flex min-h-11 items-center gap-1.5 border-b border-line/70 px-2">
+        <div role="group" aria-label="Chart instrument" className="flex min-h-11 shrink-0 items-center rounded-md border border-line bg-surface-1 p-0.5">
+          {CHART_INSTRUMENTS.map((candidate) => (
+            <button
+              key={candidate.symbol}
+              type="button"
+              aria-pressed={candidate.symbol === symbol}
+              title={`Switch to ${candidate.label}`} aria-label={`${candidate.label} ${candidate.displaySymbol}`}
+              disabled={!onSelectSymbol || candidate.symbol === symbol}
+              onClick={() => onSelectSymbol?.(candidate.symbol)}
+              className={[
+                'focus-ring inline-flex min-h-10 items-center justify-center gap-1 rounded px-2 text-[11px] font-semibold transition-colors disabled:cursor-default',
+                candidate.symbol === symbol ? 'bg-surface-3 text-ink ring-1 ring-accent/45' : 'text-ink-faint hover:bg-surface-2 hover:text-ink',
+              ].join(' ')}
+            >
+              {candidate.kind === 'crypto' ? <Bitcoin className="h-3.5 w-3.5 text-regime-hot" aria-hidden /> : <span className="text-[10px] font-bold text-regime-hot" aria-hidden>Au</span>}
+              {candidate.label}
+            </button>
+          ))}
+        </div>
+        <div className="min-w-0 flex-1 leading-none" aria-live="polite" aria-atomic="true">
+          {hasPrice ? <Num.Price value={price} precision={instrument.pricePrecision} className="text-[13px] font-semibold text-ink" /> : <span className="num text-[13px] text-ink-faint">—</span>}
+          {(hasChangeAbs || hasChange) && (
+            <span className="ml-1 inline-flex items-baseline gap-1 text-[10px]">
+              {hasChangeAbs && <Num.Delta value={changeAbs} precision={instrument.pricePrecision} />}
+              {hasChange && <Num.Pct value={change} tone precision={2} />}
+            </span>
+          )}
+        </div>
+        <span title={health.description} aria-label={health.description} className={`inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold tracking-[0.07em] ${health.className}`}>
+          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+          {health.label}
+        </span>
+        <span className="shrink-0 text-[10px] font-medium tracking-[0.08em] text-ink-faint">{effectiveExecutionMode === 'replay' ? 'REPLAY' : 'PAPER'}</span>
+      </div>
+      <div data-priority="P2" className="flex min-h-11 items-center gap-1 overflow-hidden px-2">
+        <div role="group" aria-label="Quick chart timeframes" className="flex min-w-0 flex-1 items-center gap-1">
+          {MOBILE_PRIMARY_TIMEFRAMES.map((tf) => (
+            <button key={tf} type="button" aria-pressed={selected === tf} onClick={() => onSelectTf(tf)} className={[
+              'focus-ring inline-flex min-h-11 min-w-11 flex-1 items-center justify-center rounded-md px-1 text-xs font-semibold tabular-nums transition-colors',
+              selected === tf ? 'bg-surface-3 text-ink ring-1 ring-accent/50' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+            ].join(' ')}>{tf}</button>
+          ))}
+        </div>
+        <button type="button" onClick={() => setSheet('timeframes')} aria-label={`All timeframes, current ${selected}`} className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-line bg-surface-1 px-2 text-[11px] font-semibold tabular-nums text-ink transition hover:bg-surface-2">{selected}</button>
+        <button type="button" onClick={() => setSheet('controls')} aria-label="More chart controls" className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 hover:text-ink"><MoreHorizontal className="h-5 w-5" aria-hidden /></button>
+        {onOpenDrawings && <button type="button" onClick={onOpenDrawings} aria-label="Open drawing tools" title="Open drawing tools" className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 hover:text-ink"><PenLine className="h-5 w-5" aria-hidden /></button>}
+      </div>
+      {sheet && (
+        <div className="fixed inset-0 z-[70] flex items-end bg-base/65 px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-16" role="dialog" aria-modal="true" aria-label={sheet === 'timeframes' ? 'All chart timeframes' : 'Chart controls'}>
+          <button type="button" aria-label="Close chart controls" className="absolute inset-0 cursor-default" onClick={() => setSheet(null)} />
+          <div className="relative z-10 w-full rounded-xl border border-line-strong bg-surface-1 p-2 shadow-2xl">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <span className="text-xs font-semibold text-ink">{sheet === 'timeframes' ? 'Timeframe' : 'Chart controls'}</span>
+              <button type="button" onClick={() => setSheet(null)} className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-xs font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"><X className="h-4 w-4" aria-hidden /></button>
+            </div>
+            {sheet === 'timeframes' ? (
+              <div role="group" aria-label="All chart timeframes" className="grid grid-cols-3 gap-2">
+                {ALL_CHART_TIMEFRAMES.map((tf) => <button key={tf} type="button" aria-pressed={selected === tf} onClick={() => { onSelectTf(tf); setSheet(null); }} className={[
+                  'focus-ring min-h-11 rounded-md border text-sm font-semibold tabular-nums transition-colors',
+                  selected === tf ? 'border-accent/60 bg-accent/15 text-ink' : 'border-line bg-surface-2 text-ink-muted hover:text-ink',
+                ].join(' ')}>{tf}</button>)}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="min-h-11 rounded-md border border-line bg-surface-2"><ChartTypeChip value={chartType} onChange={onSelectType} /></div>
+                <div className="min-h-11 rounded-md border border-line bg-surface-2"><IndicatorChip activeIds={activeIndicatorIds} onToggle={onToggleIndicator} onClear={onClearIndicators} /></div>
+                <button type="button" onClick={onReplayToggle} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface-2 text-sm font-medium text-ink-muted hover:text-ink"><History className="h-4 w-4" />{replayActive ? 'Replay active' : 'Replay'}</button>
+                <button type="button" onClick={onToggleFullscreen} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface-2 text-sm font-medium text-ink-muted hover:text-ink">{isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}Fullscreen</button>
+                {onToggleFocus && <button type="button" onClick={onToggleFocus} aria-pressed={isFocusMode} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface-2 text-sm font-medium text-ink-muted hover:text-ink"><Focus className="h-4 w-4" />{isFocusMode ? 'Exit Focus' : 'Focus chart'}</button>}
+                <div className="min-h-11 rounded-md border border-line bg-surface-2"><GridChip value={gridCount} onChange={onGridChange} /></div>
+                <div className="min-h-11 rounded-md border border-line bg-surface-2"><WorkspaceChip current={workspaceCurrent} onApply={onWorkspaceApply} /></div>
+                {featureFlags.chartSettings && chartSettings && onChartSettingsPatch && onChartSettingsReset && <div className="col-span-2 flex min-h-11 items-center rounded-md border border-line bg-surface-2 px-1"><ChartSettingsButtonWithPopover settings={chartSettings} onPatch={onChartSettingsPatch} onReset={onChartSettingsReset} onFitContent={onFitContent} /></div>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function ChartContext({
+  symbol,
+  onSelectSymbol,
+  price,
+  changeAbs,
+  change,
+  integrity,
+  connectionStatus,
+  executionMode,
+  positionSide,
+}: {
+  symbol: string;
+  /** Presentation-level selection only; transport ownership remains above the chart. */
+  onSelectSymbol?: (symbol: string) => void;
+  price: number | null;
+  changeAbs?: number | null;
+  change: number | null;
+  integrity: MarketDataIntegrity;
+  connectionStatus?: WSStatus;
+  executionMode: 'live' | 'replay';
+  positionSide: Exclude<PositionSide, 'flat'> | null;
+}) {
+  const instrument = getChartInstrumentPresentation(symbol);
+  const hasPrice = price != null && Number.isFinite(price);
+  const hasChange = change != null && Number.isFinite(change);
+  const hasChangeAbs = changeAbs != null && Number.isFinite(changeAbs);
+  const positionLabel = positionSide ? positionSide.toUpperCase() : null;
+  const positionTone = positionSide === 'long' ? 'text-bull-bright' : 'text-bear-bright';
+
+  return (
+    <div
+      data-testid="chart-context"
+      className="flex min-w-0 shrink items-center gap-2 px-0.5"
+      aria-label="Active chart context"
+    >
+      <DesktopInstrumentSelector symbol={symbol} onSelect={onSelectSymbol} />
+
+      <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
+
+      <div className="flex min-w-0 items-baseline gap-1.5" aria-live="polite" aria-atomic="true">
+        <span className="text-[10px] uppercase tracking-[0.08em] text-ink-faint">Last</span>
+        {hasPrice ? <Num.Price value={price} precision={instrument.pricePrecision} className="text-[13px] font-semibold text-ink" /> : <span className="num text-[13px] text-ink-faint">—</span>}
+        {(hasChangeAbs || hasChange) && (
+          <span className="hidden items-baseline gap-1 text-[11px] xl:inline-flex" title="UTC day change">
+            {hasChangeAbs && <Num.Delta value={changeAbs} precision={instrument.pricePrecision} />}
+            {hasChange && <Num.Pct value={change} tone precision={2} />}
+          </span>
+        )}
+      </div>
+
+      <MarketIntegrityState integrity={integrity} connectionStatus={connectionStatus} />
+
+      <div className="hidden items-center gap-1 sm:flex" aria-label={`Execution mode: ${executionMode} paper`}>
+        {executionMode === 'replay' && (
+          <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold tracking-[0.08em] text-regime-hot">
+            <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+            REPLAY
+          </span>
+        )}
+        <span className="text-[10px] font-medium tracking-[0.08em] text-ink-faint">PAPER</span>
+      </div>
+
+      {positionLabel && (
+        <span
+          title={`Active ${positionSide} position`}
+          aria-label={`Active ${positionSide} position`}
+          className={`hidden rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] sm:inline-flex ${positionTone}`}
+        >
+          {positionLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DesktopInstrumentSelector({ symbol, onSelect }: { symbol: string; onSelect?: (symbol: string) => void }) {
+  return (
+    <div role="group" aria-label="Chart instrument" className="flex h-[28px] shrink-0 items-center rounded border border-line bg-surface-1 p-0.5 md:max-lg:h-[36px]">
+      {CHART_INSTRUMENTS.map((instrument) => (
+        <button
+          key={instrument.symbol}
+          type="button"
+          aria-pressed={instrument.symbol === symbol}
+          title={`Switch to ${instrument.label}`} aria-label={`${instrument.label} ${instrument.displaySymbol}`}
+          disabled={!onSelect || instrument.symbol === symbol}
+          onClick={() => onSelect?.(instrument.symbol)}
+          className={[
+            'focus-ring inline-flex h-[24px] items-center gap-1 rounded px-2 text-[11px] font-semibold transition-colors disabled:cursor-default md:max-lg:h-[32px]',
+            instrument.symbol === symbol ? 'bg-surface-3 text-ink ring-1 ring-accent/45' : 'text-ink-faint hover:bg-surface-2 hover:text-ink',
+          ].join(' ')}
+        >
+          {instrument.kind === 'crypto' ? <Bitcoin className="h-3.5 w-3.5 text-regime-hot" aria-hidden /> : <span className="text-[10px] font-bold text-regime-hot" aria-hidden>Au</span>}
+          {instrument.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+function MarketIntegrityState({
+  integrity,
+  connectionStatus,
+}: {
+  integrity: MarketDataIntegrity;
+  connectionStatus?: WSStatus;
+}) {
+  const state = integrityPresentation(integrity, connectionStatus);
+  return (
+    <span
+      title={state.description}
+      aria-label={state.description}
+      className={['hidden items-center gap-1 text-[10px] font-medium tracking-[0.07em] sm:inline-flex', state.className].join(' ')}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+      <span>{state.label}</span>
+      {state.paused && <span className="normal-case tracking-normal text-ink-faint">Trading paused</span>}
+    </span>
+  );
+}
+
+function integrityPresentation(integrity: MarketDataIntegrity, connectionStatus?: WSStatus) {
+  switch (integrity) {
+    case 'live':
+      return { label: 'LIVE', description: 'Market data live and synchronized', className: 'text-ink-muted', paused: false };
+    case 'stale':
+      return { label: 'STALE', description: 'Market data is stale. Price-dependent trading is paused.', className: 'text-bear-bright', paused: true };
+    case 'unavailable':
+      return { label: 'DATA UNAVAILABLE', description: 'Market data is unavailable. Price-dependent trading is paused.', className: 'text-bear-bright', paused: true };
+    case 'partial':
+      return connectionStatus === 'open'
+        ? { label: 'SYNCHRONIZING', description: 'Market data is synchronizing. Price-dependent trading is paused.', className: 'text-regime-hot', paused: true }
+        : { label: 'RECONNECTING', description: 'Market data is reconnecting. Price-dependent trading is paused.', className: 'text-regime-hot', paused: true };
+    case 'loading':
+      return { label: 'SYNCHRONIZING', description: 'Market data is loading. Price-dependent trading is paused.', className: 'text-regime-hot', paused: true };
+    case 'historical':
+      return { label: 'HISTORICAL', description: 'Historical market data only. Live price-dependent trading is paused.', className: 'text-ink-muted', paused: true };
+    case 'demo':
+      return { label: 'DEMO', description: 'Demo market data. Price-dependent live trading is paused.', className: 'text-regime-hot', paused: true };
+    case 'replay':
+      return { label: 'SNAPSHOT', description: 'Replay snapshot data. Live price-dependent trading is paused.', className: 'text-regime-hot', paused: true };
+  }
+}
 function ToolbarDivider() {
   return <span className="mx-0.5 h-[20px] w-px shrink-0 bg-line" aria-hidden />;
 }
@@ -516,39 +855,32 @@ function TimeframeChip({
   value: Timeframe;
   onChange: (t: Timeframe) => void;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Timeframe"
-        aria-label="Timeframe"
-        aria-expanded={open}
-        className={[
-          'focus-ring inline-flex h-[24px] items-center justify-center px-1.5 text-[14px] font-medium transition-colors rounded hover:bg-surface-2',
-          open ? 'text-accent bg-surface-2' : 'text-ink hover:text-ink',
-        ].join(' ')}
-      >
-        <span className="leading-none">{value}</span>
-      </button>
-      <ChipMenu open={open} onClose={() => setOpen(false)} width={120}>
-        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
-          Timeframe
-        </div>
-        {['5m', '15m', '30m', '1h', '4h', '1d'].map((tf) => (
-          <MenuItem
+    <div
+      role="group"
+      aria-label="Chart timeframe"
+      className="flex h-[28px] items-center rounded border border-line bg-surface-1 p-0.5 md:max-lg:h-[36px]"
+    >
+      {(['5m', '15m', '30m', '1h', '4h', '1d'] as Timeframe[]).map((tf) => {
+        const active = value === tf;
+        return (
+          <button
             key={tf}
-            active={value === tf}
-            onClick={() => {
-              onChange(tf as Timeframe);
-              setOpen(false);
-            }}
+            type="button"
+            aria-pressed={active}
+            title={`Timeframe ${tf}`}
+            onClick={() => onChange(tf)}
+            className={[
+              'focus-ring inline-flex h-full min-w-[29px] items-center justify-center rounded px-1 text-[11px] font-medium tabular-nums transition-colors md:max-lg:min-w-[40px]',
+              active
+                ? 'bg-surface-3 text-ink ring-1 ring-accent/45'
+                : 'text-ink-faint hover:bg-surface-2 hover:text-ink-muted',
+            ].join(' ')}
           >
             {tf}
-          </MenuItem>
-        ))}
-      </ChipMenu>
+          </button>
+        );
+      })}
     </div>
   );
 }

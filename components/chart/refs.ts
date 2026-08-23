@@ -18,6 +18,7 @@ import type { ChartPalette } from '@/lib/chartTheme';
 import type { HoverPayload } from '@/lib/chartHoverStore';
 import type { Candle } from '@/lib/types';
 import type { ChartType, OverlayKind } from './types';
+import type { ChartLifecycle } from '@/lib/chartLifecycle';
 
 type PriceLineEntry = ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
 
@@ -40,6 +41,9 @@ export interface ChartRefs {
   fxPrimitiveRef: RefObject<ChartFxPrimitive | null>;
   daySepCanvasRef: RefObject<HTMLCanvasElement | null>;
   daySepRafRef: MutableRefObject<number>;
+  lifecycleRef: MutableRefObject<ChartLifecycle>;
+  pendingAnimationFramesRef: MutableRefObject<Set<number>>;
+  listenerCountRef: MutableRefObject<number>;
   separatePaneRef: MutableRefObject<{ setHeight: (n: number) => void } | null>;
 
   // Indicator stack refs

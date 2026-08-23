@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUp, ArrowDown, Info, RotateCcw, ChevronRight, Lightbulb, Check, ShieldCheck, BarChart3, ArrowLeft } from 'lucide-react';
 import { analyzeTrade, type TradeSide, type TradeInput } from '@/lib/tradeAnalysis';
-import { executeOrder, setPositionOverlay } from '@/lib/paperStore';
+import { executeOrder, updatePositionProtection } from '@/lib/paperStore';
 import { usd, formatNumber, formatPercent } from '@/lib/format';
 
 const SYMBOL = 'BTCUSDT';
@@ -60,8 +60,9 @@ export default function MyStackPage() {
       midPrice: input.entry,
       leverage: input.leverage,
     });
-    if (input.takeProfit != null) setPositionOverlay('tp', input.takeProfit, SYMBOL);
-    if (input.stopLoss != null) setPositionOverlay('sl', input.stopLoss, SYMBOL);
+    if (input.takeProfit != null || input.stopLoss != null) {
+      updatePositionProtection(SYMBOL, { tp: input.takeProfit ?? null, sl: input.stopLoss ?? null });
+    }
     setPlaced(`${side === 'long' ? 'Long' : 'Short'} ${num(a.positionSize, 4)} ${SYMBOL} placed on your paper account.`);
   };
 

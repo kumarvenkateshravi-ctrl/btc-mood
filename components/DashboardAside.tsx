@@ -9,6 +9,7 @@ import type { TFSnapshot } from '@/lib/signals';
 import type { CompareSymbol } from '@/lib/compare';
 import type { IndicatorCell } from './SignalMatrix';
 import type { SdSignal } from '@/lib/indicators/signalTypes';
+import type { TradePresentationFacade } from '@/lib/trade/presentationFacade';
 
 interface DashboardAsideProps {
   snapshots: Record<Timeframe, TFSnapshot | null>;
@@ -21,6 +22,7 @@ interface DashboardAsideProps {
   tab: 'signals' | 'trade' | 'trades';
   onTabChange: (t: 'signals' | 'trade' | 'trades') => void;
   signals: SdSignal[];
+  tradePresentation: TradePresentationFacade;
 }
 
 export default function DashboardAside({
@@ -34,6 +36,7 @@ export default function DashboardAside({
   tab,
   onTabChange,
   signals,
+  tradePresentation,
 }: DashboardAsideProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -64,7 +67,7 @@ export default function DashboardAside({
         <VdTradesPanel symbol={symbol} tf={selected} midPrice={midPrice} />
       ) : (
         <>
-          <TradingPanel symbol={symbol} midPrice={midPrice} />
+          <TradingPanel symbol={symbol} midPrice={midPrice} presentation={tradePresentation} />
           <SignalsPanel signals={signals} />
         </>
       )}

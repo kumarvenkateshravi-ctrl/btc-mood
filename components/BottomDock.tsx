@@ -10,10 +10,13 @@ import { type IndicatorDef } from '@/lib/indicatorLibrary';
 import { type Candle, type Timeframe, TIMEFRAMES } from '@/lib/types';
 import { type TFSnapshot } from '@/lib/signals';
 import { ChevronDown } from 'lucide-react';
+import type { TradePresentationFacade } from '@/lib/trade/presentationFacade';
 
 export default function BottomDock({
   tf,
   candles,
+  symbol,
+  tradePresentation,
   onToggleCollapse,
   // Confluence-tab data
   candlesByTf,
@@ -23,6 +26,8 @@ export default function BottomDock({
 }: {
   tf: Timeframe;
   candles: Candle[];
+  symbol: string;
+  tradePresentation: TradePresentationFacade;
   activeIndicators?: ActiveIndicator[];
   onToggleIndicator?: (id: string) => void;
   onAddIndicator?: (def: IndicatorDef) => void;
@@ -122,7 +127,7 @@ export default function BottomDock({
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-base p-4">
-        {activeTab === 'trades' && <TradeHistory />}
+        {activeTab === 'trades' && <TradeHistory symbol={symbol} presentation={tradePresentation} />}
         {activeTab === 'stats' && <BacktestStats />}
         {activeTab === 'backtest' && <BacktestPanel tf={tf} candles={candles} />}
         {activeTab === 'alerts' && <AlertsPanel defaultTf={tf} />}

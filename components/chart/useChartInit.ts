@@ -12,12 +12,21 @@ import type { ChartRefs } from './refs';
 import { OrderOverlayPrimitive } from '@/lib/orderOverlayPrimitive';
 import { ChartFxPrimitive } from '@/lib/chartFxPrimitive';
 import { chartApiStore } from '@/lib/chartApiStore';
+import { beginChartLifecycle, disposeChartLifecycle, markChartReady, isChartLifecycleActive } from '@/lib/chartLifecycle';
 
 export function useChartInit(refs: ChartRefs, height: number | string | undefined, tf?: string) {
   useEffect(() => {
+    const lifecycle = beginChartLifecycle(refs.lifecycleRef.current);
+    // eslint-disable-next-line react-hooks/immutability
+    refs.lifecycleRef.current = lifecycle;
+    const lifecycleEpoch = lifecycle.epoch;
     const { containerRef, paletteRef, chartRef, candleSeriesRef, dummySeriesRef, markersRef, overlayPrimitiveRef, fxPrimitiveRef } = refs;
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) {
+      // eslint-disable-next-line react-hooks/immutability
+      refs.lifecycleRef.current = disposeChartLifecycle(refs.lifecycleRef.current, lifecycleEpoch);
+      return;
+    }
 
     const P = paletteRef.current;
     const chart = createChart(container, {
@@ -161,6 +170,7 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
       // ('Value is null'). Skip the frame — the restore emits a real-size
       // entry right after, so nothing is lost.
       if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      if (!isChartLifecycleActive(refs.lifecycleRef.current, lifecycleEpoch)) return;
       if (chartRef.current) {
         try {
           chartRef.current.applyOptions({ width: rect.width, height: rect.height });
@@ -169,9 +179,15 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
         }
       }
     });
+    // eslint-disable-next-line react-hooks/immutability
+    refs.lifecycleRef.current = markChartReady(refs.lifecycleRef.current, lifecycleEpoch);
     ro.observe(container);
 
     return () => {
+      // eslint-disable-next-line react-hooks/immutability
+      refs.lifecycleRef.current = disposeChartLifecycle(refs.lifecycleRef.current, lifecycleEpoch);
+      for (const raf of refs.pendingAnimationFramesRef.current) cancelAnimationFrame(raf);
+      refs.pendingAnimationFramesRef.current.clear();
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -203,7 +219,8 @@ export function useChartInit(refs: ChartRefs, height: number | string | undefine
   // unregister always precedes chart.remove().
   useEffect(() => {
     const chart = refs.chartRef.current;
-    if (!chart) return;
+    const lifecycleEpoch = refs.lifecycleRef.current.epoch;
+    if (!chart || !isChartLifecycleActive(refs.lifecycleRef.current, lifecycleEpoch)) return;
     const key = tf ?? 'default';
     chartApiStore.register(key, chart);
     return () => chartApiStore.unregister(key, chart);

@@ -1,4 +1,11 @@
 import type { Candle } from './types';
+import type {
+  IndicatorEvaluationContext,
+  IndicatorFinalityPolicy,
+  IndicatorSourcePolicy,
+} from './indicatorEvaluation';
+import type { ProfileSourceProvenance } from './indicators/profileDataProvider';
+import type { HistoricalPocRecord } from './indicators/historicalPocStore';
 
 export type SignalSide = 'buy' | 'sell' | 'neutral';
 
@@ -234,6 +241,8 @@ export interface VolumeProfileRender {
   val: number;
   totalVolume: number;
   maxRowVolume: number;
+  /** Raw profile source and accuracy metadata. */
+  source?: ProfileSourceProvenance;
   /** Per-profile visibility overrides used by lightweight POC-only overlays. */
   showRows?: boolean;
   showPoc?: boolean;
@@ -268,6 +277,9 @@ export interface VolumeProfileStyle {
   vaUpColor: string;
   vaDownColor: string;
   pocColor: string;
+  weeklyPocColor: string;
+  dailyPocColor: string;
+  fourHourPocColor: string;
   vahColor: string;
   valColor: string;
   showPoc: boolean;
@@ -303,6 +315,8 @@ export interface IndicatorResult {
   candleColors?: CandleColorOverride;
   /** Price-indexed volume profiles, drawn by SessionVolumeProfilePrimitive. */
   profiles?: VolumeProfileRender[];
+  /** Compact completed-session POCs, independently retained from full profiles. */
+  historicalPocs?: HistoricalPocRecord[];
   /** Render settings for `profiles`. Ignored when `profiles` is absent. */
   profileStyle?: VolumeProfileStyle;
 }
@@ -312,9 +326,22 @@ export interface CustomIndicatorConfig {
   settings?: IndicatorSettings;
 }
 
+/** Declarative source/finality contract for indicators with analytical state. */
+export interface IndicatorEvaluationDeclaration {
+  sourcePolicy: IndicatorSourcePolicy;
+  finalityPolicy: IndicatorFinalityPolicy;
+  replaySafe: boolean;
+  incrementalEligibility: 'incremental' | 'partially-incremental' | 'full-rebuild' | 'structural-closed-bar-cached';
+  replayPolicy: 'snapshot-raw' | 'snapshot-display' | 'snapshot-mixed';
+  volumeInterpretation: 'not-applicable' | 'raw-volume' | 'estimated-directional-volume' | 'taker-side-trade-derived' | 'authoritative-trade-at-price';
+  resetTriggers: readonly ('symbol' | 'timeframe' | 'sourceRevision' | 'transform' | 'replayEnter' | 'replayRewind' | 'replayExit' | 'historyPrepend' | 'settingsChange')[];
+  replayNotes?: string;
+}
+
 // Function signature that all PineScript translations will follow
 export type IndicatorComputeFn = (
   candles: Candle[],
   config?: CustomIndicatorConfig,
   computedSources?: Record<string, (number | null)[]>,
+  context?: IndicatorEvaluationContext,
 ) => IndicatorResult;

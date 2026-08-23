@@ -88,6 +88,26 @@ export async function fetchKlinesBefore(
   return parsed.data;
 }
 
+/**
+ * Fetches the smallest REST page that can contain a detected candle gap and
+ * returns only its requested open-time range. The API's `before` cursor is an
+ * exclusive upper bound, so `endMs` is the following known candle's open.
+ */
+export async function fetchKlinesRange(
+  tf: Timeframe,
+  symbol: CompareSymbol,
+  startMs: number,
+  endMs: number,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<Candle[]> {
+  const candles = await fetchKlinesBefore(tf, symbol, endMs, limit, signal);
+  return candles.filter((candle) => {
+    const openMs = candle.time * 1_000;
+    return openMs >= startMs && openMs < endMs;
+  });
+}
+
 export const klinesQueryKey = (
   symbol: CompareSymbol,
   tf: Timeframe,

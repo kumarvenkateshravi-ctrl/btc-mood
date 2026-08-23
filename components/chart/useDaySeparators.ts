@@ -1,9 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { IChartApi, Time } from 'lightweight-charts';
-import type { RefObject } from 'react';
+import type { RefObject, MutableRefObject } from 'react';
 import type { ChartPalette } from '@/lib/chartTheme';
 import type { Candle } from '@/lib/types';
 import { shiftTime } from './types';
+import { buildDaySeparatorIndex, selectVisibleDaySeparators, updateDaySeparatorIndex, type DaySeparator } from '@/lib/daySeparatorIndex';
+import type { ChartLifecycle } from '@/lib/chartLifecycle';
+import { isChartLifecycleActive } from '@/lib/chartLifecycle';
 
 interface HoverInputs {
   src: Candle[];
@@ -27,10 +30,26 @@ export function useDaySeparators(
   tf: string | undefined,
   isRenko: boolean,
   palette: ChartPalette,
+  lifecycleRef?: RefObject<ChartLifecycle>,
+  pendingAnimationFramesRef?: MutableRefObject<Set<number>>,
 ) {
+  const dayIndexRef = useRef<{ source: Candle[]; boundaries: DaySeparator[] } | null>(null);
+
   useEffect(() => {
+    const lifecycleEpoch = lifecycleRef?.current?.epoch;
+    const active = () => lifecycleRef?.current == null || (lifecycleEpoch != null && isChartLifecycleActive(lifecycleRef.current, lifecycleEpoch));
     const chart = chartRef.current;
     const canvas = daySepCanvasRef.current;
+    const source = hoverInputsRef.current.src;
+    const previousIndex = dayIndexRef.current;
+    if (!previousIndex) {
+      dayIndexRef.current = { source, boundaries: buildDaySeparatorIndex(source) };
+    } else if (previousIndex.source !== source) {
+      dayIndexRef.current = {
+        source,
+        boundaries: updateDaySeparatorIndex(previousIndex.source, source, previousIndex.boundaries),
+      };
+    }
     if (!chart || !canvas || (!isRenko && tf === '1d')) {
       // Clear canvas if not applicable
       const ctx = canvas?.getContext('2d');
@@ -39,6 +58,8 @@ export function useDaySeparators(
     }
 
     const drawSeparators = () => {
+      if (!active()) return;
+      if (pendingAnimationFramesRef && daySepRafRef.current) pendingAnimationFramesRef.current.delete(daySepRafRef.current);
       const c = chartRef.current;
       const container = containerRef.current;
       if (!c || !canvas || !container) return;
@@ -66,51 +87,45 @@ export function useDaySeparators(
       // Skip separators for daily chart (the days ARE the bars), but allow for Renko
       if (!tf || (!isRenko && tf === '1d')) return;
 
-      // Find day boundaries in the candle data
-      const src = hoverInputsRef.current.src;
-      if (src.length < 2) return;
+      const indexed = dayIndexRef.current;
+      if (!indexed || indexed.source.length < 2) return;
+      const logicalRange = ts.getVisibleLogicalRange();
+      const boundaries = logicalRange
+        ? selectVisibleDaySeparators(indexed.boundaries, logicalRange)
+        : indexed.boundaries;
+      for (const boundary of boundaries) {
+        const x = ts.timeToCoordinate(shiftTime(boundary.time) as Time);
+        if (x == null || x < 0 || x > w) continue;
+        const xRounded = Math.round(x) + 0.5;
 
-      const seenDays = new Set<number>();
-      for (let i = 1; i < src.length; i++) {
-        const c = src[i];
-        const prevC = src[i - 1];
-        if (c == null || prevC == null || !Number.isFinite(c.time as number) || !Number.isFinite(prevC.time as number)) continue;
-        
-        const t = c.time as number;
-        // UTC day number
-        const dayNum = Math.floor(t / 86400);
-        const prevDayNum = Math.floor((prevC.time as number) / 86400);
-        if (dayNum !== prevDayNum && !seenDays.has(dayNum)) {
-          seenDays.add(dayNum);
-          const x = ts.timeToCoordinate(shiftTime(t) as Time);
-          if (x == null || x < 0 || x > w) continue;
-          const xRounded = Math.round(x) + 0.5;
-
-          ctx.save();
-          ctx.strokeStyle = paletteRef.current.daySep;
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([3, 4]);
-          ctx.lineDashOffset = 0;
-          ctx.beginPath();
-          ctx.moveTo(xRounded, 0);
-          ctx.lineTo(xRounded, h);
-          ctx.stroke();
-          ctx.restore();
-        }
+        ctx.save();
+        ctx.strokeStyle = paletteRef.current.daySep;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 4]);
+        ctx.lineDashOffset = 0;
+        ctx.beginPath();
+        ctx.moveTo(xRounded, 0);
+        ctx.lineTo(xRounded, h);
+        ctx.stroke();
+        ctx.restore();
       }
     };
 
     drawSeparators();
 
     const onChange = () => {
+      if (!active()) return;
       cancelAnimationFrame(daySepRafRef.current);
+      if (pendingAnimationFramesRef && daySepRafRef.current) pendingAnimationFramesRef.current.delete(daySepRafRef.current);
       daySepRafRef.current = requestAnimationFrame(drawSeparators);
+      pendingAnimationFramesRef?.current.add(daySepRafRef.current);
     };
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(onChange);
     return () => {
       cancelAnimationFrame(daySepRafRef.current);
+      pendingAnimationFramesRef?.current.delete(daySepRafRef.current);
       try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onChange); } catch {}
     };
-  }, [candles, tf, isRenko, palette, chartRef, daySepCanvasRef, containerRef, hoverInputsRef, paletteRef, daySepRafRef]);
+  }, [candles, tf, isRenko, palette, chartRef, daySepCanvasRef, containerRef, hoverInputsRef, paletteRef, daySepRafRef, lifecycleRef, pendingAnimationFramesRef]);
 }

@@ -1,24 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { usePaperStore } from '@/lib/paperStore';
 import { unrealizedPnl } from '@/lib/paper';
-import { useMarkPrice } from '@/lib/markPriceStore';
-import { useReplaySession, sessionBalance } from '@/lib/replaySession';
+import type { TradePresentationFacade } from '@/lib/trade/presentationFacade';
 import { positionSize, riskReward, formatRR } from '@/lib/trading';
 
-export default function TradingPanel({ symbol, midPrice }: { symbol: string; midPrice: number }) {
-  const paper = usePaperStore();
-  const session = useReplaySession();
-  // During an active replay this symbol trades on the ISOLATED session account.
-  const replay = session.active && session.symbol === symbol;
-  const pos = replay ? session.position : paper.positions[symbol] ?? null;
-  const balance = replay ? sessionBalance(session) : paper.balance;
+export default function TradingPanel({ symbol, midPrice, presentation }: { symbol: string; midPrice: number; presentation: TradePresentationFacade }) {
+  const replay = presentation.mode === 'replay';
+  const pos = presentation.position;
+  const balance = presentation.balance;
   const hasPos = !!(pos && pos.side !== 'flat' && pos.units > 0);
 
-  // The chart's current mark (tracks replay during Bar Replay), else the prop.
-  const mark = useMarkPrice(symbol);
-  const markPrice = mark?.price ?? midPrice;
+  // The shared facade supplies the mode-correct mark, else use the chart prop.
+  const markPrice = presentation.markPrice ?? midPrice;
 
   const [qty, setQty] = useState('0.1');
   const [balanceInput, setBalanceInput] = useState('');

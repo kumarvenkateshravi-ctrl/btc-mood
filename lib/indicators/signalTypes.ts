@@ -48,6 +48,8 @@ export interface ScoredZone {
   formedAtIndex: number;
   formedTime: number;
   strength: ZoneStrength;
+  /** Immutable formation-time evidence used for causal scoring. */
+  formationEvidence?: ZoneStrength;
   isConfluence: boolean;
   retestCount: number;
 }

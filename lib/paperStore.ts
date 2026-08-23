@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import {
+  applyProtectionUpdate,
   applyFill,
   marketFillPrice,
   marginFor,
@@ -13,13 +14,15 @@ import {
   type PaperOrder,
   type PaperPosition,
   type PaperTrade,
+  type ProtectionUpdate,
   type Side,
 } from './paper';
 import { canExecutePriceDependentLiveAction, setMarketDataIntegrityForTest } from './marketDataTrust';
+import { validateEntry, type EntryValidationReason } from './riskSizing';
 
 // ----- Store state (persisted to localStorage; survives reload) -------
 
-interface State {
+export interface PaperStoreState {
   /** Positions keyed by symbol (e.g. "BTCUSDT" → PaperPosition). */
   positions: Record<string, PaperPosition | null>;
   pending: PaperOrder[];
@@ -30,6 +33,8 @@ interface State {
   balance: number;
   initialBalance: number;
 }
+
+type State = PaperStoreState;
 
 const initialState: State = {
   positions: {},
@@ -127,6 +132,28 @@ const getSnapshot = (): State => state;
 // persisted client snapshot on the next tick.
 const getServerSnapshot = (): State => initialState;
 
+export const subscribePaperStore = subscribe;
+export const getPaperStoreSnapshot = getSnapshot;
+
+export function usePaperStoreSelector<T>(selector: (snapshot: PaperStoreState) => T, isEqual: (a: T, b: T) => boolean = Object.is): T {
+  const cacheRef = useRef<{ snapshot: PaperStoreState; value: T } | null>(null);
+  const getSelectedSnapshot = useCallback(() => {
+    const snapshot = getSnapshot();
+    const cached = cacheRef.current;
+    if (cached?.snapshot === snapshot) return cached.value;
+    const next = selector(snapshot);
+    if (cached !== null && isEqual(cached.value, next)) {
+      cacheRef.current = { snapshot, value: cached.value };
+      return cached.value;
+    }
+    cacheRef.current = { snapshot, value: next };
+    return next;
+  }, [selector, isEqual]);
+  const getSelectedServerSnapshot = useCallback(() => selector(initialState), [selector]);
+  return useSyncExternalStore(subscribe, getSelectedSnapshot, getSelectedServerSnapshot);
+}
+
+
 const scheduleEmit = () => {
   if (emitting) {
     pendingEmit = true;
@@ -145,6 +172,7 @@ const scheduleEmit = () => {
 };
 
 const setState = (next: State) => {
+  if (next === state) return;
   state = next;
   persist(next);
   scheduleEmit();
@@ -155,6 +183,17 @@ const patch = (mut: (s: State) => State) => setState(mut(state));
 /** Look up the position for a symbol (null when flat/missing). */
 const posFor = (s: State, sym: string): PaperPosition | null =>
   s.positions[sym] ?? null;
+
+function samePaperPosition(a: PaperPosition | null, b: PaperPosition | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return a === b;
+  return a.id === b.id && a.symbol === b.symbol && a.side === b.side
+    && a.units === b.units && a.entryPrice === b.entryPrice
+    && a.realizedPnl === b.realizedPnl && a.feesPaid === b.feesPaid
+    && a.openedAt === b.openedAt && a.tp === b.tp && a.sl === b.sl
+    && a.liquidated === b.liquidated && a.leverage === b.leverage
+    && a.trailingSl === b.trailingSl && a.trailingBest === b.trailingBest;
+}
 
 /** Set a position in the map; removes the key when flattened. */
 function setPos(s: State, sym: string, pos: PaperPosition): State {
@@ -170,32 +209,26 @@ function setPos(s: State, sym: string, pos: PaperPosition): State {
 
 /** Set (or clear, with null) the TP or SL price on a symbol's open position.
  *  The chart overlay commits dragged levels here on Save. */
-export function setPositionOverlay(
-  field: 'tp' | 'sl',
-  value: number | null,
-  symbol = 'BTCUSDT',
-) {
-  patch((s) => {
-    const pos = posFor(s, symbol);
-    if (!pos || pos.side === 'flat') return s;
-    return setPos(s, symbol, { ...pos, [field]: value });
-  });
+export type ProtectionCommandResult = { ok: true } | { ok: false; error: string };
+
+/** Atomically validates and commits any combination of SL, TP, and trailing state. */
+export function updatePositionProtection(symbol: string, input: ProtectionUpdate): ProtectionCommandResult {
+  const pos = posFor(state, symbol);
+  if (!pos || pos.side === 'flat') return { ok: false, error: 'Protection requires an open position.' };
+  const result = applyProtectionUpdate(pos, input);
+  if (!result.ok) return result;
+  if (!samePaperPosition(pos, result.position)) setState(setPos(state, symbol, result.position));
+  return { ok: true };
 }
 
-/** Toggle trailing SL on/off for a symbol's open position. When
- *  enabled, the SL price is used as the initial trail stop and
- *  `trailingBest` is seeded from the current entry price. */
+/** Compatibility adapter for single overlay edits. All writes remain atomic. */
+export function setPositionOverlay(field: 'tp' | 'sl', value: number | null, symbol = 'BTCUSDT') {
+  return updatePositionProtection(symbol, { [field]: value });
+}
+
+/** Compatibility adapter for chart controls. */
 export function toggleTrailingSl(symbol: string, enabled: boolean) {
-  patch((s) => {
-    const pos = posFor(s, symbol);
-    if (!pos || pos.side === 'flat') return s;
-    const next: PaperPosition = {
-      ...pos,
-      trailingSl: enabled,
-      trailingBest: enabled ? (pos.trailingBest ?? pos.entryPrice) : null,
-    };
-    return setPos(s, symbol, next);
-  });
+  return updatePositionProtection(symbol, { trailingSl: enabled });
 }
 
 const pushToast = (message: string, tone: 'buy' | 'sell' | 'info') => {
@@ -220,6 +253,10 @@ export function __resetForTest() {
 /** Test-only: read the current state. */
 export function __getStateForTest(): State {
   return state;
+}
+
+export function subscribeForTest(listener: () => void): () => void {
+  return subscribe(listener);
 }
 
 /** Test-only: reload the module state from localStorage (simulates a page
@@ -256,6 +293,36 @@ function rejectUntrustedPriceExecution(): { ok: false; error: string } {
   return { ok: false, error: MARKET_DATA_TRUST_ERROR };
 }
 
+function reservedMarginFor(order: PaperOrder): number {
+  if (order.reduceOnly) return 0;
+  if (Number.isFinite(order.reservedMargin) && (order.reservedMargin ?? 0) >= 0) {
+    return order.reservedMargin!;
+  }
+  return marginFor(order.units, order.price ?? 0, order.leverage);
+}
+function validatePendingEntryBracket(order: PaperOrder): string | null {
+  if (order.type === 'market') return null;
+  if ((order.tp != null && (!Number.isFinite(order.tp) || order.tp <= 0))
+    || (order.sl != null && (!Number.isFinite(order.sl) || order.sl <= 0))) {
+    return 'TP and SL must be positive prices.';
+  }
+  if (order.price == null) return null;
+  if (order.side === 'buy') {
+    if (order.tp != null && order.tp <= order.price) return 'Buy TP must be above the entry price.';
+    if (order.sl != null && order.sl >= order.price) return 'Buy SL must be below the entry price.';
+  } else {
+    if (order.tp != null && order.tp >= order.price) return 'Sell TP must be below the entry price.';
+    if (order.sl != null && order.sl <= order.price) return 'Sell SL must be above the entry price.';
+  }
+  return null;
+}
+
+
+function entryValidationError(reason: EntryValidationReason): string {
+  return reason === 'insufficient-margin'
+    ? 'Insufficient balance (insufficient-margin).'
+    : `Invalid entry: ${reason}`;
+}
 export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: string } {
   if (!canExecutePriceDependentLiveAction()) return rejectUntrustedPriceExecution();
   const order: PaperOrder = {
@@ -285,6 +352,27 @@ export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: strin
       ? marketFillPrice(input.side, input.midPrice)
       : (input.price ?? 0);
   const needed = order.reduceOnly ? 0 : marginFor(input.units, fillPrice, input.leverage);
+  if (!order.reduceOnly) {
+    const entryValidation = validateEntry({
+      side: input.side,
+      entryPrice: fillPrice,
+      stopPrice: input.sl,
+      units: input.units,
+      equity: state.balance,
+      leverage: input.leverage,
+    });
+    if (!entryValidation.ok) {
+      const error = entryValidationError(entryValidation.reason);
+      patch((s) => ({ ...s, lastError: error }));
+      return { ok: false, error };
+    }
+  }
+  const bracketError = validatePendingEntryBracket(order);
+  if (bracketError) {
+    patch((s) => ({ ...s, lastError: bracketError }));
+    return { ok: false, error: bracketError };
+  }
+  order.reservedMargin = needed;
   if (needed > 0 && state.balance < needed) {
     const errMsg = `Insufficient balance: need $${needed.toFixed(2)}, have $${state.balance.toFixed(2)}`;
     patch((s) => ({ ...s, lastError: errMsg }));
@@ -331,22 +419,6 @@ export function placeOrder(input: PlaceOrderInput): { ok: boolean; error?: strin
   // Limit / stop: park in pending. Deduct margin now.
   const pending = [order, ...state.pending].slice(0, 20);
   const nextBalance = state.balance - needed;
-  const sym = input.symbol;
-  const existing = posFor(state, sym);
-  if (existing && existing.side !== 'flat') {
-    const incomingSide: PaperPosition['side'] = input.side === 'buy' ? 'long' : 'short';
-    if (existing.side === incomingSide) {
-      patch((s) =>
-        setPos(
-          { ...s, pending, balance: nextBalance, lastError: null },
-          sym,
-          { ...existing, tp: input.tp ?? existing.tp, sl: input.sl ?? existing.sl },
-        ),
-      );
-      pushToast(`${input.type.toUpperCase()} ${input.side.toUpperCase()} working`, 'info');
-      return { ok: true };
-    }
-  }
   patch((s) => ({ ...s, balance: nextBalance, pending, lastError: null }));
   pushToast(`${input.type.toUpperCase()} ${input.side.toUpperCase()} working`, 'info');
   return { ok: true };
@@ -363,15 +435,11 @@ export function cancelOrder(id: string) {
     for (const o of state.pending) {
       if (o.id !== id && o.ocoGroup === group && o.symbol === order.symbol) {
         cancelIds.add(o.id);
-        if (!o.reduceOnly) {
-          refund += marginFor(o.units, o.price ?? 0, o.leverage);
-        }
+        refund += reservedMarginFor(o);
       }
     }
   }
-  if (!order.reduceOnly) {
-    refund += marginFor(order.units, order.price ?? 0, order.leverage);
-  }
+  refund += reservedMarginFor(order);
   setState({
     ...state,
     pending: state.pending.filter((o) => !cancelIds.has(o.id)),
@@ -380,27 +448,30 @@ export function cancelOrder(id: string) {
   pushToast('Order cancelled', 'info');
 }
 
-export function closePosition(midPrice: number, sym: string) {
+export function closePosition(midPrice: number, sym: string): { ok: boolean; error?: string } {
   if (!canExecutePriceDependentLiveAction()) {
     rejectUntrustedPriceExecution();
-    return;
+    return { ok: false, error: 'Market data is not trusted/live' };
   }
   const pos = posFor(state, sym);
-  if (!pos || pos.side === 'flat' || pos.units <= 0) return;
+  if (!pos || pos.side === 'flat' || pos.units <= 0) return { ok: false, error: 'No active position to close' };
   _closeUnits(pos, sym, pos.units, midPrice);
+  return { ok: true };
 }
 
 /** Close a fraction (0..1) of the open position. */
-export function partialClose(symbol: string, fraction: number, midPrice: number) {
+export function partialClose(symbol: string, fraction: number, midPrice: number): { ok: boolean; error?: string } {
   if (!canExecutePriceDependentLiveAction()) {
     rejectUntrustedPriceExecution();
-    return;
+    return { ok: false, error: 'Market data is not trusted/live' };
   }
   const pos = posFor(state, symbol);
-  if (!pos || pos.side === 'flat' || pos.units <= 0) return;
-  const qty = pos.units * Math.min(1, Math.max(0, fraction));
-  if (qty <= 0) return;
+  if (!pos || pos.side === 'flat' || pos.units <= 0) return { ok: false, error: 'No active position to partially close' };
+  if (!Number.isFinite(fraction) || fraction <= 0) return { ok: false, error: 'Partial close fraction must be positive' };
+  const qty = pos.units * Math.min(1, fraction);
+  if (qty <= 0) return { ok: false, error: 'Partial close quantity must be positive' };
   _closeUnits(pos, symbol, qty, midPrice);
+  return { ok: true };
 }
 
 function _closeUnits(
@@ -443,10 +514,7 @@ function _closeUnits(
 export function cancelAll() {
   let refund = 0;
   for (const o of state.pending) {
-    if (!o.reduceOnly) {
-      const fp = o.price ?? 0;
-      refund += marginFor(o.units, fp, o.leverage);
-    }
+    refund += reservedMarginFor(o);
   }
   setState({ ...state, pending: [], balance: state.balance + refund });
   pushToast('All working orders cancelled', 'info');
@@ -562,7 +630,6 @@ export function reconcileBar(symbol: string, bar: import('./types').Candle) {
 
     const r = reconcile(pos, bar, orders, bar.time);
     let nextPos = r.position;
-    changed = true;
     if (nextPos && pos) {
       if (nextPos.side === 'flat') {
         nextPos = { ...nextPos, tp: null, sl: null };
@@ -580,6 +647,21 @@ export function reconcileBar(symbol: string, bar: import('./types').Candle) {
         };
       }
     }
+    if (nextPos && nextPos.side !== 'flat') {
+      for (const workingFill of r.workingFills) {
+        if (workingFill.order.reduceOnly || workingFill.positionAfter?.side === 'flat') continue;
+        const incomingSide: PaperPosition['side'] = workingFill.order.side === 'buy' ? 'long' : 'short';
+        const sameSideAdd = workingFill.positionBefore?.side === incomingSide;
+        if (sameSideAdd) {
+          nextPos = { ...nextPos, tp: workingFill.order.tp ?? nextPos.tp, sl: workingFill.order.sl ?? nextPos.sl };
+        } else {
+          nextPos = { ...nextPos, tp: workingFill.order.tp, sl: workingFill.order.sl };
+        }
+      }
+    }
+
+    const positionChanged = !samePaperPosition(pos, nextPos);
+    changed = changed || positionChanged || r.filled.length > 0 || r.trades.length > 0;
     const filledIds = new Set(r.filled.map((f) => f.id));
     nextState = {
       ...nextState,
@@ -603,11 +685,30 @@ export function reconcileBar(symbol: string, bar: import('./types').Candle) {
     }
     // Balance tracking
     let balanceDelta = 0;
-    for (const f of r.filled) {
-      if (!f.reduceOnly) {
-        const fp = f.price ?? 0;
-        balanceDelta -= marginFor(f.units, fp, f.leverage);
+    for (const workingFill of r.workingFills) {
+      const { order, fill, positionBefore, positionAfter } = workingFill;
+      const reservation = reservedMarginFor(order);
+      const incomingSide: PaperPosition['side'] = order.side === 'buy' ? 'long' : 'short';
+      const closedUnits = positionBefore && positionBefore.side !== 'flat' && positionBefore.side !== incomingSide
+        ? Math.min(positionBefore.units, fill.units)
+        : 0;
+      const openedUnits = fill.units - closedUnits;
+      const openedMargin = openedUnits > 0 ? marginFor(openedUnits, fill.price, fill.leverage) : 0;
+      // The accepted reservation is converted into the resulting position's
+      // margin exactly once; a stop's fill-price difference is reconciled here.
+      balanceDelta += reservation - openedMargin;
+      if (openedUnits > 0) {
+        balanceDelta -= fill.fee * (openedUnits / fill.units);
       }
+      // Full closes release below. Partial closes and reversals retain a
+      // position, so release only the old margin that has actually closed.
+      if (closedUnits > 0 && positionBefore && positionAfter && positionAfter.side !== 'flat') {
+        balanceDelta += marginFor(positionBefore.units, positionBefore.entryPrice, positionBefore.leverage)
+          * (closedUnits / positionBefore.units);
+      }
+    }
+    for (const cancelled of r.cancelled) {
+      balanceDelta += reservedMarginFor(cancelled);
     }
     for (const t of r.trades) {
       balanceDelta += t.realizedPnl;
@@ -618,6 +719,7 @@ export function reconcileBar(symbol: string, bar: import('./types').Candle) {
       balanceDelta += marginFor(pos.units, pos.entryPrice, pos.leverage);
     }
     nextState = { ...nextState, balance: nextState.balance + balanceDelta };
+    changed = changed || balanceDelta !== 0;
   }
 
   if (changed) setState(nextState);

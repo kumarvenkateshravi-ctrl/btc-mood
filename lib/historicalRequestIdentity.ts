@@ -1,6 +1,6 @@
 import type { Timeframe } from './types';
 
-export type HistoricalOperation = 'lazy' | 'deep' | 'history-window';
+export type HistoricalOperation = 'lazy' | 'deep' | 'history-window' | 'repair';
 
 export interface HistoricalRequestIdentity {
   symbol: string;

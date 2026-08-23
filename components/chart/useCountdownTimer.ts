@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { ChartRefs } from './refs';
 import type { ChartPalette } from '@/lib/chartTheme';
 import { getTfMinutes } from './types';
+import { canUseChartApi } from '@/lib/chartLifecycle';
 
 export function useCountdownTimer(
   refs: ChartRefs,
@@ -10,6 +11,8 @@ export function useCountdownTimer(
   enabled: boolean = true,
 ) {
   useEffect(() => {
+    const lifecycleEpoch = refs.lifecycleRef.current.epoch;
+    const active = () => canUseChartApi(refs.lifecycleRef.current, lifecycleEpoch);
     if (!enabled) {
       // Kill the card instantly when disabled.
       const cardEl = refs.priceCardRef.current;
@@ -21,7 +24,10 @@ export function useCountdownTimer(
     }
     let countdownRaf = 0;
     const updateCountdown = () => {
+      refs.pendingAnimationFramesRef.current.delete(countdownRaf);
+      if (!active()) return;
       countdownRaf = requestAnimationFrame(updateCountdown);
+      refs.pendingAnimationFramesRef.current.add(countdownRaf);
       const cardEl = refs.priceCardRef.current;
       const priceEl = refs.priceTextRef.current;
       const cdEl = refs.countdownTextRef.current;
@@ -71,9 +77,10 @@ export function useCountdownTimer(
     };
     
     countdownRaf = requestAnimationFrame(updateCountdown);
+    refs.pendingAnimationFramesRef.current.add(countdownRaf);
 
     return () => {
-      if (countdownRaf) cancelAnimationFrame(countdownRaf);
+      if (countdownRaf) { cancelAnimationFrame(countdownRaf); refs.pendingAnimationFramesRef.current.delete(countdownRaf); }
     };
   }, [refs, tf, palette, enabled]);
 }

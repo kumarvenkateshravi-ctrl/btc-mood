@@ -1,7 +1,7 @@
 'use client';
 
 // Daily Order Flow — two accumulating columns (buy vs sell taker volume) for the
-// current UTC day, plus a cumulative-delta sparkline.
+// current UTC day, plus a cumulative taker-delta sparkline.
 //
 // Answers one question at a glance: are buyers or sellers in control today?
 //
@@ -179,10 +179,10 @@ export default function DailyOrderFlowWidget({
             />
           </div>
 
-          {/* Delta */}
+          {/* Taker-side delta */}
           <div className="mt-3 flex items-center justify-between border-t border-line pt-2">
             <span className="text-[10px] uppercase tracking-wider text-ink-faint">
-              Delta
+              Taker Delta
             </span>
             <span
               className={[
@@ -195,11 +195,11 @@ export default function DailyOrderFlowWidget({
             </span>
           </div>
 
-          {/* Cumulative delta through the day */}
+          {/* Cumulative taker delta through the day */}
           {spark.length > 1 && (
             <div className="mt-2">
               <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">
-                Cumulative delta
+                Cumulative taker delta
               </div>
               <Sparkline series={spark} />
             </div>
@@ -243,7 +243,7 @@ function Column({
   );
 }
 
-/** Cumulative-delta line with a zero baseline: shows who has been winning, and turns. */
+/** Cumulative taker-delta line with a zero baseline: shows who has been winning, and turns. */
 function Sparkline({ series }: { series: number[] }) {
   const w = 240;
   const h = 40;
@@ -265,7 +265,7 @@ function Sparkline({ series }: { series: number[] }) {
       className="h-10 w-full"
       preserveAspectRatio="none"
       role="img"
-      aria-label={`Cumulative delta today, currently ${last >= 0 ? 'positive' : 'negative'} at ${fmt(last)}`}
+      aria-label={`Cumulative taker delta today, currently ${last >= 0 ? 'positive' : 'negative'} at ${fmt(last)}`}
     >
       <line
         x1={0}

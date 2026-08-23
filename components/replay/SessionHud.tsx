@@ -5,12 +5,13 @@ import { Activity, ShieldAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { cx } from '@/components/ui/util';
 import {
-  replayOpenWithRisk,
-  setPendingLevels,
-  setReplayActionContext,
+  // Execution mutations are delegated through ChartPanel's command boundary.
+  // This keeps the replay owner explicit and testable.
+  // No direct replay command is issued by this presentation component.
   sessionBalance,
   type ReplaySessionState,
 } from '@/lib/replaySession';
+import type { ChartTradingCommands } from '@/lib/chartTradingCommands';
 import {
   currencySymbol,
   positionSizeFor,
@@ -25,6 +26,13 @@ const REASON_TEXT: Record<SizingResult['reason'], string> = {
   'stop-on-wrong-side': 'Stop must sit on the losing side of entry.',
   'insufficient-margin': 'Not enough balance for this size at the chosen leverage.',
   'bad-input': 'Waiting for a valid replay price.',
+  'invalid-side': 'Choose a valid trade direction.',
+  'invalid-entry-price': 'Waiting for a valid replay price.',
+  'invalid-stop-price': 'Stop must be a positive finite price.',
+  'invalid-units': 'Calculated position size is invalid.',
+  'invalid-capital': 'Replay capital must be a positive finite value.',
+  'invalid-risk-pct': 'Risk percentage must be a positive finite value.',
+  'invalid-leverage': 'Leverage must be a positive finite value.',
 };
 
 export default function SessionHud({
@@ -33,12 +41,14 @@ export default function SessionHud({
   lastTime,
   atr,
   replayBarIndex,
+  commands,
 }: {
   session: ReplaySessionState;
   lastClose: number;
   lastTime: number;
   atr: number;
   replayBarIndex: number;
+  commands: ChartTradingCommands;
 }) {
   const cfg = session.config!;
   const sym = currencySymbol(cfg.currency);
@@ -61,9 +71,9 @@ export default function SessionHud({
   const effectiveTp = tp ?? suggestedLevels.tp;
 
   useEffect(() => {
-    setReplayActionContext(replayBarIndex, lastTime);
-    setPendingLevels(effectiveSl, effectiveTp);
-  }, [effectiveSl, effectiveTp, replayBarIndex, lastTime]);
+    commands.setReplayPendingLevels({ symbol: session.symbol, sl: effectiveSl, tp: effectiveTp, replayContext: { barIndex: replayBarIndex, cutTime: lastTime } });
+    // The mode-aware boundary owns the replay journal context.
+  }, [commands, effectiveSl, effectiveTp, lastTime, replayBarIndex, session.symbol]);
 
   const balance = sessionBalance(session);
   const sizing = useMemo(() => positionSizeFor(cfg, balance, side, lastClose, effectiveSl), [cfg, balance, side, lastClose, effectiveSl]);
@@ -78,21 +88,21 @@ export default function SessionHud({
 
   const execute = (s: Side) => {
     selectSide(s);
-    setReplayActionContext(replayBarIndex, lastTime);
-    const r = replayOpenWithRisk(s, lastClose, lastTime);
-    if (r.blocked === 'position-open') setNotice('Finish current trade first.');
-    else if (!r.ok) setNotice(REASON_TEXT[r.reason]);
+    const result = commands.openReplayRisk({ symbol: session.symbol, side: s, mark: lastClose, ts: lastTime, replayContext: { barIndex: replayBarIndex, cutTime: lastTime } });
+    if (result.status !== 'accepted') setNotice(result.reason);
     else setNotice(null);
+    // Rejection reasons are normalized by the command boundary.
+    // Sizing feedback above remains presentation-only.
   };
 
   const field = 'input-field h-8 w-24 rounded-md border border-line bg-base px-2 font-mono text-[12px] text-ink';
 
   return (
-    <div className="elev-1 rounded-xl p-3 text-xs">
+    <div data-testid="replay-hud" className="elev-1 rounded-xl p-3 text-xs">
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-[220px] flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-accent">Practice account</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">REPLAY ACCOUNT</span>
             <Badge tone="accent">Replay only</Badge>
             {hasPosition && <Badge tone="warn">Position open</Badge>}
           </div>

@@ -1,25 +1,26 @@
 import type { ChartType } from './types';
 import { OHLCCell } from './ChartOHLCStrip';
 import type { HoverPayload } from '@/lib/chartHoverStore';
+import { formatChartInstrumentPrice } from '@/lib/chartInstrumentPresentation';
+import { formatPercent } from '@/lib/format';
 
 export function FloatingChartTooltip({
   pos,
   mode,
+  symbol = 'BTCUSDT',
 }: {
   pos: { x: number; y: number; time?: number; hover: HoverPayload };
   mode: ChartType;
+  symbol?: string;
 }) {
   const { hover } = pos;
   if (!hover) return null;
   const isRenko = mode === 'renko';
   const active = hover;
 
-  const fmt = (n: number | null | undefined, digits = 2): string => {
+  const fmt = (n: number | null | undefined): string => {
     if (n == null || !Number.isFinite(n)) return '—';
-    return n.toLocaleString('en-US', {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    });
+    return formatChartInstrumentPrice(symbol, n);
   };
   const fmtVol = (n: number | null | undefined): string => {
     if (n == null || !Number.isFinite(n)) return '—';
@@ -61,7 +62,7 @@ export function FloatingChartTooltip({
       {/* 3. Delta */}
       {delta !== null && deltaPct !== null && (
         <div className={`text-[12px] font-medium leading-tight ${delta >= 0 ? 'text-bull-bright' : 'text-bear-bright'}`}>
-          {delta > 0 ? '+' : ''}{fmt(delta)} ({delta > 0 ? '+' : ''}{fmt(deltaPct)}%)
+          {fmt(delta)} ({formatPercent(deltaPct)})
         </div>
       )}
 
