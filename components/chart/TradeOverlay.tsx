@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import { formatOverlayQuantity } from '@/lib/orderOverlayPrimitive';
 
 interface TradeOverlayProps {
   chart: IChartApi | null;
@@ -109,7 +110,7 @@ export function TradeOverlay(p: TradeOverlayProps) {
       {/* qty | ±P&L | ✕ pill — gapped from the chips, floats left of the axis */}
       <div className="ml-3 flex h-6 items-center overflow-hidden rounded border" style={{ borderColor: pillColor }}>
         <span className="flex h-full items-center px-2 text-[11px] font-medium leading-none text-white" style={{ background: pillColor }}>
-          {p.mode === 'replay' ? `Replay · ${p.qty}` : p.qty}
+          {p.mode === 'replay' ? `Replay · ${formatOverlayQuantity(p.qty)}` : formatOverlayQuantity(p.qty)}
         </span>
         <span
           className="flex h-full items-center bg-surface-1/95 px-2 font-mono text-[11px] leading-none"

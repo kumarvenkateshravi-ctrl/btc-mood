@@ -29,6 +29,14 @@ export const DECISION_SCHEMA_VERSION = 1;
 /** Drop the still-forming last bar (closed-bar determinism). */
 const closed = (c: Candle[]): Candle[] => (c.length > 1 ? c.slice(0, -1) : c);
 
+export interface TradeDecisionInputOptions {
+  /**
+   * Default callers provide a forming final bar. The official snapshot service
+   * passes the already-closed prefix and explicitly prevents a second trim.
+   */
+  readonly candlesAreClosed?: boolean;
+}
+
 interface AssembleArgs {
   board: BoardDecision;
   market: MarketIntelligenceResult;
@@ -99,13 +107,16 @@ export function computeTradeDecision(
   intel: FullMarketIntelligence,
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   smc?: Pick<SmcSnapshot, 'objects'>,
+  options: TradeDecisionInputOptions = {},
 ): TradeDecisionResult {
   const market = intel.result;
   const executionTf = board.executionTimeframe;
   const side: TradeSide | null = board.direction === 'no_trade' ? null : board.direction;
   const emptyDiag = { atr: null, swingHigh: null, swingLow: null, rawRR: null };
   const rawArr = candlesByTf[executionTf] ?? [];
-  const generatedAt = rawArr.length > 1 ? rawArr[rawArr.length - 2].time : null;
+  const generatedAt = options.candlesAreClosed
+    ? rawArr[rawArr.length - 1]?.time ?? null
+    : rawArr.length > 1 ? rawArr[rawArr.length - 2].time : null;
 
   const gate = boardGate(board);
   if (!gate.passed || !side) {
@@ -114,7 +125,7 @@ export function computeTradeDecision(
     });
   }
 
-  const candles = closed(rawArr);
+  const candles = options.candlesAreClosed ? rawArr.slice() : closed(rawArr);
   if (candles.length < DECISION_CONFIG.minCandles) {
     return assembleResult({
       board, market, executionTf, generatedAt, setup: null, side, confluence: [], extraWarnings: [], diagnostics: emptyDiag,
@@ -174,9 +185,10 @@ export function computeTradeDecision(
 export function computeFullTradeDecision(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   smc?: Pick<SmcSnapshot, 'objects'>,
+  options: TradeDecisionInputOptions = {},
 ): { decision: TradeDecisionResult; intel: FullMarketIntelligence; board: BoardDecision } {
   const matrix = computeAlignmentMatrix(candlesByTf, [...TIMEFRAMES]);
   const board = computeBoardDecision(matrix, candlesByTf);
-  const intel = computeFullMarketIntelligence({ '5m': candlesByTf['5m'] ?? [] });
-  return { decision: computeTradeDecision(board, intel, candlesByTf, smc), intel, board };
+  const intel = computeFullMarketIntelligence({ '5m': candlesByTf['5m'] ?? [] }, options);
+  return { decision: computeTradeDecision(board, intel, candlesByTf, smc, options), intel, board };
 }

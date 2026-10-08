@@ -17,11 +17,13 @@ import type { ProfileSourceProvenance } from './profileDataProvider';
 import { extractFinalizedHistoricalPocs, type HistoricalPocRecord } from './historicalPocStore';
 import type {
   CustomIndicatorConfig,
+  IndicatorMarker,
   IndicatorResult,
   VolumeProfileRender,
   VolumeProfileStyle,
 } from '../indicatorFramework';
 import { classifyProfile, SHAPE_GLYPH, SHAPE_LABEL } from './profileShape';
+import { computeVwap } from './vwap';
 
 // ---- Public types ----------------------------------------------------------
 
@@ -438,6 +440,57 @@ export function buildPocOnlyProfile(
   return { startTime: candles[0].time, endTime: candles[candles.length - 1].time, low, high, rows: [], poc, pocIndex, vah: poc, val: poc, totalVolume, maxRowVolume };
 }
 
+function confluenceMarkers(
+  candles: Candle[],
+  profileSets: readonly (readonly VolumeProfile[])[],
+  color: string,
+): IndicatorMarker[] {
+  const cursors = [0, 0, 0];
+  const markers: IndicatorMarker[] = [];
+  for (let index = 0; index < candles.length; index += 1) {
+    const candle = candles[index];
+    const bodyLow = Math.min(candle.open, candle.close);
+    const bodyHigh = Math.max(candle.open, candle.close);
+    const allPocsInBody = profileSets.every((profiles, modeIndex) => {
+      while (cursors[modeIndex] < profiles.length && profiles[cursors[modeIndex]].endTime < candle.time) {
+        cursors[modeIndex] += 1;
+      }
+      const profile = profiles[cursors[modeIndex]];
+      return profile !== undefined && profile.startTime <= candle.time && candle.time <= profile.endTime &&
+        Number.isFinite(profile.poc) && bodyLow <= profile.poc && profile.poc <= bodyHigh;
+    });
+    if (allPocsInBody) {
+      markers.push({ index, position: 'aboveBar', shape: 'circle', color, text: 'C' });
+    }
+  }
+  return markers;
+}
+
+function vwapConfluenceMarkers(candles: Candle[], color: string): IndicatorMarker[] {
+  const sessionVwap = computeVwap(candles).plots[0].data;
+  const weeklyVwap = computeVwap(candles, {
+    id: 'vwap',
+    settings: { inputs: { anchor: 'week', source: 'hlc3' }, styles: {}, visibility: {} },
+  }).plots[0].data;
+  const markers: IndicatorMarker[] = [];
+
+  for (let index = 0; index < candles.length; index += 1) {
+    const session = sessionVwap[index];
+    const weekly = weeklyVwap[index];
+    if (typeof session !== 'number' || !Number.isFinite(session) ||
+        typeof weekly !== 'number' || !Number.isFinite(weekly)) continue;
+
+    const candle = candles[index];
+    const bodyLow = Math.min(candle.open, candle.close);
+    const bodyHigh = Math.max(candle.open, candle.close);
+    if (bodyLow <= session && session <= bodyHigh &&
+        bodyLow <= weekly && weekly <= bodyHigh) {
+      markers.push({ index, position: 'belowBar', shape: 'square', color, text: 'V' });
+    }
+  }
+  return markers;
+}
+
 function addVolume(row: ProfileRow, vol: number, isUp: boolean): void {
   row.total += vol;
   if (isUp) row.up += vol;
@@ -587,6 +640,8 @@ const STYLE_DEFAULTS: Record<string, string> = {
   weeklyPoc: '#a855f7',
   dailyPoc: '#f0b90b',
   fourHourPoc: '#00bcd4',
+  confluence: '#ffffff',
+  vwapConfluence: '#42a5f5',
   vah: '#787b86',
   val: '#787b86',
 };
@@ -736,6 +791,17 @@ export function computeSessionVolumeProfile(
       showShapeLabel: false,
     }));
   });
+  const confluenceModes = ['4h', 'daily', 'weekly'] as const;
+  const confluenceProfileSets = confluenceModes.map((pocMode) =>
+    (pocMode === mode ? recent : additionalProfileSets.find((set) => set.mode === pocMode)?.profiles.slice(-MAX_PROFILES)) ?? [],
+  );
+  const showConfluence = shown('confluence') && shown('poc') &&
+    confluenceModes.every((pocMode) => shown(pocStyleIdFor(pocMode))) &&
+    confluenceProfileSets.every((set) => set.length > 0);
+  const markers: IndicatorMarker[] = [
+    ...(showConfluence ? confluenceMarkers(candles, confluenceProfileSets, color('confluence')) : []),
+    ...(shown('vwapConfluence') ? vwapConfluenceMarkers(candles, color('vwapConfluence')) : []),
+  ].sort((a, b) => a.index - b.index);
   const profileStyle: VolumeProfileStyle = {
     volumeMode: str('volume', DEFAULTS.volume) as VolumeMode,
     placement: str('placement', DEFAULTS.placement) as 'left' | 'right',
@@ -766,6 +832,7 @@ export function computeSessionVolumeProfile(
   return {
     plots: [],
     signals: candles.map(() => 'neutral'),
+    markers,
     profiles: [...rendered, ...pocOnlyProfiles],
     historicalPocs,
     profileStyle,

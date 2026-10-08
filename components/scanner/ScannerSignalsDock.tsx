@@ -9,7 +9,7 @@ import { useState } from 'react';
 import type { ScannerSnapshot } from '@/lib/scanner/engine';
 import { selectScannerSignal } from '@/lib/scanner/scannerUiStore';
 import type { ScannerSignal } from '@/lib/scanner/signals';
-import type { VdTrade } from '@/lib/indicators/vdEngine';
+import type { TrackedTrade } from '@/lib/tradeWalker';
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Active', tp1: 'TP1 ✓', tp2: 'TP2 ✓', tp3: 'TP3 ✓', stopped: 'Stopped', exit: 'Exit',
@@ -19,7 +19,7 @@ const fmtTime = (unixSec: number): string =>
   new Date(unixSec * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 /** Signed current R for an open trade at midPrice; realized R when resolved. */
-export function currentR(t: VdTrade<ScannerSignal>, midPrice?: number): number | null {
+export function currentR(t: TrackedTrade<ScannerSignal>, midPrice?: number): number | null {
   if (t.realizedR != null) return t.realizedR;
   if (midPrice == null) return null;
   const risk = Math.abs(t.signal.entry - t.signal.stopLoss);
@@ -79,7 +79,7 @@ export default function ScannerSignalsDock({
 export function SignalCard({
   trade: t, snapshot, midPrice, onClose,
 }: {
-  trade: VdTrade<ScannerSignal>;
+  trade: TrackedTrade<ScannerSignal>;
   snapshot: ScannerSnapshot;
   midPrice?: number;
   onClose: () => void;

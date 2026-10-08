@@ -53,9 +53,10 @@ export function useTradeDecision(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   smcByTf: Partial<Record<Timeframe, SmcSnapshot>>,
   smcEnabled: boolean,
+  cacheScope = '',
 ): TradeDecisionView {
   // Signature over last-CLOSED bar per TF (last bar is still forming).
-  const fullSig = TIMEFRAMES
+  const fullSig = cacheScope + '|' + TIMEFRAMES
     .map((tf) => { const a = candlesByTf[tf]; return a && a.length > 1 ? `${tf}:${a[a.length - 2].time}` : `${tf}:0`; })
     .join('|');
 

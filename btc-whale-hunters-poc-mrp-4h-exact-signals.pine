@@ -1,0 +1,198 @@
+//@version=6
+indicator("BTC WHALE HUNTER'S - POC & MRP [Exact + Signals]", shorttitle = "POC & MRP Signals", overlay = true, format = format.price, precision = 2, max_bars_back = 5000, max_labels_count = 100)
+
+// Functional reconstruction from observed chart values. This is not the
+// protected source code and does not use volume-profile bins.
+
+GRP_MRP = "MRP / WMRP"
+GRP_POC = "POC LINES"
+GRP_SIG = "BUY / SELL SIGNALS"
+
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "Show WMRP", inline = "mrp", group = GRP_MRP)
+showMrpNames = input.bool(true, "Show MRP / WMRP Name Tags", group = GRP_MRP)
+nameTagOffset = input.int(2, "Name Tag Offset", minval = 0, maxval = 20, group = GRP_MRP)
+
+showWeeklyPoc = input.bool(true, "Show Weekly POC", group = GRP_POC)
+showDailyPoc = input.bool(true, "Show Daily POC", group = GRP_POC)
+showFourHourPoc = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+weeklyPocColor = input.color(#F59E0B, "Weekly POC Color", group = GRP_POC)
+dailyPocColor = input.color(#14532D, "Daily POC Color", group = GRP_POC)
+fourHourPocColor = input.color(#22D3EE, "4-Hour POC Color", group = GRP_POC)
+pocLineWidth = input.int(2, "POC Line Width", minval = 1, maxval = 4, group = GRP_POC)
+
+showSignals = input.bool(true, "Show Signals", group = GRP_SIG)
+slopeLookback = input.int(3, "MRP Slope Lookback", minval = 1, maxval = 20, group = GRP_SIG)
+atrLength = input.int(14, "ATR Length", minval = 1, maxval = 100, group = GRP_SIG)
+touchToleranceAtr = input.float(0.10, "Retest Tolerance (ATR)", minval = 0.0, maxval = 1.0, step = 0.05, group = GRP_SIG)
+breakoutBufferAtr = input.float(0.03, "Breakout Buffer (ATR)", minval = 0.0, maxval = 0.5, step = 0.01, group = GRP_SIG)
+cooldownBars = input.int(6, "Signal Cooldown (Bars)", minval = 0, maxval = 100, group = GRP_SIG)
+
+MRP_COLOR = #0B46F0
+WMRP_COLOR = #C57A00
+
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// Developing chart-timeframe Daily MRP and Weekly MRP (HLC3 VWAPs).
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float mrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float wmrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+plot(showMrp ? mrp : na, "MRP — Daily VWAP", color = MRP_COLOR, linewidth = 2)
+plot(showWMrp ? wmrp : na, "WMRP — Weekly VWAP", color = WMRP_COLOR, linewidth = 2)
+
+// Clear current-line name tags.
+var label mrpNameTag = na
+var label wmrpNameTag = na
+if barstate.islast
+    label.delete(mrpNameTag)
+    label.delete(wmrpNameTag)
+    mrpNameTag := na
+    wmrpNameTag := na
+    if showMrp and showMrpNames and not na(mrp)
+        mrpNameTag := label.new(bar_index + nameTagOffset, mrp, "MRP", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = MRP_COLOR, textcolor = color.white, size = size.small)
+    if showWMrp and showMrpNames and not na(wmrp)
+        wmrpNameTag := label.new(bar_index + nameTagOffset, wmrp, "WMRP", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = WMRP_COLOR, textcolor = color.white, size = size.small)
+
+// Exact cyan reconstruction: cumulative UTC-day VWAP built from native 4H
+// HLC3 candles. [1] freezes the value from the completed 4H candle.
+f_developingDailyVwapFrom4H() =>
+    const int LOCAL_DAY_MS = 24 * 60 * 60 * 1000
+    int localDayKey = int(math.floor(time / LOCAL_DAY_MS))
+    bool localNewDay = barstate.isfirst or localDayKey != localDayKey[1]
+
+    float localVolume = nz(volume, 0.0)
+    var float localPvSum = 0.0
+    var float localVolumeSum = 0.0
+
+    if localNewDay
+        localPvSum := 0.0
+        localVolumeSum := 0.0
+
+    localPvSum += hlc3 * localVolume
+    localVolumeSum += localVolume
+    localVolumeSum > 0 ? localPvSum / localVolumeSum : na
+
+float fourHourPoc = request.security(
+     syminfo.tickerid, "240", f_developingDailyVwapFrom4H()[1],
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+float weeklyPoc = request.security(
+     syminfo.tickerid, "1W", open,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+float dailyPoc = request.security(
+     syminfo.tickerid, "1D",
+     (high[1] + low[1] + close[1]) / 3,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+color fourHourPlotColor = newFourHour and not barstate.isfirst ? na : fourHourPocColor
+color dailyPlotColor = newDay and not barstate.isfirst ? na : dailyPocColor
+color weeklyPlotColor = newWeek and not barstate.isfirst ? na : weeklyPocColor
+
+plot(showWeeklyPoc ? weeklyPoc : na, "Weekly POC", color = weeklyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showDailyPoc ? dailyPoc : na, "Daily POC", color = dailyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showFourHourPoc ? fourHourPoc : na, "4-Hour POC", color = fourHourPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+
+// ────────────────────────────────────────────────────────────────────────────
+// SIGNAL ENGINE
+// ────────────────────────────────────────────────────────────────────────────
+
+float signalAtr = ta.atr(atrLength)
+float touchTolerance = signalAtr * touchToleranceAtr
+float breakoutBuffer = signalAtr * breakoutBufferAtr
+
+float pocTop = math.max(weeklyPoc, math.max(dailyPoc, fourHourPoc))
+float pocBottom = math.min(weeklyPoc, math.min(dailyPoc, fourHourPoc))
+
+// Primary directional rule requested by the user.
+bool priceAboveAllPocs = close > weeklyPoc and close > dailyPoc and close > fourHourPoc
+bool priceBelowAllPocs = close < weeklyPoc and close < dailyPoc and close < fourHourPoc
+
+// Track value migration between completed 4H POC steps.
+var float previousFourHourPoc = na
+if newFourHour and not barstate.isfirst
+    previousFourHourPoc := fourHourPoc[1]
+
+bool fourHourPocRising = not na(previousFourHourPoc) and fourHourPoc > previousFourHourPoc
+bool fourHourPocFalling = not na(previousFourHourPoc) and fourHourPoc < previousFourHourPoc
+bool fourHourPocNotFalling = na(previousFourHourPoc) or fourHourPoc >= previousFourHourPoc
+bool fourHourPocNotRising = na(previousFourHourPoc) or fourHourPoc <= previousFourHourPoc
+
+bool bullishMrpContext = close > mrp and mrp > wmrp and mrp > mrp[slopeLookback]
+bool bearishMrpContext = close < mrp and mrp < wmrp and mrp < mrp[slopeLookback]
+
+// A normal signal needs location + VWAP context + non-opposing 4H migration.
+bool bullishRegime = priceAboveAllPocs and bullishMrpContext and fourHourPocNotFalling
+bool bearishRegime = priceBelowAllPocs and bearishMrpContext and fourHourPocNotRising
+
+// Breakout: the close moves from inside/below the POC structure to beyond it.
+bool bullishBreakout = not priceAboveAllPocs[1] and close > pocTop + breakoutBuffer
+bool bearishBreakout = not priceBelowAllPocs[1] and close < pocBottom - breakoutBuffer
+
+// Retest: the complete candle range, including its wick, touches the nearest
+// edge of the POC structure and then closes back on the trend side.
+bool bullishRetest = priceAboveAllPocs[1] and low <= pocTop + touchTolerance and close > pocTop + breakoutBuffer
+bool bearishRetest = priceBelowAllPocs[1] and high >= pocBottom - touchTolerance and close < pocBottom - breakoutBuffer
+
+float candleRange = math.max(high - low, syminfo.mintick)
+bool bullishConfirmation = close > open and close >= high - candleRange * 0.40
+bool bearishConfirmation = close < open and close <= low + candleRange * 0.40
+
+bool rawBuy = showSignals and barstate.isconfirmed and bullishRegime and bullishConfirmation and (bullishBreakout or bullishRetest)
+bool rawSell = showSignals and barstate.isconfirmed and bearishRegime and bearishConfirmation and (bearishBreakout or bearishRetest)
+
+var int lastSignalBar = na
+bool cooldownComplete = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
+bool buySignal = rawBuy and cooldownComplete
+bool sellSignal = rawSell and cooldownComplete
+
+if buySignal or sellSignal
+    lastSignalBar := bar_index
+
+// Correct POC ordering upgrades an ordinary signal to A+.
+bool bullishPocHierarchy = fourHourPoc > dailyPoc and dailyPoc > weeklyPoc
+bool bearishPocHierarchy = fourHourPoc < dailyPoc and dailyPoc < weeklyPoc
+bool buyAPlus = buySignal and bullishPocHierarchy and fourHourPocRising and wmrp >= wmrp[slopeLookback]
+bool sellAPlus = sellSignal and bearishPocHierarchy and fourHourPocFalling and wmrp <= wmrp[slopeLookback]
+
+plotshape(buySignal and not buyAPlus, title = "BUY", style = shape.labelup, location = location.belowbar, color = #22C55E, text = "BUY", textcolor = color.white, size = size.tiny)
+plotshape(buyAPlus, title = "A+ BUY", style = shape.labelup, location = location.belowbar, color = #15803D, text = "A+ BUY", textcolor = color.white, size = size.small)
+plotshape(sellSignal and not sellAPlus, title = "SELL", style = shape.labeldown, location = location.abovebar, color = #EF4444, text = "SELL", textcolor = color.white, size = size.tiny)
+plotshape(sellAPlus, title = "A+ SELL", style = shape.labeldown, location = location.abovebar, color = #B91C1C, text = "A+ SELL", textcolor = color.white, size = size.small)
+
+alertcondition(buySignal, "POC/MRP BUY", "POC/MRP BUY on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sellSignal, "POC/MRP SELL", "POC/MRP SELL on {{ticker}} {{interval}} at {{close}}")
+alertcondition(buyAPlus, "POC/MRP A+ BUY", "POC/MRP A+ BUY on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sellAPlus, "POC/MRP A+ SELL", "POC/MRP A+ SELL on {{ticker}} {{interval}} at {{close}}")

@@ -13,8 +13,6 @@ import {
   Grid3x3,
   Check,
   LayoutGrid,
-  Layers,
-  Save,
   Square,
   Bitcoin,
   Calculator,
@@ -23,22 +21,20 @@ import {
   MoreHorizontal,
   Focus,
   PenLine,
+  Menu,
 } from 'lucide-react';
 import Link from 'next/link';
+import MobileSheet from '@/components/ui/MobileSheet';
 import { type Timeframe } from '@/lib/types';
-import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
+import { CHART_INDICATORS } from '@/lib/chartIndicatorCatalog';
 import type { RenkoConfig, RenkoMethod } from '@/lib/renko';
 import { GRID_COUNTS, type GridCount, type Layout } from '@/lib/gridLayout';
 import { LayoutSwitcher, LayoutSwitcherButton } from './LayoutSwitcher';
-import {
-  useWorkspaces,
-  saveWorkspace,
-  deleteWorkspace,
-  type WorkspaceConfig,
-} from '@/lib/workspaces';
+
 import { ChartSettingsButton } from './chart/ChartSettingsButton';
 import { ChartSettingsPopover } from './chart/ChartSettingsPopover';
 import type { ChartSettingsState } from './chart/useChartSettings';
+
 import { featureFlags } from '@/lib/featureFlags';
 import Num from '@/components/ui/Num';
 import type { MarketDataIntegrity } from '@/lib/marketDataIntegrity';
@@ -47,6 +43,7 @@ import type { WSStatus } from '@/lib/ws';
 import { CHART_INSTRUMENTS, getChartInstrumentPresentation } from '@/lib/chartInstrumentPresentation';
 import { ALL_CHART_TIMEFRAMES, MOBILE_PRIMARY_TIMEFRAMES } from '@/lib/chartNavigation';
 
+const FEATURED_INDICATOR_IDS = new Set(['ma_ribbon_tv', 'ma_fvg', 'session_volume_profile', 'dsmart_line']);
 
 export type ToolbarChartType = 'candlestick' | 'heikinAshi' | 'renko';
 export type ToolbarPriceScaleMode = 'normal' | 'log' | 'percent';
@@ -100,9 +97,6 @@ export interface ChartToolbarProps {
   // LayoutSwitcher is used instead of the legacy GridChip.
   layout?: Layout;
   onLayoutChange?: (next: Layout) => void;
-  // Workspace controls
-  workspaceCurrent: WorkspaceConfig;
-  onWorkspaceApply: (cfg: WorkspaceConfig) => void;
   // Layout toggles
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
@@ -151,8 +145,6 @@ export default function ChartToolbar(props: ChartToolbarProps) {
     onGridChange,
     layout,
     onLayoutChange,
-    workspaceCurrent,
-    onWorkspaceApply,
     isSidebarOpen,
     onToggleSidebar,
     chartSettings,
@@ -165,7 +157,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
   return (
     <>
-    <div data-testid="desktop-chart-toolbar" className="hidden h-[40px] w-full shrink-0 flex-nowrap items-center gap-0.5 overflow-hidden border-b border-line bg-base px-2 md:flex md:max-lg:h-[44px]">
+    <div data-testid="desktop-chart-toolbar" className="relative z-50 hidden h-[40px] w-full shrink-0 flex-nowrap items-center gap-0.5 overflow-visible border-b border-line bg-base px-2 lg:flex">
       <ChartContext
         symbol={symbol}
         onSelectSymbol={onSelectSymbol}
@@ -225,7 +217,7 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* Replay + jump-to-date */}
+      {/* Replay */}
       <div className="flex shrink-0 items-center h-full">
         <ChipButton
           icon={<History className="h-3.5 w-3.5" />}
@@ -239,7 +231,18 @@ export default function ChartToolbar(props: ChartToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* Layout and workspaces are secondary below laptop width. */}
+      {/* Standalone historical date query. */}
+      <div className="flex shrink-0 items-center h-full">
+        <DateChip
+          historyActive={historyActive}
+          onJump={onJumpToDate}
+          onReturn={onReturnToLive}
+        />
+      </div>
+
+      <ToolbarDivider />
+
+      {/* Layout controls are secondary below laptop width. */}
       <div className="hidden shrink-0 items-center h-full lg:flex">
         {featureFlags.layoutSwitcher && layout && onLayoutChange ? (
           <LayoutSwitcherToolbarMount
@@ -250,11 +253,6 @@ export default function ChartToolbar(props: ChartToolbarProps) {
         ) : (
           <GridChip value={gridCount} onChange={onGridChange} />
         )}
-      </div>
-
-      {/* Workspace chip */}
-      <div className="hidden shrink-0 items-center h-full lg:flex">
-        <WorkspaceChip current={workspaceCurrent} onApply={onWorkspaceApply} />
       </div>
 
       {/* Spacer pushes fullscreen + more to the right */}
@@ -420,6 +418,9 @@ function MobileChartToolbar({
   onClearIndicators,
   replayActive,
   onReplayToggle,
+  historyActive,
+  onJumpToDate,
+  onReturnToLive,
   isFullscreen,
   onToggleFullscreen,
   isFocusMode,
@@ -427,8 +428,6 @@ function MobileChartToolbar({
   onFitContent,
   gridCount,
   onGridChange,
-  workspaceCurrent,
-  onWorkspaceApply,
   chartSettings,
   onChartSettingsPatch,
   onChartSettingsReset,
@@ -439,7 +438,7 @@ function MobileChartToolbar({
   effectiveIntegrity: MarketDataIntegrity;
   effectiveExecutionMode: 'live' | 'replay';
 }) {
-  const [sheet, setSheet] = useState<'timeframes' | 'controls' | null>(null);
+  const [sheet, setSheet] = useState<'timeframes' | 'controls' | 'instrument' | null>(null);
   useEffect(() => {
     if (!sheet) return;
     const onKey = (event: KeyboardEvent) => {
@@ -452,94 +451,64 @@ function MobileChartToolbar({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [sheet]);
   const instrument = getChartInstrumentPresentation(symbol);
-  const hasPrice = price != null && Number.isFinite(price);
-  const hasChange = change != null && Number.isFinite(change);
-  const hasChangeAbs = changeAbs != null && Number.isFinite(changeAbs);
+  // A symbol transition can retain the previous feed's last tick while loading.
+  const canDisplayPrice = effectiveIntegrity !== 'loading' && effectiveIntegrity !== 'unavailable';
+  const hasPrice = canDisplayPrice && price != null && Number.isFinite(price);
+  const hasChange = canDisplayPrice && change != null && Number.isFinite(change);
+  const hasChangeAbs = canDisplayPrice && changeAbs != null && Number.isFinite(changeAbs);
   const health = integrityPresentation(effectiveIntegrity, connectionStatus);
 
   return (
-    <div data-testid="mobile-chart-toolbar" className="flex h-[88px] w-full shrink-0 flex-col border-b border-line bg-base md:hidden">
-      <div data-priority="P1" className="flex min-h-11 items-center gap-1.5 border-b border-line/70 px-2">
-        <div role="group" aria-label="Chart instrument" className="flex min-h-11 shrink-0 items-center rounded-md border border-line bg-surface-1 p-0.5">
-          {CHART_INSTRUMENTS.map((candidate) => (
-            <button
-              key={candidate.symbol}
-              type="button"
-              aria-pressed={candidate.symbol === symbol}
-              title={`Switch to ${candidate.label}`} aria-label={`${candidate.label} ${candidate.displaySymbol}`}
-              disabled={!onSelectSymbol || candidate.symbol === symbol}
-              onClick={() => onSelectSymbol?.(candidate.symbol)}
-              className={[
-                'focus-ring inline-flex min-h-10 items-center justify-center gap-1 rounded px-2 text-[11px] font-semibold transition-colors disabled:cursor-default',
-                candidate.symbol === symbol ? 'bg-surface-3 text-ink ring-1 ring-accent/45' : 'text-ink-faint hover:bg-surface-2 hover:text-ink',
-              ].join(' ')}
-            >
-              {candidate.kind === 'crypto' ? <Bitcoin className="h-3.5 w-3.5 text-regime-hot" aria-hidden /> : <span className="text-[10px] font-bold text-regime-hot" aria-hidden>Au</span>}
-              {candidate.label}
-            </button>
-          ))}
-        </div>
-        <div className="min-w-0 flex-1 leading-none" aria-live="polite" aria-atomic="true">
-          {hasPrice ? <Num.Price value={price} precision={instrument.pricePrecision} className="text-[13px] font-semibold text-ink" /> : <span className="num text-[13px] text-ink-faint">—</span>}
-          {(hasChangeAbs || hasChange) && (
-            <span className="ml-1 inline-flex items-baseline gap-1 text-[10px]">
+    <div data-testid="mobile-chart-toolbar" className="terminal-mobile-header lg:hidden">
+      <div className="terminal-instrument-row" data-priority="P1">
+        <Link href="/" className="terminal-icon focus-ring" aria-label="Open application home"><Menu size={22} /></Link>
+        <button type="button" className="terminal-instrument focus-ring" onClick={() => setSheet('instrument')} aria-label={`Select instrument, current ${instrument.displaySymbol}`}>
+          <span className="terminal-coin" aria-hidden>{instrument.kind === 'crypto' ? <Bitcoin size={21} /> : 'Au'}</span>
+          <span>{instrument.displaySymbol}</span><ChevronDown size={16} />
+        </button>
+        <button type="button" className="terminal-icon focus-ring" onClick={() => setSheet('controls')} aria-label="More chart controls"><MoreHorizontal size={22} /></button>
+      </div>
+      <div className="terminal-market-row">
+        <div className="terminal-price">
+          {hasPrice ? <Num.Price value={price} precision={instrument.pricePrecision} className={change != null && change < 0 ? 'text-bear-bright' : 'text-bull-bright'} /> : <span className="text-ink-muted">—</span>}
+          <div className="terminal-change" aria-label={effectiveExecutionMode === 'replay' ? 'Snapshot price' : 'UTC day change'}>
+            {effectiveExecutionMode === 'replay' ? <span className="text-ink-muted">Snapshot price</span> : <>
               {hasChangeAbs && <Num.Delta value={changeAbs} precision={instrument.pricePrecision} />}
               {hasChange && <Num.Pct value={change} tone precision={2} />}
-            </span>
-          )}
-        </div>
-        <span title={health.description} aria-label={health.description} className={`inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold tracking-[0.07em] ${health.className}`}>
-          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
-          {health.label}
-        </span>
-        <span className="shrink-0 text-[10px] font-medium tracking-[0.08em] text-ink-faint">{effectiveExecutionMode === 'replay' ? 'REPLAY' : 'PAPER'}</span>
-      </div>
-      <div data-priority="P2" className="flex min-h-11 items-center gap-1 overflow-hidden px-2">
-        <div role="group" aria-label="Quick chart timeframes" className="flex min-w-0 flex-1 items-center gap-1">
-          {MOBILE_PRIMARY_TIMEFRAMES.map((tf) => (
-            <button key={tf} type="button" aria-pressed={selected === tf} onClick={() => onSelectTf(tf)} className={[
-              'focus-ring inline-flex min-h-11 min-w-11 flex-1 items-center justify-center rounded-md px-1 text-xs font-semibold tabular-nums transition-colors',
-              selected === tf ? 'bg-surface-3 text-ink ring-1 ring-accent/50' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
-            ].join(' ')}>{tf}</button>
-          ))}
-        </div>
-        <button type="button" onClick={() => setSheet('timeframes')} aria-label={`All timeframes, current ${selected}`} className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-line bg-surface-1 px-2 text-[11px] font-semibold tabular-nums text-ink transition hover:bg-surface-2">{selected}</button>
-        <button type="button" onClick={() => setSheet('controls')} aria-label="More chart controls" className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 hover:text-ink"><MoreHorizontal className="h-5 w-5" aria-hidden /></button>
-        {onOpenDrawings && <button type="button" onClick={onOpenDrawings} aria-label="Open drawing tools" title="Open drawing tools" className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 hover:text-ink"><PenLine className="h-5 w-5" aria-hidden /></button>}
-      </div>
-      {sheet && (
-        <div className="fixed inset-0 z-[70] flex items-end bg-base/65 px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-16" role="dialog" aria-modal="true" aria-label={sheet === 'timeframes' ? 'All chart timeframes' : 'Chart controls'}>
-          <button type="button" aria-label="Close chart controls" className="absolute inset-0 cursor-default" onClick={() => setSheet(null)} />
-          <div className="relative z-10 w-full rounded-xl border border-line-strong bg-surface-1 p-2 shadow-2xl">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-xs font-semibold text-ink">{sheet === 'timeframes' ? 'Timeframe' : 'Chart controls'}</span>
-              <button type="button" onClick={() => setSheet(null)} className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-xs font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"><X className="h-4 w-4" aria-hidden /></button>
-            </div>
-            {sheet === 'timeframes' ? (
-              <div role="group" aria-label="All chart timeframes" className="grid grid-cols-3 gap-2">
-                {ALL_CHART_TIMEFRAMES.map((tf) => <button key={tf} type="button" aria-pressed={selected === tf} onClick={() => { onSelectTf(tf); setSheet(null); }} className={[
-                  'focus-ring min-h-11 rounded-md border text-sm font-semibold tabular-nums transition-colors',
-                  selected === tf ? 'border-accent/60 bg-accent/15 text-ink' : 'border-line bg-surface-2 text-ink-muted hover:text-ink',
-                ].join(' ')}>{tf}</button>)}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="min-h-11 rounded-md border border-line bg-surface-2"><ChartTypeChip value={chartType} onChange={onSelectType} /></div>
-                <div className="min-h-11 rounded-md border border-line bg-surface-2"><IndicatorChip activeIds={activeIndicatorIds} onToggle={onToggleIndicator} onClear={onClearIndicators} /></div>
-                <button type="button" onClick={onReplayToggle} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface-2 text-sm font-medium text-ink-muted hover:text-ink"><History className="h-4 w-4" />{replayActive ? 'Replay active' : 'Replay'}</button>
-                <button type="button" onClick={onToggleFullscreen} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface-2 text-sm font-medium text-ink-muted hover:text-ink">{isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}Fullscreen</button>
-                {onToggleFocus && <button type="button" onClick={onToggleFocus} aria-pressed={isFocusMode} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface-2 text-sm font-medium text-ink-muted hover:text-ink"><Focus className="h-4 w-4" />{isFocusMode ? 'Exit Focus' : 'Focus chart'}</button>}
-                <div className="min-h-11 rounded-md border border-line bg-surface-2"><GridChip value={gridCount} onChange={onGridChange} /></div>
-                <div className="min-h-11 rounded-md border border-line bg-surface-2"><WorkspaceChip current={workspaceCurrent} onApply={onWorkspaceApply} /></div>
-                {featureFlags.chartSettings && chartSettings && onChartSettingsPatch && onChartSettingsReset && <div className="col-span-2 flex min-h-11 items-center rounded-md border border-line bg-surface-2 px-1"><ChartSettingsButtonWithPopover settings={chartSettings} onPatch={onChartSettingsPatch} onReset={onChartSettingsReset} onFitContent={onFitContent} /></div>}
-              </div>
-            )}
+              {!hasChangeAbs && !hasChange && <span className="text-ink-muted">Price unavailable</span>}
+            </>}
           </div>
         </div>
-      )}
+        <div className="terminal-feed"><span title={health.description} aria-label={health.description} className={effectiveIntegrity === 'live' ? 'text-bull-bright' : health.className}><i aria-hidden />{health.label}</span><span>{effectiveExecutionMode === 'replay' ? 'REPLAY · SIMULATED' : replayActive ? 'REPLAY SETUP' : 'PAPER'}</span></div>
+      </div>
+      <div className="terminal-timeframe-row">
+        <div role="group" aria-label="Quick chart timeframes" className="terminal-timeframes">
+          {MOBILE_PRIMARY_TIMEFRAMES.map((tf) => <button key={tf} type="button" className="focus-ring min-h-11" aria-pressed={selected === tf} onClick={() => onSelectTf(tf)}>{tf}</button>)}
+          <button type="button" className="focus-ring" onClick={() => setSheet('timeframes')} aria-label={`All timeframes, current ${selected}`} aria-pressed={!MOBILE_PRIMARY_TIMEFRAMES.includes(selected)}>{MOBILE_PRIMARY_TIMEFRAMES.includes(selected) ? <ChevronDown size={16} /> : selected}</button>
+        </div>
+        <div className="terminal-indicators"><IndicatorChip activeIds={activeIndicatorIds} onToggle={onToggleIndicator} onClear={onClearIndicators} /></div>
+        {onOpenDrawings && <button type="button" className="terminal-icon focus-ring" onClick={onOpenDrawings} aria-label="Open drawing tools"><PenLine size={19} /></button>}
+      </div>
+      {sheet && <MobileSheet title={sheet === 'instrument' ? 'Select instrument' : sheet === 'timeframes' ? 'All chart timeframes' : 'Chart controls'} onClose={() => setSheet(null)}>
+        {sheet === 'instrument' ? <div role="group" aria-label="Chart instrument" className="space-y-2">
+          {CHART_INSTRUMENTS.map(candidate => <button key={candidate.symbol} type="button" aria-label={`${candidate.label} ${candidate.displaySymbol}`} aria-pressed={candidate.symbol === symbol} disabled={!onSelectSymbol} onClick={() => { onSelectSymbol?.(candidate.symbol); setSheet(null); }} className="terminal-instrument-option focus-ring"><span>{candidate.label}</span><span>{candidate.displaySymbol}</span>{candidate.symbol === symbol && <Check size={18} />}</button>)}
+        </div> : sheet === 'timeframes' ? <div role="group" aria-label="All chart timeframes" className="grid grid-cols-3 gap-2">
+          {ALL_CHART_TIMEFRAMES.map(tf => <button key={tf} type="button" aria-pressed={selected === tf} onClick={() => { onSelectTf(tf); setSheet(null); }} className="terminal-sheet-action focus-ring">{tf}</button>)}
+        </div> : <div className="terminal-controls-grid">
+          <div className="terminal-sheet-action"><ChartTypeChip value={chartType} onChange={onSelectType} /></div>
+          <div className="terminal-sheet-action"><IndicatorChip activeIds={activeIndicatorIds} onToggle={onToggleIndicator} onClear={onClearIndicators} /></div>
+          <div className="terminal-sheet-action"><DateChip historyActive={historyActive} onJump={onJumpToDate} onReturn={onReturnToLive} /></div>
+          <button type="button" onClick={() => { onReplayToggle(); setSheet(null); }} className="terminal-sheet-action focus-ring"><History size={18} />{replayActive ? 'Exit replay' : 'Replay'}</button>
+          <button type="button" onClick={() => { onToggleFullscreen(); setSheet(null); }} className="terminal-sheet-action focus-ring"><Maximize2 size={18} />{isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}</button>
+          {onToggleFocus && <button type="button" onClick={onToggleFocus} aria-pressed={isFocusMode} className="terminal-sheet-action focus-ring"><Focus size={18} />Focus chart</button>}
+          <div className="terminal-sheet-action"><GridChip value={gridCount} onChange={onGridChange} /></div>
+          {featureFlags.chartSettings && chartSettings && onChartSettingsPatch && onChartSettingsReset && <div className="terminal-sheet-action"><ChartSettingsButtonWithPopover settings={chartSettings} onPatch={onChartSettingsPatch} onReset={onChartSettingsReset} onFitContent={onFitContent} /></div>}
+        </div>}
+      </MobileSheet>}
     </div>
   );
 }
+
 function ChartContext({
   symbol,
   onSelectSymbol,
@@ -563,23 +532,24 @@ function ChartContext({
   positionSide: Exclude<PositionSide, 'flat'> | null;
 }) {
   const instrument = getChartInstrumentPresentation(symbol);
-  const hasPrice = price != null && Number.isFinite(price);
-  const hasChange = change != null && Number.isFinite(change);
-  const hasChangeAbs = changeAbs != null && Number.isFinite(changeAbs);
+  const canDisplayPrice = integrity !== 'loading' && integrity !== 'unavailable';
+  const hasPrice = canDisplayPrice && price != null && Number.isFinite(price);
+  const hasChange = canDisplayPrice && change != null && Number.isFinite(change);
+  const hasChangeAbs = canDisplayPrice && changeAbs != null && Number.isFinite(changeAbs);
   const positionLabel = positionSide ? positionSide.toUpperCase() : null;
   const positionTone = positionSide === 'long' ? 'text-bull-bright' : 'text-bear-bright';
 
   return (
     <div
       data-testid="chart-context"
-      className="flex min-w-0 shrink items-center gap-2 px-0.5"
+      className="flex min-w-0 shrink-0 items-center gap-2 whitespace-nowrap px-0.5"
       aria-label="Active chart context"
     >
       <DesktopInstrumentSelector symbol={symbol} onSelect={onSelectSymbol} />
 
       <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
 
-      <div className="flex min-w-0 items-baseline gap-1.5" aria-live="polite" aria-atomic="true">
+      <div className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap" aria-live="polite" aria-atomic="true">
         <span className="text-[10px] uppercase tracking-[0.08em] text-ink-faint">Last</span>
         {hasPrice ? <Num.Price value={price} precision={instrument.pricePrecision} className="text-[13px] font-semibold text-ink" /> : <span className="num text-[13px] text-ink-faint">—</span>}
         {(hasChangeAbs || hasChange) && (
@@ -1244,128 +1214,6 @@ function LayoutSwitcherToolbarMount({
   );
 }
 
-/** Workspace chip — icon only, opens a dropdown to save/restore/delete workspaces. */
-function WorkspaceChip({
-  current,
-  onApply,
-}: {
-  current: WorkspaceConfig;
-  onApply: (cfg: WorkspaceConfig) => void;
-}) {
-  const workspaces = useWorkspaces();
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('mousedown', onClick);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onClick);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  const handleSave = () => {
-    if (!name.trim()) return;
-    saveWorkspace(name.trim(), current);
-    setName('');
-  };
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Workspaces"
-        aria-label="Workspaces"
-        aria-expanded={open}
-        className={[
-          'focus-ring relative inline-flex h-full px-2 items-center justify-center transition-colors',
-          open
-            ? 'text-accent'
-            : 'text-ink-faint hover:text-ink',
-        ].join(' ')}
-      >
-        <Layers className="h-3.5 w-3.5" />
-        {workspaces.length > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-white">
-            {workspaces.length}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full z-40 mt-1.5 w-[270px] overflow-hidden rounded-lg border border-line-strong bg-surface-1 shadow-2xl">
-          {/* Header */}
-          <div className="flex items-center gap-1.5 border-b border-line bg-surface-2/40 px-3 py-2">
-            <Layers className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
-            <span className="text-[11px] font-semibold text-ink">Workspaces</span>
-          </div>
-          {/* Save row */}
-          <div className="flex items-center gap-1.5 border-b border-line p-2">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
-              placeholder="Name this workspace…"
-              className="focus-ring min-w-0 flex-1 rounded bg-base px-2 py-1 text-xs text-ink outline-none placeholder:text-ink-faint"
-            />
-            <button
-              onClick={handleSave}
-              title="Save current layout"
-              disabled={!name.trim()}
-              className="focus-ring inline-flex items-center gap-1 rounded bg-accent/15 px-2 py-1 text-xs font-medium text-ink transition hover:bg-accent/25 disabled:opacity-40"
-            >
-              <Save className="h-3.5 w-3.5" />
-              Save
-            </button>
-          </div>
-          {/* List */}
-          {workspaces.length === 0 ? (
-            <div className="px-3 py-4 text-center text-[11px] text-ink-faint">
-              No saved workspaces yet.
-            </div>
-          ) : (
-            <ul className="max-h-[40vh] overflow-auto py-1">
-              {workspaces.map((w) => (
-                <li key={w.id} className="group flex items-center">
-                  <button
-                    onClick={() => {
-                      onApply({ chartType: w.chartType, symbol: w.symbol, tf: w.tf, indicatorIds: w.indicatorIds });
-                      setOpen(false);
-                    }}
-                    className="min-w-0 flex-1 px-3 py-2 text-left transition-colors hover:bg-surface-2"
-                  >
-                    <div className="truncate text-[13px] font-medium text-ink">{w.name}</div>
-                    <div className="mt-0.5 truncate font-mono text-[10px] text-ink-faint">
-                      {w.symbol} · {w.tf} · {w.chartType} · {w.indicatorIds.length} ind
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => deleteWorkspace(w.id)}
-                    aria-label={`Delete ${w.name}`}
-                    className="mr-1 shrink-0 rounded p-1 text-ink-faint opacity-0 transition hover:bg-surface-2 hover:text-bear-bright group-hover:opacity-100"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function IndicatorChip({
   activeIds,
   onToggle,
@@ -1378,6 +1226,8 @@ export function IndicatorChip({
   const [open, setOpen] = useState(false);
   const count = activeIds.length;
   const label = count > 0 ? `Indicators · ${count}` : 'Indicators';
+  const featuredIndicators = CHART_INDICATORS.filter((indicator) => FEATURED_INDICATOR_IDS.has(indicator.id));
+  const remainingIndicators = CHART_INDICATORS.filter((indicator) => !FEATURED_INDICATOR_IDS.has(indicator.id));
 
   return (
     <div className="relative">
@@ -1397,7 +1247,19 @@ export function IndicatorChip({
       />
       <ChipMenu open={open} onClose={() => setOpen(false)} width={260}>
         <div className="max-h-[60vh] overflow-auto">
-          {CUSTOM_INDICATORS.map((ind) => (
+          <div className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-faint" aria-label="Featured indicators">
+            Featured indicators
+          </div>
+          {featuredIndicators.map((ind) => (
+            <MenuItem
+              key={ind.id}
+              onClick={() => { onToggle(ind.id); setOpen(false); }}
+            >
+              {ind.name}
+            </MenuItem>
+          ))}
+          <MenuDivider />
+          {remainingIndicators.map((ind) => (
             <MenuItem
               key={ind.id}
               onClick={() => { onToggle(ind.id); setOpen(false); }}

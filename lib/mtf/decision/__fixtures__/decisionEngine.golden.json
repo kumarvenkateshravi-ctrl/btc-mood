@@ -1,0 +1,316 @@
+{
+  "board": {
+    "schemaVersion": 1,
+    "direction": "long",
+    "bias": "bullish",
+    "conviction": 100,
+    "trendStrength": {
+      "score": 54,
+      "label": "moderate"
+    },
+    "marketStructure": {
+      "label": "Range",
+      "sublabel": "Mixed structure",
+      "verdict": "neutral"
+    },
+    "executionTimeframe": "5m",
+    "contributors": [
+      {
+        "timeframe": "5m",
+        "verdict": "bullish",
+        "score": 88,
+        "weight": 0.3
+      },
+      {
+        "timeframe": "15m",
+        "verdict": "bullish",
+        "score": 57,
+        "weight": 0.3
+      },
+      {
+        "timeframe": "30m",
+        "verdict": "bullish",
+        "score": 90,
+        "weight": 0.2
+      },
+      {
+        "timeframe": "1h",
+        "verdict": "bullish",
+        "score": 67,
+        "weight": 0.1
+      },
+      {
+        "timeframe": "4h",
+        "verdict": "bullish",
+        "score": 87,
+        "weight": 0.06
+      },
+      {
+        "timeframe": "1d",
+        "verdict": "bullish",
+        "score": 85,
+        "weight": 0.04
+      }
+    ],
+    "warnings": []
+  },
+  "market": {
+    "schemaVersion": 1,
+    "headline": {
+      "bias": "bullish",
+      "state": "bullish_continuation",
+      "controller": "5m",
+      "regime": "trending_up",
+      "stage": "continuation",
+      "mostLikelyOutcome": "pullback",
+      "outcomeProbability": 0.629,
+      "calibration": "prior"
+    },
+    "quality": {
+      "score": 84,
+      "level": "excellent",
+      "reasons": [
+        "strong confidence (66)",
+        "strong agreement (82)",
+        "aligned timeframes (100)",
+        "healthy trend lifecycle (94)",
+        "low conflict (100)"
+      ]
+    },
+    "opportunity": {
+      "score": 72,
+      "grade": "B"
+    },
+    "risk": {
+      "score": 12,
+      "level": "very_low",
+      "reasons": [
+        "reduced confidence (+7)",
+        "probabilities from model priors (+5)"
+      ]
+    },
+    "readiness": {
+      "state": "ready",
+      "reason": "quality excellent, opportunity B, risk very_low"
+    },
+    "evidence": {
+      "supporting": [
+        {
+          "source": "M3",
+          "text": "strong bullish consensus (82%)"
+        },
+        {
+          "source": "M4",
+          "text": "high confidence (66%)"
+        },
+        {
+          "source": "M5",
+          "text": "timeframes aligned (100%) under 5m control"
+        },
+        {
+          "source": "M6",
+          "text": "continuation stage with healthy lifecycle strength (94)"
+        },
+        {
+          "source": "M7",
+          "text": "probability currently favors pullback (63%)"
+        }
+      ],
+      "opposing": []
+    },
+    "outlook": {
+      "expectedStage": "healthy_pullback",
+      "rationale": "Continuation without exhaustion typically cycles back into another pullback.",
+      "nextStageConfidence": 83,
+      "marketOutcomes": [
+        {
+          "outcome": "pullback",
+          "probability": 0.629
+        },
+        {
+          "outcome": "continuation",
+          "probability": 0.2864
+        },
+        {
+          "outcome": "reversal",
+          "probability": 0.0846
+        }
+      ],
+      "invalidation": {
+        "invalidated": false,
+        "condition": null
+      },
+      "transition": false
+    },
+    "narrative": [
+      "5m remains in control of the market structure.",
+      "The market is in a Bullish Continuation state.",
+      "Agreement stands at 82% with high confidence (66%).",
+      "Probability currently favors pullback (63%).",
+      "Market quality is excellent with opportunity grade B.",
+      "Trading environment: ready (quality excellent, opportunity B, risk very_low)."
+    ],
+    "signals": [
+      {
+        "code": "AGR_STRONG_CONSENSUS",
+        "message": "Strong bullish consensus across indicators and categories.",
+        "severity": "strong",
+        "source": "M3"
+      },
+      {
+        "code": "AGR_ONE_SIDED",
+        "message": "One-sided positioning.",
+        "severity": "strong",
+        "source": "M3"
+      },
+      {
+        "code": "TF_STACK_ALIGNED",
+        "message": "Timeframes aligned bullish.",
+        "severity": "strong",
+        "source": "M5"
+      },
+      {
+        "code": "MI_READINESS",
+        "message": "Environment readiness: ready — quality excellent, opportunity B, risk very_low.",
+        "severity": "strong",
+        "source": "M8"
+      },
+      {
+        "code": "AGR_LAYERS_ALIGNED",
+        "message": "Indicators and categories agree (bullish).",
+        "severity": "info",
+        "source": "M3"
+      },
+      {
+        "code": "CONF_HIGH_AGREEMENT",
+        "message": "Agreement is directionally strong.",
+        "severity": "info",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_HIGH_CATEGORY_CONFIDENCE",
+        "message": "Categories are confident.",
+        "severity": "info",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_HIGH_INDICATOR_CONFIDENCE",
+        "message": "Indicators are confident.",
+        "severity": "info",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_COMPLETE_EVIDENCE",
+        "message": "Full evidence base.",
+        "severity": "info",
+        "source": "M4"
+      },
+      {
+        "code": "TF_CONTROLLER",
+        "message": "5m controls (bullish).",
+        "severity": "info",
+        "source": "M5"
+      },
+      {
+        "code": "TF_STRONG_CONTEXT",
+        "message": "Higher-timeframe context is strong.",
+        "severity": "info",
+        "source": "M5"
+      },
+      {
+        "code": "LC_CONTINUATION",
+        "message": "5m continuing its trend.",
+        "severity": "info",
+        "source": "M6"
+      },
+      {
+        "code": "PROB_MODEL_PRIORS",
+        "message": "Estimates from model priors, not measured frequencies.",
+        "severity": "info",
+        "source": "M7"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "AGR_DISSENT",
+        "message": "volume diverge from the bullish consensus.",
+        "severity": "warning",
+        "source": "M3"
+      },
+      {
+        "code": "CONF_LOW_QUALITY",
+        "message": "Weak trend quality reduces trust.",
+        "severity": "warning",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_HIGH_VOLATILITY",
+        "message": "High volatility reduces trust.",
+        "severity": "warning",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_WEAK_CATEGORY",
+        "message": "participation is below its configured confidence threshold.",
+        "severity": "warning",
+        "source": "M4"
+      }
+    ],
+    "diagnostics": {
+      "schemaVersions": {
+        "agreement": 1,
+        "confidence": 1,
+        "hierarchy": 1,
+        "lifecycle": 1,
+        "probability": 1
+      },
+      "calibration": "prior",
+      "modelVersion": "1.0",
+      "scores": {
+        "agreement": 82,
+        "confidence": 66,
+        "alignment": 100,
+        "conflict": 0,
+        "lifecycleStrength": 94,
+        "probabilityOpportunity": 62
+      }
+    }
+  },
+  "decision": {
+    "schemaVersion": 1,
+    "action": "no_trade",
+    "gate": {
+      "passed": false,
+      "blockedBy": "rr_too_low",
+      "reason": "reward-to-risk 1.23 is below the 1.5 minimum"
+    },
+    "direction": "bullish",
+    "executionTf": "5m",
+    "generatedAt": 1700016680,
+    "setup": null,
+    "riskTier": "none",
+    "confluence": [],
+    "calibration": "prior",
+    "explanation": [
+      "No trade: reward-to-risk 1.23 is below the 1.5 minimum."
+    ],
+    "signals": [
+      {
+        "code": "DECISION_MODEL_PRIORS",
+        "severity": "info",
+        "message": "Probabilities behind this decision come from model priors, not measured frequencies"
+      }
+    ],
+    "warnings": [],
+    "diagnostics": {
+      "schemaVersions": {
+        "market": 1
+      },
+      "atr": null,
+      "swingHigh": 159.1255195980327,
+      "swingLow": 153.1761078119508,
+      "rawRR": 1.23,
+      "smcApplied": false
+    }
+  }
+}

@@ -1,5 +1,3 @@
-import { computeSMACrossover } from './indicators/smaCrossover';
-import { computeSqueezeMomentum } from './indicators/squeezeMomentum';
 import { computeMaRibbonTV } from './indicators/maRibbonTV';
 import { computeMacd } from './indicators/macd';
 import { computeBollingerBands } from './indicators/bollingerBands';
@@ -16,19 +14,11 @@ import { computeSuperTrend } from './indicators/superTrend';
 import { computeVwapBands } from './indicators/vwapBands';
 import { computeWilliamsR } from './indicators/williamsR';
 import { computeSma } from './indicators/sma';
-import { computeSdZones } from './indicators/sdZones';
-import { computeSdSignals } from './indicators/sdSignals';
-import { computeVolumeDistributionZones } from './indicators/volumeDistributionZones';
-import { computeScannerSignals } from './indicators/scannerSignals';
-import { computeVolSpike } from './indicators/volSpike';
-import { computeMagicSr } from './indicators/magicSr';
-import { computeFibPivot } from './indicators/fibPivot';
 import { computeSmcOverlay } from './indicators/smcOverlay';
 import { computeMaFvg } from './indicators/maFvg';
-import { computeElephantZone } from './indicators/elephantZone';
-import { computeJumboZones } from './indicators/jumboZones';
 import { computeSessionVolumeProfile } from './indicators/sessionVolumeProfile';
-import { computeRegressionGChannel } from './indicators/regressionGChannel';
+import { computeDsmartOverlay } from './indicators/dsmartOverlay';
+import { computePocMrpZones } from './indicators/pocMrpZones';
 import { incrementalSma, incrementalObv, incrementalVwap, incrementalAtr } from './indicators/incremental';
 import { incrementalSessionVolumeProfile } from './indicators/sessionVolumeProfileIncremental';
 
@@ -53,10 +43,68 @@ const SRC_OPTS = [
   { value: 'hl2', label: 'HL2' }, { value: 'hlc3', label: 'HLC3' }, { value: 'ohlc4', label: 'OHLC4' },
 ];
 
+const POC_MRP_ZONE_STYLES: IndicatorStyleDef[] = [
+  { id: 'mrp', name: 'MRP', color: '#0B46F0', thickness: 2, lineStyle: 'solid', display: true },
+  { id: 'weekly_mrp', name: 'W MRP', color: '#C57A00', thickness: 1, lineStyle: 'solid', display: true },
+  { id: 'weekly_poc', name: 'Weekly POC', color: '#F59E0B', thickness: 2, lineStyle: 'solid', display: true },
+  { id: 'daily_poc', name: 'Daily POC', color: '#14532D', thickness: 2, lineStyle: 'solid', display: true },
+  { id: 'four_hour_poc', name: '4-Hour POC', color: '#22D3EE', thickness: 2, lineStyle: 'solid', display: true },
+  { id: 'one_hour_poc', name: '1-Hour POC', color: '#A855F7', thickness: 2, lineStyle: 'solid', display: true },
+];
+
+for (const [prefix, heading, entries] of [
+  ['h4', '4H', [
+    ['strong_demand', 'Strong Demand', '#388E3C', 'rgba(56,142,60,0.25)'],
+    ['weak_demand', 'Weak Demand', '#76B852', 'rgba(118,184,82,0.18)'],
+    ['weak_supply', 'Weak Supply', '#FB8C00', 'rgba(251,140,0,0.18)'],
+    ['strong_supply', 'Strong Supply', '#E53935', 'rgba(229,57,53,0.25)'],
+  ]],
+  ['daily', 'Daily', [
+    ['strong_demand', 'Strong Demand', '#00838F', 'rgba(0,131,143,0.25)'],
+    ['weak_demand', 'Weak Demand', '#00BCD4', 'rgba(0,188,212,0.18)'],
+    ['weak_supply', 'Weak Supply', '#E91E63', 'rgba(233,30,99,0.18)'],
+    ['strong_supply', 'Strong Supply', '#AD1457', 'rgba(173,20,87,0.25)'],
+  ]],
+  ['weekly', 'Weekly', [
+    ['strong_demand', 'Strong Demand', '#1565C0', 'rgba(21,101,192,0.25)'],
+    ['weak_demand', 'Weak Demand', '#42A5F5', 'rgba(66,165,245,0.18)'],
+    ['weak_supply', 'Weak Supply', '#AB47BC', 'rgba(171,71,188,0.18)'],
+    ['strong_supply', 'Strong Supply', '#6A1B9A', 'rgba(106,27,154,0.25)'],
+  ]],
+] as const) {
+  for (const [suffix, label, lineColor, fillColor] of entries) {
+    POC_MRP_ZONE_STYLES.push(
+      { id: `${prefix}_${suffix}_lower`, name: `${heading} — ${label} Lower`, color: lineColor, thickness: 1, lineStyle: 'solid', display: true },
+      { id: `${prefix}_${suffix}_upper`, name: `${heading} — ${label} Upper`, color: lineColor, thickness: 1, lineStyle: 'solid', display: true },
+      { id: `${prefix}_${suffix}_background`, name: `${heading} — ${label} Background`, color: fillColor, thickness: 1, lineStyle: 'solid', display: true, isFill: true },
+    );
+  }
+}
+
 const RAW_CUSTOM_INDICATORS: CustomIndicatorDef[] = [
   {
+    id: 'poc_mrp_zones',
+    name: 'POC & MRP + Demand & Supply Zones',
+    description: 'Developing Daily/Weekly MRP, confirmed 1H/4H POC segments, Daily/Weekly POCs, and ATR-calibrated 4H/Daily/Weekly demand and supply zones.',
+    inputs: [
+      { id: 'show4hZones', name: 'Show Layer 1 — 4H Zones', type: 'boolean', default: true, group: 'FIXED ZONE LAYERS' },
+      { id: 'showDailyZones', name: 'Show Layer 2 — Daily Zones', type: 'boolean', default: true, group: 'FIXED ZONE LAYERS' },
+      { id: 'showWeeklyZones', name: 'Show Layer 3 — Weekly Zones', type: 'boolean', default: true, group: 'FIXED ZONE LAYERS' },
+      { id: 'showMrp', name: 'Show MRP', type: 'boolean', default: true, group: 'MRP' },
+      { id: 'showWeeklyMrp', name: 'W MRP', type: 'boolean', default: true, group: 'MRP' },
+      { id: 'showWeeklyPoc', name: 'Show Weekly POC', type: 'boolean', default: true, group: 'POC LINES' },
+      { id: 'showDailyPoc', name: 'Show Daily POC', type: 'boolean', default: true, group: 'POC LINES' },
+      { id: 'showFourHourPoc', name: 'Show 4-Hour POC', type: 'boolean', default: true, group: 'POC LINES' },
+      { id: 'showOneHourPoc', name: 'Show 1-Hour POC', type: 'boolean', default: true, group: 'POC LINES' },
+      { id: 'oneHourPocHistoryDays', name: '1-Hour POC History (Days)', type: 'number', default: 3, min: 1, max: 15, step: 1, group: 'POC LINES' },
+      { id: 'pocLineWidth', name: 'POC Line Width', type: 'number', default: 2, min: 1, max: 4, step: 1, group: 'POC LINES' },
+    ],
+    styles: POC_MRP_ZONE_STYLES,
+    compute: computePocMrpZones,
+  },
+  {
     id: 'session_volume_profile',
-    name: 'SVP HD',
+    name: 'Volume Profile (SVP HD)',
     description:
       'Session Volume Profile — volume by price per session, with POC, value area, and automatic profile-shape classification.',
     inputs: [
@@ -199,6 +247,8 @@ const RAW_CUSTOM_INDICATORS: CustomIndicatorDef[] = [
       { id: 'weeklyPoc', name: 'Weekly POC', color: '#a855f7', thickness: 1, lineStyle: 'solid', display: true },
       { id: 'dailyPoc', name: 'Daily POC', color: '#f0b90b', thickness: 1, lineStyle: 'solid', display: true },
       { id: 'fourHourPoc', name: '4H POC', color: '#00bcd4', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'confluence', name: '4H + Daily + Weekly Confluence (C)', color: '#ffffff', thickness: 1, lineStyle: 'solid', display: true },
+      { id: 'vwapConfluence', name: 'Session + Weekly VWAP Confluence (V)', color: '#42a5f5', thickness: 1, lineStyle: 'solid', display: true },
       { id: 'vah', name: 'VAH', color: '#787b86', thickness: 1, lineStyle: 'dashed', display: false },
       { id: 'val', name: 'VAL', color: '#787b86', thickness: 1, lineStyle: 'dashed', display: false },
     ],
@@ -224,43 +274,6 @@ const RAW_CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     ],
     compute: computeSma,
     incremental: incrementalSma,
-  },
-  {
-    id: 'sma_crossover_bb',
-    name: 'SMA Crossover Signals + BB',
-    description: 'Fast/Slow SMA crossover filtered by Trend and Bollinger Bands.',
-    inputs: [
-      { id: 'fastLength', name: 'Fast MA Length', type: 'number', default: 10, min: 1, max: 200, step: 1 },
-      { id: 'slowLength', name: 'Slow MA Length', type: 'number', default: 21, min: 1, max: 200, step: 1 },
-      { id: 'trendLength', name: 'Trend MA Length', type: 'number', default: 200, min: 1, max: 500, step: 1 },
-      { id: 'bbLength', name: 'BB Length', type: 'number', default: 20, min: 1, max: 100, step: 1, group: 'SMOOTHING' },
-      { id: 'bbDev', name: 'BB StdDev', type: 'number', default: 2.0, min: 0.1, max: 10.0, step: 0.1, group: 'SMOOTHING' },
-      { id: 'source', name: 'Source', type: 'select', default: 'close', options: [{ value: 'close', label: 'Close' }, { value: 'open', label: 'Open' }, { value: 'high', label: 'High' }, { value: 'low', label: 'Low' }] },
-    ],
-    styles: [
-      { id: 'fastMA', name: 'Fast MA', color: '#2962FF', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'slowMA', name: 'Slow MA', color: '#FF6D00', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'bbUpper', name: 'BB Upper', color: '#2962FF', thickness: 1, lineStyle: 'dashed', display: true },
-      { id: 'bbLower', name: 'BB Lower', color: '#2962FF', thickness: 1, lineStyle: 'dashed', display: true },
-    ],
-    compute: computeSMACrossover,
-  },
-  {
-    id: 'squeeze_momentum',
-    name: 'Squeeze Momentum [LazyBear]',
-    description: 'Carter TTM Squeeze: BB inside KC = squeeze building. Release with momentum = entry signal.',
-    inputs: [
-      { id: 'bbLength', name: 'BB Length', type: 'number', default: 20, min: 1, max: 500, step: 1, group: 'Bollinger Bands' },
-      { id: 'bbMult', name: 'BB MultFactor', type: 'number', default: 2.0, min: 0.1, max: 10.0, step: 0.1, group: 'Bollinger Bands' },
-      { id: 'kcLength', name: 'KC Length', type: 'number', default: 20, min: 1, max: 500, step: 1, group: 'Keltner Channel' },
-      { id: 'kcMult', name: 'KC MultFactor', type: 'number', default: 1.5, min: 0.1, max: 10.0, step: 0.1, group: 'Keltner Channel' },
-      { id: 'useTrueRange', name: 'Use TrueRange (KC)', type: 'boolean', default: true, group: 'Keltner Channel' },
-    ],
-    styles: [
-      { id: 'momentum', name: 'Momentum', color: '#26A69A', thickness: 4, lineStyle: 'solid', display: true },
-      { id: 'squeezeDots', name: 'Squeeze Dots', color: '#9E9E9E', thickness: 2, lineStyle: 'solid', display: true },
-    ],
-    compute: computeSqueezeMomentum,
   },
   {
     id: 'ma_ribbon_tv',
@@ -606,6 +619,23 @@ const RAW_CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     compute: computeSuperTrend,
   },
   {
+    id: 'dsmart_line',
+    name: 'D Smart Line',
+    description: 'Adaptive Walking and Running trend lines with cloud, continuation, pullback, and exhaustion markers.',
+    inputs: [
+      { id: 'mode', name: 'Display', type: 'select', default: 'cloud', options: [{ value: 'cloud', label: 'Cloud' }, { value: 'single', label: 'Single line' }] },
+      { id: 'showArrows', name: 'Show continuation arrows', type: 'boolean', default: true, group: 'SIGNALS' },
+      { id: 'showPullbacks', name: 'Show pullback markers', type: 'boolean', default: true, group: 'SIGNALS' },
+      { id: 'showStars', name: 'Show exhaustion markers', type: 'boolean', default: true, group: 'SIGNALS' },
+      { id: 'donchianLen', name: 'Donchian length', type: 'number', default: 10, min: 1, max: 500, step: 1, group: 'CALCULATION' },
+      { id: 'dispLen', name: 'Disparity length', type: 'number', default: 20, min: 1, max: 500, step: 1, group: 'CALCULATION' },
+      { id: 'dispThresholdPct', name: 'Disparity threshold (%)', type: 'number', default: 3, min: 0.1, max: 100, step: 0.1, group: 'CALCULATION' },
+      { id: 'maxPullbackLen', name: 'Maximum pullback bars', type: 'number', default: 3, min: 1, max: 100, step: 1, group: 'CALCULATION' },
+    ],
+    styles: [],
+    compute: computeDsmartOverlay,
+  },
+  {
     id: 'vwap_bands',
     name: 'VWAP Bands',
     description: 'VWAP with volume-weighted ±σ bands (TV formula). Anchor Session/Week/Month/Quarter/Year, source hlc3.',
@@ -657,192 +687,6 @@ const RAW_CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     compute: computeWilliamsR,
   },
   {
-    id: 'sd_zones',
-    name: 'Supply / Demand Zones',
-    description: 'Non-repainting supply/demand price bands from the prior higher-TF period (up to 3 TFs), ranked by a configurable Zone Strength Score.',
-    inputs: [
-      { id: 'tf1', name: 'Timeframe 1', type: 'select', default: 'D', options: ['None','15M','30M','1H','2H','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf2', name: 'Timeframe 2', type: 'select', default: 'None', options: ['None','15M','30M','1H','2H','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf3', name: 'Timeframe 3', type: 'select', default: 'None', options: ['None','15M','30M','1H','2H','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'targetFactor', name: 'Target projection ×', type: 'number', default: 1.5, min: 0, max: 5, step: 0.1 },
-      { id: 'showLabels', name: 'Show labels', type: 'boolean', default: true },
-      { id: 'showStrength', name: 'Show strength score', type: 'boolean', default: true },
-      { id: 'minStrength', name: 'Min strength', type: 'number', default: 0, min: 0, max: 100, step: 1 },
-      { id: 'wConfluence', name: 'Weight: Confluence', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
-      { id: 'wRejection', name: 'Weight: Rejection', type: 'number', default: 0.22, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
-      { id: 'wVolume', name: 'Weight: Volume', type: 'number', default: 0.18, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
-      { id: 'wRetests', name: 'Weight: Retests', type: 'number', default: 0.13, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
-      { id: 'wZoneWidth', name: 'Weight: Zone Width', type: 'number', default: 0.12, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
-      { id: 'wFreshness', name: 'Weight: Freshness', type: 'number', default: 0.10, min: 0, max: 1, step: 0.01, group: 'Zone Strength Weights' },
-    ],
-    // One style entry per band plot id (`{TF} {kind}`) so the settings modal
-    // exposes color + visibility for every timeframe and both target zones.
-    // Ids must match the `${TF_LABEL} ${KIND_LABEL}` plot ids in computeSdZones.
-    // Mockup palette: supply = deep blue, demand = muted orange (structure
-    // colors; green/red stay reserved for signals + trade levels). Measured-
-    // move target bands default OFF — context on demand, not clutter.
-    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf) => {
-      const su = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' }[tf];
-      const de = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' }[tf];
-      return [
-        { id: `${tf} Su`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
-        { id: `${tf} Su T`, name: `${tf} Supply Target`, color: `rgba(${su},0.05)`, thickness: 1, lineStyle: 'solid' as const, display: false },
-        { id: `${tf} De`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid' as const, display: true },
-        { id: `${tf} De T`, name: `${tf} Demand Target`, color: `rgba(${de},0.05)`, thickness: 1, lineStyle: 'solid' as const, display: false },
-      ];
-    }),
-    compute: computeSdZones,
-  },
-  {
-    id: 'sd_signals',
-    name: 'Supply / Demand Signals',
-    description: 'Complete reversal trade setup on the same Supply/Demand zones as sd_zones: draws the zones, prints strictly non-repainting BUY/SELL signals (closed-bar only), and marks entry / stop-loss / TP1 (opposing zone) / TP2 (measured move) with an explained confidence score. One indicator = one full setup. Historical zone strength is frozen from evidence available at formation and never recalculated from future bars. Paper & educational — not financial advice.',
-    inputs: [
-      { id: 'tf1', name: 'Zone Timeframe 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf2', name: 'Zone Timeframe 2', type: 'select', default: '4H', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf3', name: 'Zone Timeframe 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'targetFactor', name: 'Target projection ×', type: 'number', default: 1.5, min: 0, max: 5, step: 0.1 },
-      { id: 'signalOn', name: 'Signal on', type: 'select', default: 'close', options: [{ value: 'close', label: 'Bar close (strict)' }, { value: 'live', label: 'Live (provisional)' }] },
-      { id: 'confirmation', name: 'Confirmation', type: 'select', default: 'rejection_close', options: ['touch','rejection_close','reversal_candle'].map((v) => ({ value: v, label: v })) },
-      { id: 'minTier', name: 'Min zone tier', type: 'select', default: 'medium', options: ['medium','strong'].map((v) => ({ value: v, label: v })) },
-      { id: 'confidenceFloor', name: 'Min confidence', type: 'number', default: 55, min: 0, max: 100, step: 1 },
-      { id: 'minRR', name: 'Min R:R', type: 'number', default: 1.5, min: 0, max: 10, step: 0.1 },
-      { id: 'slBufferMode', name: 'Stop buffer mode', type: 'select', default: 'atr', options: ['atr','percent','ticks'].map((v) => ({ value: v, label: v })) },
-      { id: 'slBuffer', name: 'Stop buffer', type: 'number', default: 0.25, min: 0, max: 100, step: 0.05 },
-      { id: 'tickSize', name: 'Tick size', type: 'number', default: 0.1, min: 0.00000001, max: 1000, step: 0.1 },
-      { id: 'maxBarsToTrigger', name: 'Max bars to trigger', type: 'number', default: 20, min: 1, max: 500, step: 1 },
-      { id: 'maxBarsInTrade', name: 'Max bars in trade', type: 'number', default: 150, min: 1, max: 5000, step: 1 },
-      { id: 'showSupply', name: 'Show supply zones', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showDemand', name: 'Show demand zones', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showSignals', name: 'Show buy/sell signals', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showEntry', name: 'Show entry line', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showSl', name: 'Show stop loss', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showTp1', name: 'Show TP1', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showTp2', name: 'Show TP2', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showConfidence', name: 'Show confidence labels', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showRRBox', name: 'Show risk/reward box', type: 'boolean', default: true, group: 'Display' },
-    ],
-    // Zone band styles must match the `${TF} ${KIND}` plot ids emitted by computeSdZones.
-    // Mockup palette: supply = deep blue, demand = muted orange (structure
-    // colors; green/red stay reserved for signals + trade levels). Measured-
-    // move target bands default OFF — context on demand, not clutter.
-    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf): IndicatorStyleDef[] => {
-      const su = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' }[tf];
-      const de = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' }[tf];
-      return [
-        { id: `${tf} Su`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
-        { id: `${tf} Su T`, name: `${tf} Supply Target`, color: `rgba(${su},0.05)`, thickness: 1, lineStyle: 'solid', display: false },
-        { id: `${tf} De`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
-        { id: `${tf} De T`, name: `${tf} Demand Target`, color: `rgba(${de},0.05)`, thickness: 1, lineStyle: 'solid', display: false },
-      ];
-    }).concat([
-      { id: 'R:R Reward', name: 'R:R Reward box', color: 'rgba(34,211,154,0.05)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'R:R Risk', name: 'R:R Risk box', color: 'rgba(242,54,69,0.05)', thickness: 1, lineStyle: 'solid', display: true },
-    ]),
-    compute: computeSdSignals,
-  },
-  {
-    id: 'volume_distribution_zones',
-    name: 'Volume Distribution Zones',
-    description: 'Original MyCryptoStack engine: per-period (4H/D/W/M) proportional range-volume histogram finds where volume actually concentrated — supply/demand zones with Upper/Weighted-Average/Midpoint/Lower, estimated directional buy/sell allocation, adaptive bins & threshold, and a full zone lifecycle (health, acceptance, sweep, reaction, classification, cross-TF clustering, confidence 0-100). Strictly non-repainting: zones freeze at period close, signals on closed bars only, with TP1 (opposite wavg) / TP2 (opposite boundary) / TP3 (measured move). Paper & educational — not financial advice.',
-    inputs: [
-      { id: 'tf1', name: 'Period 1', type: 'select', default: 'D', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf2', name: 'Period 2', type: 'select', default: '4H', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'tf3', name: 'Period 3', type: 'select', default: 'None', options: ['None','4H','D','W','M'].map((v) => ({ value: v, label: v })) },
-      { id: 'thrBase', name: 'Base threshold %', type: 'number', default: 10, min: 1, max: 50, step: 0.5 },
-      { id: 'volMult', name: 'Rejection volume ×', type: 'number', default: 1.2, min: 1, max: 5, step: 0.1, group: 'Signals' },
-      { id: 'maxRetests', name: 'Max retests', type: 'number', default: 3, min: 0, max: 10, step: 1, group: 'Signals' },
-      { id: 'minHealth', name: 'Min zone health', type: 'number', default: 40, min: 0, max: 100, step: 5, group: 'Signals' },
-      { id: 'confidenceFloor', name: 'Min confidence', type: 'number', default: 50, min: 0, max: 100, step: 1, group: 'Signals' },
-      { id: 'minRR', name: 'Min R:R', type: 'number', default: 1.2, min: 0, max: 10, step: 0.1, group: 'Signals' },
-      { id: 'slBufferAtr', name: 'Stop buffer (ATR ×)', type: 'number', default: 0.25, min: 0, max: 5, step: 0.05, group: 'Signals' },
-      { id: 'acceptanceBars', name: 'Acceptance bars', type: 'number', default: 3, min: 2, max: 20, step: 1, group: 'Signals' },
-      { id: 'trendFilter', name: 'Trend filter (EMA50)', type: 'boolean', default: true, group: 'Signals' },
-      { id: 'useContextGate', name: 'MTF context confirmation', type: 'boolean', default: true, group: 'Signals' },
-      { id: 'minDecisionScore', name: 'Min decision score', type: 'number', default: 65, min: 0, max: 100, step: 1, group: 'Signals' },
-      { id: 'beAfterTp1', name: 'Break-even stop after TP1', type: 'boolean', default: true, group: 'Exits' },
-      { id: 'trailAtr', name: 'Trail after TP2 (ATR ×, 0 = off)', type: 'number', default: 1.0, min: 0, max: 10, step: 0.1, group: 'Exits' },
-      { id: 'contextExit', name: 'Exit on context flip', type: 'boolean', default: true, group: 'Exits' },
-      { id: 'showSupply', name: 'Show supply zones', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showDemand', name: 'Show demand zones', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showWavg', name: 'Show weighted average', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showSignals', name: 'Show buy/sell signals', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showTradeLevels', name: 'Show trade levels', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showTradeSetups', name: 'Show R:R boxes on signals', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showLabels', name: 'Show zone labels', type: 'boolean', default: true, group: 'Display' },
-    ],
-    // Ids must match the `${tf} Supply` / `${tf} Demand` (+ ` WAvg`) plot ids.
-    styles: (['4H', 'D', 'W', 'M'] as const).flatMap((tf): IndicatorStyleDef[] => {
-      const su = { '4H': '122,160,255', D: '79,127,255', W: '61,105,224', M: '50,88,196' }[tf];
-      const de = { '4H': '255,181,102', D: '255,159,54', W: '230,136,38', M: '204,117,30' }[tf];
-      return [
-        { id: `${tf} Supply`, name: `${tf} Supply`, color: `rgba(${su},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
-        { id: `${tf} Supply WAvg`, name: `${tf} Supply WAvg`, color: `rgba(${su},0.85)`, thickness: 1, lineStyle: 'dashed', display: true },
-        { id: `${tf} Demand`, name: `${tf} Demand`, color: `rgba(${de},0.10)`, thickness: 1, lineStyle: 'solid', display: true },
-        { id: `${tf} Demand WAvg`, name: `${tf} Demand WAvg`, color: `rgba(${de},0.85)`, thickness: 1, lineStyle: 'dashed', display: true },
-      ];
-    }).concat([
-      { id: 'Trade Risk', name: 'Trade risk box', color: 'rgba(242,54,69,0.07)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'Trade Reward', name: 'Trade reward box', color: 'rgba(34,211,154,0.07)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'Trade Runner', name: 'Trade runner box (TP1→TP3)', color: 'rgba(34,211,154,0.035)', thickness: 1, lineStyle: 'solid', display: true },
-    ]),
-    compute: computeVolumeDistributionZones,
-  },
-  {
-    id: 'scanner_signals',
-    name: 'Technical Scanner Signals',
-    description: 'Renders your enabled Technical Scanner strategies on the chart: BUY/SELL arrows on strictly closed-bar signals, entry/SL/TP1-3 levels, R:R boxes and outcome chips per trade. Signals are immutable and non-repainting; build strategies in the Technical Scanner panel. Paper & educational — not financial advice.',
-    inputs: [
-      { id: 'showSignals', name: 'Show signals', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showTradeLevels', name: 'Show entry/SL/TP levels', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showRRBoxes', name: 'Show R:R boxes', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showOutcomeChips', name: 'Show outcome chips', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showHistorical', name: 'Show all historical signals', type: 'boolean', default: true, group: 'Display' },
-    ],
-    styles: [
-      { id: 'Scan Risk', name: 'Risk box', color: 'rgba(242,54,69,0.07)', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'Scan Reward', name: 'Reward box', color: 'rgba(38,198,218,0.08)', thickness: 1, lineStyle: 'solid', display: true },
-    ],
-    compute: computeScannerSignals,
-  },
-  {
-    id: 'vol_spike',
-    name: 'Volume Spike Detection',
-    description: 'Marks abnormal-volume bars: blue up-arrow = major buying, dark down-arrow = major selling.',
-    inputs: [
-      { id: 'length', name: 'Volume MA Length', type: 'number', default: 20, min: 1, max: 500, step: 1 },
-      { id: 'mult', name: 'Spike ×', type: 'number', default: 1.8, min: 1, max: 10, step: 0.1 },
-    ],
-    styles: [],
-    compute: computeVolSpike,
-  },
-  {
-    id: 'magic_sr',
-    name: 'Support & Resistance',
-    description: 'Horizontal S/R from recent swing pivots: resistance above price, support below.',
-    inputs: [
-      { id: 'lookback', name: 'Pivot Lookback', type: 'number', default: 10, min: 2, max: 100, step: 1 },
-      { id: 'count', name: 'Lines Each Side', type: 'number', default: 3, min: 1, max: 10, step: 1 },
-      { id: 'showUp', name: 'Show Resistance', type: 'boolean', default: true },
-      { id: 'showDown', name: 'Show Support', type: 'boolean', default: true },
-    ],
-    styles: [],
-    compute: computeMagicSr,
-  },
-  {
-    id: 'fib_pivot',
-    name: 'Fibonacci Pivots',
-    description: 'Fibonacci pivot P / R1-3 / S1-3 from the prior Day/Week/Month range.',
-    inputs: [
-      { id: 'period', name: 'Period', type: 'select', default: 'D', options: [{ value: 'D', label: 'Day' }, { value: 'W', label: 'Week' }, { value: 'M', label: 'Month' }] },
-      { id: 'f1', name: 'Fib 1', type: 'number', default: 0.382, min: 0, max: 4, step: 0.001 },
-      { id: 'f2', name: 'Fib 2', type: 'number', default: 0.618, min: 0, max: 4, step: 0.001 },
-      { id: 'f3', name: 'Fib 3', type: 'number', default: 1.0, min: 0, max: 4, step: 0.001 },
-    ],
-    styles: [],
-    compute: computeFibPivot,
-  },
-  {
     id: 'smc',
     name: 'Smart Money Concepts (SMC)',
     description:
@@ -865,125 +709,6 @@ const RAW_CUSTOM_INDICATORS: CustomIndicatorDef[] = [
     styles: [],
     compute: computeSmcOverlay,
   },
-  {
-    id: 'elephant_zone',
-    name: 'Elephant Zone (S/R Levels)',
-    description:
-      'Cross-asset psychological S/R grid anchored on the PREVIOUS day\'s close. Spacing adapts by mode: volatility (step from avg daily range, default), round (round-number magnitude — works at any price), or manual. Draws R1-4 / S1-4 grid lines, a Base line, and two pivots (prev close + HLC/3). Best-effort — no Pine source; compare before trusting.',
-    inputs: [
-      { id: 'spacingMode', name: 'Spacing Mode', type: 'select', default: 'volatility', options: [{ value: 'volatility', label: 'Volatility (adaptive)' }, { value: 'round', label: 'Round numbers' }, { value: 'manual', label: 'Manual' }] },
-      { id: 'levelCount', name: 'Levels per side', type: 'number', default: 4, min: 1, max: 20, step: 1 },
-      { id: 'zoneWidthFraction', name: 'Zone width (× spacing)', type: 'number', default: 0.3, min: 0.02, max: 1, step: 0.01 },
-      { id: 'atrLength', name: 'Avg range days', type: 'number', default: 14, min: 1, max: 200, step: 1, group: 'Volatility Mode' },
-      { id: 'stepFraction', name: 'Step fraction of range', type: 'number', default: 0.25, min: 0.02, max: 2, step: 0.01, group: 'Volatility Mode' },
-      { id: 'roundBase', name: 'Round base', type: 'number', default: 1000, min: 0.00000001, max: 1000000, step: 1, group: 'Manual Mode' },
-      { id: 'stepSize', name: 'Step size', type: 'number', default: 200, min: 0.00000001, max: 1000000, step: 1, group: 'Manual Mode' },
-      { id: 'showResistance', name: 'Show resistance', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showSupport', name: 'Show support', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showBase', name: 'Show base line', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showPivot', name: 'Show pivot (prev close)', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showPivotP', name: 'Show pivot P (HLC/3)', type: 'boolean', default: true, group: 'Display' },
-      { id: 'pivotLineWidth', name: 'Pivot line width', type: 'number', default: 3, min: 1, max: 4, step: 1, group: 'Display' },
-    ],
-    styles: [
-      { id: 'R1', name: 'Resistance 1', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'R2', name: 'Resistance 2', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'R3', name: 'Resistance 3', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'R4', name: 'Resistance 4', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'S1', name: 'Support 1', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'S2', name: 'Support 2', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'S3', name: 'Support 3', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'S4', name: 'Support 4', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'BASE', name: 'Base (round number)', color: 'rgba(255,255,255,0.3)', thickness: 1, lineStyle: 'dashed', display: true },
-      { id: 'PIVOT', name: 'Pivot (prev close)', color: 'rgba(80,190,240,1)', thickness: 3, lineStyle: 'solid', display: true },
-      { id: 'PIVOT_P', name: 'Pivot P (HLC/3)', color: 'rgba(99,102,241,1)', thickness: 3, lineStyle: 'solid', display: true },
-    ],
-    compute: computeElephantZone,
-  },
-  {
-    id: 'jumbo_zones',
-    name: 'Jumbo Zones',
-    description:
-      'Official Elephant Edge model: adaptive S/R zones from historical session expansion. Anchored on today\'s session OPEN, R1/R2 (resistance) and S1/S2 (support) are percentile-pair bands of the median bull/bear expansion over the last N sessions — they widen/tighten with volatility and reset each session. Cross-market (crypto/forex/indices). Separate from Elephant Zone for comparison. Best-effort reconstruction; compare before trusting.',
-    inputs: [
-      { id: 'sessionLookback', name: 'Session lookback (days)', type: 'number', default: 1, min: 1, max: 200, step: 1 },
-      { id: 'avgMethod', name: 'Average method', type: 'select', default: 'median', options: [{ value: 'median', label: 'Median (robust)' }, { value: 'mean', label: 'Mean' }] },
-      { id: 'expansionMode', name: 'Expansion mode', type: 'select', default: 'directional', options: [{ value: 'directional', label: 'Directional (bull/bear)' }, { value: 'symmetric', label: 'Symmetric' }] },
-      { id: 'innerLow', name: 'Inner % low', type: 'number', default: 21, min: 0, max: 500, step: 1, group: 'Percentiles' },
-      { id: 'innerHigh', name: 'Inner % high', type: 'number', default: 29, min: 0, max: 500, step: 1, group: 'Percentiles' },
-      { id: 'outerLow', name: 'Outer % low', type: 'number', default: 53, min: 0, max: 500, step: 1, group: 'Percentiles' },
-      { id: 'outerHigh', name: 'Outer % high', type: 'number', default: 62, min: 0, max: 500, step: 1, group: 'Percentiles' },
-      { id: 'showResistance', name: 'Show resistance', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showSupport', name: 'Show support', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showPivot', name: 'Show pivot (prev close)', type: 'boolean', default: true, group: 'Display' },
-      { id: 'showPivotP', name: 'Show pivot P (HLC/3)', type: 'boolean', default: true, group: 'Display' },
-      { id: 'pivotLineWidth', name: 'Pivot line width', type: 'number', default: 3, min: 1, max: 4, step: 1, group: 'Display' },
-    ],
-    styles: [
-      { id: 'R1', name: 'Resistance 1 (inner)', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'R2', name: 'Resistance 2 (outer)', color: 'rgba(176,124,64,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'S1', name: 'Support 1 (inner)', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'S2', name: 'Support 2 (outer)', color: 'rgba(64,150,108,1)', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'PIVOT', name: 'Pivot (prev close)', color: 'rgba(80,190,240,1)', thickness: 3, lineStyle: 'solid', display: true },
-      { id: 'PIVOT_P', name: 'Pivot P (HLC/3)', color: 'rgba(99,102,241,1)', thickness: 3, lineStyle: 'solid', display: true },
-    ],
-    compute: computeJumboZones,
-  },
-  {
-    id: 'regression_gchannel',
-    name: 'Regression Line + G-Channel',
-    description: 'Composite Pine port: filtered regression line, G-Channel trend state, AutoFib bands, and ATR-buffered D Smart Line. Bar coloring is intentionally omitted.',
-    inputs: [
-      { id: 'source', name: 'Source', type: 'source', default: 'close', options: SRC_OPTS, group: 'REGRESSION' },
-      { id: 'filtType', name: 'Base Average Type', type: 'select', default: 'SMA', options: ['ALMA', 'EMA', 'SMA', 'RMA', 'LWMA', 'VWMA'].map((v) => ({ value: v, label: v })), group: 'REGRESSION' },
-      { id: 'windowType', name: 'Window Type', type: 'select', default: 'Continuous', options: [{ value: 'Continuous', label: 'Continuous' }, { value: 'Interval', label: 'Interval' }], group: 'REGRESSION' },
-      { id: 'length', name: 'Sampling Length', type: 'number', default: 200, min: 2, max: 5000, step: 1, group: 'REGRESSION', disabledIf: (i) => i['windowType'] !== 'Continuous' },
-      { id: 'interval', name: 'Interval Size', type: 'select', default: 'D', options: [{ value: 'chart', label: 'Chart bar' }, { value: '15m', label: '15 minutes' }, { value: '30m', label: '30 minutes' }, { value: '1h', label: '1 hour' }, { value: '4h', label: '4 hours' }, { value: 'D', label: 'Day' }, { value: 'W', label: 'Week' }], group: 'REGRESSION', disabledIf: (i) => i['windowType'] !== 'Interval' },
-      { id: 'extendLines', name: 'Extend Line Right', type: 'boolean', default: false, group: 'REGRESSION' },
-      { id: 'showLine', name: 'Show Regression Line', type: 'boolean', default: true, group: 'REGRESSION' },
-      { id: 'lineWidth', name: 'Line Width', type: 'number', default: 4, min: 1, max: 4, step: 1, group: 'REGRESSION' },
-      { id: 'lineStyle', name: 'Line Style', type: 'select', default: 'Solid', options: [{ value: 'Solid', label: 'Solid' }, { value: 'Dotted', label: 'Dotted' }, { value: 'Dashed', label: 'Dashed' }], group: 'REGRESSION' },
-      { id: 'showTracer', name: 'Show Tracer', type: 'boolean', default: true, group: 'REGRESSION' },
-      { id: 'gcShow', name: 'Show G-Channel', type: 'boolean', default: true, group: 'G-CHANNEL' },
-      { id: 'gcLength', name: 'Length', type: 'number', default: 100, min: 1, max: 5000, step: 1, group: 'G-CHANNEL' },
-      { id: 'gcSource', name: 'Source', type: 'source', default: 'close', options: SRC_OPTS, group: 'G-CHANNEL' },
-      { id: 'gcShowCross', name: 'Show Buy/Sell Labels', type: 'boolean', default: true, group: 'G-CHANNEL' },
-      { id: 'showFibLevels', name: 'Show Fib Levels', type: 'boolean', default: true, group: 'AUTOFIB' },
-      { id: 'showFibBands', name: 'Show Fib Bands', type: 'boolean', default: true, group: 'AUTOFIB' },
-      { id: 'fibLength', name: 'Fib Length', type: 'number', default: 265, min: 1, max: 5000, step: 1, group: 'AUTOFIB' },
-      { id: 'fibOpacity', name: 'Band Transparency', type: 'number', default: 92, min: 0, max: 100, step: 1, group: 'AUTOFIB' },
-      { id: 'dcLength', name: 'Lookback Length', type: 'number', default: 40, min: 1, max: 5000, step: 1, group: 'D SMART' },
-      { id: 'showZoneFill', name: 'Shade Buy/Sell Zones', type: 'boolean', default: true, group: 'D SMART' },
-      { id: 'useAtrBuffer', name: 'Use ATR Buffer', type: 'boolean', default: true, group: 'D SMART' },
-      { id: 'atrLength', name: 'ATR Buffer Length', type: 'number', default: 14, min: 1, max: 5000, step: 1, group: 'D SMART' },
-      { id: 'atrMultiplier', name: 'ATR Buffer Multiplier', type: 'number', default: 0.25, min: 0, max: 20, step: 0.05, group: 'D SMART', disabledIf: (i) => !i['useAtrBuffer'] },
-      { id: 'maLength', name: 'Moving Average Length', type: 'number', default: 20, min: 1, max: 5000, step: 1, group: 'DISPARITY' },
-      { id: 'maType', name: 'MA Type', type: 'select', default: 'EMA', options: ['SMA', 'EMA', 'WMA', 'RMA'].map((v) => ({ value: v, label: v })), group: 'DISPARITY' },
-      { id: 'dispHigh', name: 'Overbought %', type: 'number', default: 5, min: -100, max: 100, step: 0.1, group: 'DISPARITY' },
-      { id: 'dispLow', name: 'Oversold %', type: 'number', default: -5, min: -100, max: 100, step: 0.1, group: 'DISPARITY' },
-    ],
-    styles: [
-      { id: 'regression_line', name: 'Regression Line', color: '#00e676', thickness: 4, lineStyle: 'solid', display: true },
-      { id: 'regression_down', name: 'Regression Falling', color: '#ef5350', thickness: 4, lineStyle: 'solid', display: true },
-      { id: 'regression_flat', name: 'Regression Flat', color: '#cccccc', thickness: 4, lineStyle: 'solid', display: true },
-      { id: 'regression_values', name: 'Regression Values (internal)', color: '#00e676', thickness: 1, lineStyle: 'solid', display: false, hideCheckbox: true },
-      { id: 'regression_tracer', name: 'Regression Tracer', color: '#e5e7eb', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'g_channel_average', name: 'G-Channel Average', color: '#00e676', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'g_channel_bull', name: 'G-Channel Bullish Fill', color: 'rgba(0,230,118,0.18)', thickness: 1, lineStyle: 'solid', display: true, isFill: true },
-      { id: 'g_channel_bear', name: 'G-Channel Bearish Fill', color: 'rgba(239,83,80,0.18)', thickness: 1, lineStyle: 'solid', display: true, isFill: true },
-      { id: 'fib_1', name: 'Fib 1', color: '#9ca3af', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'fib_764', name: 'Fib 0.764', color: '#3399ff', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'fib_618', name: 'Fib 0.618', color: '#3b82f6', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'fib_5', name: 'Fib 0.5', color: '#84cc16', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'fib_382', name: 'Fib 0.382', color: '#22c55e', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'fib_236', name: 'Fib 0.236', color: '#ef4444', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'fib_0', name: 'Fib 0', color: '#9ca3af', thickness: 1, lineStyle: 'solid', display: true },
-      { id: 'dsmart_line', name: 'D Smart Line', color: '#22c55e', thickness: 2, lineStyle: 'solid', display: true },
-      { id: 'dsmart_zone_bull', name: 'D Smart Bull Zone', color: 'rgba(34,197,94,0.08)', thickness: 1, lineStyle: 'solid', display: true, isFill: true },
-      { id: 'dsmart_zone_bear', name: 'D Smart Bear Zone', color: 'rgba(239,68,68,0.08)', thickness: 1, lineStyle: 'solid', display: true, isFill: true },
-    ],
-    compute: computeRegressionGChannel,
-  },
 ];
 
 const RESET_TRIGGERS: IndicatorEvaluationDeclaration['resetTriggers'] = ['symbol', 'timeframe', 'sourceRevision', 'transform', 'replayEnter', 'replayRewind', 'replayExit', 'historyPrepend', 'settingsChange'];
@@ -997,8 +722,8 @@ const addEvaluation = (ids: string, ...args: Parameters<typeof registryEvaluatio
   for (const id of ids.split(',')) EVALUATION_BY_ID[id] = registryEvaluation(...args);
 };
 addEvaluation('session_volume_profile', 'raw', 'developing', 'incremental', 'snapshot-raw', 'estimated-directional-volume', 'Profile rows use raw candle volume; directional/delta allocation is estimated.');
+addEvaluation('poc_mrp_zones', 'raw', 'developing', 'full-rebuild', 'snapshot-raw', 'raw-volume', 'Zone geometry uses confirmed higher-timeframe ATR values; MRP lines use the developing raw-volume snapshot.');
 addEvaluation('sma', 'display', 'developing', 'incremental', 'snapshot-display', 'not-applicable');
-addEvaluation('sma_crossover_bb,squeeze_momentum', 'display', 'mixed', 'full-rebuild', 'snapshot-display', 'not-applicable');
 addEvaluation('ma_ribbon_tv', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'not-applicable');
 addEvaluation('ma_fvg', 'mixed', 'closed', 'full-rebuild', 'snapshot-mixed', 'not-applicable', 'MA/VWAP visuals use display inputs; FVG structure uses raw closed candles.');
 addEvaluation('macd,bollinger_bands,rsi,parabolic_sar,stochastic,keltner_channels,adx,williams_r', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'not-applicable');
@@ -1006,14 +731,10 @@ addEvaluation('atr', 'display', 'developing', 'incremental', 'snapshot-display',
 addEvaluation('volume', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'raw-volume');
 addEvaluation('obv', 'display', 'developing', 'incremental', 'snapshot-display', 'estimated-directional-volume', 'OBV signs raw volume by candle close direction; it is not aggressor delta.');
 addEvaluation('vwap', 'display', 'developing', 'incremental', 'snapshot-display', 'raw-volume');
-addEvaluation('supertrend,vol_spike,regression_gchannel', 'display', 'mixed', 'full-rebuild', 'snapshot-display', 'not-applicable');
+addEvaluation('dsmart_line', 'display', 'mixed', 'full-rebuild', 'snapshot-display', 'not-applicable');
+addEvaluation('supertrend', 'display', 'mixed', 'full-rebuild', 'snapshot-display', 'not-applicable');
 addEvaluation('vwap_bands', 'display', 'developing', 'full-rebuild', 'snapshot-display', 'raw-volume');
-addEvaluation('sd_zones,sd_signals', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'not-applicable');
-addEvaluation('volume_distribution_zones', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'estimated-directional-volume', 'Buy/sell allocation is inferred from candle range and close location, not trade aggressor data.');
-addEvaluation('scanner_signals', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'not-applicable');
-addEvaluation('magic_sr,fib_pivot,smc,jumbo_zones', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'not-applicable');
-addEvaluation('elephant_zone', 'raw', 'closed', 'full-rebuild', 'snapshot-raw', 'not-applicable');
-
+addEvaluation('smc', 'raw', 'closed', 'structural-closed-bar-cached', 'snapshot-raw', 'not-applicable');
 export const CUSTOM_INDICATORS: CustomIndicatorDef[] = RAW_CUSTOM_INDICATORS.map((def) => {
   const evaluation = EVALUATION_BY_ID[def.id];
   if (!evaluation) throw new Error(`Missing evaluation metadata for indicator ${def.id}`);

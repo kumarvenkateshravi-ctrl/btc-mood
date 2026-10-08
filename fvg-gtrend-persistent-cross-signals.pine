@@ -1,0 +1,182 @@
+//@version=6
+indicator("FVG + G-Trend + VWAP Contact Signals", overlay = true, max_boxes_count = 100, max_labels_count = 500)
+
+// ── Inputs ─────────────────────────────────────────────────────────────────
+// Full credit to Alex Grover:
+// https://www.tradingview.com/script/fIvlS64B-G-Channels-Efficient-Calculation-Of-Upper-Lower-Extremities/
+gLength = input.int(100, "G-Trend Length", minval = 1, group = "Original G-Trend")
+gSource = input.source(close, "G-Trend Source", group = "Original G-Trend")
+showGTrendCross = input.bool(true, "Show G-Trend Buy/Sell", group = "Original G-Trend")
+
+maxAgeBars    = input.int(200, "Maximum FVG Age (Bars)", minval = 1, group = "Fair Value Gaps")
+maxActiveFvgs = input.int(30, "Maximum Active FVGs", minval = 1, maxval = 100, group = "Fair Value Gaps")
+showFvg       = input.bool(true, "Show Active FVGs", group = "Fair Value Gaps")
+bullFvgColor  = input.color(color.new(color.rgb(0, 168, 138), 84), "Bullish FVG", group = "Fair Value Gaps")
+bearFvgColor  = input.color(color.new(color.rgb(224, 82, 96), 84), "Bearish FVG", group = "Fair Value Gaps")
+
+// VWAP is calculated here because the supplied script did not contain it.
+showSessionVwap = input.bool(true, "Show Session VWAP", group = "Session VWAP")
+vwapSource = input.source(hlc3, "VWAP Source", group = "Session VWAP")
+vwapColor = input.color(color.rgb(66, 165, 245), "VWAP Color", group = "Session VWAP")
+newVwapSession = timeframe.change("1D")
+sessionVwap = ta.vwap(vwapSource, newVwapSession or barstate.isfirst)
+plot(showSessionVwap ? sessionVwap : na, "Session VWAP", color = vwapColor, linewidth = 2)
+
+showFvgLineCandleSignals = input.bool(true, "Show VWAP/G-Trend + FVG candle signals", group = "VWAP / G-Trend + FVG Candle")
+useVwapFvgCandle = input.bool(true, "Use Session VWAP", group = "VWAP / G-Trend + FVG Candle")
+useGTrendFvgCandle = input.bool(true, "Use G-Trend Average", group = "VWAP / G-Trend + FVG Candle")
+fvgLineCandleCooldown = input.int(6, "Minimum bars between same-side markers", minval = 0, maxval = 100, group = "VWAP / G-Trend + FVG Candle", tooltip = "Prevents label clusters when several same-direction FVG candles touch either line during one move.")
+fvgLineBuyColor = input.color(color.rgb(0, 168, 138), "BUY label color", group = "VWAP / G-Trend + FVG Candle")
+fvgLineSellColor = input.color(color.rgb(224, 82, 96), "SELL label color", group = "VWAP / G-Trend + FVG Candle")
+
+lineTouchesCandle(valueAtCandle, candleLow, candleHigh) =>
+    // Use the line's value on the FVG candle itself. Equality with the candle
+    // high/low is an outside boundary touch. Movement between bars is ignored.
+    not na(valueAtCandle) and valueAtCandle >= candleLow and valueAtCandle <= candleHigh
+
+// ── Original G-Trend, ported directly from Pine v4 to Pine v6 ───────────────
+float gA = 0.0
+float gB = 0.0
+
+gA := math.max(gSource, nz(gA[1])) - nz(gA[1] - gB[1]) / gLength
+gB := math.min(gSource, nz(gB[1])) + nz(gA[1] - gB[1]) / gLength
+gAverage = math.avg(gA, gB)
+
+gCrossUp = gB[1] < close[1] and gB > close
+gCrossDn = gA[1] < close[1] and gA > close
+gBullish = ta.barssince(gCrossDn) <= ta.barssince(gCrossUp)
+gColor = gBullish ? color.lime : color.red
+
+gAveragePlot = plot(gAverage, "Average", color = color.new(gColor, 90), linewidth = 1)
+gClosePlot = plot(close, "Close price", color = color.new(gColor, 100), linewidth = 1)
+fill(gAveragePlot, gClosePlot, color = color.new(gColor, 90))
+
+plotshape(showGTrendCross and not gBullish and gBullish[1] ? gAverage : na, title = "Original G-Trend Sell", location = location.absolute, style = shape.labeldown, color = color.red, size = size.tiny, text = "Sell", textcolor = color.white, offset = -1)
+plotshape(showGTrendCross and gBullish and not gBullish[1] ? gAverage : na, title = "Original G-Trend Buy", location = location.absolute, style = shape.labelup, color = color.lime, size = size.tiny, text = "Buy", textcolor = color.white, offset = -1)
+
+// ── FVG storage ─────────────────────────────────────────────────────────────
+// Direction: 1 = bullish FVG, -1 = bearish FVG.
+var box[] fvgBoxes = array.new_box()
+var float[] fvgTops = array.new_float()
+var float[] fvgBottoms = array.new_float()
+var int[] fvgDirections = array.new_int()
+var int[] fvgCreatedBars = array.new_int()
+
+removeFvg(index) =>
+    box.delete(array.get(fvgBoxes, index))
+    array.remove(fvgBoxes, index)
+    array.remove(fvgTops, index)
+    array.remove(fvgBottoms, index)
+    array.remove(fvgDirections, index)
+    array.remove(fvgCreatedBars, index)
+
+addFvg(top, bottom, direction) =>
+    // Evict before drawing so TradingView's box limit cannot delete a box
+    // still referenced by our arrays when maxActiveFvgs is set to 100.
+    if array.size(fvgBoxes) >= maxActiveFvgs
+        removeFvg(0)
+    zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+    borderColor = direction == 1 ? color.lime : color.red
+    newBox = box.new(
+         left = bar_index - 2,
+         top = top,
+         right = bar_index,
+         bottom = bottom,
+         xloc = xloc.bar_index,
+         bgcolor = showFvg ? zoneColor : na,
+         border_color = showFvg ? borderColor : na
+     )
+
+    array.push(fvgBoxes, newBox)
+    array.push(fvgTops, top)
+    array.push(fvgBottoms, bottom)
+    array.push(fvgDirections, direction)
+    array.push(fvgCreatedBars, bar_index)
+
+// ── FVG lifecycle and signal generation ─────────────────────────────────────
+bool fvgLineCandleBuy = false
+bool fvgLineCandleSell = false
+bool vwapBullFvgTouch = false
+bool gTrendBullFvgTouch = false
+bool vwapBearFvgTouch = false
+bool gTrendBearFvgTouch = false
+var int lastFvgLineBuyBar = na
+var int lastFvgLineSellBar = na
+
+// Historical bars are confirmed. On live data, this prevents a signal from
+// appearing until the candle closes.
+if barstate.isconfirmed
+    // Update / expire existing FVGs before evaluating a trade signal.
+    if array.size(fvgBoxes) > 0
+        for i = array.size(fvgBoxes) - 1 to 0
+            fvgBox = array.get(fvgBoxes, i)
+            top = array.get(fvgTops, i)
+            bottom = array.get(fvgBottoms, i)
+            direction = array.get(fvgDirections, i)
+            createdBar = array.get(fvgCreatedBars, i)
+
+            expired = bar_index - createdBar > maxAgeBars
+            mitigated = direction == 1 ? close < bottom : close > top
+
+            if expired or mitigated
+                removeFvg(i)
+            else
+                zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+                borderColor = direction == 1 ? color.lime : color.red
+                box.set_right(fvgBox, bar_index)
+                box.set_bgcolor(fvgBox, showFvg ? zoneColor : na)
+                box.set_border_color(fvgBox, showFvg ? borderColor : na)
+
+    // Create new FVGs only from confirmed candles.
+    bullishFvg = bar_index >= 2 and low > high[2] and close[1] > high[2]
+    bearishFvg = bar_index >= 2 and high < low[2] and close[1] < low[2]
+
+    if bullishFvg
+        addFvg(low, high[2], 1)
+
+    if bearishFvg
+        addFvg(low[2], high, -1)
+
+    // The middle candle [1] is the displacement/FVG candle. A line qualifies
+    // only when its value on that exact candle lies within high-low. Equality
+    // is the requested outside boundary touch; between-bar movement is ignored.
+    // The current third candle confirms the FVG; the marker is then placed on
+    // the middle candle with offset -1.
+    bool vwapTouchesMiddle = useVwapFvgCandle and lineTouchesCandle(sessionVwap[1], low[1], high[1])
+    bool gTrendTouchesMiddle = useGTrendFvgCandle and lineTouchesCandle(gAverage[1], low[1], high[1])
+
+    vwapBullFvgTouch := bullishFvg and close[1] > open[1] and vwapTouchesMiddle
+    gTrendBullFvgTouch := bullishFvg and close[1] > open[1] and gTrendTouchesMiddle
+    vwapBearFvgTouch := bearishFvg and close[1] < open[1] and vwapTouchesMiddle
+    gTrendBearFvgTouch := bearishFvg and close[1] < open[1] and gTrendTouchesMiddle
+
+    bool fvgLineBuySpacingOk = na(lastFvgLineBuyBar) or bar_index - lastFvgLineBuyBar >= fvgLineCandleCooldown
+    bool fvgLineSellSpacingOk = na(lastFvgLineSellBar) or bar_index - lastFvgLineSellBar >= fvgLineCandleCooldown
+    fvgLineCandleBuy := (vwapBullFvgTouch or gTrendBullFvgTouch) and fvgLineBuySpacingOk
+    fvgLineCandleSell := (vwapBearFvgTouch or gTrendBearFvgTouch) and fvgLineSellSpacingOk
+    if fvgLineCandleBuy
+        lastFvgLineBuyBar := bar_index
+    if fvgLineCandleSell
+        lastFvgLineSellBar := bar_index
+
+// ── Signal markers and alerts ───────────────────────────────────────────────
+bool bothFvgBuy = fvgLineCandleBuy and vwapBullFvgTouch and gTrendBullFvgTouch
+bool vwapOnlyFvgBuy = fvgLineCandleBuy and vwapBullFvgTouch and not gTrendBullFvgTouch
+bool gTrendOnlyFvgBuy = fvgLineCandleBuy and gTrendBullFvgTouch and not vwapBullFvgTouch
+bool bothFvgSell = fvgLineCandleSell and vwapBearFvgTouch and gTrendBearFvgTouch
+bool vwapOnlyFvgSell = fvgLineCandleSell and vwapBearFvgTouch and not gTrendBearFvgTouch
+bool gTrendOnlyFvgSell = fvgLineCandleSell and gTrendBearFvgTouch and not vwapBearFvgTouch
+
+plotshape(showFvgLineCandleSignals and vwapOnlyFvgBuy, title = "VWAP-FVG BUY", style = shape.labelup, location = location.belowbar, color = fvgLineBuyColor, offset = -1, text = "VWAP BUY", textcolor = color.white, size = size.small)
+plotshape(showFvgLineCandleSignals and gTrendOnlyFvgBuy, title = "G-Trend-FVG BUY", style = shape.labelup, location = location.belowbar, color = fvgLineBuyColor, offset = -1, text = "G-FVG BUY", textcolor = color.white, size = size.small)
+plotshape(showFvgLineCandleSignals and bothFvgBuy, title = "VWAP + G-Trend FVG BUY", style = shape.labelup, location = location.belowbar, color = fvgLineBuyColor, offset = -1, text = "BOTH BUY", textcolor = color.white, size = size.small)
+plotshape(showFvgLineCandleSignals and vwapOnlyFvgSell, title = "VWAP-FVG SELL", style = shape.labeldown, location = location.abovebar, color = fvgLineSellColor, offset = -1, text = "VWAP SELL", textcolor = color.white, size = size.small)
+plotshape(showFvgLineCandleSignals and gTrendOnlyFvgSell, title = "G-Trend-FVG SELL", style = shape.labeldown, location = location.abovebar, color = fvgLineSellColor, offset = -1, text = "G-FVG SELL", textcolor = color.white, size = size.small)
+plotshape(showFvgLineCandleSignals and bothFvgSell, title = "VWAP + G-Trend FVG SELL", style = shape.labeldown, location = location.abovebar, color = fvgLineSellColor, offset = -1, text = "BOTH SELL", textcolor = color.white, size = size.small)
+
+alertcondition(fvgLineCandleBuy, "BUY - VWAP/G-Trend Touches Bullish FVG Candle", "Session VWAP or G-Trend touches a confirmed green bullish FVG candle on {{ticker}} {{interval}}.")
+alertcondition(fvgLineCandleSell, "SELL - VWAP/G-Trend Touches Bearish FVG Candle", "Session VWAP or G-Trend touches a confirmed red bearish FVG candle on {{ticker}} {{interval}}.")
+alertcondition(fvgLineCandleBuy and vwapBullFvgTouch, "BUY - VWAP Touches Bullish FVG Candle", "Session VWAP touches a confirmed green bullish FVG candle on {{ticker}} {{interval}}.")
+alertcondition(fvgLineCandleBuy and gTrendBullFvgTouch, "BUY - G-Trend Touches Bullish FVG Candle", "G-Trend Average touches a confirmed green bullish FVG candle on {{ticker}} {{interval}}.")
+alertcondition(fvgLineCandleSell and vwapBearFvgTouch, "SELL - VWAP Touches Bearish FVG Candle", "Session VWAP touches a confirmed red bearish FVG candle on {{ticker}} {{interval}}.")
+alertcondition(fvgLineCandleSell and gTrendBearFvgTouch, "SELL - G-Trend Touches Bearish FVG Candle", "G-Trend Average touches a confirmed red bearish FVG candle on {{ticker}} {{interval}}.")

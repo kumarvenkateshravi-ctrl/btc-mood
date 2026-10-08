@@ -1,0 +1,171 @@
+//@version=6
+indicator("BTC WHALE HUNTER'S - POC, MRP & G-Trend", shorttitle = "POC + G-Trend", overlay = true, format = format.price, precision = 2, max_bars_back = 5000, max_labels_count = 100)
+
+// Functional reconstruction from observed chart values. This is not the
+// protected source code and does not use volume-profile bins.
+
+GRP_MRP = "MRP / WMRP"
+GRP_POC = "POC LINES"
+GRP_GTREND = "G-CHANNEL TREND"
+GRP_SIGNALS = "G-CHANNEL SIGNALS"
+
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "Show WMRP", inline = "mrp", group = GRP_MRP)
+showMrpNames = input.bool(true, "Show MRP / WMRP Name Tags", group = GRP_MRP)
+nameTagOffset = input.int(2, "Name Tag Offset", minval = 0, maxval = 20, group = GRP_MRP)
+
+showWeeklyPoc = input.bool(true, "Show Weekly POC", group = GRP_POC)
+showDailyPoc = input.bool(true, "Show Daily POC", group = GRP_POC)
+showFourHourPoc = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+weeklyPocColor = input.color(#F59E0B, "Weekly POC Color", group = GRP_POC)
+dailyPocColor = input.color(#EC4899, "Daily POC Color", group = GRP_POC)
+fourHourPocColor = input.color(#22D3EE, "4-Hour POC Color", group = GRP_POC)
+pocLineWidth = input.int(2, "POC Line Width", minval = 1, maxval = 4, group = GRP_POC)
+
+gLength = input.int(100, "Length", minval = 1, group = GRP_GTREND)
+gSource = input.source(close, "Source", group = GRP_GTREND)
+showGCloud = input.bool(true, "Show G-Channel Cloud", group = GRP_GTREND)
+
+showSignals = input.bool(true, "Show BUY / SELL Labels", group = GRP_SIGNALS)
+confirmationMode = input.string("POC hierarchy", "Signal Confirmation", options = ["G-Channel only", "POC hierarchy", "POC hierarchy + price"], group = GRP_SIGNALS)
+confirmedBarsOnly = input.bool(true, "Wait For Candle Close", group = GRP_SIGNALS)
+
+MRP_COLOR = #0B46F0
+WMRP_COLOR = #C57A00
+
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// Developing chart-timeframe Daily and Weekly HLC3 VWAPs.
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float mrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float wmrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+plot(showMrp ? mrp : na, "MRP — Daily VWAP", color = MRP_COLOR, linewidth = 2)
+plot(showWMrp ? wmrp : na, "WMRP — Weekly VWAP", color = WMRP_COLOR, linewidth = 2)
+
+var label mrpNameTag = na
+var label wmrpNameTag = na
+if barstate.islast
+    label.delete(mrpNameTag)
+    label.delete(wmrpNameTag)
+    mrpNameTag := na
+    wmrpNameTag := na
+    if showMrp and showMrpNames and not na(mrp)
+        mrpNameTag := label.new(bar_index + nameTagOffset, mrp, "MRP", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = MRP_COLOR, textcolor = color.white, size = size.small)
+    if showWMrp and showMrpNames and not na(wmrp)
+        wmrpNameTag := label.new(bar_index + nameTagOffset, wmrp, "WMRP", xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = WMRP_COLOR, textcolor = color.white, size = size.small)
+
+// Exact reconstructed 4H POC: cumulative UTC-day VWAP from completed native
+// 4H HLC3 bars. The [1] holds the completed 4H value without look-ahead drift.
+f_developingDailyVwapFrom4H() =>
+    const int LOCAL_DAY_MS = 24 * 60 * 60 * 1000
+    int localDayKey = int(math.floor(time / LOCAL_DAY_MS))
+    bool localNewDay = barstate.isfirst or localDayKey != localDayKey[1]
+    float localVolume = nz(volume, 0.0)
+    var float localPvSum = 0.0
+    var float localVolumeSum = 0.0
+    if localNewDay
+        localPvSum := 0.0
+        localVolumeSum := 0.0
+    localPvSum += hlc3 * localVolume
+    localVolumeSum += localVolume
+    localVolumeSum > 0 ? localPvSum / localVolumeSum : na
+
+float fourHourPoc = request.security(
+     syminfo.tickerid, "240", f_developingDailyVwapFrom4H()[1],
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// Monday open, fixed throughout the UTC week.
+float weeklyPoc = request.security(
+     syminfo.tickerid, "1W", open,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// Confirmed previous-day pivot, fixed throughout the UTC day.
+float dailyPoc = request.security(
+     syminfo.tickerid, "1D", (high[1] + low[1] + close[1]) / 3,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+color fourHourPlotColor = newFourHour and not barstate.isfirst ? na : fourHourPocColor
+color dailyPlotColor = newDay and not barstate.isfirst ? na : dailyPocColor
+color weeklyPlotColor = newWeek and not barstate.isfirst ? na : weeklyPocColor
+
+plot(showWeeklyPoc ? weeklyPoc : na, "Weekly POC", color = weeklyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showDailyPoc ? dailyPoc : na, "Daily POC", color = dailyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showFourHourPoc ? fourHourPoc : na, "4-Hour POC", color = fourHourPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+
+// G-Channel calculation converted directly from Alex Grover's v4 script.
+var float gUpper = 0.0
+var float gLower = 0.0
+gUpper := math.max(gSource, nz(gUpper[1])) - nz(gUpper[1] - gLower[1]) / gLength
+gLower := math.min(gSource, nz(gLower[1])) + nz(gUpper[1] - gLower[1]) / gLength
+float gAverage = math.avg(gUpper, gLower)
+
+bool gCrossUp = gLower[1] < close[1] and gLower > close
+bool gCrossDown = gUpper[1] < close[1] and gUpper > close
+bool gBullish = ta.barssince(gCrossDown) <= ta.barssince(gCrossUp)
+color gTrendColor = gBullish ? color.lime : color.red
+
+gAveragePlot = plot(showGCloud ? gAverage : na, "G-Channel Average", color = color.new(gTrendColor, 90), linewidth = 1)
+gClosePlot = plot(showGCloud ? close : na, "G-Channel Close", color = color.new(gTrendColor, 100), linewidth = 1)
+fill(gAveragePlot, gClosePlot, color = showGCloud ? color.new(gTrendColor, 90) : na, title = "G-Channel Trend Cloud")
+
+// The only signal source is a confirmed G-Channel trend flip. POCs are optional
+// confirmation gates; they never create their own signal or shift marker.
+bool rawGChannelBuy = gBullish and not gBullish[1]
+bool rawGChannelSell = not gBullish and gBullish[1]
+
+bool bullishPocHierarchy = weeklyPoc < dailyPoc and dailyPoc < fourHourPoc
+bool bearishPocHierarchy = weeklyPoc > dailyPoc and dailyPoc > fourHourPoc
+bool priceAbovePocs = close > weeklyPoc and close > dailyPoc and close > fourHourPoc
+bool priceBelowPocs = close < weeklyPoc and close < dailyPoc and close < fourHourPoc
+
+bool buyPocConfirmation = switch confirmationMode
+    "G-Channel only" => true
+    "POC hierarchy" => bullishPocHierarchy
+    => bullishPocHierarchy and priceAbovePocs
+
+bool sellPocConfirmation = switch confirmationMode
+    "G-Channel only" => true
+    "POC hierarchy" => bearishPocHierarchy
+    => bearishPocHierarchy and priceBelowPocs
+
+bool closeAllowed = not confirmedBarsOnly or barstate.isconfirmed
+bool buySignal = showSignals and closeAllowed and rawGChannelBuy and buyPocConfirmation
+bool sellSignal = showSignals and closeAllowed and rawGChannelSell and sellPocConfirmation
+
+plotshape(buySignal, title = "G-Channel + POC BUY", style = shape.labelup, location = location.belowbar, color = color.lime, size = size.tiny, text = "BUY", textcolor = color.white)
+plotshape(sellSignal, title = "G-Channel + POC SELL", style = shape.labeldown, location = location.abovebar, color = color.red, size = size.tiny, text = "SELL", textcolor = color.white)
+
+alertcondition(buySignal, "G-Channel + POC BUY", "G-Channel bullish flip confirmed by the selected POC mode on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sellSignal, "G-Channel + POC SELL", "G-Channel bearish flip confirmed by the selected POC mode on {{ticker}} {{interval}} at {{close}}")

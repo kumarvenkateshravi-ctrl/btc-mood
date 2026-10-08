@@ -1,0 +1,389 @@
+//@version=6
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//
+// Combined overlay: Trend Magic (© KivancOzbilgic), Opening Range Breakout,
+// Smoothed Heikin Ashi Candles, G-Channel Trend, and Fair Value Gap
+// (© LuxAlgo, CC BY-NC-SA 4.0 — non-commercial as combined here).
+//
+// Important: plot(), plotcandle(), plotshape(), and fill() calls intentionally
+// remain separate and editable. This preserves the rich Style tab controls for
+// ORB High/Low, Smoothed HA body/wick/border, G-Trend plots/fill, and signals.
+
+indicator("Trend Magic + ORB + Smoothed HA + G-Trend + FVG", shorttitle="MT+OBR-15MINS", overlay=true, format=format.price, precision=2)
+
+// ═══════════════════════════════════════════════════════════════════════
+// TREND MAGIC
+// ═══════════════════════════════════════════════════════════════════════
+GRP_TM = "Trend Magic"
+
+tmShow = input.bool(true, "Show Trend Magic", group=GRP_TM)
+tmPeriod = input.int(20, "CCI period", group=GRP_TM)
+tmCoeff = input.float(1, "ATR Multiplier", group=GRP_TM)
+tmAP = input.int(5, "ATR Period", group=GRP_TM)
+tmSrc = input.source(close, "Source", group=GRP_TM)
+
+tmTf = input.timeframe(
+     "",
+     "Indicator Timeframe",
+     group=GRP_TM,
+     tooltip="Leave blank to use the chart's timeframe, or choose a higher timeframe to compute Trend Magic on."
+)
+
+trendMagic() =>
+    tmATR = ta.sma(ta.tr, tmAP)
+    tmUpT = low - tmATR * tmCoeff
+    tmDownT = high + tmATR * tmCoeff
+    tmCci = ta.cci(tmSrc, tmPeriod)
+
+    var float mt = 0.0
+    mt := tmCci >= 0 ? (tmUpT < nz(mt[1]) ? nz(mt[1]) : tmUpT) : (tmDownT > nz(mt[1]) ? nz(mt[1]) : tmDownT)
+    [mt, tmCci]
+
+[magicTrend, tmCci] = request.security(syminfo.tickerid, tmTf, trendMagic())
+
+tmColor = tmCci >= 0 ? #0022FC : #FC0400
+
+plot(tmShow ? magicTrend : na, color=tmColor, linewidth=3, title="Trend Magic")
+
+alertcondition(ta.cross(close, magicTrend), title="TM Cross Alert", message="Price - MagicTrend Crossing!")
+alertcondition(ta.crossover(low, magicTrend), title="TM CrossOver Alarm", message="BUY SIGNAL!")
+alertcondition(ta.crossunder(high, magicTrend), title="TM CrossUnder Alarm", message="SELL SIGNAL!")
+
+// ═══════════════════════════════════════════════════════════════════════
+// OPENING RANGE BREAKOUT
+// ═══════════════════════════════════════════════════════════════════════
+GRP_ORB = "Opening Range Breakout"
+
+orbShow = input.bool(true, "Show ORB", group=GRP_ORB)
+orbMaxMin = input.int(5, "ORB Total Time (Minutes)", group=GRP_ORB)
+orbSession = input.session("0915-0920", "Session Time", group=GRP_ORB)
+
+orbT = time(timeframe.period, orbSession + ":1234567")
+orbHide = timeframe.isintraday
+
+orbInSession = not na(orbT)
+orbIsFirst = orbInSession and not orbInSession[1]
+
+var float orbHigh = na
+var float orbLow = na
+
+if orbIsFirst
+    orbHigh := high
+    orbLow := low
+else
+    orbHigh := orbHigh[1]
+    orbLow := orbLow[1]
+
+if high > orbHigh and orbInSession
+    orbHigh := high
+
+if low < orbLow and orbInSession
+    orbLow := low
+
+plot(
+     orbShow and orbHide ? orbHigh : na,
+     style=plot.style_line,
+     color=orbHigh[1] != orbHigh ? na : color.green,
+     title="ORB High",
+     linewidth=2
+)
+
+plot(
+     orbShow and orbHide ? orbLow : na,
+     style=plot.style_line,
+     color=orbLow[1] != orbLow ? na : color.red,
+     title="ORB Low",
+     linewidth=2
+)
+
+alertcondition(ta.crossover(close, orbHigh), title="ORB Breakout Up", message="Price broke above ORB High — BUY SIGNAL!")
+alertcondition(ta.crossunder(close, orbLow), title="ORB Breakout Down", message="Price broke below ORB Low — SELL SIGNAL!")
+
+// ═══════════════════════════════════════════════════════════════════════
+// SMOOTHED HEIKIN ASHI CANDLES
+// ═══════════════════════════════════════════════════════════════════════
+GRP_SHA = "Smoothed Heikin Ashi"
+
+shaShow = input.bool(
+     true,
+     "Show Smoothed HA Candles",
+     group=GRP_SHA,
+     tooltip="Plots as an overlay candle series over the real price candles."
+)
+
+shaLen1 = input.int(10, "Pre-smoothing EMA Length", minval=1, group=GRP_SHA)
+shaLen2 = input.int(10, "Post-smoothing EMA Length", minval=1, group=GRP_SHA)
+
+
+
+shaO = ta.ema(open, shaLen1)
+shaC = ta.ema(close, shaLen1)
+shaH = ta.ema(high, shaLen1)
+shaL = ta.ema(low, shaLen1)
+
+shaHaClose = (shaO + shaH + shaL + shaC) / 4
+
+var float shaHaOpen = na
+shaHaOpen := na(shaHaOpen[1]) ? (shaO + shaC) / 2 : (shaHaOpen[1] + shaHaClose[1]) / 2
+
+shaHaHigh = math.max(shaH, math.max(shaHaOpen, shaHaClose))
+shaHaLow = math.min(shaL, math.min(shaHaOpen, shaHaClose))
+
+shaO2 = ta.ema(shaHaOpen, shaLen2)
+shaC2 = ta.ema(shaHaClose, shaLen2)
+shaH2 = ta.ema(shaHaHigh, shaLen2)
+shaL2 = ta.ema(shaHaLow, shaLen2)
+
+// Keep these as direct plot colours, not input.color values. TradingView then
+// exposes Body Color 0/1 and Border Color 0/1 in the Style tab, exactly like
+// the original detailed Smoothed HA style controls.
+shaColor = shaO2 > shaC2 ? color.red : color.lime
+
+plotcandle(
+     shaShow ? shaO2 : na,
+     shaShow ? shaH2 : na,
+     shaShow ? shaL2 : na,
+     shaShow ? shaC2 : na,
+     title="Smoothed HA",
+     color=shaColor,
+     wickcolor=na,
+     bordercolor=shaColor
+)
+
+alertcondition(ta.cross(shaO2, shaC2), title="Smoothed HA Flip", message="Smoothed Heikin Ashi candle color flipped!")
+
+// ═══════════════════════════════════════════════════════════════════════
+// G-CHANNEL TREND
+// ═══════════════════════════════════════════════════════════════════════
+GRP_GTREND = "G-Trend"
+
+gLength = input.int(100, "Length", minval=1, group=GRP_GTREND)
+gSource = input.source(close, "Source", group=GRP_GTREND)
+showGCross = input.bool(true, "Show Buy / Sell Signals", group=GRP_GTREND)
+
+var float gUpper = 0.0
+var float gLower = 0.0
+
+gUpper := math.max(gSource, nz(gUpper[1])) - nz(gUpper[1] - gLower[1]) / gLength
+gLower := math.min(gSource, nz(gLower[1])) + nz(gUpper[1] - gLower[1]) / gLength
+
+gAverage = math.avg(gUpper, gLower)
+
+gCrossUp = gLower[1] < close[1] and gLower > close
+gCrossDown = gUpper[1] < close[1] and gUpper > close
+
+gBarsSinceDown = ta.barssince(gCrossDown)
+gBarsSinceUp = ta.barssince(gCrossUp)
+gBullish = gBarsSinceDown <= gBarsSinceUp
+
+gAverageColor = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90)
+gCloseColor = gBullish ? color.new(color.lime, 100) : color.new(color.red, 100)
+gFillColor = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90)
+
+gAveragePlot = plot(gAverage, title="G-Trend Average", color=gAverageColor, linewidth=1)
+gClosePlot = plot(close, title="G-Trend Close Price", color=gCloseColor, linewidth=1)
+fill(gAveragePlot, gClosePlot, title="G-Trend Background", color=gFillColor)
+
+gSellSignal = showGCross and not gBullish and gBullish[1]
+gBuySignal = showGCross and gBullish and not gBullish[1]
+
+plotshape(
+     gSellSignal ? gAverage : na,
+     title="G-Trend Sell",
+     location=location.absolute,
+     style=shape.labeldown,
+     color=color.red,
+     size=size.tiny,
+     text="Sell",
+     textcolor=color.white,
+     offset=-1
+)
+
+plotshape(
+     gBuySignal ? gAverage : na,
+     title="G-Trend Buy",
+     location=location.absolute,
+     style=shape.labelup,
+     color=color.lime,
+     size=size.tiny,
+     text="Buy",
+     textcolor=color.white,
+     offset=-1
+)
+
+alertcondition(gBuySignal, title="G-Trend Buy", message="G-Trend generated a Buy signal.")
+alertcondition(gSellSignal, title="G-Trend Sell", message="G-Trend generated a Sell signal.")
+
+// ═══════════════════════════════════════════════════════════════════════
+// FAIR VALUE GAP (© LuxAlgo, CC BY-NC-SA 4.0 — non-commercial as combined here)
+// ═══════════════════════════════════════════════════════════════════════
+GRP_FVG = "Fair Value Gap"
+fvgShow = input.bool(true, "Show Fair Value Gaps", group=GRP_FVG)
+fvgThresholdPer = input.float(0, "Threshold %", minval=0, maxval=100, step=.1, inline="fvgThreshold", group=GRP_FVG)
+fvgAuto = input(false, "Auto", inline="fvgThreshold", group=GRP_FVG)
+fvgDeleteOnFill = input.bool(true, "Delete FVGs After Fill?", group=GRP_FVG, tooltip="ON: delete a fully-filled gap. OFF: keep it, recolored gray.")
+fvgWaitClose = input.bool(true, "Wait for Candle Close to Identify FVGs?", group=GRP_FVG, tooltip="ON: only confirmed, closed-bar gaps are shown. OFF: intrabar FVG detection may repaint.")
+fvgShowLast = input.int(0, "Unmitigated Levels", minval=0, group=GRP_FVG)
+fvgMitigationLevels = input.bool(false, "Mitigation Levels", group=GRP_FVG)
+fvgTf = input.timeframe("", "Timeframe", group=GRP_FVG)
+
+fvgExtend = input.int(20, "Extend", minval=0, inline="fvgExtend", group="FVG Style")
+fvgDynamic = input(false, "Dynamic", inline="fvgExtend", group="FVG Style")
+// Direct colours intentionally keep the FVG boundary and fill entries editable
+// in TradingView's Style tab. They are not input.color fields, which would
+// flatten them into the Inputs tab.
+fvgBullCss = color.new(#089981, 70)
+fvgBearCss = color.new(#f23645, 70)
+
+fvgShowDash = input(true, "Show Dashboard", group="FVG Dashboard")
+fvgDashLoc = input.string("Top Right", "Location", options=["Top Right", "Bottom Right", "Bottom Left"], group="FVG Dashboard")
+fvgTextSize = input.string("Small", "Size", options=["Tiny", "Small", "Normal"], group="FVG Dashboard")
+
+type FVGRecord
+    float max
+    float min
+    bool isbull
+    int t = time
+
+method fvgToSolid(color id) => color.rgb(color.r(id), color.g(id), color.b(id))
+
+fvgDetect(bool waitClose) =>
+    var new_fvg = FVGRecord.new(float(na), float(na), bool(na), int(na))
+    off = waitClose ? 1 : 0
+    threshold = fvgAuto ? ta.cum((high - low) / low) / bar_index : fvgThresholdPer / 100
+    bull_fvg = low[off] > high[off + 2] and close[off + 1] > high[off + 2] and (low[off] - high[off + 2]) / high[off + 2] > threshold
+    bear_fvg = high[off] < low[off + 2] and close[off + 1] < low[off + 2] and (low[off + 2] - high[off]) / high[off] > threshold
+    if bull_fvg
+        new_fvg := FVGRecord.new(low[off], high[off + 2], true, time[off])
+    else if bear_fvg
+        new_fvg := FVGRecord.new(low[off + 2], high[off], false, time[off])
+    [bull_fvg, bear_fvg, new_fvg]
+
+var float fvgMaxBull = na
+var float fvgMinBull = na
+var int fvgBullCount = 0
+var int fvgBullMitigated = 0
+var float fvgMaxBear = na
+var float fvgMinBear = na
+var int fvgBearCount = 0
+var int fvgBearMitigated = 0
+var int fvgT = 0
+var int fvgDailyBullCount = 0
+var int fvgDailyBearCount = 0
+
+if session.isfirstbar
+    fvgDailyBullCount := 0
+    fvgDailyBearCount := 0
+
+var fvgRecords = array.new<FVGRecord>(0)
+var fvgAreas = array.new<box>(0)
+
+[fvgBullFvg, fvgBearFvg, fvgNewFvg] = request.security(syminfo.tickerid, fvgTf, fvgDetect(fvgWaitClose))
+fvgOffBox = fvgWaitClose ? 1 : 0
+
+if fvgShow and fvgBullFvg and fvgNewFvg.t != fvgT
+    if fvgDynamic
+        fvgMaxBull := fvgNewFvg.max
+        fvgMinBull := fvgNewFvg.min
+    if not fvgDynamic
+        fvgAreas.unshift(box.new(bar_index - 2 - fvgOffBox, fvgNewFvg.max, bar_index + fvgExtend, fvgNewFvg.min, na, bgcolor=fvgBullCss, text="FVG-" + str.tostring(fvgDailyBullCount + 1), text_color=color.green, text_size=size.small))
+    fvgRecords.unshift(fvgNewFvg)
+    fvgBullCount += 1
+    fvgDailyBullCount += 1
+    fvgT := fvgNewFvg.t
+else if fvgShow and fvgDynamic
+    fvgMaxBull := math.max(math.min(close, fvgMaxBull), fvgMinBull)
+
+if fvgShow and fvgBearFvg and fvgNewFvg.t != fvgT
+    if fvgDynamic
+        fvgMaxBear := fvgNewFvg.max
+        fvgMinBear := fvgNewFvg.min
+    if not fvgDynamic
+        fvgAreas.unshift(box.new(bar_index - 2 - fvgOffBox, fvgNewFvg.max, bar_index + fvgExtend, fvgNewFvg.min, na, bgcolor=fvgBearCss, text="FVG-" + str.tostring(fvgDailyBearCount + 1), text_color=color.red, text_size=size.small))
+    fvgRecords.unshift(fvgNewFvg)
+    fvgBearCount += 1
+    fvgDailyBearCount += 1
+    fvgT := fvgNewFvg.t
+else if fvgShow and fvgDynamic
+    fvgMinBear := math.min(math.max(close, fvgMinBear), fvgMaxBear)
+
+if fvgShow and fvgRecords.size() > 0
+    for i = fvgRecords.size() - 1 to 0
+        fvgGet = fvgRecords.get(i)
+        if fvgGet.isbull
+            if close < fvgGet.min
+                if fvgMitigationLevels
+                    line.new(fvgGet.t, fvgGet.min, time, fvgGet.min, xloc.bar_time, color=fvgBullCss, style=line.style_dashed)
+                if not fvgDynamic
+                    fvgArea = fvgAreas.remove(i)
+                    if fvgDeleteOnFill
+                        fvgArea.delete()
+                    else
+                        box.set_bgcolor(fvgArea, color.new(color.gray, 88))
+                        box.set_border_color(fvgArea, color.new(color.gray, 60))
+                fvgRecords.remove(i)
+                fvgBullMitigated += 1
+        else if close > fvgGet.max
+            if fvgMitigationLevels
+                line.new(fvgGet.t, fvgGet.max, time, fvgGet.max, xloc.bar_time, color=fvgBearCss, style=line.style_dashed)
+            if not fvgDynamic
+                fvgArea = fvgAreas.remove(i)
+                if fvgDeleteOnFill
+                    fvgArea.delete()
+                else
+                    box.set_bgcolor(fvgArea, color.new(color.gray, 88))
+                    box.set_border_color(fvgArea, color.new(color.gray, 60))
+            fvgRecords.remove(i)
+            fvgBearMitigated += 1
+
+var fvgUnmitigated = array.new<line>(0)
+if fvgShow and barstate.islast and fvgShowLast > 0 and fvgRecords.size() > 0
+    if fvgUnmitigated.size() > 0
+        for element in fvgUnmitigated
+            element.delete()
+        fvgUnmitigated.clear()
+    for i = 0 to math.min(fvgShowLast - 1, fvgRecords.size() - 1)
+        fvgGet = fvgRecords.get(i)
+        fvgUnmitigated.push(line.new(fvgGet.t, fvgGet.isbull ? fvgGet.min : fvgGet.max, time, fvgGet.isbull ? fvgGet.min : fvgGet.max, xloc.bar_time, color=fvgGet.isbull ? fvgBullCss : fvgBearCss))
+
+var fvgTablePosition = fvgDashLoc == "Bottom Left" ? position.bottom_left : fvgDashLoc == "Top Right" ? position.top_right : position.bottom_right
+var fvgTableSize = fvgTextSize == "Tiny" ? size.tiny : fvgTextSize == "Small" ? size.small : size.normal
+var fvgTb = table.new(fvgTablePosition, 3, 2, bgcolor=#1e222d, border_color=#373a46, border_width=1, frame_color=#373a46, frame_width=1)
+
+fvgIsToday(t) =>
+    dayofmonth(t) == dayofmonth and month(t) == month and year(t) == year
+
+var int fvgTodayActiveBull = 0
+var int fvgTodayActiveBear = 0
+if barstate.islast
+    fvgTodayActiveBull := 0
+    fvgTodayActiveBear := 0
+    if fvgRecords.size() > 0
+        for i = 0 to fvgRecords.size() - 1
+            fvgGet = fvgRecords.get(i)
+            if fvgIsToday(fvgGet.t)
+                if fvgGet.isbull
+                    fvgTodayActiveBull += 1
+                else
+                    fvgTodayActiveBear += 1
+
+if fvgShow and fvgShowDash
+    if barstate.isfirst
+        fvgTb.cell(1, 0, "Bullish", text_color=fvgBullCss.fvgToSolid(), text_size=fvgTableSize)
+        fvgTb.cell(2, 0, "Bearish", text_color=fvgBearCss.fvgToSolid(), text_size=fvgTableSize)
+        fvgTb.cell(0, 1, "Active Today", text_size=fvgTableSize, text_color=color.white)
+    if barstate.islast
+        fvgTb.cell(1, 1, str.tostring(fvgTodayActiveBull), text_color=fvgBullCss.fvgToSolid(), text_size=fvgTableSize)
+        fvgTb.cell(2, 1, str.tostring(fvgTodayActiveBear), text_color=fvgBearCss.fvgToSolid(), text_size=fvgTableSize)
+
+fvgMaxBullPlot = plot(fvgShow ? fvgMaxBull : na, color=#089981, title="FVG Bullish (upper)", linewidth=1)
+fvgMinBullPlot = plot(fvgShow ? fvgMinBull : na, color=#089981, title="FVG Bullish (lower)", linewidth=1)
+fill(fvgMaxBullPlot, fvgMinBullPlot, color=fvgBullCss, title="Bullish FVG")
+fvgMaxBearPlot = plot(fvgShow ? fvgMaxBear : na, color=#f23645, title="FVG Bearish (upper)", linewidth=1)
+fvgMinBearPlot = plot(fvgShow ? fvgMinBear : na, color=#f23645, title="FVG Bearish (lower)", linewidth=1)
+fill(fvgMaxBearPlot, fvgMinBearPlot, color=fvgBearCss, title="Bearish FVG")
+
+alertcondition(fvgBullCount > fvgBullCount[1], "Bullish FVG", "Bullish FVG detected")
+alertcondition(fvgBearCount > fvgBearCount[1], "Bearish FVG", "Bearish FVG detected")
+alertcondition(fvgBullMitigated > fvgBullMitigated[1], "Bullish FVG Mitigation", "Bullish FVG mitigated")
+alertcondition(fvgBearMitigated > fvgBearMitigated[1], "Bearish FVG Mitigation", "Bearish FVG mitigated")

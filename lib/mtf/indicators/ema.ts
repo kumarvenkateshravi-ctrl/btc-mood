@@ -7,6 +7,7 @@
 // is computed exactly once per evaluation and reused across all dimensions.
 
 import type { Candle } from '../../types';
+import type { IndicatorSettings } from '../../indicatorFramework';
 import * as pm from '../../pineMath';
 import {
   labelOf, verdictOf,
@@ -147,11 +148,15 @@ function buildWarnings(d: EmaDiagnostics): IndicatorSignal[] {
 }
 
 /** Pure, deterministic EMA evaluation: frozen score + indicator-local intelligence. */
-export function evaluateEma(candles: Candle[]): IndicatorEvaluation {
+export function evaluateEma(candles: Candle[], settings?: IndicatorSettings): IndicatorEvaluation {
   const closes = candles.map((c) => c.close);
-  const e20Arr = pm.emaPine(closes, 20);
-  const e50Arr = pm.emaPine(closes, 50);
-  const e200Arr = pm.emaPine(closes, 200);
+  const period = (key: 'fast' | 'slow' | 'long', fallback: number): number => {
+    const value = settings?.inputs[key];
+    return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback;
+  };
+  const e20Arr = pm.emaPine(closes, period('fast', 20));
+  const e50Arr = pm.emaPine(closes, period('slow', 50));
+  const e200Arr = pm.emaPine(closes, period('long', 200));
   const e20 = lastVal(e20Arr);
   const e50 = lastVal(e50Arr);
   const e200 = lastVal(e200Arr);

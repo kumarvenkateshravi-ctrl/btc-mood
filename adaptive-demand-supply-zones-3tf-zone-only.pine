@@ -1,0 +1,457 @@
+//@version=6
+indicator(title="Adaptive Demand & Supply Zones — 3TF", shorttitle="ADSZ 3TF", overlay=true, max_labels_count=500, max_bars_back=5000)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Adaptive Demand & Supply Zones (ADSZ)
+//
+// ATR-based volatility zones that work universally on any asset and timeframe.
+// Plots demand/supply zones across 6 timeframes (4H, Daily, Weekly, Monthly,
+// Quarterly, Half-Yearly) using statistical volatility derived from Average
+// True Range. Zones auto-adapt — wider during high volatility, tighter during
+// calm periods.
+//
+// Core formula:
+//   • Effective Volatility = ATR Slope × Annualized ATR%
+//   • Zone spread (σ) simplifies to: σ = Slope × ATR
+//   • Strong zones at ±1σ from open, Weak zones at ±σ/2.83 (or σ/2.77)
+//   • 3 fixed display layers — 4H primary, Daily confirmation, Weekly confirmation
+//   • Independent zone and POC visibility toggles for all three fixed layers
+//   • Four zone-entry alerts: 4H Buy/Sell plus 4H+Daily+Weekly Strong Buy/Sell
+//
+// Works on: Stocks, Indices, Crypto, Commodities, Forex
+//
+// NOTE: If quarterly or half-yearly zones appear different on lower-timeframe
+// charts (e.g., 4H) with multi-panel layouts, switch from "Extended Trading
+// Hours" to "Regular Trading Hours" in chart settings. Extended hours load
+// extra bars per day, reducing historical depth for higher-timeframe ATR.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── INPUTS ───────────────────────────────────────────────────────────────────
+
+// Frozen zone calibration — intentionally not exposed in Inputs
+// These are the original defaults and cannot be changed from indicator settings.
+const int   d_atr_period  = 20
+const float d_slope       = 0.69
+const float d_intercept   = 0.0
+const int   w_atr_period  = 5
+const float w_slope       = 0.68
+const float w_intercept   = 0.0
+const int   m_atr_period  = 20
+const float m_slope       = 0.90
+const float m_intercept   = 0.0
+const int   h4_atr_period = 20
+const float h4_slope      = 0.92
+const int   q_atr_period  = 20
+const float q_slope       = 0.89
+const int   hy_atr_period = 20
+const float hy_slope      = 0.88
+
+// Fixed confluence layers — timeframe assignments are intentionally locked.
+const string layer1_tf = "4H"
+const string layer2_tf = "Daily"
+const string layer3_tf = "Weekly"
+
+grp_layers = "── Fixed Zone Layers ──"
+bool show_l1_zones = input.bool(true, title="Show Layer 1 — 4H Zones", group=grp_layers)
+bool show_l2_zones = input.bool(true, title="Show Layer 2 — Daily Zones", group=grp_layers)
+bool show_l3_zones = input.bool(true, title="Show Layer 3 — Weekly Zones", group=grp_layers)
+bool show_l1_poc   = input.bool(true, title="Show Layer 1 — 4H POC", group=grp_layers)
+bool show_l2_poc   = input.bool(true, title="Show Layer 2 — Daily POC", group=grp_layers)
+bool show_l3_poc   = input.bool(true, title="Show Layer 3 — Weekly POC", group=grp_layers)
+bool show_labels   = input.bool(true, title="Show Zone Labels", group=grp_layers)
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+
+float phi     = 1.618034
+float sqrt2   = math.sqrt(2)
+float sqrt252 = math.sqrt(252)
+
+// Ensure sufficient history for higher-timeframe zone calculations
+max_bars_back(time,   5000)
+max_bars_back(open,   5000)
+max_bars_back(high,   5000)
+max_bars_back(low,    5000)
+max_bars_back(close,  5000)
+
+// ── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
+// Map a layer's timeframe selection to the correct zone value
+f_z(string tf, float v4h, float vd, float vw, float vm, float vq, float vhy) =>
+    tf == "None" ? na : tf == "4H" ? v4h : tf == "Daily" ? vd : tf == "Weekly" ? vw : tf == "Monthly" ? vm : tf == "Quarterly" ? vq : vhy
+
+// f_c removed — inline ternaries used instead to avoid series-type promotion from function returns
+// (PineScript functions promote return types to series, which doubles plot counts for colors)
+
+// ── DAILY ZONES ──────────────────────────────────────────────────────────────
+
+[day_open, day_atr, day_close_prev, day_high_prev, day_low_prev] = request.security(syminfo.tickerid, "D", [open, ta.atr(d_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Effective Volatility from annualized ATR%
+float atr_ann_pct = day_atr / day_close_prev * sqrt252 * 100
+// float atr_ann_pct = day_atr / day_open * sqrt252 * 100          // ← Gap fix: uncomment this, comment line above
+float effvol      = d_slope * atr_ann_pct + d_intercept
+
+// Zone geometry
+float P          = math.round(day_open)
+float sigma      = P * effvol / (100.0 * sqrt252)
+float dist_strong = sigma
+float dist_weak   = sigma / (2.0 * sqrt2)
+float ws          = math.round(sigma / 4.0)
+float ww          = math.round(sigma / (4.0 * phi))
+
+// Daily zone boundaries
+float sd_low   = math.round(P - dist_strong - ws / 2)
+float sd_high  = math.round(P - dist_strong + ws / 2)
+float wd_low   = math.round(P - dist_weak   - ww / 2)
+float wd_high  = math.round(P - dist_weak   + ww / 2)
+float wsp_low  = math.round(P + dist_weak   - ww / 2)
+float wsp_high = math.round(P + dist_weak   + ww / 2)
+float ss_low   = math.round(P + dist_strong - ws / 2)
+float ss_high  = math.round(P + dist_strong + ws / 2)
+
+// Daily POC = CPR Central Pivot of previous day
+float dpoc = math.round((day_high_prev + day_low_prev + day_close_prev) / 3)
+
+// ── WEEKLY ZONES ─────────────────────────────────────────────────────────────
+
+[week_open, w_atr_weekly, w_close_prev] = request.security(syminfo.tickerid, "W", [open, ta.atr(w_atr_period)[1], close[1]], lookahead=barmerge.lookahead_on)
+
+// Weekly Effective Volatility
+float w_atr_ann_pct = w_atr_weekly / w_close_prev * math.sqrt(52) * 100
+// float w_atr_ann_pct = w_atr_weekly / week_open * math.sqrt(52) * 100  // ← Gap fix: uncomment this, comment line above
+
+var float effvol_w = na
+bool new_week = ta.change(time("W")) != 0
+if new_week
+    effvol_w := w_slope * w_atr_ann_pct + w_intercept
+if na(effvol_w)
+    effvol_w := w_slope * w_atr_ann_pct + w_intercept
+
+float P_w          = math.round(week_open)
+float sigma_w      = P_w * effvol_w / (100.0 * math.sqrt(252.0 / 5.0))
+float dist_strong_w = sigma_w
+float dist_weak_w   = sigma_w / (2.0 * sqrt2)
+float ws_w          = math.round(sigma_w / 4.0)
+float ww_w          = math.round(sigma_w / (4.0 * phi))
+
+// Weekly zone boundaries
+float wsd_low  = math.round(P_w - dist_strong_w - ws_w / 2)
+float wsd_high = math.round(P_w - dist_strong_w + ws_w / 2)
+float wwd_low  = math.round(P_w - dist_weak_w   - ww_w / 2)
+float wwd_high = math.round(P_w - dist_weak_w   + ww_w / 2)
+float wws_low  = math.round(P_w + dist_weak_w   - ww_w / 2)
+float wws_high = math.round(P_w + dist_weak_w   + ww_w / 2)
+float wss_low  = math.round(P_w + dist_strong_w - ws_w / 2)
+float wss_high = math.round(P_w + dist_strong_w + ws_w / 2)
+float wpoc     = P_w + 8
+
+// ── MONTHLY ZONES ────────────────────────────────────────────────────────────
+
+[month_open, m_atr_monthly, m_close_prev, m_high_prev, m_low_prev] = request.security(syminfo.tickerid, "M", [open, ta.atr(m_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Monthly Effective Volatility
+float m_atr_ann_pct = m_atr_monthly / month_open * math.sqrt(12) * 100
+
+var float effvol_m = na
+bool new_month = ta.change(time("M")) != 0
+if new_month
+    effvol_m := m_slope * m_atr_ann_pct + m_intercept
+if na(effvol_m)
+    effvol_m := m_slope * m_atr_ann_pct + m_intercept
+
+float P_m           = math.round(month_open)
+float sigma_m       = P_m * effvol_m / (100.0 * math.sqrt(12.0))
+float dist_strong_m = sigma_m
+float dist_weak_m   = sigma_m / 2.77
+float ws_m          = math.round(sigma_m / 4.35)
+float ww_m          = math.round(sigma_m / 5.1)
+
+// Monthly zone boundaries
+float msd_low  = math.round(P_m - dist_strong_m - ws_m / 2)
+float msd_high = math.round(P_m - dist_strong_m + ws_m / 2)
+float mwd_low  = math.round(P_m - dist_weak_m   - ww_m / 2)
+float mwd_high = math.round(P_m - dist_weak_m   + ww_m / 2)
+float mws_low  = math.round(P_m + dist_weak_m   - ww_m / 2)
+float mws_high = math.round(P_m + dist_weak_m   + ww_m / 2)
+float mss_low  = math.round(P_m + dist_strong_m - ws_m / 2)
+float mss_high = math.round(P_m + dist_strong_m + ws_m / 2)
+
+// Monthly POC = Standard Pivot of previous month
+float mpoc = math.round((m_high_prev + m_low_prev + m_close_prev) / 3)
+
+// ── QUARTERLY ZONES ──────────────────────────────────────────────────────────
+
+[q_open, q_atr_val, q_close_prev, q_high_prev, q_low_prev] = request.security(syminfo.tickerid, "3M", [open, ta.atr(q_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Quarterly Effective Volatility (normalize by q_open to handle gaps)
+float q_atr_ann_pct = q_atr_val / q_open * math.sqrt(4) * 100
+
+var float effvol_q = na
+bool new_quarter = ta.change(time("3M")) != 0
+if new_quarter
+    effvol_q := q_slope * q_atr_ann_pct
+if na(effvol_q)
+    effvol_q := q_slope * q_atr_ann_pct
+
+float P_q           = math.round(q_open)
+float sigma_q       = P_q * effvol_q / (100.0 * math.sqrt(4.0))
+float dist_strong_q = sigma_q
+float dist_weak_q   = sigma_q / 2.77
+float ws_q          = math.round(sigma_q / 4.35)
+float ww_q          = math.round(sigma_q / 5.1)
+
+// Quarterly zone boundaries
+float qsd_low  = math.round(P_q - dist_strong_q - ws_q / 2)
+float qsd_high = math.round(P_q - dist_strong_q + ws_q / 2)
+float qwd_low  = math.round(P_q - dist_weak_q   - ww_q / 2)
+float qwd_high = math.round(P_q - dist_weak_q   + ww_q / 2)
+float qws_low  = math.round(P_q + dist_weak_q   - ww_q / 2)
+float qws_high = math.round(P_q + dist_weak_q   + ww_q / 2)
+float qss_low  = math.round(P_q + dist_strong_q - ws_q / 2)
+float qss_high = math.round(P_q + dist_strong_q + ws_q / 2)
+
+// Quarterly POC = Standard Pivot of previous quarter
+float qpoc = math.round((q_high_prev + q_low_prev + q_close_prev) / 3)
+
+// ── HALF-YEARLY ZONES ────────────────────────────────────────────────────────
+
+[hy_open, hy_atr_val, hy_close_prev, hy_high_prev, hy_low_prev] = request.security(syminfo.tickerid, "6M", [open, ta.atr(hy_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Half-Yearly Effective Volatility (normalize by hy_open to handle gaps)
+float hy_atr_ann_pct = hy_atr_val / hy_open * math.sqrt(2) * 100
+
+var float effvol_hy = na
+bool new_half = ta.change(time("6M")) != 0
+if new_half
+    effvol_hy := hy_slope * hy_atr_ann_pct
+if na(effvol_hy)
+    effvol_hy := hy_slope * hy_atr_ann_pct
+
+float P_hy           = math.round(hy_open)
+float sigma_hy       = P_hy * effvol_hy / (100.0 * math.sqrt(2.0))
+float dist_strong_hy = sigma_hy
+float dist_weak_hy   = sigma_hy / 2.77
+float ws_hy          = math.round(sigma_hy / 4.35)
+float ww_hy          = math.round(sigma_hy / 5.1)
+
+// Half-Yearly zone boundaries
+float hysd_low  = math.round(P_hy - dist_strong_hy - ws_hy / 2)
+float hysd_high = math.round(P_hy - dist_strong_hy + ws_hy / 2)
+float hywd_low  = math.round(P_hy - dist_weak_hy   - ww_hy / 2)
+float hywd_high = math.round(P_hy - dist_weak_hy   + ww_hy / 2)
+float hyws_low  = math.round(P_hy + dist_weak_hy   - ww_hy / 2)
+float hyws_high = math.round(P_hy + dist_weak_hy   + ww_hy / 2)
+float hyss_low  = math.round(P_hy + dist_strong_hy - ws_hy / 2)
+float hyss_high = math.round(P_hy + dist_strong_hy + ws_hy / 2)
+
+// Half-Yearly POC = Standard Pivot of previous half-year
+float hypoc = math.round((hy_high_prev + hy_low_prev + hy_close_prev) / 3)
+
+// ── 4H ZONES ─────────────────────────────────────────────────────────────────
+
+[h4_open, h4_atr, h4_close_prev, h4_high_prev, h4_low_prev, h4_high_prev2, h4_low_prev2, h4_close_prev2] = request.security(syminfo.tickerid, "240", [open, ta.atr(h4_atr_period)[1], close[1], high[1], low[1], high[2], low[2], close[2]], lookahead=barmerge.lookahead_on)
+
+// 4H Effective Volatility (normalize by h4_open to handle overnight gaps)
+float h4_atr_ann_pct = h4_atr / h4_open * math.sqrt(504) * 100
+// float h4_atr_ann_pct = h4_atr / h4_close_prev * math.sqrt(504) * 100  // ← No gap fix: uncomment this, comment line above
+
+var float effvol_4h = na
+bool new_4h = ta.change(time("240")) != 0
+if new_4h
+    effvol_4h := h4_slope * h4_atr_ann_pct
+if na(effvol_4h)
+    effvol_4h := h4_slope * h4_atr_ann_pct
+
+float P_4h          = math.round(h4_open)
+float sigma_4h      = P_4h * effvol_4h / (100.0 * math.sqrt(504.0))
+float dist_strong_4h = sigma_4h
+float dist_weak_4h   = sigma_4h / 2.77
+float ws_4h          = math.round(sigma_4h / 4.35)
+float ww_4h          = math.round(sigma_4h / 5.1)
+
+// 4H zone boundaries
+float h4sd_low  = math.round(P_4h - dist_strong_4h - ws_4h / 2)
+float h4sd_high = math.round(P_4h - dist_strong_4h + ws_4h / 2)
+float h4wd_low  = math.round(P_4h - dist_weak_4h   - ww_4h / 2)
+float h4wd_high = math.round(P_4h - dist_weak_4h   + ww_4h / 2)
+float h4ws_low  = math.round(P_4h + dist_weak_4h   - ww_4h / 2)
+float h4ws_high = math.round(P_4h + dist_weak_4h   + ww_4h / 2)
+float h4ss_low  = math.round(P_4h + dist_strong_4h - ws_4h / 2)
+float h4ss_high = math.round(P_4h + dist_strong_4h + ws_4h / 2)
+
+// 4H POC: first session averages last 2 pivots (overnight smoothing),
+// second session uses simple prev 4H pivot
+float h4_pivot1 = (h4_high_prev + h4_low_prev + h4_close_prev) / 3
+float h4_pivot2 = (h4_high_prev2 + h4_low_prev2 + h4_close_prev2) / 3
+
+var bool in_first_4h_session = true
+if ta.change(time("D")) != 0
+    in_first_4h_session := true
+else if new_4h
+    in_first_4h_session := false
+
+float h4poc = in_first_4h_session ? math.round((h4_pivot1 + h4_pivot2) / 2) : math.round(h4_pivot1)
+
+// ── ZONE DISPLAY (3 Fixed Layers) ───────────────────────────────────────────
+// Fixed layers map 4H, Daily and Weekly to the pre-computed zone boundaries.
+// Colors use const literals directly in plot() to avoid series-type promotion
+// (any conditional color — even on input.string — counts as series in PineScript).
+// Layer 1 (4H): Green/Lime demand / Orange/Red supply / DodgerBlue POC
+// Layer 2 (Daily): Cyan/Teal demand / Magenta/Crimson supply / Dark Green POC
+// Layer 3 (Weekly): Blue demand / Purple supply / Gold POC
+
+// Layer 1 — zone boundaries (hidden when show_l1_zones is off)
+float l1_sd_l = show_l1_zones ? f_z(layer1_tf, h4sd_low,  sd_low,  wsd_low,  msd_low,  qsd_low,  hysd_low) : na
+float l1_sd_h = show_l1_zones ? f_z(layer1_tf, h4sd_high, sd_high, wsd_high, msd_high, qsd_high, hysd_high) : na
+float l1_wd_l = show_l1_zones ? f_z(layer1_tf, h4wd_low,  wd_low,  wwd_low,  mwd_low,  qwd_low,  hywd_low) : na
+float l1_wd_h = show_l1_zones ? f_z(layer1_tf, h4wd_high, wd_high, wwd_high, mwd_high, qwd_high, hywd_high) : na
+float l1_ws_l = show_l1_zones ? f_z(layer1_tf, h4ws_low,  wsp_low, wws_low,  mws_low,  qws_low,  hyws_low) : na
+float l1_ws_h = show_l1_zones ? f_z(layer1_tf, h4ws_high, wsp_high,wws_high, mws_high, qws_high, hyws_high) : na
+float l1_ss_l = show_l1_zones ? f_z(layer1_tf, h4ss_low,  ss_low,  wss_low,  mss_low,  qss_low,  hyss_low) : na
+float l1_ss_h = show_l1_zones ? f_z(layer1_tf, h4ss_high, ss_high, wss_high, mss_high, qss_high, hyss_high) : na
+
+// Break POC transitions by inserting na at period boundaries (avoids diagonal)
+bool new_day = ta.change(time("D")) != 0
+float h4poc_c  = new_4h ? na : h4poc
+float dpoc_c   = new_day ? na : dpoc
+float wpoc_c   = new_week ? na : wpoc
+float mpoc_c   = new_month ? na : mpoc
+float qpoc_c   = new_quarter ? na : qpoc
+float hypoc_c  = new_half ? na : hypoc
+
+float l1_poc  = show_l1_poc ? f_z(layer1_tf, h4poc_c, dpoc_c, wpoc_c, mpoc_c, qpoc_c, hypoc_c) : na
+
+// Plot Layer 1 (steplinebr eliminates diagonal transitions without losing first bar)
+l1a = plot(l1_sd_l, title="L1 SD Lo", color=color.new(color.green,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l1b = plot(l1_sd_h, title="L1 SD Hi", color=color.new(color.green,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l1a, l1b, color=color.new(color.green,75), title="L1 Strong Demand")
+l1c = plot(l1_wd_l, title="L1 WD Lo", color=color.new(color.lime,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l1d = plot(l1_wd_h, title="L1 WD Hi", color=color.new(color.lime,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l1c, l1d, color=color.new(color.lime,82), title="L1 Weak Demand")
+l1e = plot(l1_ws_l, title="L1 WS Lo", color=color.new(color.orange,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l1f = plot(l1_ws_h, title="L1 WS Hi", color=color.new(color.orange,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l1e, l1f, color=color.new(color.orange,82), title="L1 Weak Supply")
+l1g = plot(l1_ss_l, title="L1 SS Lo", color=color.new(color.red,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l1h = plot(l1_ss_h, title="L1 SS Hi", color=color.new(color.red,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l1g, l1h, color=color.new(color.red,75), title="L1 Strong Supply")
+plot(l1_poc, title="L1 POC", color=color.new(#1E90FF,0), linewidth=3, style=plot.style_linebr)
+
+// Layer 2 — zone boundaries (hidden when show_l2_zones is off)
+float l2_sd_l = show_l2_zones ? f_z(layer2_tf, h4sd_low,  sd_low,  wsd_low,  msd_low,  qsd_low,  hysd_low) : na
+float l2_sd_h = show_l2_zones ? f_z(layer2_tf, h4sd_high, sd_high, wsd_high, msd_high, qsd_high, hysd_high) : na
+float l2_wd_l = show_l2_zones ? f_z(layer2_tf, h4wd_low,  wd_low,  wwd_low,  mwd_low,  qwd_low,  hywd_low) : na
+float l2_wd_h = show_l2_zones ? f_z(layer2_tf, h4wd_high, wd_high, wwd_high, mwd_high, qwd_high, hywd_high) : na
+float l2_ws_l = show_l2_zones ? f_z(layer2_tf, h4ws_low,  wsp_low, wws_low,  mws_low,  qws_low,  hyws_low) : na
+float l2_ws_h = show_l2_zones ? f_z(layer2_tf, h4ws_high, wsp_high,wws_high, mws_high, qws_high, hyws_high) : na
+float l2_ss_l = show_l2_zones ? f_z(layer2_tf, h4ss_low,  ss_low,  wss_low,  mss_low,  qss_low,  hyss_low) : na
+float l2_ss_h = show_l2_zones ? f_z(layer2_tf, h4ss_high, ss_high, wss_high, mss_high, qss_high, hyss_high) : na
+float l2_poc  = show_l2_poc ? f_z(layer2_tf, h4poc_c, dpoc_c, wpoc_c, mpoc_c, qpoc_c, hypoc_c) : na
+
+// Plot Layer 2 (cyan demand, magenta supply, dark green POC)
+l2a = plot(l2_sd_l, title="L2 SD Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l2b = plot(l2_sd_h, title="L2 SD Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l2a, l2b, color=color.new(#00838F,75), title="L2 Strong Demand")
+l2c = plot(l2_wd_l, title="L2 WD Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l2d = plot(l2_wd_h, title="L2 WD Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l2c, l2d, color=color.new(#00BCD4,82), title="L2 Weak Demand")
+l2e = plot(l2_ws_l, title="L2 WS Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l2f = plot(l2_ws_h, title="L2 WS Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l2e, l2f, color=color.new(#E91E63,82), title="L2 Weak Supply")
+l2g = plot(l2_ss_l, title="L2 SS Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l2h = plot(l2_ss_h, title="L2 SS Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l2g, l2h, color=color.new(#AD1457,75), title="L2 Strong Supply")
+plot(l2_poc, title="L2 POC", color=color.new(#2E7D32,0), linewidth=3, style=plot.style_linebr)
+
+// Layer 3 — Weekly zone boundaries
+float l3_sd_l = show_l3_zones ? f_z(layer3_tf, h4sd_low,  sd_low,  wsd_low,  msd_low,  qsd_low,  hysd_low) : na
+float l3_sd_h = show_l3_zones ? f_z(layer3_tf, h4sd_high, sd_high, wsd_high, msd_high, qsd_high, hysd_high) : na
+float l3_wd_l = show_l3_zones ? f_z(layer3_tf, h4wd_low,  wd_low,  wwd_low,  mwd_low,  qwd_low,  hywd_low) : na
+float l3_wd_h = show_l3_zones ? f_z(layer3_tf, h4wd_high, wd_high, wwd_high, mwd_high, qwd_high, hywd_high) : na
+float l3_ws_l = show_l3_zones ? f_z(layer3_tf, h4ws_low,  wsp_low, wws_low,  mws_low,  qws_low,  hyws_low) : na
+float l3_ws_h = show_l3_zones ? f_z(layer3_tf, h4ws_high, wsp_high,wws_high, mws_high, qws_high, hyws_high) : na
+float l3_ss_l = show_l3_zones ? f_z(layer3_tf, h4ss_low,  ss_low,  wss_low,  mss_low,  qss_low,  hyss_low) : na
+float l3_ss_h = show_l3_zones ? f_z(layer3_tf, h4ss_high, ss_high, wss_high, mss_high, qss_high, hyss_high) : na
+float l3_poc  = show_l3_poc ? f_z(layer3_tf, h4poc_c, dpoc_c, wpoc_c, mpoc_c, qpoc_c, hypoc_c) : na
+
+l3a = plot(l3_sd_l, title="L3 SD Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l3b = plot(l3_sd_h, title="L3 SD Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l3a, l3b, color=color.new(#1565C0,75), title="L3 Strong Demand")
+l3c = plot(l3_wd_l, title="L3 WD Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l3d = plot(l3_wd_h, title="L3 WD Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l3c, l3d, color=color.new(#42A5F5,82), title="L3 Weak Demand")
+l3e = plot(l3_ws_l, title="L3 WS Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l3f = plot(l3_ws_h, title="L3 WS Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l3e, l3f, color=color.new(#AB47BC,82), title="L3 Weak Supply")
+l3g = plot(l3_ss_l, title="L3 SS Lo", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+l3h = plot(l3_ss_h, title="L3 SS Hi", color=color.new(color.black,100), display=display.none, linewidth=1, style=plot.style_steplinebr)
+fill(l3g, l3h, color=color.new(#6A1B9A,75), title="L3 Strong Supply")
+plot(l3_poc, title="L3 POC", color=color.new(#FBC02D,0), linewidth=3, style=plot.style_linebr)
+
+
+// ── LABELS ───────────────────────────────────────────────────────────────────
+if show_labels and new_day
+    label.new(bar_index, ss_high + 20,
+              "SD:" + str.tostring(sd_low) + "-" + str.tostring(sd_high) +
+              " | SS:" + str.tostring(ss_low) + "-" + str.tostring(ss_high),
+              style=label.style_none, textcolor=color.gray, size=size.tiny)
+
+if show_labels and new_month
+    label.new(bar_index, mss_high + 100,
+              "Mσ:" + str.tostring(math.round(sigma_m)) +
+              " ATR:" + str.tostring(math.round(m_atr_monthly)) +
+              " MSD:" + str.tostring(msd_low) + "-" + str.tostring(msd_high) +
+              " MSS:" + str.tostring(mss_low) + "-" + str.tostring(mss_high) +
+              " MPOC:" + str.tostring(mpoc),
+              style=label.style_label_down, textcolor=color.white,
+              color=color.new(#4B0082, 30), size=size.small)
+
+// ── FIXED 4H-PRIMARY ZONE ALERTS ─────────────────────────────────────────────
+// Full candle range is used, so bodies, wicks and doji candles all qualify.
+f_zone_touched(float zoneLow, float zoneHigh) =>
+    not na(zoneLow) and not na(zoneHigh) and low <= zoneHigh and high >= zoneLow
+
+// The three zones must share a real common price interval, and the candle must
+// touch that shared interval.
+f_three_zone_overlap_touched(float aLow, float aHigh, float bLow, float bHigh, float cLow, float cHigh) =>
+    float overlapLow = math.max(aLow, math.max(bLow, cLow))
+    float overlapHigh = math.min(aHigh, math.min(bHigh, cHigh))
+    not na(overlapLow) and not na(overlapHigh) and overlapLow <= overlapHigh and low <= overlapHigh and high >= overlapLow
+
+bool h4DemandTouched = f_zone_touched(h4sd_low, h4sd_high) or f_zone_touched(h4wd_low, h4wd_high)
+bool h4SupplyTouched = f_zone_touched(h4ws_low, h4ws_high) or f_zone_touched(h4ss_low, h4ss_high)
+
+bool tripleDemandTouched =
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, sd_low, sd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, sd_low, sd_high, wwd_low, wwd_high) or
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, wd_low, wd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, wd_low, wd_high, wwd_low, wwd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, sd_low, sd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, sd_low, sd_high, wwd_low, wwd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, wd_low, wd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, wd_low, wd_high, wwd_low, wwd_high)
+
+bool tripleSupplyTouched =
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, wsp_low, wsp_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, wsp_low, wsp_high, wss_low, wss_high) or
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, ss_low, ss_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, ss_low, ss_high, wss_low, wss_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, wsp_low, wsp_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, wsp_low, wsp_high, wss_low, wss_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, ss_low, ss_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, ss_low, ss_high, wss_low, wss_high)
+
+// Fire only on entry; leaving the area rearms the relevant alert.
+// Strong confluence supersedes the normal 4H alert on the same candle.
+bool strongBuyEntry  = tripleDemandTouched and not tripleDemandTouched[1]
+bool strongSellEntry = tripleSupplyTouched and not tripleSupplyTouched[1]
+bool buyEntry  = h4DemandTouched and not h4DemandTouched[1] and not tripleDemandTouched
+bool sellEntry = h4SupplyTouched and not h4SupplyTouched[1] and not tripleSupplyTouched
+
+alertcondition(buyEntry, title="4H Demand — BUY",
+     message="BUY: Price entered a 4H demand zone ({{ticker}} @ {{close}})")
+alertcondition(sellEntry, title="4H Supply — SELL",
+     message="SELL: Price entered a 4H supply zone ({{ticker}} @ {{close}})")
+alertcondition(strongBuyEntry, title="4H + Daily + Weekly — STRONG BUY",
+     message="STRONG BUY: Price entered a common 4H + Daily + Weekly demand overlap ({{ticker}} @ {{close}})")
+alertcondition(strongSellEntry, title="4H + Daily + Weekly — STRONG SELL",
+     message="STRONG SELL: Price entered a common 4H + Daily + Weekly supply overlap ({{ticker}} @ {{close}})")
+

@@ -15,6 +15,9 @@ export function feedbackForTradingCommand(result: TradingCommandResult): TradeCo
       message: 'The command was sent to the active execution account.',
     };
   }
+  if (result.status === 'pending') {
+    return { tone: 'info', title: 'Saving Challenge', message: result.reason };
+  }
   if (result.status === 'unsupported') {
     return { tone: 'info', title: 'Command unavailable', message: result.reason };
   }

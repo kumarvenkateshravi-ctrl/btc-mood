@@ -97,6 +97,8 @@ export interface IndicatorPlot {
   // For 'band', array of { upper: number; lower: number } | null.
   data: (number | { value: number; color: string } | { upper: number; lower: number } | null)[];
   lineWidth?: number;
+  /** Render line plots with TradingView-style horizontal steps. */
+  lineType?: 'simple' | 'withSteps';
   /**
    * Optional pane routing:
    *   - 'overlay' (default): same price scale as the candle chart
@@ -205,6 +207,8 @@ export interface IndicatorLineSegment {
   color: string;
   lineWidth?: number;
   lineStyle?: 'solid' | 'dashed' | 'dotted';
+  /** Optional Style-tab entry controlling this segment. */
+  styleId?: string;
   extendRight?: boolean;
 }
 

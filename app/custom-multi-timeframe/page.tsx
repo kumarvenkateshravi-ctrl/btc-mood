@@ -29,6 +29,7 @@ import { evaluateSmcScreener } from '@/lib/smc/screener';
 import { createMarketStructureSnapshot } from '@/lib/mtf/structureEngine';
 import { computeBoardDecision } from '@/lib/mtf/board/boardEngine';
 import MarketStructureCard from '@/components/mtf/MarketStructureCard';
+import MtfStructureEventMatrix from '@/components/mtf/MtfStructureEventMatrix';
 import {
   BoardDecisionCard, MTFIntelligenceBoard, AgreementConfidencePanel, CategoryStrip, TradeContextCard,
   MarketIntelligenceVerdict, TrendLifecyclePanel, ProbabilityPanel, NarrativeEvidencePanel,
@@ -37,6 +38,13 @@ import {
 import { useMarketIntelligence } from '@/components/mtf/useMarketIntelligence';
 import { useTradeDecision } from '@/components/mtf/useTradeDecision';
 import { useMaFvgSignal } from '@/components/mtf/useMaFvgSignal';
+import MtfStructuralContext from '@/components/mtf/MtfStructuralContext';
+import FvgMatrixRow from '@/components/mtf/FvgMatrixRow';
+import VwapCrossMatrixRow from '@/components/mtf/VwapCrossMatrixRow';
+import { createCustomMtfConfig } from '@/lib/mtf/customMtfConfig';
+import { buildCustomMtfContext } from '@/lib/mtf/customMtfWorkspace';
+import { countActiveTodayFvgs, countActiveTodayFvgsByTimeframe, type ActiveFvgCountsByTimeframe } from '@/lib/mtf/fvgActivity';
+import { computeClosedPriceWeeklyVwapCrossesByTimeframe, type PriceWeeklyVwapCrossByTimeframe } from '@/lib/mtf/vwapCrossover';
 import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import { Panel } from '@/components/ui';
@@ -157,19 +165,29 @@ export default function CustomMultiTimeframePage() {
     return phase;
   }, [candlesByTf, structTf]);
 
-  const structureSnapshot = useMemo(() => {
-    const smc = smcByTf[structTf];
-    const arr = candlesByTf[structTf];
-    if (!smc || !arr || arr.length < 2) return null;
+  const structureSnapshotsByTf = useMemo(() => {
     const perTf = TIMEFRAMES.filter((tf) => smcByTf[tf]).map((tf) => ({
       timeframe: tf,
       events: smcByTf[tf]!.events,
       barsProcessed: smcByTf[tf]!.diagnostics.barsProcessed,
     }));
-    return createMarketStructureSnapshot({
-      smc, candles: arr.slice(0, -1), symbol, timeframe: structTf, perTf, phaseLabel,
-    });
+    const out: Partial<Record<Timeframe, ReturnType<typeof createMarketStructureSnapshot>>> = {};
+    for (const tf of TIMEFRAMES) {
+      const smc = smcByTf[tf];
+      const arr = candlesByTf[tf];
+      if (!smc || !arr || arr.length < 2) continue;
+      out[tf] = createMarketStructureSnapshot({
+        smc,
+        candles: arr.slice(0, -1),
+        symbol,
+        timeframe: tf,
+        perTf,
+        phaseLabel: tf === structTf ? phaseLabel : null,
+      });
+    }
+    return out;
   }, [smcByTf, candlesByTf, structTf, symbol, phaseLabel]);
+  const structureSnapshot = structureSnapshotsByTf[structTf] ?? null;
 
   // ---- Market Intelligence (M2–M5), memoized on the closed-bar signature ----
   const intel = useMarketIntelligence(candlesByTf, structTf);
@@ -178,6 +196,21 @@ export default function CustomMultiTimeframePage() {
   const [smcOn, setSmcOn] = useState(true);
   const tradeDecision = useTradeDecision(board, intel.full, candlesByTf, smcByTf, smcOn);
   const maFvgSignal = useMaFvgSignal(candlesByTf, intel.full, smcByTf);
+  const customMtfConfig = useMemo(
+    () => createCustomMtfConfig({ indicatorSettings: indSettings, workspace: { structureTimeframe: structTf, smcEnabled: smcOn } }),
+    [indSettings, smcOn, structTf],
+  );
+  const customStructuralContext = useMemo(() => {
+    const candles = candlesByTf[structTf] ?? [];
+    if (candles.length < 2) return null;
+    return buildCustomMtfContext({ symbol, timeframe: structTf, candles, config: customMtfConfig, hasFormingBar: true });
+  }, [candlesByTf, customMtfConfig, structTf, symbol]);
+  const customActiveTodayFvgs = useMemo(() => {
+    const candles = candlesByTf[structTf] ?? [];
+    return candles.length > 1 ? countActiveTodayFvgs(candles, structTf) : null;
+  }, [candlesByTf, structTf]);
+  const activeTodayFvgsByTf = useMemo(() => countActiveTodayFvgsByTimeframe(candlesByTf), [candlesByTf]);
+  const vwapCrossesByTf = useMemo(() => computeClosedPriceWeeklyVwapCrossesByTimeframe(candlesByTf), [candlesByTf]);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
   const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
@@ -252,10 +285,12 @@ export default function CustomMultiTimeframePage() {
                   <h2 className="text-sm font-semibold tracking-wide text-accent">CUSTOM MULTI-TIMEFRAME ANALYSIS</h2>
                   <span className="text-[11px] text-ink-faint">Click Supertrend, RSI, MACD or ADX to tune its parameters</span>
                 </div>
-                <MatrixTable matrix={matrix} onConfigure={setEditingId} />
+                <MatrixTable matrix={matrix} fvgCounts={activeTodayFvgsByTf} vwapCrosses={vwapCrossesByTf} onConfigure={setEditingId} />
               </Panel>
 
               <MaFvgSignalCard signal={maFvgSignal} />
+
+              {customStructuralContext && <MtfStructuralContext timeframeLabel={TF_LABEL[structTf]} derived={customStructuralContext.derived} activeToday={customActiveTodayFvgs} />}
 
               {intel.full.layers.snapshots.length > 0 && (
                 <>
@@ -311,6 +346,13 @@ export default function CustomMultiTimeframePage() {
                   <SummaryCard k="Overall Outlook" sub="weighted" band={summary.outlook} emphasis />
                 </div>
               </Panel>
+
+              <MtfStructureEventMatrix
+                snapshots={structureSnapshotsByTf}
+                timeframes={[...TIMEFRAMES]}
+                selectedTf={structTf}
+                onSelectTf={selectStructTf}
+              />
 
               {structureSnapshot && (
                 <MarketStructureCard
@@ -422,7 +464,7 @@ export default function CustomMultiTimeframePage() {
 
 // ---- panels ----
 
-function MatrixTable({ matrix, onConfigure }: { matrix: ReturnType<typeof computeAlignmentMatrix>; onConfigure: (id: string) => void }) {
+function MatrixTable({ matrix, fvgCounts, vwapCrosses, onConfigure }: { matrix: ReturnType<typeof computeAlignmentMatrix>; fvgCounts: ActiveFvgCountsByTimeframe; vwapCrosses: PriceWeeklyVwapCrossByTimeframe; onConfigure: (id: string) => void }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-separate border-spacing-0 text-left text-sm">
@@ -476,6 +518,8 @@ function MatrixTable({ matrix, onConfigure }: { matrix: ReturnType<typeof comput
               </tr>
             );
           })}
+          <FvgMatrixRow counts={fvgCounts} />
+          <VwapCrossMatrixRow crosses={vwapCrosses} />
           <tr>
             <td className="bg-surface-2/50 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-accent">Timeframe Score</td>
             {TIMEFRAMES.map((tf) => {

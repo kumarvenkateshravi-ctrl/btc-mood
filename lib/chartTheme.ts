@@ -32,9 +32,8 @@ export interface ChartPalette {
   /** BUY/SELL flip markers */
   markerBuy: string;
   markerSell: string;
-  /** Last-price axis card. 'direction' = color by candle direction
-   *  (the TradingView convention); a hex pins it to a brand color
-   *  (the Bitcoin theme's gold tag — its signature). */
+  /** Last-price axis card. 'direction' colors the price and countdown
+   *  by the current candle direction; a hex pins it to a brand color. */
   priceCardBg: 'direction' | (string & {});
   priceCardInk: string;
   priceCardSubInk: string;
@@ -101,6 +100,24 @@ export const CHART_PALETTES: Record<Theme, ChartPalette> = {
     dv1: '#b7a8f5', dv2: '#5aa2e6', dv3: '#00d68f', dv4: '#f0b90b', dv5: '#ff5570', dv6: '#3e6ef5',
   },
 
+  /* TradingView Dark — neutral near-black canvas with clear directional candles. */
+  tradingview: {
+    chartBg: '#0F0F0F',
+    text: '#D1D4DC',
+    textFaint: '#858990',
+    grid: 'rgba(209, 212, 220, 0.06)',
+    border: '#333333',
+    crosshairLine: '#858990',
+    crosshairLabelBg: '#1B1B1B',
+    ...TV_CANDLES,
+    priceCardBg: 'direction',
+    priceCardInk: '#ffffff',
+    priceCardSubInk: 'rgba(255, 255, 255, 0.8)',
+    daySep: 'rgba(120, 130, 150, 0.35)',
+    vignette: 'rgba(0, 0, 0, 0.28)',
+    dv1: '#2962FF', dv2: '#9B8AFB', dv3: '#089981', dv4: '#F0B90B', dv5: '#F23645', dv6: '#5AA2E6',
+  },
+
   /* Cobalt — navy canvas, royal-blue accent. */
   cobalt: {
     chartBg: '#161d2c',
@@ -119,9 +136,7 @@ export const CHART_PALETTES: Record<Theme, ChartPalette> = {
     dv1: '#3e6ef5', dv2: '#b7a8f5', dv3: '#00d68f', dv4: '#f0b90b', dv5: '#ff5570', dv6: '#5aa2e6',
   },
 
-  /* Bitcoin — warm charcoal, vibrant signal greens, and the theme's
-     signature: a GOLD last-price tag + gold crosshair labels, matching
-     the reference design this theme is built from. */
+  /* Bitcoin — warm charcoal with directional last-price and countdown colors. */
   bitcoin: {
     chartBg: '#16130e',
     text: '#d6cfc0',
@@ -140,9 +155,9 @@ export const CHART_PALETTES: Record<Theme, ChartPalette> = {
     bearWick: '#ff3b5c',
     markerBuy: '#00d68f',
     markerSell: '#ff5570',
-    priceCardBg: '#f0b90b',
-    priceCardInk: '#1a1508',
-    priceCardSubInk: 'rgba(26, 21, 8, 0.72)',
+    priceCardBg: 'direction',
+    priceCardInk: '#ffffff',
+    priceCardSubInk: 'rgba(255, 255, 255, 0.8)',
     daySep: 'rgba(240, 185, 11, 0.30)',
     vignette: 'rgba(10, 8, 5, 0.45)',
     dv1: '#f0b90b', dv2: '#3e6ef5', dv3: '#b7a8f5', dv4: '#00d68f', dv5: '#ff5570', dv6: '#5aa2e6',

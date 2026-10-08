@@ -2,13 +2,10 @@
 
 import SignalMatrix from './SignalMatrix';
 import TradingPanel from './trade/TradingPanel';
-import SignalsPanel from './trade/SignalsPanel';
-import VdTradesPanel from './trade/VdTradesPanel';
 import type { Timeframe } from '@/lib/types';
 import type { TFSnapshot } from '@/lib/signals';
 import type { CompareSymbol } from '@/lib/compare';
 import type { IndicatorCell } from './SignalMatrix';
-import type { SdSignal } from '@/lib/indicators/signalTypes';
 import type { TradePresentationFacade } from '@/lib/trade/presentationFacade';
 
 interface DashboardAsideProps {
@@ -19,9 +16,8 @@ interface DashboardAsideProps {
   indicatorRows: Array<{ key: string; label: string; sub: string; cells: Record<string, IndicatorCell> }>;
   symbol: CompareSymbol;
   midPrice: number;
-  tab: 'signals' | 'trade' | 'trades';
-  onTabChange: (t: 'signals' | 'trade' | 'trades') => void;
-  signals: SdSignal[];
+  tab: 'signals' | 'trade';
+  onTabChange: (t: 'signals' | 'trade') => void;
   tradePresentation: TradePresentationFacade;
 }
 
@@ -35,13 +31,12 @@ export default function DashboardAside({
   midPrice,
   tab,
   onTabChange,
-  signals,
   tradePresentation,
 }: DashboardAsideProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex rounded-lg border border-line bg-base/40 p-0.5">
-        {(['signals', 'trade', 'trades'] as const).map((t) => (
+        {(['signals', 'trade'] as const).map((t) => (
           <button
             key={t}
             onClick={() => onTabChange(t)}
@@ -50,7 +45,7 @@ export default function DashboardAside({
               tab === t ? 'bg-surface-2 text-ink shadow-sm' : 'text-ink-faint hover:text-ink-muted',
             ].join(' ')}
           >
-            {t === 'signals' ? 'Signals' : t === 'trade' ? 'Trade' : 'Trades'}
+            {t === 'signals' ? 'Signals' : 'Trade'}
           </button>
         ))}
       </div>
@@ -63,12 +58,9 @@ export default function DashboardAside({
           onSelectTf={onSelectTf}
           indicatorRows={indicatorRows}
         />
-      ) : tab === 'trades' ? (
-        <VdTradesPanel symbol={symbol} tf={selected} midPrice={midPrice} />
       ) : (
         <>
           <TradingPanel symbol={symbol} midPrice={midPrice} presentation={tradePresentation} />
-          <SignalsPanel signals={signals} />
         </>
       )}
     </div>

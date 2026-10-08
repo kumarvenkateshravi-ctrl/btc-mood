@@ -24,7 +24,6 @@ import { useMarketContext } from '@/lib/hooks/useMarketContext';
 import { useScannerEngine } from '@/lib/hooks/useScannerEngine';
 import ScannerSignalsDock from '@/components/scanner/ScannerSignalsDock';
 import TechnicalScannerPanel from '@/components/scanner/TechnicalScannerPanel';
-import { computeSdSignalEvents } from '@/lib/indicators/sdSignals';
 import MoodStrip from '@/components/MoodStrip';
 import OrderFlowPanel from '@/components/OrderFlowPanel';
 import RightDock, { type RightPanelId } from '@/components/RightDock';
@@ -38,7 +37,7 @@ import WidgetsPanel, { DEFAULT_WIDGET_PREFS, type WidgetKey, type WidgetPrefs } 
 import DailyOrderFlowWidget from '@/components/DailyOrderFlowWidget';
 import { useDrawings, getDrawings, setDrawings } from '@/lib/drawings';
 import { useSharedIndicators } from '@/lib/useSharedIndicators';
-import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
+import { isChartIndicatorId } from '@/lib/chartIndicatorCatalog';
 import {
   DEFAULT_COMPARE_SYMBOL,
   isCompareSymbol,
@@ -46,7 +45,6 @@ import {
 } from '@/lib/compare';
 import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
 import type { ChartType } from '@/components/Chart';
-import type { WorkspaceConfig } from '@/lib/workspaces';
 import {
   INDICATORS_KEY,
   readInitialState,
@@ -69,6 +67,8 @@ import { useMarketState } from '@/lib/hooks/useMarketState';
 import { computeUtcDayChange } from '@/lib/utcDayChange';
 import { isPriceExecutionTrusted } from '@/lib/marketDataIntegrity';
 import { setMarketDataReplayActive } from '@/lib/marketDataTrust';
+import { createChallengeChartCommands } from '@/lib/challenges/ui/chartCommands';
+import { resumeChallengeOnChart, useChallengeChartSlice } from '@/lib/challenges/ui/store';
 
 export default function DashboardPage() {
   // ---- Core view state ----
@@ -122,7 +122,7 @@ export default function DashboardPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undoIndicators, redoIndicators]);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [tab, setTab] = useState<'signals' | 'trade' | 'trades'>('signals');
+  const [tab, setTab] = useState<'signals' | 'trade'>('signals');
   // Which right-rail panel is shown (null = collapsed). Driven by the far-right icon dock.
   const [rightPanel, setRightPanel] = useState<RightPanelId | null>('signals');
 
@@ -191,18 +191,6 @@ export default function DashboardPage() {
 
   useLayoutMigrationToast({ migrated: layoutMigrated, previousCount: layoutPreviousCount });
 
-  // Explicit workspace application is a user command: it intentionally applies the
-  // workspace snapshot immediately. Initial hydration uses URL > workspace >
-  // persisted > default; no persisted write can override this command.
-  const applyWorkspace = useCallback((cfg: WorkspaceConfig) => {
-    if (cfg.chartType === 'candlestick' || cfg.chartType === 'heikinAshi' || cfg.chartType === 'renko') {
-      setChartType(cfg.chartType);
-    }
-    if (isCompareSymbol(cfg.symbol)) setSymbol(cfg.symbol);
-    if ((TIMEFRAMES as string[]).includes(cfg.tf)) setSelected(cfg.tf as Timeframe);
-    setActiveIndicatorIds(cfg.indicatorIds.map(id => id.includes('::') ? id : `${id}::default`).filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0])));
-  }, []);
-
   const { activeIndicators, showVolume, toggleVolume, handleAdd: handleAddIndicator, handleRemove: handleRemoveIndicator, handleToggle: handleToggleIndicator } = useSharedIndicators();
 
   const currentDrawings = useDrawings(symbol);
@@ -215,7 +203,7 @@ export default function DashboardPage() {
     setChartType(init.type);
     setRightPanel(init.rightPanel);
     if (init.indicators && init.indicators.length) {
-      setActiveIndicatorIds(init.indicators.map(id => id.includes('::') ? id : id + '::default').filter((id) => CUSTOM_INDICATORS.some((d) => d.id === id.split('::')[0])));
+      setActiveIndicatorIds(init.indicators.map(id => id.includes('::') ? id : id + '::default').filter((id) => isChartIndicatorId(id.split('::')[0])));
     }
     if (init.drawings && init.drawings.length > 0) {
       const existing = getDrawings(init.symbol);
@@ -268,10 +256,13 @@ export default function DashboardPage() {
       signal?: AbortSignal,
     ) => {
       const steps = planDeepLoad(selected, targetMs, Date.now());
+      let selectedCandles: Candle[] | undefined;
       for (const step of steps) {
-        if (signal?.aborted) return;
-        await loadHistoryUntil(step.tf, step.untilMs, step.maxPages, onProgress, signal);
+        if (signal?.aborted) return selectedCandles;
+        const loaded = await loadHistoryUntil(step.tf, step.untilMs, step.maxPages, onProgress, signal);
+        if (step.tf === selected) selectedCandles = loaded;
       }
+      return selectedCandles;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [selected, loadHistoryUntil],
@@ -318,7 +309,7 @@ export default function DashboardPage() {
   );
 
   // ---- History window (jump-to-date) ----
-  const { historyCandles, fitSignal, jumpToDate, returnToLive, loadOlderHistory } =
+  const { historyCandles, focusTime, fitSignal, jumpToDate, returnToLive, loadOlderHistory } =
     useHistoryWindow(selected, symbol);
 
   const handleLoadOlder = useCallback(() => {
@@ -335,14 +326,6 @@ export default function DashboardPage() {
   const marketContext = useMarketContext(analyticsCandlesByTf);
   const scannerSnapshot = useScannerEngine(analyticsCandlesByTf, selected);
 
-  // Emission boundary: on each closed bar this yields the current SdSignal[].
-  // Phase 2 alerts/webhooks subscribe by diffing newly-`triggered` ids here.
-  const signalEvents = useMemo(
-    () => computeSdSignalEvents(analyticsCandlesByTf[selected] ?? [], { id: 'sd_signals' }, { symbol, timeframe: selected }),
-    // Keyed on the WINDOWED slice: stable across prepends, fresh per tick.
-    [analyticsCandlesByTf, symbol, selected],
-  );
-
   const currentPrice = replayCut.active
     ? (replayCut.cutBar?.close ?? prices[selected])
     : (ticker24h ? ticker24h.price : prices[selected]);
@@ -357,12 +340,39 @@ export default function DashboardPage() {
 
   // Active-position cockpit reads the current execution owner, never a cached
   // live position. Replay can therefore present its isolated session safely.
-  const activePresentation = useActiveTradePresentation({
+  const legacyPresentation = useActiveTradePresentation({
     mode: replayCut.active ? 'replay' : 'live',
     symbol,
     markPrice: currentPrice,
     markTrusted: isPriceExecutionTrusted(executionIntegrity),
   });
+  const challengeChart = useChallengeChartSlice();
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('challenge');
+    if (!requested) return;
+    const timer = window.setTimeout(() => { void resumeChallengeOnChart(requested); }, 400);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const challengeReplayActive = Boolean(
+    replayDataset.active &&
+    challengeChart.challengeId &&
+    challengeChart.sourceReplaySessionId === replayDataset.sessionId &&
+    symbol === 'BTCUSDT',
+  );
+  const challengeCommands = useMemo(() => createChallengeChartCommands(), []);
+  const activePresentation = useMemo(() => {
+    if (!challengeReplayActive) return legacyPresentation;
+    return {
+      mode: 'replay' as const,
+      symbol,
+      position: challengeChart.position,
+      trades: [],
+      balance: challengeChart.cash,
+      initialBalance: challengeChart.startingCash,
+      markPrice: currentPrice,
+      markTrusted: Number.isFinite(currentPrice),
+    };
+  }, [challengeReplayActive, challengeChart, legacyPresentation, symbol, currentPrice]);
   const activeTradeCommandContextRef = useRef<ChartTradingControllerSession>({ mode: 'live', symbol });
   activeTradeCommandContextRef.current = { mode: replayCut.active ? 'replay' : 'live', symbol };
   // One controller per active chart session. The controller is recreated for
@@ -399,6 +409,7 @@ export default function DashboardPage() {
     activeTradeCommands.activate();
     return () => activeTradeCommands.dispose();
   }, [activeTradeCommands]);
+  const effectiveTradeCommands = challengeReplayActive ? challengeCommands : activeTradeCommands;
   const activePosition = activePresentation.position;
   const activeView =
     activePosition && currentPrice != null
@@ -433,6 +444,7 @@ export default function DashboardPage() {
   const ask = bookTicker?.ask ?? null;
 
   const bottomPanelRef = useRef<PanelImperativeHandle>(null);
+  const toolbarHostRef = useRef<HTMLDivElement | null>(null);
 
   // ---- Alerts ----
   useAlerts(
@@ -447,15 +459,16 @@ export default function DashboardPage() {
 
   // ---- Render ----
   return (
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden">
+    <div className="mobile-terminal flex h-[100dvh] w-full flex-col overflow-hidden">
+      <div ref={toolbarHostRef} data-testid="chart-workspace-toolbar" className="relative z-50 w-full shrink-0 overflow-visible" />
       <main className="flex min-h-0 w-full flex-1 relative">
         {/* Left Drawing Rail (Placeholder for Phase 5) */}
         {/* <div className="w-[50px] border-r border-line bg-surface flex-shrink-0" /> */}
 
         {/* Center Canvas Area */}
         <div className="flex flex-1 flex-col min-w-0 h-full">
-          <PanelGroup orientation="vertical">
-            <Panel defaultSize={75} minSize={20}>
+          <PanelGroup orientation="vertical" className="terminal-panel-group">
+            <Panel defaultSize="75%" minSize="20%" className="terminal-chart-panel">
               <div className="flex-1 flex flex-col h-full relative">
 
                 {(
@@ -488,7 +501,7 @@ export default function DashboardPage() {
                     status={status}
                     marketIntegrity={integrity}
                     connectionStatus={wsStatus}
-                    tradingCommands={activeTradeCommands}
+                    tradingCommands={effectiveTradeCommands}
                     tradePresentation={activePresentation}
                     showVolume={showVolume}
                     onQuickTrade={() => { setTab('trade'); setRightPanel('signals'); }}
@@ -500,6 +513,7 @@ export default function DashboardPage() {
                     onClearIndicators={onToolbarClearIndicators}
                     onLoadOlder={handleLoadOlder}
                     historyActive={historyCandles != null}
+                    historyFocusTime={focusTime}
                     onJumpToDate={jumpToDate}
                     onReturnToLive={returnToLive}
                     fitSignal={fitSignal}
@@ -508,13 +522,13 @@ export default function DashboardPage() {
                     layout={gridLayout}
                     onLayoutChange={setGridLayout}
                     paneCount={gridLayout.mode === 'multi-pane' ? gridLayout.count : 1}
-                    workspaceCurrent={{ chartType, symbol, tf: selected, indicatorIds: activeIndicatorIds }}
-                    onWorkspaceApply={applyWorkspace}
+                    toolbarHostRef={toolbarHostRef}
+                    mobileSecondaryContent={<BottomDock tf={selected} candles={currentCandles} symbol={symbol} tradePresentation={activePresentation} candlesByTf={analyticsCandlesByTf} snapshots={snapshots} selected={selected} onSelectTf={setSelected} />}
                   />
                 )}
 
                 {gridLayout.mode === 'single' && (
-                  <ScannerSignalsDock snapshot={scannerSnapshot} midPrice={currentPrice ?? undefined} />
+                  <div className="hidden lg:contents"><ScannerSignalsDock snapshot={scannerSnapshot} midPrice={currentPrice ?? undefined} /></div>
                 )}
 
                 {/* Compact Market Context widget (Phase 11) — same MarketContext
@@ -531,9 +545,9 @@ export default function DashboardPage() {
               </div>
             </Panel>
 
-            <PanelResizeHandle className="h-1.5 w-full bg-line hover:bg-accent/40 cursor-row-resize transition relative z-20" />
+            <PanelResizeHandle className="terminal-panel-resize h-1.5 w-full bg-line hover:bg-accent/40 cursor-row-resize transition relative z-20" />
 
-            <Panel panelRef={bottomPanelRef} defaultSize={25} minSize={5} collapsible>
+            <Panel panelRef={bottomPanelRef} defaultSize="25%" minSize="5%" collapsible className="terminal-secondary-panel">
               <BottomDock
                 tf={selected}
                 candles={currentCandles}
@@ -613,10 +627,10 @@ export default function DashboardPage() {
                     <ActivePositionWidget
                       mode={activePresentation.mode}
                       view={activeView}
-                      onMoveBreakEven={() => activeTradeCommands.setOverlay({ symbol, field: 'sl', value: activePosition.entryPrice })}
-                      onClosePartial={(f) => activeTradeCommands.partialClose({ symbol, fraction: f, mark: currentPrice ?? activePosition.entryPrice })}
-                      onToggleTrailing={() => activeTradeCommands.toggleTrailing({ symbol, enabled: !activePosition.trailingSl })}
-                      onCloseFull={() => activeTradeCommands.close({ symbol, mark: currentPrice ?? activePosition.entryPrice })}
+                      onMoveBreakEven={() => effectiveTradeCommands.setOverlay({ symbol, field: 'sl', value: activePosition.entryPrice })}
+                      onClosePartial={(f) => effectiveTradeCommands.partialClose({ symbol, fraction: f, mark: currentPrice ?? activePosition.entryPrice })}
+                      onToggleTrailing={() => effectiveTradeCommands.toggleTrailing({ symbol, enabled: !activePosition.trailingSl })}
+                      onCloseFull={() => effectiveTradeCommands.close({ symbol, mark: currentPrice ?? activePosition.entryPrice })}
                     />
                   </div>
                 )}
@@ -636,7 +650,6 @@ export default function DashboardPage() {
                 midPrice={currentPrice ?? mid}
                 tab={tab}
                 onTabChange={setTab}
-                signals={signalEvents}
                 tradePresentation={activePresentation}
               />
             )}
@@ -663,4 +676,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

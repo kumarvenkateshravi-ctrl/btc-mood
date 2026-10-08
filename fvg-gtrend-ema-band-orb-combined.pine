@@ -1,0 +1,447 @@
+//@version=6
+indicator("FVG + G-Trend + Simple EMA Band + ORB", shorttitle = "FVG + EMA Band + ORB", overlay = true, max_boxes_count = 100, max_labels_count = 500)
+
+// =============================================================================
+// FVG + G-TREND STRATEGY — INPUTS
+// =============================================================================
+gLength       = input.int(100, "G-Trend Length", minval = 1, group = "G-Trend")
+showGTrend    = input.bool(true, "Show G-Trend", group = "G-Trend")
+bullTrend     = input.color(color.rgb(0, 168, 138), "Bullish Color", group = "G-Trend")
+bearTrend     = input.color(color.rgb(224, 82, 96), "Bearish Color", group = "G-Trend")
+
+maxAgeBars    = input.int(200, "Maximum FVG Age (Bars)", minval = 1, group = "Fair Value Gaps")
+maxActiveFvgs = input.int(30, "Maximum Active FVGs", minval = 1, maxval = 100, group = "Fair Value Gaps")
+showFvg       = input.bool(true, "Show Active FVGs", group = "Fair Value Gaps")
+showFvgDashboard = input.bool(true, "Show Active Today Dashboard", group = "Fair Value Gaps")
+bullFvgColor  = input.color(color.new(color.rgb(0, 168, 138), 84), "Bullish FVG", group = "Fair Value Gaps")
+bearFvgColor  = input.color(color.new(color.rgb(224, 82, 96), 84), "Bearish FVG", group = "Fair Value Gaps")
+
+requireReclaim = input.bool(true, "Require Midpoint Reclaim", group = "Confirmation")
+cooldownBars   = input.int(6, "Signal Cooldown (Bars)", minval = 0, group = "Confirmation")
+showSignals    = input.bool(true, "Show Buy/Sell Signals", group = "Display")
+
+// =============================================================================
+// SIMPLE EMA BAND — INPUTS
+// =============================================================================
+// The original four inputs are preserved, with Weekly VWAP and touch controls
+// added below them exactly as in the supplied source.
+source = input.source(close, "Open/close")
+shortLength = input.int(9, "Shorter EMA", minval = 1)
+longLength = input.int(21, "Longer EMA", minval = 1)
+enable200 = input.bool(true, "Enable 200 Ema")
+enableWeeklyVwap = input.bool(true, "Enable Weekly VWAP")
+weeklyVwapSource = input.source(hlc3, "Weekly VWAP Source")
+touchToleranceTicks = input.float(1.0, "Touch Tolerance (Ticks)", minval = 0.0, step = 0.25,
+     tooltip = "Allows a near-equal EMA value to count as a visual touch. Set to 0 for strict line contact.")
+
+// =============================================================================
+// ORB — INPUTS
+// =============================================================================
+inputMax = input.int(5, title = "ORB total time (minutes)")
+sess = input.session("0915-0920", title = "Session Time")
+
+// =============================================================================
+// FVG + G-TREND STRATEGY — CALCULATIONS
+// =============================================================================
+var float gUpper = na
+var float gLower = na
+
+gUpper := na(gUpper[1]) ? close : math.max(close, gUpper[1]) - (gUpper[1] - gLower[1]) / gLength
+gLower := na(gLower[1]) ? close : math.min(close, gLower[1]) + (gUpper[1] - gLower[1]) / gLength
+gAverage = (gUpper + gLower) / 2
+
+lowerCrossesPrice = gLower[1] < close[1] and gLower > close
+upperCrossesPrice = gUpper[1] < close[1] and gUpper > close
+
+barsSinceLowerCross = ta.barssince(lowerCrossesPrice)
+barsSinceUpperCross = ta.barssince(upperCrossesPrice)
+
+// Same regime model used by the app's G-Channel implementation.
+gBullish = not na(barsSinceLowerCross) and not na(barsSinceUpperCross) and barsSinceUpperCross <= barsSinceLowerCross
+
+// Direction: 1 = bullish FVG, -1 = bearish FVG.
+var box[] fvgBoxes = array.new_box()
+var float[] fvgTops = array.new_float()
+var float[] fvgBottoms = array.new_float()
+var int[] fvgDirections = array.new_int()
+var int[] fvgCreatedBars = array.new_int()
+var int[] fvgCreatedTimes = array.new_int()
+var bool[] fvgConsumed = array.new_bool()
+
+// Daily numbering counters reset at the start of each new exchange day. They
+// give each newly formed bullish and bearish gap its own FVG-1, FVG-2, ... label.
+var int fvgDailyBullCount = 0
+var int fvgDailyBearCount = 0
+
+if barstate.isfirst or timeframe.change("D")
+    fvgDailyBullCount := 0
+    fvgDailyBearCount := 0
+
+removeFvg(index) =>
+    box.delete(array.get(fvgBoxes, index))
+    array.remove(fvgBoxes, index)
+    array.remove(fvgTops, index)
+    array.remove(fvgBottoms, index)
+    array.remove(fvgDirections, index)
+    array.remove(fvgCreatedBars, index)
+    array.remove(fvgCreatedTimes, index)
+    array.remove(fvgConsumed, index)
+
+addFvg(top, bottom, direction, dailyNumber) =>
+    zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+    borderColor = direction == 1 ? bullTrend : bearTrend
+    newBox = box.new(
+         left = bar_index - 2,
+         top = top,
+         right = bar_index,
+         bottom = bottom,
+         xloc = xloc.bar_index,
+         bgcolor = showFvg ? zoneColor : na,
+         border_color = showFvg ? borderColor : na,
+         text = "FVG-" + str.tostring(dailyNumber),
+         text_color = showFvg ? borderColor : na,
+         text_size = size.tiny,
+         text_halign = text.align_right,
+         text_valign = text.align_center
+     )
+
+    array.push(fvgBoxes, newBox)
+    array.push(fvgTops, top)
+    array.push(fvgBottoms, bottom)
+    array.push(fvgDirections, direction)
+    array.push(fvgCreatedBars, bar_index)
+    array.push(fvgCreatedTimes, time)
+    array.push(fvgConsumed, false)
+
+    if array.size(fvgBoxes) > maxActiveFvgs
+        removeFvg(0)
+
+var int lastSignalBar = na
+bool buySignal = false
+bool sellSignal = false
+
+// Historical bars are confirmed. On live data, this prevents a signal from
+// appearing until the candle closes.
+if barstate.isconfirmed
+    // Update / expire existing FVGs before evaluating a trade signal.
+    if array.size(fvgBoxes) > 0
+        for i = array.size(fvgBoxes) - 1 to 0
+            fvgBox = array.get(fvgBoxes, i)
+            top = array.get(fvgTops, i)
+            bottom = array.get(fvgBottoms, i)
+            direction = array.get(fvgDirections, i)
+            createdBar = array.get(fvgCreatedBars, i)
+
+            expired = bar_index - createdBar > maxAgeBars
+            mitigated = direction == 1 ? close < bottom : close > top
+
+            if expired or mitigated
+                removeFvg(i)
+            else
+                zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+                borderColor = direction == 1 ? bullTrend : bearTrend
+                box.set_right(fvgBox, bar_index)
+                box.set_bgcolor(fvgBox, showFvg ? zoneColor : na)
+                box.set_border_color(fvgBox, showFvg ? borderColor : na)
+                box.set_text_color(fvgBox, showFvg ? borderColor : na)
+
+    // Create new FVGs only from confirmed candles.
+    bullishFvg = bar_index >= 2 and low > high[2] and close[1] > high[2]
+    bearishFvg = bar_index >= 2 and high < low[2] and close[1] < low[2]
+
+    if bullishFvg
+        fvgDailyBullCount += 1
+        addFvg(low, high[2], 1, fvgDailyBullCount)
+
+    if bearishFvg
+        fvgDailyBearCount += 1
+        addFvg(low[2], high, -1, fvgDailyBearCount)
+
+    // G-Trend direction must agree with the FVG direction.
+    cooldownComplete = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
+
+    if showSignals and cooldownComplete and array.size(fvgBoxes) > 0
+        // Work from newest FVG to oldest, so the latest valid zone gets priority.
+        for i = array.size(fvgBoxes) - 1 to 0
+            if not buySignal and not sellSignal
+                top = array.get(fvgTops, i)
+                bottom = array.get(fvgBottoms, i)
+                direction = array.get(fvgDirections, i)
+                createdBar = array.get(fvgCreatedBars, i)
+                consumed = array.get(fvgConsumed, i)
+
+                midpoint = (top + bottom) / 2
+                touched = low <= top and high >= bottom
+                reclaimed = direction == 1 ? close >= midpoint : close <= midpoint
+
+                validBuy = gBullish and direction == 1 and bar_index > createdBar and not consumed and touched and (not requireReclaim or reclaimed)
+                validSell = not gBullish and direction == -1 and bar_index > createdBar and not consumed and touched and (not requireReclaim or reclaimed)
+
+                if validBuy
+                    buySignal := true
+                    lastSignalBar := bar_index
+                    array.set(fvgConsumed, i, true)
+
+                if validSell
+                    sellSignal := true
+                    lastSignalBar := bar_index
+                    array.set(fvgConsumed, i, true)
+
+// Only records still present in these arrays are active and unmitigated. The
+// date check limits the dashboard to gaps formed on the current exchange date.
+fvgIsToday(createdTime) =>
+    year(createdTime) == year(time) and month(createdTime) == month(time) and dayofmonth(createdTime) == dayofmonth(time)
+
+var table fvgDashboard = table.new(
+     position.top_right,
+     3,
+     2,
+     bgcolor = #1e222d,
+     border_color = #373a46,
+     border_width = 1,
+     frame_color = #373a46,
+     frame_width = 1
+ )
+
+if barstate.islast
+    int fvgTodayActiveBull = 0
+    int fvgTodayActiveBear = 0
+
+    if array.size(fvgBoxes) > 0
+        for i = 0 to array.size(fvgBoxes) - 1
+            if fvgIsToday(array.get(fvgCreatedTimes, i))
+                direction = array.get(fvgDirections, i)
+                fvgTodayActiveBull += direction == 1 ? 1 : 0
+                fvgTodayActiveBear += direction == -1 ? 1 : 0
+
+    if showFvgDashboard
+        table.cell(fvgDashboard, 0, 0, "", bgcolor = #1e222d, text_color = color.white, text_size = size.tiny)
+        table.cell(fvgDashboard, 1, 0, "Bullish", bgcolor = #1e222d, text_color = bullTrend, text_size = size.tiny)
+        table.cell(fvgDashboard, 2, 0, "Bearish", bgcolor = #1e222d, text_color = bearTrend, text_size = size.tiny)
+        table.cell(fvgDashboard, 0, 1, "Active Today", bgcolor = #1e222d, text_color = color.white, text_size = size.tiny)
+        table.cell(fvgDashboard, 1, 1, str.tostring(fvgTodayActiveBull), bgcolor = #1e222d, text_color = bullTrend, text_size = size.tiny)
+        table.cell(fvgDashboard, 2, 1, str.tostring(fvgTodayActiveBear), bgcolor = #1e222d, text_color = bearTrend, text_size = size.tiny)
+    else
+        table.clear(fvgDashboard, 0, 0, 2, 1)
+
+// =============================================================================
+// SIMPLE EMA BAND — CALCULATIONS
+// =============================================================================
+shortEma = ta.ema(source, shortLength)
+longEma = ta.ema(source, longLength)
+ema200 = ta.ema(source, 200)
+bool weeklyReset = barstate.isfirst or timeframe.change("W")
+weeklyVwap = ta.vwap(weeklyVwapSource, weeklyReset)
+
+bool bullishBand = shortEma > longEma
+bool bearishBand = shortEma < longEma
+bool bullish200 = shortEma > ema200
+
+// The complete area between the short and long EMAs is the ribbon. Each
+// reference line can approach it from either side. A signal is emitted on the
+// first bar where relative line movement reaches or passes the nearest edge.
+// No crossover is required, and continued contact cannot repeat a signal.
+float ribbonUpper = math.max(shortEma, longEma)
+float ribbonLower = math.min(shortEma, longEma)
+float touchTolerance = touchToleranceTicks * syminfo.mintick
+
+bool ema200WasBelowRibbon = ema200[1] < ribbonLower[1] - touchTolerance
+bool ema200WasAboveRibbon = ema200[1] > ribbonUpper[1] + touchTolerance
+bool ema200ReachedFromBelow = ema200WasBelowRibbon and ema200 >= ribbonLower - touchTolerance
+bool ema200ReachedFromAbove = ema200WasAboveRibbon and ema200 <= ribbonUpper + touchTolerance
+bool ema200FirstTouch = barstate.isconfirmed and enable200 and
+     (ema200ReachedFromBelow or ema200ReachedFromAbove)
+
+// The first bar of a new week starts a fresh VWAP anchor. It is excluded from
+// contact detection because the reset creates a discontinuous jump rather than
+// a line approaching and touching the ribbon.
+bool weeklyVwapWasBelowRibbon = weeklyVwap[1] < ribbonLower[1] - touchTolerance
+bool weeklyVwapWasAboveRibbon = weeklyVwap[1] > ribbonUpper[1] + touchTolerance
+bool weeklyVwapReachedFromBelow = weeklyVwapWasBelowRibbon and weeklyVwap >= ribbonLower - touchTolerance
+bool weeklyVwapReachedFromAbove = weeklyVwapWasAboveRibbon and weeklyVwap <= ribbonUpper + touchTolerance
+bool weeklyVwapFirstTouch = barstate.isconfirmed and enableWeeklyVwap and not weeklyReset and
+     (weeklyVwapReachedFromBelow or weeklyVwapReachedFromAbove)
+
+bool buy200Signal = ema200FirstTouch and bullishBand
+bool sell200Signal = ema200FirstTouch and bearishBand
+bool buyWeeklyVwapSignal = weeklyVwapFirstTouch and bullishBand
+bool sellWeeklyVwapSignal = weeklyVwapFirstTouch and bearishBand
+
+// The four band states visible in the Style tab:
+// 1. Bullish and the candle low is inside the EMA band.
+// 2. Bullish with price outside the EMA band.
+// 3. Bearish and the candle high is inside the EMA band.
+// 4. Bearish with price outside the EMA band.
+color bandColor = bullishBand ?
+     (longEma < low and low < shortEma ? color.rgb(0, 236, 47, 74) : color.rgb(0, 255, 51, 91)) :
+     (longEma > high and high > shortEma ? color.rgb(255, 0, 0, 72) : color.rgb(255, 0, 0, 89))
+
+// =============================================================================
+// ORB — CALCULATIONS
+// =============================================================================
+t = time(timeframe.period, sess + ":1234567")
+hide = timeframe.isintraday and timeframe.multiplier <= inputMax
+
+is_newbar(res) => ta.change(time(res)) != 0
+in_session = not na(t)
+is_first = in_session and not in_session[1]
+
+float orb_high = na
+float orb_low = na
+
+if is_first
+    orb_high := high
+    orb_low := low
+else
+    orb_high := orb_high[1]
+    orb_low := orb_low[1]
+if high > orb_high and in_session
+    orb_high := high
+if low < orb_low and in_session
+    orb_low := low
+
+// =============================================================================
+// STYLE TAB — FVG + G-TREND STRATEGY
+// The hidden, noneditable first row is a visual section heading only.
+// =============================================================================
+plot(float(na), title = "──────── FVG + G-TREND STRATEGY ────────", editable = false, display = display.none)
+
+plot(
+     showGTrend ? gAverage : na,
+     "G-Trend Average",
+     color = gBullish ? bullTrend : bearTrend,
+     linewidth = 2
+)
+
+plotshape(
+     buySignal,
+     title = "FVG Buy",
+     text = "BUY",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = bullTrend,
+     textcolor = color.white,
+     size = size.small
+)
+
+plotshape(
+     sellSignal,
+     title = "FVG Sell",
+     text = "SELL",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = bearTrend,
+     textcolor = color.white,
+     size = size.small
+)
+
+// =============================================================================
+// STYLE TAB — SIMPLE EMA BAND
+// Every original plot title and style is preserved exactly.
+// =============================================================================
+plot(float(na), title = "──────── SIMPLE EMA BAND ────────", editable = false, display = display.none)
+
+plot(shortEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(0, 234, 183) : color.rgb(227, 13, 13))
+
+plot(longEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(3, 237, 69) : color.rgb(255, 0, 144),
+     style = plot.style_linebr)
+
+plot(enable200 ? ema200 : na,
+     title = "Plot",
+     color = bullish200 ? color.rgb(38, 166, 154) : color.rgb(242, 54, 69),
+     linewidth = 2)
+
+plot(enableWeeklyVwap ? weeklyVwap : na,
+     title = "Weekly VWAP",
+     color = color.rgb(255, 193, 7),
+     linewidth = 2,
+     style = plot.style_linebr)
+
+// These reproduce the two unchecked blue Plot rows in the Style tab.
+longAnchor = plot(longEma, title = "Plot", display = display.none)
+shortAnchor = plot(shortEma, title = "Plot", display = display.none)
+
+fill(longAnchor, shortAnchor,
+     title = "Plots Background",
+     color = bandColor,
+     editable = true)
+
+plotshape(buy200Signal,
+     title = "EMA 200 Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sell200Signal,
+     title = "EMA 200 Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(buyWeeklyVwapSignal,
+     title = "Weekly VWAP Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY W",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sellWeeklyVwapSignal,
+     title = "Weekly VWAP Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL W",
+     textcolor = color.white,
+     size = size.tiny)
+
+// =============================================================================
+// STYLE TAB — ORB
+// The two original ORB plot styles are preserved exactly.
+// =============================================================================
+plot(float(na), title = "──────── ORB ────────", editable = false, display = display.none)
+
+plot(hide ? orb_high : na,
+     style = plot.style_line,
+     color = orb_high[1] != orb_high ? na : color.green,
+     title = "ORB High",
+     linewidth = 2)
+
+plot(hide ? orb_low : na,
+     style = plot.style_line,
+     color = orb_low[1] != orb_low ? na : color.red,
+     title = "ORB Low",
+     linewidth = 2)
+
+// =============================================================================
+// ALERTS — ALL THREE INDICATORS
+// =============================================================================
+alertcondition(buySignal, "FVG + G-Trend Buy", "Bullish G-Trend FVG retest and reclaim confirmed.")
+alertcondition(sellSignal, "FVG + G-Trend Sell", "Bearish G-Trend FVG retest and reclaim confirmed.")
+
+alertcondition(buy200Signal,
+     title = "EMA 200 First Touch — Buy",
+     message = "BUY: EMA 200 made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sell200Signal,
+     title = "EMA 200 First Touch — Sell",
+     message = "SELL: EMA 200 made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(buyWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Buy",
+     message = "BUY: Weekly VWAP made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sellWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Sell",
+     message = "SELL: Weekly VWAP made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")

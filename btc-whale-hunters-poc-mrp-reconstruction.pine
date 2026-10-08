@@ -1,0 +1,251 @@
+//@version=6
+indicator("BTC WHALE HUNTER'S - POC & MRP [Reconstruction]", shorttitle = "POC & MRP", overlay = true, format = format.price, precision = 2, max_bars_back = 5000)
+
+// Functional reconstruction from the visible chart behavior. This is not the
+// deleted/protected source code and it does not use volume-profile bins.
+
+// ════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ════════════════════════════════════════════════════════════════════════════
+
+GRP_MRP = "MRP"
+GRP_POC = "POC LINES"
+GRP_SIGNALS = "BUY / SELL SIGNALS"
+
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "W MRP", inline = "mrp", group = GRP_MRP)
+
+showWeeklyPoc = input.bool(true, "Show Weekly POC", group = GRP_POC)
+showDailyPoc = input.bool(true, "Show Daily POC", group = GRP_POC)
+showFourHourPoc = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+
+weeklyPocColor = input.color(#F59E0B, "Weekly POC Color", group = GRP_POC)
+dailyPocColor = input.color(#14532D, "Daily POC Color", group = GRP_POC)
+fourHourPocColor = input.color(#22D3EE, "4-Hour POC Color", group = GRP_POC)
+pocLineWidth = input.int(2, "POC Line Width", minval = 1, maxval = 4, group = GRP_POC)
+
+showSignals = input.bool(true, "Show Buy/Sell Signals", group = GRP_SIGNALS)
+slopeBars = input.int(3, "MRP Slope Lookback", minval = 1, maxval = 20, group = GRP_SIGNALS)
+confluenceAtr = input.float(0.25, "Level Confluence (ATR)", minval = 0.05, maxval = 2.0, step = 0.05, group = GRP_SIGNALS)
+breakoutAtr = input.float(0.10, "Breakout Distance (ATR)", minval = 0.0, maxval = 1.0, step = 0.05, group = GRP_SIGNALS)
+retestBars = input.int(8, "Retest Window (Bars)", minval = 1, maxval = 50, group = GRP_SIGNALS)
+cooldownBars = input.int(6, "Signal Cooldown (Bars)", minval = 0, maxval = 100, group = GRP_SIGNALS)
+maxCandleAtr = input.float(1.5, "Maximum Signal Candle (ATR)", minval = 0.25, maxval = 5.0, step = 0.25, group = GRP_SIGNALS)
+warmupMinutes = input.int(60, "Daily Reset Warmup (Minutes)", minval = 0, maxval = 360, step = 15, group = GRP_SIGNALS)
+
+MRP_COLOR = #0B46F0
+WEEKLY_MRP_COLOR = #C57A00
+
+// ════════════════════════════════════════════════════════════════════════════
+// UTC PERIOD KEYS
+// ════════════════════════════════════════════════════════════════════════════
+
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+// Unix epoch began on Thursday. Adding three aligns weeks to Monday UTC.
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// ════════════════════════════════════════════════════════════════════════════
+// MRP — DEVELOPING DAILY AND WEEKLY HLC3 VWAP
+// ════════════════════════════════════════════════════════════════════════════
+
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float mrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float weeklyMrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+plot(showMrp ? mrp : na, "MRP", color = MRP_COLOR, linewidth = 2)
+plot(showWMrp ? weeklyMrp : na, "W MRP", color = WEEKLY_MRP_COLOR, linewidth = 1)
+
+// ════════════════════════════════════════════════════════════════════════════
+// POC-LABELLED REFERENCE LEVELS
+// ════════════════════════════════════════════════════════════════════════════
+
+// The cyan staircase holds the last completed Daily MRP value immediately
+// before each 4-hour UTC boundary. This is why every step begins where the
+// developing blue session VWAP ended in the preceding block.
+var float fourHourPoc = na
+if newFourHour
+    fourHourPoc := nz(mrp[1], mrp)
+
+// The original orange levels align with the Monday UTC opening price rather
+// than the first chart candle's HLC3/W-MRP sample.
+float weeklyPoc = request.security(
+     syminfo.tickerid, "1W", open,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// Daily POC is the standard confirmed prior-day pivot requested by the user.
+float dailyPoc = request.security(
+     syminfo.tickerid, "1D",
+     (high[1] + low[1] + close[1]) / 3,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// A transparent boundary bar prevents diagonal/vertical joins between the
+// independent horizontal periods. Each plot also receives a Style-tab checkbox.
+color fourHourPlotColor = newFourHour and not barstate.isfirst ? na : fourHourPocColor
+color dailyPlotColor = newDay and not barstate.isfirst ? na : dailyPocColor
+color weeklyPlotColor = newWeek and not barstate.isfirst ? na : weeklyPocColor
+
+plot(showWeeklyPoc ? weeklyPoc : na, "Weekly POC", color = weeklyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showDailyPoc ? dailyPoc : na, "Daily POC", color = dailyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showFourHourPoc ? fourHourPoc : na, "4-Hour POC", color = fourHourPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONFIRMED-BAR BUY / SELL SIGNALS
+// ════════════════════════════════════════════════════════════════════════════
+
+// Setup 1: trade a rejection/reclaim of MRP or a POC only when Daily MRP,
+// Weekly MRP, and price agree. Setup 2: require a Daily/Weekly POC breakout,
+// then a successful retest within the configured window. These are not raw
+// VWAP crossovers and do not use any volume-profile calculation.
+float signalAtr = ta.atr(14)
+float levelTolerance = confluenceAtr * signalAtr
+float breakoutDistance = breakoutAtr * signalAtr
+int minutesIntoUtcDay = int(math.floor((time % DAY_MS) / 60000))
+
+bool bullContext = close > weeklyMrp and mrp > weeklyMrp and mrp > mrp[slopeBars]
+bool bearContext = close < weeklyMrp and mrp < weeklyMrp and mrp < mrp[slopeBars]
+bool validSignalTime = minutesIntoUtcDay >= warmupMinutes
+bool validSignalRange = high - low <= maxCandleAtr * signalAtr
+
+bool touchMrp = not na(mrp) and low <= mrp + levelTolerance and high >= mrp - levelTolerance
+bool touchFourHour = not na(fourHourPoc) and low <= fourHourPoc + levelTolerance and high >= fourHourPoc - levelTolerance
+bool touchDaily = not na(dailyPoc) and low <= dailyPoc + levelTolerance and high >= dailyPoc - levelTolerance
+bool touchWeekly = not na(weeklyPoc) and low <= weeklyPoc + levelTolerance and high >= weeklyPoc - levelTolerance
+
+int touchedCount = 0
+float longZone = na
+float shortZone = na
+if touchMrp
+    touchedCount += 1
+    longZone := mrp
+    shortZone := mrp
+if touchFourHour
+    touchedCount += 1
+    longZone := na(longZone) ? fourHourPoc : math.max(longZone, fourHourPoc)
+    shortZone := na(shortZone) ? fourHourPoc : math.min(shortZone, fourHourPoc)
+if touchDaily
+    touchedCount += 1
+    longZone := na(longZone) ? dailyPoc : math.max(longZone, dailyPoc)
+    shortZone := na(shortZone) ? dailyPoc : math.min(shortZone, dailyPoc)
+if touchWeekly
+    touchedCount += 1
+    longZone := na(longZone) ? weeklyPoc : math.max(longZone, weeklyPoc)
+    shortZone := na(shortZone) ? weeklyPoc : math.min(shortZone, weeklyPoc)
+
+bool longPullback = bullContext and not na(longZone) and low <= longZone and close > longZone and close[1] >= longZone - levelTolerance and close > open and close > high[1]
+bool shortPullback = bearContext and not na(shortZone) and high >= shortZone and close < shortZone and close[1] <= shortZone + levelTolerance and close < open and close < low[1]
+
+var float pendingLongLevel = na
+var int pendingLongExpiry = na
+var bool pendingLongConfluence = false
+var float pendingShortLevel = na
+var int pendingShortExpiry = na
+var bool pendingShortConfluence = false
+var int lastSignalBar = na
+var bool longArmed = true
+var bool shortArmed = true
+var float lastLongLevel = na
+var float lastShortLevel = na
+
+if not longArmed and not na(lastLongLevel) and close >= lastLongLevel + 0.5 * signalAtr
+    longArmed := true
+if not shortArmed and not na(lastShortLevel) and close <= lastShortLevel - 0.5 * signalAtr
+    shortArmed := true
+
+if not na(pendingLongLevel) and (bar_index > pendingLongExpiry or close < pendingLongLevel - levelTolerance)
+    pendingLongLevel := na
+    pendingLongExpiry := na
+    pendingLongConfluence := false
+if not na(pendingShortLevel) and (bar_index > pendingShortExpiry or close > pendingShortLevel + levelTolerance)
+    pendingShortLevel := na
+    pendingShortExpiry := na
+    pendingShortConfluence := false
+
+bool cooledDown = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
+bool maySignal = showSignals and barstate.isconfirmed and validSignalTime and validSignalRange and cooledDown
+bool buySignal = false
+bool sellSignal = false
+bool buyAPlus = false
+bool sellAPlus = false
+float emittedLevel = na
+
+if maySignal and longArmed and longPullback
+    buySignal := true
+    buyAPlus := touchedCount >= 2 and not na(weeklyPoc) and close > weeklyPoc
+    emittedLevel := longZone
+else if maySignal and shortArmed and shortPullback
+    sellSignal := true
+    sellAPlus := touchedCount >= 2 and not na(weeklyPoc) and close < weeklyPoc
+    emittedLevel := shortZone
+else if maySignal and longArmed and bullContext and not na(pendingLongLevel) and low <= pendingLongLevel + levelTolerance and close > pendingLongLevel and close > open and close > high[1]
+    buySignal := true
+    buyAPlus := pendingLongConfluence and not na(weeklyPoc) and close > weeklyPoc
+    emittedLevel := pendingLongLevel
+else if maySignal and shortArmed and bearContext and not na(pendingShortLevel) and high >= pendingShortLevel - levelTolerance and close < pendingShortLevel and close < open and close < low[1]
+    sellSignal := true
+    sellAPlus := pendingShortConfluence and not na(weeklyPoc) and close < weeklyPoc
+    emittedLevel := pendingShortLevel
+
+if buySignal or sellSignal
+    lastSignalBar := bar_index
+    if buySignal
+        longArmed := false
+        lastLongLevel := emittedLevel
+    if sellSignal
+        shortArmed := false
+        lastShortLevel := emittedLevel
+    pendingLongLevel := na
+    pendingLongExpiry := na
+    pendingLongConfluence := false
+    pendingShortLevel := na
+    pendingShortExpiry := na
+    pendingShortConfluence := false
+else
+    bool dailyLongBreakout = not na(dailyPoc) and close[1] <= dailyPoc and close >= dailyPoc + breakoutDistance
+    bool weeklyLongBreakout = not na(weeklyPoc) and close[1] <= weeklyPoc and close >= weeklyPoc + breakoutDistance
+    bool dailyShortBreakout = not na(dailyPoc) and close[1] >= dailyPoc and close <= dailyPoc - breakoutDistance
+    bool weeklyShortBreakout = not na(weeklyPoc) and close[1] >= weeklyPoc and close <= weeklyPoc - breakoutDistance
+    if barstate.isconfirmed and mrp > mrp[slopeBars] and (dailyLongBreakout or weeklyLongBreakout)
+        pendingLongLevel := dailyLongBreakout and weeklyLongBreakout ? math.max(dailyPoc, weeklyPoc) : dailyLongBreakout ? dailyPoc : weeklyPoc
+        pendingLongExpiry := bar_index + retestBars
+        pendingLongConfluence := not na(dailyPoc) and not na(weeklyPoc) and math.abs(dailyPoc - weeklyPoc) <= levelTolerance
+    if barstate.isconfirmed and mrp < mrp[slopeBars] and (dailyShortBreakout or weeklyShortBreakout)
+        pendingShortLevel := dailyShortBreakout and weeklyShortBreakout ? math.min(dailyPoc, weeklyPoc) : dailyShortBreakout ? dailyPoc : weeklyPoc
+        pendingShortExpiry := bar_index + retestBars
+        pendingShortConfluence := not na(dailyPoc) and not na(weeklyPoc) and math.abs(dailyPoc - weeklyPoc) <= levelTolerance
+
+plotshape(buySignal and buyAPlus, "A+ Buy", shape.labelup, location.belowbar, #16A34A, text = "A+ BUY", textcolor = color.white, size = size.tiny)
+plotshape(buySignal and not buyAPlus, "A Buy", shape.labelup, location.belowbar, #22C55E, text = "A BUY", textcolor = color.white, size = size.tiny)
+plotshape(sellSignal and sellAPlus, "A+ Sell", shape.labeldown, location.abovebar, #DC2626, text = "A+ SELL", textcolor = color.white, size = size.tiny)
+plotshape(sellSignal and not sellAPlus, "A Sell", shape.labeldown, location.abovebar, #EF4444, text = "A SELL", textcolor = color.white, size = size.tiny)
+
+alertcondition(buySignal, "POC/MRP Buy", "POC/MRP confirmed BUY on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sellSignal, "POC/MRP Sell", "POC/MRP confirmed SELL on {{ticker}} {{interval}} at {{close}}")

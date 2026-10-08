@@ -1,0 +1,72 @@
+// This work is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © BigBeluga
+
+//@version=6
+indicator("Dynamic Grid Indicator [BigBeluga]", overlay = true, max_bars_back = 5000, calc_bars_count = 3000)
+
+// ＩＮＰＵＴＳ ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
+var string G_MA = 'Trend & Base Channel Settings'
+hmaLength = input.int(150, 'HMA Length', minval = 1, group = G_MA, tooltip = 'Period length for the central Hull Moving Average baseline.')
+atrLength = input.int(100, 'ATR Length', minval = 1, group = G_MA, tooltip = 'Period length used to measure average true range volatility.')
+atrMult   = input.float(1.6, 'ATR Multiplier Step', minval = 0.1, step = 0.1, group = G_MA, tooltip = 'Multiplier step distance applied to each grid channel level.')
+
+var string G_GRID = 'Grid Settings'
+numLevels  = input.int(3, 'Grid Levels (Each Side)', minval = 1, maxval = 3, group = G_GRID, tooltip = 'Number of channel levels projected above and below the baseline (1 to 3).')
+thresholdP = input.float(0.5, 'Proximity Sensitivity (% of Step)', minval = 0.01, maxval = 1.0, step = 0.1, group = G_GRID, tooltip = 'Defines proximity distance to hide line segment when price is near.')
+
+var string G_STYLE = 'Style Settings'
+baseTeal   = input.color(#1ecc75, 'Bullish Color', group = G_STYLE, tooltip = 'Primary color used for bullish grid levels and the rising HMA.')
+baseMaroon = input.color(#c04020, 'Bearish Color', group = G_STYLE, tooltip = 'Primary color used for bearish grid levels and the falling HMA.')
+// }
+
+// ＣＡＬＣＵＬＡＴＩＯＮＳ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
+
+// Core calculations.
+centerLine = ta.hma(close, hmaLength)
+atrVal     = ta.atr(atrLength) * atrMult
+proxDist   = atrVal * thresholdP
+
+// Dynamic level calculations.
+upper1 = centerLine + atrVal * 1
+lower1 = centerLine - atrVal * 1
+upper2 = centerLine + atrVal * 2
+lower2 = centerLine - atrVal * 2
+upper3 = centerLine + atrVal * 3
+lower3 = centerLine - atrVal * 3
+
+// Helper for upper versus lower channel overlay colors.
+getGridColor(float gridLevel, int levelIdx, bool isUpper) =>
+    float diff  = math.abs(close - gridLevel)
+    float diff1 = math.abs(open - gridLevel)
+    float diff2 = math.abs(hl2 - gridLevel)
+    float diff3 = math.abs(hlc3 - gridLevel)
+    float diff4 = math.abs(hlcc4 - gridLevel)
+
+    bool isClose = diff <= proxDist or diff1 <= proxDist or diff2 <= proxDist or diff3 <= proxDist or diff4 <= proxDist
+
+    float stepNorm   = levelIdx / float(numLevels)
+    color targetBase = isUpper ? baseTeal : baseMaroon
+    color startColor = color.new(targetBase, 85)
+    color endColor   = color.new(targetBase, 20)
+
+    color computedColor = color.from_gradient(stepNorm, 0.0, 1.0, startColor, endColor)
+    isClose ? color(na) : computedColor
+
+// }
+
+// ＰＬＯＴ ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
+
+trendColor = centerLine > centerLine[1] ? baseTeal : baseMaroon
+plot(centerLine, 'Central HMA', color = trendColor, linewidth = 2)
+plot(centerLine, 'Central HMA Glow', color = color.new(trendColor, 80), linewidth = 10)
+
+plot(numLevels >= 1 ? upper1 : na, 'Upper 1', color = getGridColor(upper1, 1, true), linewidth = 1)
+plot(numLevels >= 1 ? lower1 : na, 'Lower 1', color = getGridColor(lower1, 1, false), linewidth = 1)
+
+plot(numLevels >= 2 ? upper2 : na, 'Upper 2', color = getGridColor(upper2, 2, true), linewidth = 1)
+plot(numLevels >= 2 ? lower2 : na, 'Lower 2', color = getGridColor(lower2, 2, false), linewidth = 1)
+
+plot(numLevels >= 3 ? upper3 : na, 'Upper 3', color = getGridColor(upper3, 3, true), linewidth = 2)
+plot(numLevels >= 3 ? lower3 : na, 'Lower 3', color = getGridColor(lower3, 3, false), linewidth = 2)
+// }

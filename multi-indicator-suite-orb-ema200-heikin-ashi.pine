@@ -1,0 +1,185 @@
+//@version=5
+indicator("Multi-Indicator Suite", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// =============================================================================
+// INPUTS
+// =============================================================================
+grp_pivot = "Previous Day Levels"
+grp_ema   = "EMA Cross System"
+grp_vwap  = "VWAP"
+grp_style = "Style"
+
+// --- Previous Day Levels ---
+show_pdc = input.bool(true, "Show Previous Day Close", group=grp_pivot)
+show_pp  = input.bool(true, "Show Pivot Point (HLC/3)", group=grp_pivot)
+show_pdh = input.bool(true, "Show Previous Day High", group=grp_pivot)
+show_pdl = input.bool(true, "Show Previous Day Low", group=grp_pivot)
+
+// --- EMA Cross System ---
+ema_01_len = input.int(7, title='EMA 1 Length', step=1, group=grp_ema)
+ema_02_len = input.int(21, title='EMA 2 Length', step=1, group=grp_ema)
+ema_03_len = input.int(50, title='EMA 3 Length', step=1, group=grp_ema)
+ema_04_len = input.int(200, title='EMA 4 Length', step=1, group=grp_ema)
+ema_src    = input.source(close, title="EMA Source", group=grp_ema)
+show_bands = input.bool(true, "Show EMA Bands (Fill)", group=grp_ema,
+     tooltip = "Fills the area between EMA 1/2 and EMA 3/4. Green/Blue when fast > slow, Red/Orange when fast < slow.")
+
+// --- VWAP ---
+show_vwap = input.bool(true, "Show VWAP", group=grp_vwap)
+
+// --- Colors ---
+pdc_color  = input.color(#00FFFF, "Previous Day Close (Cyan)", group=grp_style)
+pp_color   = input.color(#4B0082, "Pivot Point (Indigo)", group=grp_style)
+pdh_color  = input.color(color.red, "Previous Day High (Red)", group=grp_style)
+pdl_color  = input.color(color.green, "Previous Day Low (Green)", group=grp_style)
+vwap_color = input.color(color.blue, "VWAP (Blue)", group=grp_style)
+
+// =============================================================================
+// PREVIOUS DAY DATA
+// =============================================================================
+[pdh, pdl, pdc] = request.security(syminfo.tickerid, "D", [high[1], low[1], close[1]], lookahead=barmerge.lookahead_on)
+pivot = (pdh + pdl + pdc) / 3
+
+// =============================================================================
+// VWAP
+// =============================================================================
+vwap_val = ta.vwap(hlc3)
+
+// =============================================================================
+// EMA CALCULATIONS
+// =============================================================================
+ema_01 = ta.ema(ema_src, ema_01_len)
+ema_02 = ta.ema(ema_src, ema_02_len)
+ema_03 = ta.ema(ema_src, ema_03_len)
+ema_04 = ta.ema(ema_src, ema_04_len)
+
+// =============================================================================
+// PLOTS — PREVIOUS DAY LEVELS
+// =============================================================================
+plot(show_pdc ? pdc : na, "Previous Day Close", color=pdc_color, linewidth=1)
+plot(show_pp  ? pivot : na, "Pivot Point", color=pp_color, linewidth=1)
+plot(show_pdh ? pdh : na, "Previous Day High", color=pdh_color, linewidth=1)
+plot(show_pdl ? pdl : na, "Previous Day Low", color=pdl_color, linewidth=1)
+
+// =============================================================================
+// PLOT — VWAP
+// =============================================================================
+plot(show_vwap ? vwap_val : na, "VWAP", color=vwap_color, linewidth=1)
+
+// =============================================================================
+// PLOTS — EMAS (Original colors preserved)
+// =============================================================================
+plot(ema_01, title='EMA 1', color=color.new(#00FF00, 0), style=plot.style_line, linewidth=1)
+plot(ema_02, title='EMA 2', color=color.new(#ff0040, 0), style=plot.style_line, linewidth=1)
+plot(ema_03, title='EMA 3', color=color.new(#0000FF, 0), style=plot.style_line, linewidth=1)
+plot(ema_04, title='EMA 4', color=color.new(#ff2080, 0), style=plot.style_line, linewidth=1)
+
+// =============================================================================
+// EMA BANDS (Fill between EMA pairs)
+// =============================================================================
+fill_1_color = ema_01 > ema_02 ? color.new(color.green, 90) : color.new(color.red, 90)
+fill_2_color = ema_03 > ema_04 ? color.new(color.blue, 90) : color.new(color.orange, 90)
+
+// Invisible plots for fill boundaries
+p_ema_01 = plot(ema_01, title="EMA1 Fill", color=na, editable=false, display=display.none)
+p_ema_02 = plot(ema_02, title="EMA2 Fill", color=na, editable=false, display=display.none)
+p_ema_03 = plot(ema_03, title="EMA3 Fill", color=na, editable=false, display=display.none)
+p_ema_04 = plot(ema_04, title="EMA4 Fill", color=na, editable=false, display=display.none)
+
+fill(p_ema_01, p_ema_02, color=show_bands ? fill_1_color : na, title="EMA 1/2 Band")
+fill(p_ema_03, p_ema_04, color=show_bands ? fill_2_color : na, title="EMA 3/4 Band")
+
+// =============================================================================
+// CROSS DETECTION (Original logic preserved exactly)
+// =============================================================================
+cross_01_up   = ta.crossover(ema_01, ema_02)
+cross_01_down = ta.crossunder(ema_01, ema_02)
+
+plot(cross_01_up or cross_01_down ? ema_01 : na, style=plot.style_cross, title="Cross 01", linewidth=3, color=ema_01 > ema_02 ? color.green : color.red)
+plotchar(cross_01_up or cross_01_down ? ema_01 : na, title="Cross 01 Char", char="x", location=location.bottom, color=ema_01 > ema_02 ? color.green : color.red, text="Cross 01", textcolor=ema_01 > ema_02 ? color.green : color.red)
+
+cross_02_up   = ta.crossover(ema_03, ema_04)
+cross_02_down = ta.crossunder(ema_03, ema_04)
+
+plot(cross_02_up or cross_02_down ? ema_03 : na, style=plot.style_cross, title="Cross 02", linewidth=3, color=ema_03 > ema_04 ? color.green : color.red)
+plotchar(cross_02_up or cross_02_down ? ema_03 : na, title="Cross 02 Char", char="x", location=location.bottom, color=ema_03 > ema_04 ? color.green : color.red, text="Cross 02", textcolor=ema_03 > ema_04 ? color.green : color.red)
+
+// =============================================================================
+// ALERTS
+// =============================================================================
+alertcondition(cross_01_up, title='Cross 01 Up', message='EMA 1 crossed above EMA 2')
+alertcondition(cross_01_down, title='Cross 01 Down', message='EMA 1 crossed below EMA 2')
+alertcondition(cross_02_up, title='Cross 02 Up', message='EMA 3 crossed above EMA 4')
+alertcondition(cross_02_down, title='Cross 02 Down', message='EMA 3 crossed below EMA 4')
+
+// =============================================================================
+// OPENING RANGE BREAKOUT (ORB) — Pine v5 conversion of supplied v4 script
+// =============================================================================
+grp_orb = "Opening Range Breakout"
+orb_input_max = input.int(5, title="ORB total time (minutes)", minval=1, group=grp_orb)
+orb_session = input.session("0915-0920", title="Session Time", group=grp_orb)
+orb_show = input.bool(true, title="Show ORB", group=grp_orb)
+orb_high_color = input.color(color.green, title="ORB High Color", group=grp_orb)
+orb_low_color = input.color(color.red, title="ORB Low Color", group=grp_orb)
+
+orb_t = time(timeframe.period, orb_session + ":1234567")
+orb_hide = timeframe.isintraday and timeframe.multiplier <= orb_input_max
+
+orb_is_newbar(res) => ta.change(time(res)) != 0
+orb_in_session = not na(orb_t)
+orb_is_first = orb_in_session and not orb_in_session[1]
+
+float orb_high = na
+float orb_low = na
+
+if orb_is_first
+    orb_high := high
+    orb_low := low
+else
+    orb_high := orb_high[1]
+    orb_low := orb_low[1]
+if high > orb_high and orb_in_session
+    orb_high := high
+if low < orb_low and orb_in_session
+    orb_low := low
+
+plot(orb_show and orb_hide ? orb_high : na, style=plot.style_line,
+     color=orb_high[1] != orb_high ? na : orb_high_color,
+     title="ORB High", linewidth=2)
+plot(orb_show and orb_hide ? orb_low : na, style=plot.style_line,
+     color=orb_low[1] != orb_low ? na : orb_low_color,
+     title="ORB Low", linewidth=2)
+
+// =============================================================================
+// FIXED 200 EMA
+// =============================================================================
+grp_ema_200 = "Fixed 200 EMA"
+show_ema_200 = input.bool(true, "Show Fixed 200 EMA", group=grp_ema_200)
+ema_200_source = input.source(close, "Source", group=grp_ema_200)
+ema_200_color = input.color(#FFD700, "Color", group=grp_ema_200)
+ema_200_width = input.int(2, "Line Width", minval=1, maxval=5, group=grp_ema_200)
+fixed_ema_200 = ta.ema(ema_200_source, 200)
+plot(show_ema_200 ? fixed_ema_200 : na, title="Fixed EMA 200",
+     color=ema_200_color, linewidth=ema_200_width)
+
+// =============================================================================
+// HEIKIN ASHI CANDLE OVERLAY
+// =============================================================================
+grp_ha = "Heikin Ashi Candles"
+show_ha_candles = input.bool(true, "Show Heikin Ashi Candles", group=grp_ha)
+ha_bull_color = input.color(#26A69A, "Bullish Color", group=grp_ha)
+ha_bear_color = input.color(#EF5350, "Bearish Color", group=grp_ha)
+ha_wick_color = input.color(color.gray, "Wick Color", group=grp_ha)
+
+ha_ticker = ticker.heikinashi(syminfo.tickerid)
+[ha_open, ha_high, ha_low, ha_close] = request.security(
+     ha_ticker, timeframe.period, [open, high, low, close],
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+ha_candle_color = ha_close >= ha_open ? ha_bull_color : ha_bear_color
+
+plotcandle(show_ha_candles ? ha_open : na,
+     show_ha_candles ? ha_high : na,
+     show_ha_candles ? ha_low : na,
+     show_ha_candles ? ha_close : na,
+     title="Heikin Ashi Candles", color=ha_candle_color,
+     wickcolor=ha_wick_color, bordercolor=ha_candle_color)

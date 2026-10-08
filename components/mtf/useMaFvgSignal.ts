@@ -79,9 +79,10 @@ export function useMaFvgSignal(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   full: FullMarketIntelligence,
   smcByTf: Partial<Record<Timeframe, SmcSnapshot>>,
+  cacheScope = '',
 ): MaFvgSignalView {
   const arr = candlesByTf[SIGNAL_TF];
-  const sig = arr && arr.length > 1 ? `${arr[arr.length - 2].time}:${arr.length}` : '0';
+  const sig = cacheScope + '|' + (arr && arr.length > 1 ? `${arr[arr.length - 2].time}:${arr.length}` : '0');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recompute only on the 5m closed bar + layers
   return useMemo(() => buildMaFvgSignalView(candlesByTf, full, smcByTf), [sig, full, smcByTf]);
 }

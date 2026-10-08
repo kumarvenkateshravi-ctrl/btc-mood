@@ -28,6 +28,74 @@ import { tradeReadiness } from './readiness';
 import { collectEvidence } from './evidence';
 import { composeNarrative } from './narrative';
 import { unifySignals } from './unifiedSignals';
+import type { StandardMtfCategories } from '../standardMtfContract';
+import type { MarketGrade, QualityLevel, RiskLevel } from './marketTypes';
+
+const clampScore = (value: number) => Math.round(Math.max(0, Math.min(100, value)));
+const qualityLevel = (score: number): QualityLevel =>
+  score >= 80 ? 'excellent' : score >= 65 ? 'good' : score >= 45 ? 'average' : score >= 25 ? 'poor' : 'dangerous';
+const opportunityGrade = (score: number): MarketGrade =>
+  score >= 85 ? 'A+' : score >= 75 ? 'A' : score >= 65 ? 'B' : score >= 50 ? 'C' : score >= 35 ? 'D' : 'F';
+const riskLevel = (score: number): RiskLevel =>
+  score < 15 ? 'very_low' : score < 30 ? 'low' : score < 50 ? 'medium' : score < 70 ? 'high' : 'extreme';
+
+/**
+ * Applies the Standard MTF category context to M8's existing market picture.
+ * It is deliberately bounded and non-directional: category evidence can
+ * reduce quality/opportunity and increase risk, but cannot replace hierarchy's
+ * bias or Board direction. Unavailable sources are excluded rather than treated
+ * as neutral or bearish votes.
+ */
+export function applyStandardCategoryContext(base: MarketIntelligenceResult, categories?: StandardMtfCategories): MarketIntelligenceResult {
+  if (!categories) return base;
+  const available = Object.values(categories).filter((category) => category.availability === 'available');
+  if (!available.length) return base;
+  const profile = categories.volumeProfile;
+  const volatility = categories.volatility;
+  const structure = categories.marketStructure;
+  const trend = categories.trend;
+  const confluence = categories.confluence;
+  let qualityPenalty = 0;
+  let opportunityPenalty = 0;
+  let riskPoints = 0;
+  const reasons: string[] = [];
+  const penalize = (quality: number, opportunity: number, risk: number, reason: string) => {
+    qualityPenalty += quality;
+    opportunityPenalty += opportunity;
+    riskPoints += risk;
+    reasons.push(reason);
+  };
+  if (profile.availability === 'available' && profile.state === 'mixed_range') {
+    penalize(12, 18, 10, 'mixed POC range/trap context');
+  }
+  if (volatility.availability === 'available' && volatility.state === 'compressed') {
+    penalize(8, 16, 5, 'volatility compression without a confirmed trigger');
+  }
+  if (volatility.availability === 'available' && volatility.state === 'expanding') {
+    penalize(3, 4, 8, 'expanding volatility context');
+  }
+  const directionalConflict =
+    trend.availability === 'available' &&
+    structure.availability === 'available' &&
+    trend.verdict !== 'neutral' &&
+    structure.verdict !== 'neutral' &&
+    trend.verdict !== structure.verdict;
+  if (directionalConflict) penalize(12, 15, 12, 'trend and SMC structure conflict');
+  if (confluence.availability === 'available' && confluence.state === 'mixed') {
+    penalize(5, 7, 4, 'mixed FVG confluence context');
+  }
+  if (!reasons.length) return base;
+  const qualityScore = clampScore(base.quality.score - qualityPenalty);
+  const opportunityScore = clampScore(base.opportunity.score - opportunityPenalty);
+  const riskScore = clampScore(base.risk.score + riskPoints);
+  const quality = { score: qualityScore, level: qualityLevel(qualityScore), reasons: [...base.quality.reasons, ...reasons] };
+  const opportunity = { score: opportunityScore, grade: opportunityGrade(opportunityScore) };
+  const risk = { score: riskScore, level: riskLevel(riskScore), reasons: [...base.risk.reasons, ...reasons] };
+  const readiness = base.readiness.state === 'ready' && (quality.level === 'poor' || opportunity.grade === 'D' || opportunity.grade === 'F')
+    ? { state: 'wait' as const, reason: 'awaiting confirmation — Phase 5 category context reduced tradeability' }
+    : base.readiness;
+  return { ...base, quality, opportunity, risk, readiness };
+}
 
 export function computeMarketIntelligence(
   agreement: AgreementResult,
@@ -108,13 +176,25 @@ export interface FullMarketIntelligence {
   };
 }
 
+export interface MarketIntelligenceInputOptions {
+  /**
+   * Default callers pass a forming tail and retain the existing behaviour.
+   * The official Standard MTF boundary has already selected closed bars, so it
+   * opts in to avoid silently dropping one more candle.
+   */
+  readonly candlesAreClosed?: boolean;
+  /** Standard MTF's already-composed execution-timeframe category context. */
+  readonly categories?: StandardMtfCategories;
+}
+
 /** The single public entry point: candles → the entire frozen v1.0 stack → M8 synthesis. */
 export function computeFullMarketIntelligence(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
+  options: MarketIntelligenceInputOptions = {},
 ): FullMarketIntelligence {
   const closedByTf: Partial<Record<Timeframe, Candle[]>> = {};
   for (const [tf, arr] of Object.entries(candlesByTf) as [Timeframe, Candle[]][]) {
-    if (arr && arr.length) closedByTf[tf] = closed(arr);
+    if (arr && arr.length) closedByTf[tf] = options.candlesAreClosed ? arr.slice() : closed(arr);
   }
 
   const snapshots = buildTimeframeSnapshots(closedByTf);
@@ -127,6 +207,9 @@ export function computeFullMarketIntelligence(
   const confidence = computeConfidence(indicators, categories, agreement);
   const probability = computeProbability(lifecycle, hierarchy);
 
-  const result = computeMarketIntelligence(agreement, confidence, hierarchy, lifecycle, probability);
+  const result = applyStandardCategoryContext(
+    computeMarketIntelligence(agreement, confidence, hierarchy, lifecycle, probability),
+    options.categories,
+  );
   return { result, layers: { snapshots, hierarchy, lifecycle, agreement, confidence, probability } };
 }

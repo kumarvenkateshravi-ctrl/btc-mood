@@ -1,0 +1,139 @@
+//@version=6
+indicator("4H POC Matcher + Session/Weekly VWAP", shorttitle="4H POC + 2 VWAP", overlay=true, format=format.price, precision=2, max_bars_back=5000)
+
+// Diagnostic reconstruction for matching a protected/reference 4H POC.
+// This is not a volume-profile calculation.
+
+grp = "4H POC MATCHER"
+
+string pocMethod = input.string(
+     "Previous 4H VWAP — HLC3",
+     "Calculation",
+     options=[
+         "Previous 4H VWAP — HLC3",
+         "Previous 4H VWAP — OHLC4",
+         "Previous 4H VWAP — Close",
+         "Previous 4H Pivot — HLC3",
+         "Previous 4H Midpoint — HL2",
+         "Held Daily MRP — HLC3 VWAP"],
+     group=grp)
+
+color pocColor = input.color(color.white, "Comparison Line Color", group=grp)
+int pocWidth = input.int(2, "Line Width", minval=1, maxval=4, group=grp)
+bool showValue = input.bool(true, "Show Current POC Value", group=grp)
+
+grpVwap = "SESSION & WEEKLY VWAP"
+bool showSessionVwap = input.bool(true, "Show Session VWAP", group=grpVwap)
+color sessionVwapColor = input.color(#0B46F0, "Session VWAP Color", group=grpVwap)
+int sessionVwapWidth = input.int(2, "Session VWAP Width", minval=1, maxval=4, group=grpVwap)
+
+bool showWeeklyVwap = input.bool(true, "Show Weekly VWAP", group=grpVwap)
+color weeklyVwapColor = input.color(#C57A00, "Weekly VWAP Color", group=grpVwap)
+int weeklyVwapWidth = input.int(2, "Weekly VWAP Width", minval=1, maxval=4, group=grpVwap)
+
+// UTC keys match Binance's standard 4-hour and daily boundaries.
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+int weekKey = int(math.floor((dayKey + 3) / 7))
+bool newFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+float sourceVolume = nz(volume, 0.0)
+
+// ── CANDIDATE 1–3: FINAL VWAP OF THE PREVIOUS COMPLETED 4H BLOCK ────────────
+var float blockPvHlc3 = 0.0
+var float blockPvOhlc4 = 0.0
+var float blockPvClose = 0.0
+var float blockVolume = 0.0
+
+var float held4hVwapHlc3 = na
+var float held4hVwapOhlc4 = na
+var float held4hVwapClose = na
+
+if newFourHour
+    held4hVwapHlc3 := blockVolume > 0 ? blockPvHlc3 / blockVolume : na
+    held4hVwapOhlc4 := blockVolume > 0 ? blockPvOhlc4 / blockVolume : na
+    held4hVwapClose := blockVolume > 0 ? blockPvClose / blockVolume : na
+
+    blockPvHlc3 := hlc3 * sourceVolume
+    blockPvOhlc4 := ohlc4 * sourceVolume
+    blockPvClose := close * sourceVolume
+    blockVolume := sourceVolume
+else
+    blockPvHlc3 += hlc3 * sourceVolume
+    blockPvOhlc4 += ohlc4 * sourceVolume
+    blockPvClose += close * sourceVolume
+    blockVolume += sourceVolume
+
+// ── CANDIDATE 4–5: PREVIOUS COMPLETED 4H PRICE REFERENCES ────────────────────
+float previous4hPivot = request.security(
+     syminfo.tickerid, "240", (high[1] + low[1] + close[1]) / 3,
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+float previous4hMidpoint = request.security(
+     syminfo.tickerid, "240", (high[1] + low[1]) / 2,
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+// ── CANDIDATE 6: DAILY DEVELOPING MRP SNAPSHOT AT EACH 4H BOUNDARY ───────────
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+
+dailyPv += hlc3 * sourceVolume
+dailyVolume += sourceVolume
+float developingDailyMrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+
+// Developing Weekly HLC3 VWAP, anchored Monday 00:00 UTC.
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+weeklyPv += hlc3 * sourceVolume
+weeklyVolume += sourceVolume
+float developingWeeklyVwap = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+var float heldDailyMrp = na
+if newFourHour
+    heldDailyMrp := nz(developingDailyMrp[1], developingDailyMrp)
+
+float selectedPoc = switch pocMethod
+    "Previous 4H VWAP — HLC3" => held4hVwapHlc3
+    "Previous 4H VWAP — OHLC4" => held4hVwapOhlc4
+    "Previous 4H VWAP — Close" => held4hVwapClose
+    "Previous 4H Pivot — HLC3" => previous4hPivot
+    "Previous 4H Midpoint — HL2" => previous4hMidpoint
+    "Held Daily MRP — HLC3 VWAP" => heldDailyMrp
+    => held4hVwapHlc3
+
+// A one-bar break keeps independent 4H segments from joining vertically.
+plot(newFourHour ? na : selectedPoc, "4H POC Test Line",
+     color=pocColor, linewidth=pocWidth, style=plot.style_linebr)
+
+plot(showSessionVwap ? developingDailyMrp : na, "Session VWAP",
+     color=sessionVwapColor, linewidth=sessionVwapWidth)
+
+plot(showWeeklyVwap ? developingWeeklyVwap : na, "Weekly VWAP",
+     color=weeklyVwapColor, linewidth=weeklyVwapWidth)
+
+var label valueLabel = na
+if barstate.islast
+    label.delete(valueLabel)
+    if showValue and not na(selectedPoc)
+        valueLabel := label.new(
+             bar_index + 2, selectedPoc,
+             "4H POC  " + str.tostring(selectedPoc, format.mintick),
+             xloc=xloc.bar_index, yloc=yloc.price,
+             style=label.style_none, textcolor=pocColor, size=size.normal)
+
+
+

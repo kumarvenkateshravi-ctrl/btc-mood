@@ -1,0 +1,821 @@
+{
+  "result": {
+    "schemaVersion": 1,
+    "headline": {
+      "bias": "bullish",
+      "state": "bullish_continuation",
+      "controller": "1d",
+      "regime": "trending_up",
+      "stage": "continuation",
+      "mostLikelyOutcome": "pullback",
+      "outcomeProbability": 0.6108,
+      "calibration": "prior"
+    },
+    "quality": {
+      "score": 73,
+      "level": "good",
+      "reasons": [
+        "strong agreement (67)",
+        "aligned timeframes (89)",
+        "healthy trend lifecycle (95)",
+        "low conflict (78)"
+      ]
+    },
+    "opportunity": {
+      "score": 65,
+      "grade": "B"
+    },
+    "risk": {
+      "score": 20,
+      "level": "low",
+      "reasons": [
+        "timeframe conflict (+6)",
+        "reduced confidence (+9)",
+        "probabilities from model priors (+5)"
+      ]
+    },
+    "readiness": {
+      "state": "ready",
+      "reason": "quality good, opportunity B, risk low"
+    },
+    "evidence": {
+      "supporting": [
+        {
+          "source": "M3",
+          "text": "strong bullish consensus (67%)"
+        },
+        {
+          "source": "M5",
+          "text": "timeframes aligned (89%) under 1d control"
+        },
+        {
+          "source": "M6",
+          "text": "continuation stage with healthy lifecycle strength (95)"
+        },
+        {
+          "source": "M7",
+          "text": "probability currently favors pullback (61%)"
+        }
+      ],
+      "opposing": []
+    },
+    "outlook": {
+      "expectedStage": "healthy_pullback",
+      "rationale": "Continuation without exhaustion typically cycles back into another pullback.",
+      "nextStageConfidence": 72,
+      "marketOutcomes": [
+        {
+          "outcome": "pullback",
+          "probability": 0.6108
+        },
+        {
+          "outcome": "continuation",
+          "probability": 0.3025
+        },
+        {
+          "outcome": "reversal",
+          "probability": 0.0867
+        }
+      ],
+      "invalidation": {
+        "invalidated": false,
+        "condition": null
+      },
+      "transition": false
+    },
+    "narrative": [
+      "1d remains in control of the market structure.",
+      "The market is in a Bullish Continuation state.",
+      "Agreement stands at 67% with medium confidence (55%).",
+      "Probability currently favors pullback (61%).",
+      "Market quality is good with opportunity grade B.",
+      "Trading environment: ready (quality good, opportunity B, risk low)."
+    ],
+    "signals": [
+      {
+        "code": "TF_STACK_ALIGNED",
+        "message": "Timeframes aligned bullish.",
+        "severity": "strong",
+        "source": "M5"
+      },
+      {
+        "code": "MI_READINESS",
+        "message": "Environment readiness: ready — quality good, opportunity B, risk low.",
+        "severity": "strong",
+        "source": "M8"
+      },
+      {
+        "code": "AGR_LAYERS_ALIGNED",
+        "message": "Indicators and categories agree (bullish).",
+        "severity": "info",
+        "source": "M3"
+      },
+      {
+        "code": "CONF_HIGH_CATEGORY_CONFIDENCE",
+        "message": "Categories are confident.",
+        "severity": "info",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_HIGH_INDICATOR_CONFIDENCE",
+        "message": "Indicators are confident.",
+        "severity": "info",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_COMPLETE_EVIDENCE",
+        "message": "Full evidence base.",
+        "severity": "info",
+        "source": "M4"
+      },
+      {
+        "code": "TF_CONTROLLER",
+        "message": "1d controls (bullish).",
+        "severity": "info",
+        "source": "M5"
+      },
+      {
+        "code": "TF_STRONG_CONTEXT",
+        "message": "Higher-timeframe context is strong.",
+        "severity": "info",
+        "source": "M5"
+      },
+      {
+        "code": "LC_CONTINUATION",
+        "message": "1d continuing its trend.",
+        "severity": "info",
+        "source": "M6"
+      },
+      {
+        "code": "PROB_MODEL_PRIORS",
+        "message": "Estimates from model priors, not measured frequencies.",
+        "severity": "info",
+        "source": "M7"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "AGR_DISSENT",
+        "message": "macd, momentum diverge from the bullish consensus.",
+        "severity": "warning",
+        "source": "M3"
+      },
+      {
+        "code": "CONF_HIGH_CONFLICT",
+        "message": "Directional conflict reduces trust.",
+        "severity": "warning",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_WEAK_PILLAR",
+        "message": "Confidence limited by its weakest pillar (agreement).",
+        "severity": "warning",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_LOW_QUALITY",
+        "message": "Weak trend quality reduces trust.",
+        "severity": "warning",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_HIGH_VOLATILITY",
+        "message": "High volatility reduces trust.",
+        "severity": "warning",
+        "source": "M4"
+      },
+      {
+        "code": "CONF_WEAK_CATEGORY",
+        "message": "participation is below its configured confidence threshold.",
+        "severity": "warning",
+        "source": "M4"
+      }
+    ],
+    "diagnostics": {
+      "schemaVersions": {
+        "agreement": 1,
+        "confidence": 1,
+        "hierarchy": 1,
+        "lifecycle": 1,
+        "probability": 1
+      },
+      "calibration": "prior",
+      "modelVersion": "1.0",
+      "scores": {
+        "agreement": 67,
+        "confidence": 55,
+        "alignment": 89,
+        "conflict": 22,
+        "lifecycleStrength": 95,
+        "probabilityOpportunity": 59
+      }
+    }
+  },
+  "layers": {
+    "snapshots": [
+      {
+        "timeframe": "1d",
+        "bias": "bullish",
+        "agreement": 67,
+        "conflict": 32,
+        "confidence": 55,
+        "regime": "trending_up",
+        "regimeClarity": 95,
+        "trendFreshness": 50,
+        "momentumExhaustion": 0
+      },
+      {
+        "timeframe": "4h",
+        "bias": "bullish",
+        "agreement": 64,
+        "conflict": 18,
+        "confidence": 46,
+        "regime": "trending_up",
+        "regimeClarity": 90,
+        "trendFreshness": 20,
+        "momentumExhaustion": 0
+      },
+      {
+        "timeframe": "1h",
+        "bias": "bullish",
+        "agreement": 68,
+        "conflict": 27,
+        "confidence": 52,
+        "regime": "trending_up",
+        "regimeClarity": 94,
+        "trendFreshness": 20,
+        "momentumExhaustion": 0
+      },
+      {
+        "timeframe": "30m",
+        "bias": "bearish",
+        "agreement": 69,
+        "conflict": 17,
+        "confidence": 38,
+        "regime": "trending_down",
+        "regimeClarity": 67,
+        "trendFreshness": 20,
+        "momentumExhaustion": 0
+      },
+      {
+        "timeframe": "15m",
+        "bias": "bullish",
+        "agreement": 62,
+        "conflict": 38,
+        "confidence": 45,
+        "regime": "trending_up",
+        "regimeClarity": 79,
+        "trendFreshness": 50,
+        "momentumExhaustion": 0
+      },
+      {
+        "timeframe": "5m",
+        "bias": "bullish",
+        "agreement": 69,
+        "conflict": 16,
+        "confidence": 51,
+        "regime": "trending_up",
+        "regimeClarity": 91,
+        "trendFreshness": 20,
+        "momentumExhaustion": 0
+      }
+    ],
+    "hierarchy": {
+      "schemaVersion": 1,
+      "htfBias": "bullish",
+      "alignment": 89,
+      "conflict": 22,
+      "controller": "1d",
+      "controllerAuthority": 71,
+      "overallMarketState": "bullish_continuation",
+      "transition": false,
+      "perTimeframe": {
+        "1d": {
+          "timeframe": "1d",
+          "bias": "bullish",
+          "confidence": 55,
+          "regime": "trending_up",
+          "regimeClarity": 95,
+          "role": "context",
+          "authority": 71,
+          "agreesWithHTF": true
+        },
+        "4h": {
+          "timeframe": "4h",
+          "bias": "bullish",
+          "confidence": 46,
+          "regime": "trending_up",
+          "regimeClarity": 90,
+          "role": "context",
+          "authority": 64,
+          "agreesWithHTF": true
+        },
+        "1h": {
+          "timeframe": "1h",
+          "bias": "bullish",
+          "confidence": 52,
+          "regime": "trending_up",
+          "regimeClarity": 94,
+          "role": "confirmation",
+          "authority": 69,
+          "agreesWithHTF": true
+        },
+        "30m": {
+          "timeframe": "30m",
+          "bias": "bearish",
+          "confidence": 38,
+          "regime": "trending_down",
+          "regimeClarity": 67,
+          "role": "confirmation",
+          "authority": 50,
+          "agreesWithHTF": false
+        },
+        "15m": {
+          "timeframe": "15m",
+          "bias": "bullish",
+          "confidence": 45,
+          "regime": "trending_up",
+          "regimeClarity": 79,
+          "role": "trigger",
+          "authority": 59,
+          "agreesWithHTF": true
+        },
+        "5m": {
+          "timeframe": "5m",
+          "bias": "bullish",
+          "confidence": 51,
+          "regime": "trending_up",
+          "regimeClarity": 91,
+          "role": "trigger",
+          "authority": 67,
+          "agreesWithHTF": true
+        }
+      },
+      "contributors": [
+        {
+          "timeframe": "1d",
+          "bias": "bullish",
+          "confidence": 55,
+          "weight": 6,
+          "authority": 71
+        },
+        {
+          "timeframe": "4h",
+          "bias": "bullish",
+          "confidence": 46,
+          "weight": 5,
+          "authority": 64
+        },
+        {
+          "timeframe": "1h",
+          "bias": "bullish",
+          "confidence": 52,
+          "weight": 4,
+          "authority": 69
+        },
+        {
+          "timeframe": "30m",
+          "bias": "bearish",
+          "confidence": 38,
+          "weight": 3,
+          "authority": 50
+        },
+        {
+          "timeframe": "15m",
+          "bias": "bullish",
+          "confidence": 45,
+          "weight": 2,
+          "authority": 59
+        },
+        {
+          "timeframe": "5m",
+          "bias": "bullish",
+          "confidence": 51,
+          "weight": 1,
+          "authority": 67
+        }
+      ],
+      "signals": [
+        {
+          "code": "TF_STACK_ALIGNED",
+          "message": "Timeframes aligned bullish.",
+          "severity": "strong"
+        },
+        {
+          "code": "TF_CONTROLLER",
+          "message": "1d controls (bullish).",
+          "severity": "info"
+        },
+        {
+          "code": "TF_STRONG_CONTEXT",
+          "message": "Higher-timeframe context is strong.",
+          "severity": "info"
+        }
+      ],
+      "warnings": []
+    },
+    "lifecycle": {
+      "schemaVersion": 1,
+      "timeframe": "1d",
+      "stage": "continuation",
+      "direction": "bullish",
+      "lifecycleStrength": 95,
+      "freshness": 50,
+      "exhaustion": 0,
+      "stageConfidence": 72,
+      "nextStageConfidence": 72,
+      "progression": {
+        "previous": null,
+        "current": "continuation",
+        "trajectory": "advancing"
+      },
+      "expectation": {
+        "expected": "healthy_pullback",
+        "rationale": "Continuation without exhaustion typically cycles back into another pullback."
+      },
+      "invalidation": {
+        "invalidated": false,
+        "condition": null
+      },
+      "perTimeframe": {
+        "1d": {
+          "stage": "continuation",
+          "direction": "bullish"
+        },
+        "4h": {
+          "stage": "trend_establishment",
+          "direction": "bullish"
+        },
+        "1h": {
+          "stage": "trend_establishment",
+          "direction": "bullish"
+        },
+        "30m": {
+          "stage": "trend_establishment",
+          "direction": "bearish"
+        },
+        "15m": {
+          "stage": "trend_establishment",
+          "direction": "bullish"
+        },
+        "5m": {
+          "stage": "trend_establishment",
+          "direction": "bullish"
+        }
+      },
+      "signals": [
+        {
+          "code": "LC_CONTINUATION",
+          "message": "1d continuing its trend.",
+          "severity": "info"
+        }
+      ],
+      "warnings": []
+    },
+    "agreement": {
+      "schemaVersion": 1,
+      "agreement": 67,
+      "conflict": 32,
+      "dominantBias": "bullish",
+      "state": "moderate",
+      "consensus": "moderate_bullish",
+      "indicatorAgreement": 80,
+      "categoryAgreement": 59,
+      "contributors": [
+        {
+          "id": "ema",
+          "layer": "indicator",
+          "vote": "bullish",
+          "weight": 82
+        },
+        {
+          "id": "supertrend",
+          "layer": "indicator",
+          "vote": "bullish",
+          "weight": 93
+        },
+        {
+          "id": "rsi",
+          "layer": "indicator",
+          "vote": "bullish",
+          "weight": 38
+        },
+        {
+          "id": "macd",
+          "layer": "indicator",
+          "vote": "bearish",
+          "weight": 86
+        },
+        {
+          "id": "adx",
+          "layer": "indicator",
+          "vote": "bullish",
+          "weight": 70
+        },
+        {
+          "id": "obv",
+          "layer": "indicator",
+          "vote": "bullish",
+          "weight": 84
+        },
+        {
+          "id": "volume",
+          "layer": "indicator",
+          "vote": "neutral",
+          "weight": 7
+        },
+        {
+          "id": "trend",
+          "layer": "category",
+          "vote": "bullish",
+          "weight": 99
+        },
+        {
+          "id": "momentum",
+          "layer": "category",
+          "vote": "bearish",
+          "weight": 51
+        },
+        {
+          "id": "volume",
+          "layer": "category",
+          "vote": "bullish",
+          "weight": 46
+        },
+        {
+          "id": "volatility",
+          "layer": "category",
+          "vote": "neutral",
+          "weight": 37
+        },
+        {
+          "id": "quality",
+          "layer": "category",
+          "vote": "neutral",
+          "weight": 54
+        },
+        {
+          "id": "participation",
+          "layer": "category",
+          "vote": "bullish",
+          "weight": 61
+        }
+      ],
+      "signals": [
+        {
+          "code": "AGR_LAYERS_ALIGNED",
+          "message": "Indicators and categories agree (bullish).",
+          "severity": "info",
+          "source": "category"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "AGR_DISSENT",
+          "message": "macd, momentum diverge from the bullish consensus.",
+          "severity": "warning",
+          "source": "indicator"
+        }
+      ],
+      "diagnostics": {
+        "bullishVotes": 8,
+        "bearishVotes": 2,
+        "neutralVotes": 3,
+        "agreementRatio": 0.67,
+        "dominantShare": 0.67,
+        "minorityShare": 0.16
+      }
+    },
+    "confidence": {
+      "schemaVersion": 1,
+      "confidence": 55,
+      "state": "medium",
+      "contributors": [
+        {
+          "id": "indicator",
+          "layer": "indicator",
+          "kind": "base",
+          "contribution": 20
+        },
+        {
+          "id": "category",
+          "layer": "category",
+          "kind": "base",
+          "contribution": 23
+        },
+        {
+          "id": "agreement",
+          "layer": "agreement",
+          "kind": "base",
+          "contribution": 20
+        },
+        {
+          "id": "data_completeness",
+          "layer": "indicator",
+          "kind": "evidence",
+          "contribution": 8
+        },
+        {
+          "id": "conflict",
+          "layer": "agreement",
+          "kind": "penalty",
+          "contribution": -5
+        },
+        {
+          "id": "low_quality",
+          "layer": "category",
+          "kind": "penalty",
+          "contribution": -3
+        },
+        {
+          "id": "high_volatility",
+          "layer": "category",
+          "kind": "penalty",
+          "contribution": -5
+        },
+        {
+          "id": "weak_pillar:agreement",
+          "layer": "agreement",
+          "kind": "penalty",
+          "contribution": -3
+        }
+      ],
+      "signals": [
+        {
+          "code": "CONF_HIGH_CATEGORY_CONFIDENCE",
+          "message": "Categories are confident.",
+          "severity": "info"
+        },
+        {
+          "code": "CONF_HIGH_INDICATOR_CONFIDENCE",
+          "message": "Indicators are confident.",
+          "severity": "info"
+        },
+        {
+          "code": "CONF_COMPLETE_EVIDENCE",
+          "message": "Full evidence base.",
+          "severity": "info"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "CONF_HIGH_CONFLICT",
+          "message": "Directional conflict reduces trust.",
+          "severity": "warning"
+        },
+        {
+          "code": "CONF_WEAK_PILLAR",
+          "message": "Confidence limited by its weakest pillar (agreement).",
+          "severity": "warning"
+        },
+        {
+          "code": "CONF_LOW_QUALITY",
+          "message": "Weak trend quality reduces trust.",
+          "severity": "warning"
+        },
+        {
+          "code": "CONF_HIGH_VOLATILITY",
+          "message": "High volatility reduces trust.",
+          "severity": "warning"
+        },
+        {
+          "code": "CONF_WEAK_CATEGORY",
+          "message": "participation is below its configured confidence threshold.",
+          "severity": "warning"
+        }
+      ],
+      "diagnostics": {
+        "indicatorConfidence": 66,
+        "categoryConfidence": 67,
+        "agreementConfidence": 56,
+        "evidence": 8,
+        "penalties": 16
+      }
+    },
+    "probability": {
+      "schemaVersion": 1,
+      "calibration": "prior",
+      "modelVersion": "1.0",
+      "sampleSize": 0,
+      "stageTransitions": [
+        {
+          "outcome": "advance",
+          "stage": "healthy_pullback",
+          "probability": 0.5317
+        },
+        {
+          "outcome": "stay",
+          "stage": "continuation",
+          "probability": 0.2554
+        },
+        {
+          "outcome": "regress",
+          "stage": "healthy_pullback",
+          "probability": 0.1277
+        },
+        {
+          "outcome": "break",
+          "stage": "reversal",
+          "probability": 0.0851
+        }
+      ],
+      "directional": [
+        {
+          "direction": "bullish",
+          "probability": 0.5567
+        },
+        {
+          "direction": "bearish",
+          "probability": 0.1997
+        },
+        {
+          "direction": "sideways",
+          "probability": 0.2436
+        }
+      ],
+      "marketOutcomes": [
+        {
+          "outcome": "pullback",
+          "probability": 0.6108
+        },
+        {
+          "outcome": "continuation",
+          "probability": 0.3025
+        },
+        {
+          "outcome": "reversal",
+          "probability": 0.0867
+        }
+      ],
+      "dominantTransition": {
+        "outcome": "advance",
+        "stage": "healthy_pullback",
+        "probability": 0.5317
+      },
+      "dominantDirection": {
+        "direction": "bullish",
+        "probability": 0.5567
+      },
+      "mostLikelyOutcome": {
+        "outcome": "pullback",
+        "probability": 0.6108
+      },
+      "opportunity": {
+        "score": 59,
+        "grade": "C"
+      },
+      "contributors": [
+        {
+          "layer": "transition",
+          "outcome": "advance",
+          "source": "nextStageConfidence",
+          "factor": 1.176
+        },
+        {
+          "layer": "transition",
+          "outcome": "advance",
+          "source": "lifecycleStrength",
+          "factor": 1.18
+        },
+        {
+          "layer": "directional",
+          "outcome": "bullish",
+          "source": "htfBias·alignment",
+          "factor": 1.89
+        },
+        {
+          "layer": "directional",
+          "outcome": "sideways",
+          "source": "conflict",
+          "factor": 1.22
+        },
+        {
+          "layer": "directional",
+          "outcome": "bullish",
+          "source": "lifecycle·strength",
+          "factor": 1.475
+        },
+        {
+          "layer": "outcome",
+          "outcome": "continuation",
+          "source": "direction·bias",
+          "factor": 1.2784
+        },
+        {
+          "layer": "outcome",
+          "outcome": "reversal",
+          "source": "direction·opposite",
+          "factor": 1.0999
+        }
+      ],
+      "signals": [
+        {
+          "code": "PROB_MODEL_PRIORS",
+          "message": "Estimates from model priors, not measured frequencies.",
+          "severity": "info"
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

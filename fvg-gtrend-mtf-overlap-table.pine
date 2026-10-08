@@ -1,0 +1,365 @@
+//@version=6
+indicator("FVG + G-Trend Zone Entry + MTF", overlay = true, max_boxes_count = 100, max_labels_count = 500)
+
+// ── Inputs ─────────────────────────────────────────────────────────────────
+gLength       = input.int(100, "G-Trend Length", minval = 1, group = "G-Trend")
+showGTrend    = input.bool(true, "Show G-Trend", group = "G-Trend")
+bullTrend     = input.color(color.rgb(0, 168, 138), "Bullish Color", group = "G-Trend")
+bearTrend     = input.color(color.rgb(224, 82, 96), "Bearish Color", group = "G-Trend")
+
+maxAgeBars    = input.int(200, "Maximum FVG Age (Bars)", minval = 1, group = "Fair Value Gaps")
+maxActiveFvgs = input.int(30, "Maximum Active FVGs", minval = 1, maxval = 100, group = "Fair Value Gaps")
+showFvg       = input.bool(true, "Show Active FVGs", group = "Fair Value Gaps")
+bullFvgColor  = input.color(color.new(color.rgb(0, 168, 138), 84), "Bullish FVG", group = "Fair Value Gaps")
+bearFvgColor  = input.color(color.new(color.rgb(224, 82, 96), 84), "Bearish FVG", group = "Fair Value Gaps")
+cooldownBars  = input.int(0, "Signal Cooldown (Bars)", minval = 0, group = "Confirmation")
+
+showSignals    = input.bool(true, "Show FVG Buy/Sell Signals", group = "Display")
+tableTimeZone  = input.string("Asia/Kolkata", "Table Time Zone", options = ["Asia/Kolkata", "Etc/UTC", "Europe/London", "America/New_York"], group = "Display")
+
+// ── G-Trend regime ──────────────────────────────────────────────────────────
+var float gUpper = na
+var float gLower = na
+
+gUpper := na(gUpper[1]) ? close : math.max(close, gUpper[1]) - (gUpper[1] - gLower[1]) / gLength
+gLower := na(gLower[1]) ? close : math.min(close, gLower[1]) + (gUpper[1] - gLower[1]) / gLength
+gAverage = (gUpper + gLower) / 2
+
+lowerCrossesPrice = gLower[1] < close[1] and gLower > close
+upperCrossesPrice = gUpper[1] < close[1] and gUpper > close
+
+barsSinceLowerCross = ta.barssince(lowerCrossesPrice)
+barsSinceUpperCross = ta.barssince(upperCrossesPrice)
+
+// Same regime model used by the app's G-Channel implementation.
+gRegimeKnown = not na(barsSinceLowerCross) and not na(barsSinceUpperCross)
+gBullish = gRegimeKnown and barsSinceUpperCross <= barsSinceLowerCross
+gBearish = gRegimeKnown and not gBullish
+
+plot(
+     showGTrend ? gAverage : na,
+     "G-Trend Average",
+     color = gBullish ? bullTrend : bearTrend,
+     linewidth = 2
+)
+
+// ── FVG storage ─────────────────────────────────────────────────────────────
+// Direction: 1 = bullish FVG, -1 = bearish FVG.
+var box[] fvgBoxes = array.new_box()
+var float[] fvgTops = array.new_float()
+var float[] fvgBottoms = array.new_float()
+var int[] fvgDirections = array.new_int()
+var int[] fvgCreatedBars = array.new_int()
+var bool[] fvgTriggered = array.new_bool()
+
+removeFvg(index) =>
+    box.delete(array.get(fvgBoxes, index))
+    array.remove(fvgBoxes, index)
+    array.remove(fvgTops, index)
+    array.remove(fvgBottoms, index)
+    array.remove(fvgDirections, index)
+    array.remove(fvgCreatedBars, index)
+    array.remove(fvgTriggered, index)
+
+addFvg(top, bottom, direction) =>
+    zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+    borderColor = direction == 1 ? bullTrend : bearTrend
+    newBox = box.new(
+         left = bar_index - 2,
+         top = top,
+         right = bar_index,
+         bottom = bottom,
+         xloc = xloc.bar_index,
+         bgcolor = showFvg ? zoneColor : na,
+         border_color = showFvg ? borderColor : na
+     )
+
+    array.push(fvgBoxes, newBox)
+    array.push(fvgTops, top)
+    array.push(fvgBottoms, bottom)
+    array.push(fvgDirections, direction)
+    array.push(fvgCreatedBars, bar_index)
+    array.push(fvgTriggered, false)
+
+    if array.size(fvgBoxes) > maxActiveFvgs
+        removeFvg(0)
+
+// ── FVG lifecycle and first G-Trend zone entry ──────────────────────────────
+bool buyEvent = false
+bool sellEvent = false
+var int lastSignalBar = na
+
+// Historical bars are confirmed. On live data, this prevents a signal from
+// appearing until the candle closes.
+if barstate.isconfirmed
+    // Update / expire existing FVGs before evaluating a trade signal.
+    if array.size(fvgBoxes) > 0
+        for i = array.size(fvgBoxes) - 1 to 0
+            fvgBox = array.get(fvgBoxes, i)
+            top = array.get(fvgTops, i)
+            bottom = array.get(fvgBottoms, i)
+            direction = array.get(fvgDirections, i)
+            createdBar = array.get(fvgCreatedBars, i)
+
+            expired = bar_index - createdBar > maxAgeBars
+            mitigated = direction == 1 ? low <= bottom : high >= top
+
+            if expired or mitigated
+                removeFvg(i)
+            else
+                zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+                borderColor = direction == 1 ? bullTrend : bearTrend
+                box.set_right(fvgBox, bar_index)
+                box.set_bgcolor(fvgBox, showFvg ? zoneColor : na)
+                box.set_border_color(fvgBox, showFvg ? borderColor : na)
+
+    // Create new FVGs only from confirmed candles.
+    bullishFvg = bar_index >= 2 and low > high[2] and close[1] > high[2]
+    bearishFvg = bar_index >= 2 and high < low[2] and close[1] < low[2]
+
+    if bullishFvg
+        addFvg(low, high[2], 1)
+
+    if bearishFvg
+        addFvg(low[2], high, -1)
+
+    // Only the G-Trend Average's own value may trigger an FVG. A new FVG
+    // qualifies immediately if the line is inside; an older FVG requires
+    // the line to enter from outside. Each FVG triggers once.
+    bool cooldownComplete = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
+    if cooldownComplete and array.size(fvgBoxes) > 0
+        for i = array.size(fvgBoxes) - 1 to 0
+            if not array.get(fvgTriggered, i)
+                float top = array.get(fvgTops, i)
+                float bottom = array.get(fvgBottoms, i)
+                int direction = array.get(fvgDirections, i)
+                int createdBar = array.get(fvgCreatedBars, i)
+                bool insideNow = gAverage >= bottom and gAverage <= top
+                bool outsideBefore = na(gAverage[1]) or gAverage[1] < bottom or gAverage[1] > top
+                bool lineEntered = insideNow and (createdBar == bar_index or outsideBefore)
+                bool directionMatches = direction == 1 ? gBullish : gBearish
+                if lineEntered and directionMatches
+                    array.set(fvgTriggered, i, true)
+                    buyEvent := direction == 1
+                    sellEvent := direction == -1
+                    lastSignalBar := bar_index
+                    break
+
+// The chart-timeframe count uses the exact same array as the visible boxes.
+int chartBullCount = 0
+int chartBearCount = 0
+if array.size(fvgDirections) > 0
+    for i = 0 to array.size(fvgDirections) - 1
+        if array.get(fvgDirections, i) == 1
+            chartBullCount += 1
+        else
+            chartBearCount += 1
+
+// Show the confirmed zone-entry event on the next candle.
+bool buySignal = buyEvent[1]
+bool sellSignal = sellEvent[1]
+
+// ── Signal markers and alerts ───────────────────────────────────────────────
+plotshape(
+     showSignals and buySignal,
+     title = "FVG Zone Entry Buy",
+     text = "BUY",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = bullTrend,
+     textcolor = color.white,
+     size = size.small
+)
+
+plotshape(
+     showSignals and sellSignal,
+     title = "FVG Zone Entry Sell",
+     text = "SELL",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = bearTrend,
+     textcolor = color.white,
+     size = size.small
+)
+
+alertcondition(buyEvent, "FVG + G-Trend Zone Entry Buy", "G-Trend Average first entered an active bullish FVG: BUY")
+alertcondition(sellEvent, "FVG + G-Trend Zone Entry Sell", "G-Trend Average first entered an active bearish FVG: SELL")
+
+// Each requested timeframe tracks independent active FVGs and first line entry.
+f_zoneState() =>
+    var float mtfUpper = na
+    var float mtfLower = na
+    mtfUpper := na(mtfUpper[1]) ? close : math.max(close, mtfUpper[1]) - (mtfUpper[1] - mtfLower[1]) / gLength
+    mtfLower := na(mtfLower[1]) ? close : math.min(close, mtfLower[1]) + (mtfUpper[1] - mtfLower[1]) / gLength
+    float mtfAverage = (mtfUpper + mtfLower) / 2
+    bool mtfLowerCrossesPrice = mtfLower[1] < close[1] and mtfLower > close
+    bool mtfUpperCrossesPrice = mtfUpper[1] < close[1] and mtfUpper > close
+    int mtfBarsSinceLower = ta.barssince(mtfLowerCrossesPrice)
+    int mtfBarsSinceUpper = ta.barssince(mtfUpperCrossesPrice)
+    bool mtfRegimeKnown = not na(mtfBarsSinceLower) and not na(mtfBarsSinceUpper)
+    bool mtfBullish = mtfRegimeKnown and mtfBarsSinceUpper <= mtfBarsSinceLower
+    bool mtfBearish = mtfRegimeKnown and not mtfBullish
+
+    // Mirror the chart's active FVG storage and capacity in this timeframe.
+    // A gap formed yesterday remains counted while its chart box is active.
+    var float[] mtfTops = array.new_float()
+    var float[] mtfBottoms = array.new_float()
+    var int[] mtfDirections = array.new_int()
+    var int[] mtfCreated = array.new_int()
+    var bool[] mtfTriggered = array.new_bool()
+    var float[] mtfEntries = array.new_float()
+    var int[] mtfSignalTimes = array.new_int()
+
+    var int lastSide = 0
+    var float lastEntry = na
+    var int lastSignalAt = na
+    var int lastSignalBar = na
+    bool mitigatedActive = false
+    int zoneEvent = 0
+
+    if array.size(mtfTops) > 0
+        for i = array.size(mtfTops) - 1 to 0
+            int direction = array.get(mtfDirections, i)
+            bool expired = bar_index - array.get(mtfCreated, i) > maxAgeBars
+            bool mitigated = direction == 1 ? low <= array.get(mtfBottoms, i) : high >= array.get(mtfTops, i)
+            if expired or mitigated
+                if mitigated and array.get(mtfTriggered, i)
+                    mitigatedActive := true
+                array.remove(mtfTops, i)
+                array.remove(mtfBottoms, i)
+                array.remove(mtfDirections, i)
+                array.remove(mtfCreated, i)
+                array.remove(mtfTriggered, i)
+                array.remove(mtfEntries, i)
+                array.remove(mtfSignalTimes, i)
+
+    bool bullishFvg = bar_index >= 2 and low > high[2] and close[1] > high[2]
+    bool bearishFvg = bar_index >= 2 and high < low[2] and close[1] < low[2]
+    if bullishFvg
+        array.push(mtfTops, low)
+        array.push(mtfBottoms, high[2])
+        array.push(mtfDirections, 1)
+        array.push(mtfCreated, bar_index)
+        array.push(mtfTriggered, false)
+        array.push(mtfEntries, na)
+        array.push(mtfSignalTimes, na)
+    if bearishFvg
+        array.push(mtfTops, low[2])
+        array.push(mtfBottoms, high)
+        array.push(mtfDirections, -1)
+        array.push(mtfCreated, bar_index)
+        array.push(mtfTriggered, false)
+        array.push(mtfEntries, na)
+        array.push(mtfSignalTimes, na)
+    while array.size(mtfTops) > maxActiveFvgs
+        array.shift(mtfTops)
+        array.shift(mtfBottoms)
+        array.shift(mtfDirections)
+        array.shift(mtfCreated)
+        array.shift(mtfTriggered)
+        array.shift(mtfEntries)
+        array.shift(mtfSignalTimes)
+
+    bool cooldownComplete = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
+    if cooldownComplete and array.size(mtfTops) > 0
+        for i = array.size(mtfTops) - 1 to 0
+            if not array.get(mtfTriggered, i)
+                float top = array.get(mtfTops, i)
+                float bottom = array.get(mtfBottoms, i)
+                int direction = array.get(mtfDirections, i)
+                int createdBar = array.get(mtfCreated, i)
+                bool insideNow = mtfAverage >= bottom and mtfAverage <= top
+                bool outsideBefore = na(mtfAverage[1]) or mtfAverage[1] < bottom or mtfAverage[1] > top
+                bool lineEntered = insideNow and (createdBar == bar_index or outsideBefore)
+                bool directionMatches = direction == 1 ? mtfBullish : mtfBearish
+                if lineEntered and directionMatches
+                    array.set(mtfTriggered, i, true)
+                    array.set(mtfEntries, i, close)
+                    array.set(mtfSignalTimes, i, time_close)
+                    zoneEvent := direction
+                    lastSide := direction
+                    lastEntry := close
+                    lastSignalAt := time_close
+                    lastSignalBar := bar_index
+                    break
+
+    int bullCount = 0
+    int bearCount = 0
+    if array.size(mtfDirections) > 0
+        for i = 0 to array.size(mtfDirections) - 1
+            if array.get(mtfDirections, i) == 1
+                bullCount += 1
+            else
+                bearCount += 1
+
+    int activeIndex = na
+    int newestSignalTime = na
+    if array.size(mtfTriggered) > 0
+        for i = 0 to array.size(mtfTriggered) - 1
+            if array.get(mtfTriggered, i)
+                int triggeredAt = array.get(mtfSignalTimes, i)
+                if na(newestSignalTime) or triggeredAt > newestSignalTime
+                    newestSignalTime := triggeredAt
+                    activeIndex := i
+    int state = not na(activeIndex) ? array.get(mtfDirections, activeIndex) : mitigatedActive ? 3 : 0
+    int shownSide = not na(activeIndex) ? state : lastSide
+    float shownEntry = not na(activeIndex) ? array.get(mtfEntries, activeIndex) : lastEntry
+    int shownSignalAt = not na(activeIndex) ? array.get(mtfSignalTimes, activeIndex) : lastSignalAt
+    [state, zoneEvent, shownSide, shownEntry, shownSignalAt, time_close, bullCount, bearCount]
+
+// The offset returns the last completed requested-timeframe candle.
+f_confirmedZoneState() =>
+    [state, zoneEvent, side, entry, signalAt, closedAt, bullCount, bearCount] = f_zoneState()
+    [state[1], zoneEvent[1], side[1], entry[1], signalAt[1], closedAt[1], bullCount[1], bearCount[1]]
+
+[state5, event5, side5, entry5, signalAt5, closed5, bull5, bear5] = request.security(syminfo.tickerid, "5", f_confirmedZoneState(), lookahead = barmerge.lookahead_on)
+[state15, event15, side15, entry15, signalAt15, closed15, bull15, bear15] = request.security(syminfo.tickerid, "15", f_confirmedZoneState(), lookahead = barmerge.lookahead_on)
+[state30, event30, side30, entry30, signalAt30, closed30, bull30, bear30] = request.security(syminfo.tickerid, "30", f_confirmedZoneState(), lookahead = barmerge.lookahead_on)
+
+f_tableRow(table panel, int row, string tfLabel, int state, int lastSide, float entry, int signalAt, int closedAt, int bullCount, int bearCount, bool lowerTf) =>
+    string status = lowerTf ? "USE 5m CHART" : na(closedAt) ? "LOADING" : state == 1 ? "BUY" : state == -1 ? "SELL" : state == 3 ? "MITIGATED" : "WAIT"
+    color statusColor = state == 1 and not lowerTf ? color.new(bullTrend, 15) : state == -1 and not lowerTf ? color.new(bearTrend, 15) : state == 3 and not lowerTf ? color.rgb(120, 80, 20) : color.rgb(45, 50, 60)
+    string entryText = lowerTf or na(entry) ? "—" : str.tostring(entry, format.mintick)
+    float livePoints = lastSide == 1 ? close - entry : lastSide == -1 ? entry - close : na
+    string pointsText = lowerTf or na(livePoints) ? "—" : (livePoints > 0 ? "+" : "") + str.tostring(livePoints, format.mintick)
+    color pointsColor = na(livePoints) or lowerTf ? color.white : livePoints > 0 ? bullTrend : livePoints < 0 ? bearTrend : color.white
+    string signalText = lowerTf or na(signalAt) ? "—" : str.format_time(signalAt, "HH:mm", tableTimeZone)
+    string bullText = lowerTf or na(closedAt) ? "—" : str.tostring(bullCount)
+    string bearText = lowerTf or na(closedAt) ? "—" : str.tostring(bearCount)
+    table.cell(panel, 0, row, tfLabel, text_color = color.white, bgcolor = color.rgb(35, 40, 48))
+    table.cell(panel, 1, row, status, text_color = color.white, bgcolor = statusColor)
+    table.cell(panel, 2, row, entryText, text_color = color.white, bgcolor = color.rgb(35, 40, 48))
+    table.cell(panel, 3, row, pointsText, text_color = pointsColor, bgcolor = color.rgb(35, 40, 48))
+    table.cell(panel, 4, row, signalText, text_color = color.white, bgcolor = color.rgb(35, 40, 48))
+    table.cell(panel, 5, row, bullText, text_color = bullTrend, bgcolor = color.rgb(35, 40, 48))
+    table.cell(panel, 6, row, bearText, text_color = bearTrend, bgcolor = color.rgb(35, 40, 48))
+
+int chartSeconds = timeframe.in_seconds(timeframe.period)
+var table overlapTable = table.new(position.top_right, 7, 4, frame_width = 1, frame_color = color.rgb(90, 100, 110))
+if barstate.islast
+    color headerColor = color.rgb(20, 25, 33)
+    table.cell(overlapTable, 0, 0, "TF", text_color = color.white, bgcolor = headerColor)
+    table.cell(overlapTable, 1, 0, "SIGNAL / FVG", text_color = color.white, bgcolor = headerColor)
+    table.cell(overlapTable, 2, 0, "ENTRY", text_color = color.white, bgcolor = headerColor)
+    table.cell(overlapTable, 3, 0, "LIVE PTS", text_color = color.white, bgcolor = headerColor)
+    table.cell(overlapTable, 4, 0, "SIGNAL TIME", text_color = color.white, bgcolor = headerColor)
+    table.cell(overlapTable, 5, 0, "BULL ACTIVE", text_color = bullTrend, bgcolor = headerColor)
+    table.cell(overlapTable, 6, 0, "BEAR ACTIVE", text_color = bearTrend, bgcolor = headerColor)
+    f_tableRow(overlapTable, 1, "5m", state5, side5, entry5, signalAt5, closed5, chartSeconds == 300 ? chartBullCount : bull5, chartSeconds == 300 ? chartBearCount : bear5, chartSeconds > 300)
+    f_tableRow(overlapTable, 2, "15m", state15, side15, entry15, signalAt15, closed15, chartSeconds == 900 ? chartBullCount : bull15, chartSeconds == 900 ? chartBearCount : bear15, chartSeconds > 900)
+    f_tableRow(overlapTable, 3, "30m", state30, side30, entry30, signalAt30, closed30, chartSeconds == 1800 ? chartBullCount : bull30, chartSeconds == 1800 ? chartBearCount : bear30, chartSeconds > 1800)
+
+// One alert per confirmed first-entry event on each requested timeframe.
+bool long5 = chartSeconds <= 300 and event5 == 1 and closed5 != closed5[1]
+bool short5 = chartSeconds <= 300 and event5 == -1 and closed5 != closed5[1]
+bool long15 = chartSeconds <= 900 and event15 == 1 and closed15 != closed15[1]
+bool short15 = chartSeconds <= 900 and event15 == -1 and closed15 != closed15[1]
+bool long30 = chartSeconds <= 1800 and event30 == 1 and closed30 != closed30[1]
+bool short30 = chartSeconds <= 1800 and event30 == -1 and closed30 != closed30[1]
+
+alertcondition(long5, "5m FVG Zone Entry Buy", "5m G-Trend Average first entered an active bullish FVG: BUY")
+alertcondition(short5, "5m FVG Zone Entry Sell", "5m G-Trend Average first entered an active bearish FVG: SELL")
+alertcondition(long15, "15m FVG Zone Entry Buy", "15m G-Trend Average first entered an active bullish FVG: BUY")
+alertcondition(short15, "15m FVG Zone Entry Sell", "15m G-Trend Average first entered an active bearish FVG: SELL")
+alertcondition(long30, "30m FVG Zone Entry Buy", "30m G-Trend Average first entered an active bullish FVG: BUY")
+alertcondition(short30, "30m FVG Zone Entry Sell", "30m G-Trend Average first entered an active bearish FVG: SELL")

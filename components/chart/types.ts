@@ -50,6 +50,14 @@ export interface ChartOverlay {
 
 export interface ChartProps {
   candles: Candle[];
+  /**
+   * Stable identity for the authoritative candle owner. Replay uses an
+   * immutable snapshot, so changing between live data and that snapshot must
+   * reset the viewport even when symbol, timeframe, and chart type match.
+   * This deliberately does not include the replay cursor, which advances on
+   * every bar and must retain the user's viewport while playing.
+   */
+  dataContextKey?: string;
   candlesByTf?: Record<string, Candle[]>;
   type: ChartType;
   tf?: string;
@@ -121,6 +129,10 @@ export interface ChartProps {
   onRemoveIndicator?: (id: string) => void;
   onUpdateIndicatorSettingsFor?: (id: string, settings: IndicatorSettings) => void;
   resetTick?: number;
+  /** Timestamp in milliseconds to focus in the visible chart range. */
+  focusTime?: number | null;
+  /** Keep the newest completed candle in view as bars are appended. */
+  followLatest?: boolean;
   /** Blind-drill mode: hide the time axis so dates can't reveal the moment. */
   maskTimeAxis?: boolean;
   /**

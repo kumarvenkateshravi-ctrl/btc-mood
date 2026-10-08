@@ -136,20 +136,27 @@ export const subscribePaperStore = subscribe;
 export const getPaperStoreSnapshot = getSnapshot;
 
 export function usePaperStoreSelector<T>(selector: (snapshot: PaperStoreState) => T, isEqual: (a: T, b: T) => boolean = Object.is): T {
-  const cacheRef = useRef<{ snapshot: PaperStoreState; value: T } | null>(null);
+  const cacheRef = useRef<{ snapshot: PaperStoreState; selector: typeof selector; value: T } | null>(null);
   const getSelectedSnapshot = useCallback(() => {
     const snapshot = getSnapshot();
     const cached = cacheRef.current;
-    if (cached?.snapshot === snapshot) return cached.value;
+    if (cached?.snapshot === snapshot && cached.selector === selector) return cached.value;
     const next = selector(snapshot);
     if (cached !== null && isEqual(cached.value, next)) {
-      cacheRef.current = { snapshot, value: cached.value };
+      cacheRef.current = { snapshot, selector, value: cached.value };
       return cached.value;
     }
-    cacheRef.current = { snapshot, value: next };
+    cacheRef.current = { snapshot, selector, value: next };
     return next;
   }, [selector, isEqual]);
-  const getSelectedServerSnapshot = useCallback(() => selector(initialState), [selector]);
+  const serverCacheRef = useRef<{ selector: (snapshot: PaperStoreState) => T; value: T } | null>(null);
+  const getSelectedServerSnapshot = useCallback(() => {
+    const cached = serverCacheRef.current;
+    if (cached?.selector === selector) return cached.value;
+    const value = selector(initialState);
+    serverCacheRef.current = { selector, value };
+    return value;
+  }, [selector]);
   return useSyncExternalStore(subscribe, getSelectedSnapshot, getSelectedServerSnapshot);
 }
 

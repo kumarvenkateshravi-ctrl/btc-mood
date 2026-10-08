@@ -1,0 +1,305 @@
+//@version=6
+indicator("FVG + G-Trend + Session VWAP + EMA 200 + Simple EMA Band", overlay = true, max_boxes_count = 100, max_labels_count = 500)
+
+// ── Inputs ─────────────────────────────────────────────────────────────────
+gLength = input.int(100, "G-Trend Length", minval = 1, group = "G-Trend")
+gSource = input.source(close, "G-Trend Source", group = "G-Trend")
+showGTrendCross = input.bool(true, "Show G-Trend Buy/Sell", group = "G-Trend")
+
+maxAgeBars    = input.int(200, "Maximum FVG Age (Bars)", minval = 1, group = "Fair Value Gaps")
+maxActiveFvgs = input.int(30, "Maximum Active FVGs", minval = 1, maxval = 100, group = "Fair Value Gaps")
+showFvg       = input.bool(true, "Show Active FVGs", group = "Fair Value Gaps")
+bullFvgColor  = input.color(color.new(color.rgb(0, 168, 138), 84), "Bullish FVG", group = "Fair Value Gaps")
+bearFvgColor  = input.color(color.new(color.rgb(224, 82, 96), 84), "Bearish FVG", group = "Fair Value Gaps")
+bullFvgBorder = input.color(color.rgb(0, 168, 138), "Bullish FVG Border", group = "Fair Value Gaps")
+bearFvgBorder = input.color(color.rgb(224, 82, 96), "Bearish FVG Border", group = "Fair Value Gaps")
+
+showSessionVwap = input.bool(true, "Show Session VWAP", group = "Session VWAP")
+sessionVwapSource = input.source(hlc3, "Source", group = "Session VWAP")
+
+showEma200 = input.bool(true, "Show 200 EMA", group = "200 EMA")
+ema200Source = input.source(close, "Source", group = "200 EMA")
+
+// ── Session VWAP and 200 EMA ────────────────────────────────────────────────
+newVwapSession = timeframe.change("1D") or barstate.isfirst
+sessionVwap = ta.vwap(sessionVwapSource, newVwapSession)
+ema200 = ta.ema(ema200Source, 200)
+
+plot(showSessionVwap ? sessionVwap : na, title = "Session VWAP", color = color.blue, linewidth = 2, editable = true)
+plot(
+     showEma200 ? ema200 : na,
+     title = "200 EMA",
+     color = ema200Source >= ema200 ? color.lime : color.red,
+     linewidth = 2,
+     editable = true
+)
+
+// ── Original G-Channel Trend Detection ─────────────────────────────────────
+// Pine v6 port of the supplied Pine v4 code. Its calculations and signal
+// conditions are unchanged.
+float a = 0.0
+float b = 0.0
+a := math.max(gSource, nz(a[1])) - nz(a[1] - b[1]) / gLength
+b := math.min(gSource, nz(b[1])) + nz(a[1] - b[1]) / gLength
+gAverage = math.avg(a, b)
+
+crossup = b[1] < close[1] and b > close
+crossdn = a[1] < close[1] and a > close
+gBullish = ta.barssince(crossdn) <= ta.barssince(crossup)
+
+// Keep the bullish and bearish colors directly in every visual call. This
+// exposes both state colors, visibility, line style, and width in TradingView's
+// Style tab instead of hiding the controls behind a calculated color variable.
+gAveragePlot = plot(
+     gAverage,
+     title = "Average",
+     color = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90),
+     linewidth = 1,
+     editable = true
+)
+
+gClosePlot = plot(
+     close,
+     title = "Close price",
+     color = gBullish ? color.new(color.lime, 100) : color.new(color.red, 100),
+     linewidth = 1,
+     editable = true
+)
+
+fill(
+     gAveragePlot,
+     gClosePlot,
+     color = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90),
+     title = "G-Trend Background",
+     editable = true
+)
+
+plotshape(showGTrendCross and not gBullish and gBullish[1] ? gAverage : na, title = "G-Trend Sell", location = location.absolute, style = shape.labeldown, color = color.red, size = size.tiny, text = "Sell", textcolor = color.white, offset = -1, editable = true)
+plotshape(showGTrendCross and gBullish and not gBullish[1] ? gAverage : na, title = "G-Trend Buy", location = location.absolute, style = shape.labelup, color = color.lime, size = size.tiny, text = "Buy", textcolor = color.white, offset = -1, editable = true)
+
+// ── FVG storage ─────────────────────────────────────────────────────────────
+// Direction: 1 = bullish FVG, -1 = bearish FVG.
+var box[] fvgBoxes = array.new_box()
+var float[] fvgTops = array.new_float()
+var float[] fvgBottoms = array.new_float()
+var int[] fvgDirections = array.new_int()
+var int[] fvgCreatedBars = array.new_int()
+
+removeFvg(index) =>
+    box.delete(array.get(fvgBoxes, index))
+    array.remove(fvgBoxes, index)
+    array.remove(fvgTops, index)
+    array.remove(fvgBottoms, index)
+    array.remove(fvgDirections, index)
+    array.remove(fvgCreatedBars, index)
+
+addFvg(top, bottom, direction) =>
+    zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+    borderColor = direction == 1 ? bullFvgBorder : bearFvgBorder
+    newBox = box.new(
+         left = bar_index - 2,
+         top = top,
+         right = bar_index,
+         bottom = bottom,
+         xloc = xloc.bar_index,
+         bgcolor = showFvg ? zoneColor : na,
+         border_color = showFvg ? borderColor : na
+     )
+
+    array.push(fvgBoxes, newBox)
+    array.push(fvgTops, top)
+    array.push(fvgBottoms, bottom)
+    array.push(fvgDirections, direction)
+    array.push(fvgCreatedBars, bar_index)
+
+    if array.size(fvgBoxes) > maxActiveFvgs
+        removeFvg(0)
+
+// ── FVG lifecycle ───────────────────────────────────────────────────────────
+// Historical bars are confirmed. On live data, this prevents a new FVG from
+// appearing until the confirming candle closes.
+if barstate.isconfirmed
+    // Update or expire existing FVGs.
+    if array.size(fvgBoxes) > 0
+        for i = array.size(fvgBoxes) - 1 to 0
+            fvgBox = array.get(fvgBoxes, i)
+            top = array.get(fvgTops, i)
+            bottom = array.get(fvgBottoms, i)
+            direction = array.get(fvgDirections, i)
+            createdBar = array.get(fvgCreatedBars, i)
+
+            expired = bar_index - createdBar > maxAgeBars
+            mitigated = direction == 1 ? close < bottom : close > top
+
+            if expired or mitigated
+                removeFvg(i)
+            else
+                zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+                borderColor = direction == 1 ? bullFvgBorder : bearFvgBorder
+                box.set_right(fvgBox, bar_index)
+                box.set_bgcolor(fvgBox, showFvg ? zoneColor : na)
+                box.set_border_color(fvgBox, showFvg ? borderColor : na)
+
+    // Create new FVGs only from confirmed candles.
+    bullishFvg = bar_index >= 2 and low > high[2] and close[1] > high[2]
+    bearishFvg = bar_index >= 2 and high < low[2] and close[1] < low[2]
+
+    if bullishFvg
+        addFvg(low, high[2], 1)
+
+    if bearishFvg
+        addFvg(low[2], high, -1)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Simple EMA Band — Reconstruction
+// ══════════════════════════════════════════════════════════════════════════════
+// Reconstructed from the supplied chart and settings screenshots.
+// The original four inputs are preserved, with Weekly VWAP and touch controls
+// added below them.
+
+// ── INPUTS ──────────────────────────────────────────────────────────────────
+source = input.source(close, "Open/close")
+shortLength = input.int(9, "Shorter EMA", minval = 1)
+longLength = input.int(21, "Longer EMA", minval = 1)
+enable200 = input.bool(true, "Enable 200 Ema")
+enableWeeklyVwap = input.bool(true, "Enable Weekly VWAP")
+weeklyVwapSource = input.source(hlc3, "Weekly VWAP Source")
+touchToleranceTicks = input.float(1.0, "Touch Tolerance (Ticks)", minval = 0.0, step = 0.25,
+     tooltip = "Allows a near-equal EMA value to count as a visual touch. Set to 0 for strict line contact.")
+
+// ── CALCULATIONS ────────────────────────────────────────────────────────────
+shortEma = ta.ema(source, shortLength)
+longEma = ta.ema(source, longLength)
+bandEma200 = ta.ema(source, 200)
+bool weeklyReset = barstate.isfirst or timeframe.change("W")
+weeklyVwap = ta.vwap(weeklyVwapSource, weeklyReset)
+
+bool bullishBand = shortEma > longEma
+bool bearishBand = shortEma < longEma
+bool bullish200 = shortEma > bandEma200
+
+// ── FIRST CONTACT SIGNALS ───────────────────────────────────────────────────
+// The complete area between the short and long EMAs is the ribbon. Each
+// reference line can approach it from either side. A signal is emitted on the
+// first bar where relative line movement reaches or passes the nearest edge.
+// No crossover is required, and continued contact cannot repeat a signal.
+float ribbonUpper = math.max(shortEma, longEma)
+float ribbonLower = math.min(shortEma, longEma)
+float touchTolerance = touchToleranceTicks * syminfo.mintick
+
+bool ema200WasBelowRibbon = bandEma200[1] < ribbonLower[1] - touchTolerance
+bool ema200WasAboveRibbon = bandEma200[1] > ribbonUpper[1] + touchTolerance
+bool ema200ReachedFromBelow = ema200WasBelowRibbon and bandEma200 >= ribbonLower - touchTolerance
+bool ema200ReachedFromAbove = ema200WasAboveRibbon and bandEma200 <= ribbonUpper + touchTolerance
+bool ema200FirstTouch = barstate.isconfirmed and enable200 and
+     (ema200ReachedFromBelow or ema200ReachedFromAbove)
+
+// The first bar of a new week starts a fresh VWAP anchor. It is excluded from
+// contact detection because the reset creates a discontinuous jump rather than
+// a line approaching and touching the ribbon.
+bool weeklyVwapWasBelowRibbon = weeklyVwap[1] < ribbonLower[1] - touchTolerance
+bool weeklyVwapWasAboveRibbon = weeklyVwap[1] > ribbonUpper[1] + touchTolerance
+bool weeklyVwapReachedFromBelow = weeklyVwapWasBelowRibbon and weeklyVwap >= ribbonLower - touchTolerance
+bool weeklyVwapReachedFromAbove = weeklyVwapWasAboveRibbon and weeklyVwap <= ribbonUpper + touchTolerance
+bool weeklyVwapFirstTouch = barstate.isconfirmed and enableWeeklyVwap and not weeklyReset and
+     (weeklyVwapReachedFromBelow or weeklyVwapReachedFromAbove)
+
+bool buy200Signal = ema200FirstTouch and bullishBand
+bool sell200Signal = ema200FirstTouch and bearishBand
+bool buyWeeklyVwapSignal = weeklyVwapFirstTouch and bullishBand
+bool sellWeeklyVwapSignal = weeklyVwapFirstTouch and bearishBand
+
+// The four band states visible in the Style tab:
+// 1. Bullish and the candle low is inside the EMA band.
+// 2. Bullish with price outside the EMA band.
+// 3. Bearish and the candle high is inside the EMA band.
+// 4. Bearish with price outside the EMA band.
+color bandColor = bullishBand ?
+     (longEma < low and low < shortEma ? color.rgb(0, 236, 47, 74) : color.rgb(0, 255, 51, 91)) :
+     (longEma > high and high > shortEma ? color.rgb(255, 0, 0, 72) : color.rgb(255, 0, 0, 89))
+
+// ── VISIBLE PLOTS ───────────────────────────────────────────────────────────
+// Titles are deliberately left as "Plot" so the Style tab matches the source
+// screenshots for the original EMA lines. Weekly VWAP is added as a named plot.
+plot(shortEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(0, 234, 183) : color.rgb(227, 13, 13))
+
+plot(longEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(3, 237, 69) : color.rgb(255, 0, 144),
+     style = plot.style_linebr)
+
+plot(enable200 ? bandEma200 : na,
+     title = "Plot",
+     color = bullish200 ? color.rgb(38, 166, 154) : color.rgb(242, 54, 69),
+     linewidth = 2)
+
+plot(enableWeeklyVwap ? weeklyVwap : na,
+     title = "Weekly VWAP",
+     color = color.rgb(255, 193, 7),
+     linewidth = 2,
+     style = plot.style_linebr)
+
+// ── HIDDEN FILL ANCHORS ─────────────────────────────────────────────────────
+// These reproduce the two unchecked blue Plot rows in the Style tab.
+longAnchor = plot(longEma, title = "Plot", display = display.none)
+shortAnchor = plot(shortEma, title = "Plot", display = display.none)
+
+fill(longAnchor, shortAnchor,
+     title = "Plots Background",
+     color = bandColor,
+     editable = true)
+
+// ── SIGNALS AND ALERTS ──────────────────────────────────────────────────────
+plotshape(buy200Signal,
+     title = "EMA 200 Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sell200Signal,
+     title = "EMA 200 Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(buyWeeklyVwapSignal,
+     title = "Weekly VWAP Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY W",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sellWeeklyVwapSignal,
+     title = "Weekly VWAP Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL W",
+     textcolor = color.white,
+     size = size.tiny)
+
+alertcondition(buy200Signal,
+     title = "EMA 200 First Touch — Buy",
+     message = "BUY: EMA 200 made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sell200Signal,
+     title = "EMA 200 First Touch — Sell",
+     message = "SELL: EMA 200 made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(buyWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Buy",
+     message = "BUY: Weekly VWAP made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sellWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Sell",
+     message = "SELL: Weekly VWAP made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")

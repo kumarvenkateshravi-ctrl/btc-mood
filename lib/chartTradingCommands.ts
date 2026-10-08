@@ -34,6 +34,7 @@ export interface PlaceChartOrder {
 
 export type TradingCommandResult<T = undefined> =
   | { status: 'accepted'; mode: ChartTradingMode; value?: T }
+  | { status: 'pending'; mode: ChartTradingMode; reason: string }
   | { status: 'rejected'; mode: ChartTradingMode | null; reason: string }
   | { status: 'unsupported'; mode: ChartTradingMode; reason: string };
 

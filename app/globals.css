@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./mobile-terminal.css";
 
 /* ============================================================
    BTC Market Mood — design system
@@ -179,6 +180,43 @@
 
 /* CryptoVision is flat charcoal — drop the indigo/emerald aurora glow. */
 :root[data-theme="cryptovision"] .app-aurora {
+  background: none;
+}
+
+/* Neutral-black trading canvas with restrained blue controls. */
+:root[data-theme="tradingview"] {
+  --base:          #0F0F0F;
+  --surface-1:     #1B1B1B;
+  --surface-2:     #242424;
+  --surface-3:     #2D2D2D;
+  --surface-hover: #272727;
+  --chart-bg:      #0F0F0F;
+  --specular:      rgba(255, 255, 255, 0.035);
+
+  --line:         #353535;
+  --line-strong:  #4A4A4A;
+  --border-focus: #2962FF;
+
+  --ink:        #F2F3F5;
+  --ink-muted:  #B8BBC2;
+  --ink-faint:  #858990;
+
+  --accent:        #2962FF;
+  --accent-bright: #5B83FF;
+  --accent-dim:    #1F4BCC;
+  --accent-2:      #9B8AFB;
+  --button-primary-bg: #2962FF;
+  --button-primary-fg: #FFFFFF;
+  --ring: rgba(41, 98, 255, 0.5);
+
+  --neutral:     #A0A4AD;
+  --neutral-dim: #737780;
+  --dv-1: #2962FF;
+  --dv-2: #9B8AFB;
+}
+
+:root[data-theme="tradingview"] .app-aurora,
+:root[data-theme="tradingview"] .paper-bg {
   background: none;
 }
 
@@ -400,6 +438,11 @@
   --scroll-thumb-hover: #4b4b54;
   --selection-bg: oklch(0.745 0.095 292 / 0.35);
 }
+:root[data-theme="tradingview"] {
+  --scroll-thumb: #383838;
+  --scroll-thumb-hover: #505050;
+  --selection-bg: rgba(41, 98, 255, 0.35);
+}
 :root[data-theme="cobalt"] {
   --scroll-thumb: #34415d;
   --scroll-thumb-hover: #435377;
@@ -431,6 +474,12 @@
    for ~320ms around the swap, so the recolor sweeps instead of snapping.
    !important lets it win over per-component transition declarations for
    that brief window; reduced-motion kills it globally below. */
+/* Challenge pages use dense 9–10px financial labels. Keep their tertiary ink
+   quiet while meeting WCAG contrast on every graphite surface. */
+.challenge-shell {
+  --ink-faint: oklch(0.690 0.015 264);
+}
+
 html.theme-fade,
 html.theme-fade *,
 html.theme-fade *::before,

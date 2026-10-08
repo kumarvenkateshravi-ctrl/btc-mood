@@ -39,8 +39,6 @@ function toolbar(overrides: Partial<ChartToolbarProps> = {}) {
     historyActive: false,
     gridCount: 1,
     onGridChange: noop,
-    workspaceCurrent: { chartType: 'candlestick', symbol: 'BTCUSDT', tf: '5m', indicatorIds: [] },
-    onWorkspaceApply: noop,
     chartSettings: DEFAULT_CHART_SETTINGS,
     onChartSettingsPatch: noop,
     onChartSettingsReset: noop,
@@ -72,6 +70,8 @@ describe('Stage 7 Task 1 — chart context toolbar', () => {
     const out = toolbar();
 
     expect(out).toContain('data-testid="chart-context"');
+    expect(out).toContain('shrink-0 items-center gap-2 whitespace-nowrap');
+    expect(out).toContain('flex shrink-0 items-baseline gap-1.5 whitespace-nowrap');
     expect(out).toContain('BTCUSDT');
     expect(out).toContain('$118,420.00');
     expect(out).toContain('+1,450.00');
@@ -87,6 +87,21 @@ describe('Stage 7 Task 1 — chart context toolbar', () => {
       expect(out).toContain(`>${timeframe}<`);
     }
     expect(out).toMatch(/aria-pressed="true"[^>]*>1h</);
+  });
+
+  it('shows the standalone date query and no workspace control', () => {
+    const out = toolbar();
+
+    expect(out).toContain('title="Jump to date"');
+    expect(out).toContain('aria-label="Jump to date"');
+    expect(out).not.toContain('title="Workspaces"');
+  });
+  it('keeps desktop chip menus above the chart and outside the toolbar clipping region', () => {
+    const out = toolbar();
+
+    expect(out).toContain('data-testid="desktop-chart-toolbar"');
+    expect(out).toContain('relative z-50');
+    expect(out).toContain('overflow-visible');
   });
 
   it('renders a quiet LIVE + PAPER identity for trusted live paper trading', () => {

@@ -5,7 +5,7 @@
 // behavioral coaching. All functions are pure; lib/replaySession.ts owns the
 // state and the fills.
 
-import type { PaperTrade } from '../paper';
+import { marginFor, type PaperTrade } from '../paper';
 import { sizeRiskPosition, type RiskSizingResult } from '../riskSizing';
 
 // ---- Session configuration --------------------------------------------------
@@ -48,8 +48,15 @@ export function currencySymbol(code: SessionCurrencyCode): string {
 
 // ---- Position sizing (spec step 4: how professionals size) -----------------
 
-/** Compatibility name for the shared risk-sizing result used by replay. */
-export type SizingResult = RiskSizingResult;
+/**
+ * Replay can reduce a requested risk size to the capital available at the
+ * selected leverage. The shared validator remains strict for non-replay order
+ * entry, while the practice account teaches the user what it can actually
+ * fund instead of leaving both trade actions unusable.
+ */
+export type SizingResult = Omit<RiskSizingResult, 'reason'> & {
+  reason: RiskSizingResult['reason'] | 'margin-capped';
+};
 
 /**
  * riskAmount / |entry − stop| = units. Guardrails: a stop is required
@@ -64,7 +71,7 @@ export function positionSizeFor(
   entry: number,
   stop: number | null,
 ): SizingResult {
-  return sizeRiskPosition({
+  const target = sizeRiskPosition({
     side,
     entryPrice: entry,
     stopPrice: stop,
@@ -72,6 +79,15 @@ export function positionSizeFor(
     riskPct: cfg.riskPct,
     leverage: cfg.leverage,
   });
+  if (target.reason !== 'insufficient-margin') return target;
+
+  // The requested risk size exceeds the account's buying power. Cap the
+  // position to the funded notional and re-state risk from that safe size.
+  const units = (balance * cfg.leverage) / entry;
+  const margin = marginFor(units, entry, cfg.leverage);
+  const riskAmount = units * Math.abs(entry - stop!);
+  if (!Number.isFinite(units) || units <= 0 || !Number.isFinite(riskAmount)) return target;
+  return { ok: true, units, riskAmount, margin, reason: 'margin-capped' };
 }
 
 // ---- Behavioral tracking (spec step 14) -------------------------------------

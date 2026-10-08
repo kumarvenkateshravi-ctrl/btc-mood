@@ -1,0 +1,18 @@
+{
+  "candles": 1020,
+  "retained_after_zone_removal": 32,
+  "morning_events": [
+    {
+      "candle": "2026-10-02T07:20:00+05:30",
+      "side": "BUY",
+      "source": "VWAP",
+      "fvg_created": "2026-10-02T07:20:00+05:30"
+    },
+    {
+      "candle": "2026-10-02T07:20:00+05:30",
+      "side": "BUY",
+      "source": "G-Trend",
+      "fvg_created": "2026-10-02T07:20:00+05:30"
+    }
+  ]
+}

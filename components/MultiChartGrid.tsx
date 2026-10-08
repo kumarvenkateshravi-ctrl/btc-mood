@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Chart, { type ChartType } from './Chart';
 import ChartErrorBoundary from '@/components/chart/ChartErrorBoundary';
 import type { ChartApi } from './chart/types';
 import { useBaseCandles } from '@/lib/chartHelpers';
 import { DEFAULT_RENKO, renkoConfigToOptions } from '@/lib/renko';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
+import type { IndicatorSettings } from '@/lib/indicatorFramework';
+import { INDICATOR_DEFAULTS_CHANGED_EVENT, loadIndicatorDefaults, readLegacyIndicatorDefaults } from '@/lib/indicatorDefaultsStore';
 import type { Candle, Timeframe } from '@/lib/types';
 import { LAYOUT_CONFIGS, type GridCount, type LayoutSync } from '@/lib/gridLayout';
 
@@ -65,6 +67,22 @@ export default function MultiChartGrid({
   const chartApis = useRef(new Map<number, ChartApi>());
   const syncingRange = useRef(false);
   const syncingCrosshair = useRef(false);
+  const [indicatorDefaults, setIndicatorDefaults] = useState(readLegacyIndicatorDefaults);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void loadIndicatorDefaults().then((defaults) => {
+        if (!cancelled) setIndicatorDefaults(defaults);
+      });
+    };
+    refresh();
+    window.addEventListener(INDICATOR_DEFAULTS_CHANGED_EVENT, refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(INDICATOR_DEFAULTS_CHANGED_EVENT, refresh);
+    };
+  }, []);
 
   const handleReady = (idx: number, api: ChartApi) => {
     chartApis.current.set(idx, api);
@@ -117,6 +135,7 @@ export default function MultiChartGrid({
           candlesByTf={candlesByTf}
           type={cell.type}
           activeIndicatorIds={cell.indicatorIds}
+          indicatorDefaults={indicatorDefaults}
           active={i === selectedIndex}
           onSelect={() => onSelectCell(i)}
           onRemoveIndicator={(id) => onRemoveCellIndicator(i, id)}
@@ -134,6 +153,7 @@ function GridCell({
   candlesByTf,
   type,
   activeIndicatorIds,
+  indicatorDefaults,
   active,
   onSelect,
   onRemoveIndicator,
@@ -145,6 +165,7 @@ function GridCell({
   candlesByTf: Record<Timeframe, Candle[]>;
   type: ChartType;
   activeIndicatorIds: string[];
+  indicatorDefaults: Record<string, IndicatorSettings>;
   active: boolean;
   onSelect: () => void;
   onRemoveIndicator: (id: string) => void;
@@ -166,11 +187,7 @@ function GridCell({
       const def = CUSTOM_INDICATORS.find((d) => d.id === baseId);
       if (!def) return;
       
-      let savedSettings;
-      try {
-        const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
-        savedSettings = JSON.parse(defaultsStr)[baseId];
-      } catch {}
+      const savedSettings = indicatorDefaults[baseId];
       
       let result;
       try {
@@ -197,7 +214,7 @@ function GridCell({
     });
     
     return results;
-  }, [baseCandlesForIndicators, activeIndicatorIds]);
+  }, [baseCandlesForIndicators, activeIndicatorIds, indicatorDefaults]);
 
   return (
     <div

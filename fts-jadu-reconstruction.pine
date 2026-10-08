@@ -1,0 +1,153 @@
+//@version=6
+indicator("Simple EMA Band — Reconstruction", shorttitle = "EMA Band", overlay = true)
+
+// Reconstructed from the supplied chart and settings screenshots.
+// The original four inputs are preserved, with Weekly VWAP and touch controls
+// added below them.
+
+// ── INPUTS ──────────────────────────────────────────────────────────────────
+source = input.source(close, "Open/close")
+shortLength = input.int(9, "Shorter EMA", minval = 1)
+longLength = input.int(21, "Longer EMA", minval = 1)
+enable200 = input.bool(true, "Enable 200 Ema")
+enableWeeklyVwap = input.bool(true, "Enable Weekly VWAP")
+weeklyVwapSource = input.source(hlc3, "Weekly VWAP Source")
+touchToleranceTicks = input.float(1.0, "Touch Tolerance (Ticks)", minval = 0.0, step = 0.25,
+     tooltip = "Allows a near-equal EMA value to count as a visual touch. Set to 0 for strict line contact.")
+
+// ── CALCULATIONS ────────────────────────────────────────────────────────────
+shortEma = ta.ema(source, shortLength)
+longEma = ta.ema(source, longLength)
+ema200 = ta.ema(source, 200)
+bool weeklyReset = barstate.isfirst or timeframe.change("W")
+weeklyVwap = ta.vwap(weeklyVwapSource, weeklyReset)
+
+bool bullishBand = shortEma > longEma
+bool bearishBand = shortEma < longEma
+bool bullish200 = shortEma > ema200
+
+// ── FIRST CONTACT SIGNALS ───────────────────────────────────────────────────
+// The complete area between the short and long EMAs is the ribbon. Each
+// reference line can approach it from either side. A signal is emitted on the
+// first bar where relative line movement reaches or passes the nearest edge.
+// No crossover is required, and continued contact cannot repeat a signal.
+float ribbonUpper = math.max(shortEma, longEma)
+float ribbonLower = math.min(shortEma, longEma)
+float touchTolerance = touchToleranceTicks * syminfo.mintick
+
+bool ema200WasBelowRibbon = ema200[1] < ribbonLower[1] - touchTolerance
+bool ema200WasAboveRibbon = ema200[1] > ribbonUpper[1] + touchTolerance
+bool ema200ReachedFromBelow = ema200WasBelowRibbon and ema200 >= ribbonLower - touchTolerance
+bool ema200ReachedFromAbove = ema200WasAboveRibbon and ema200 <= ribbonUpper + touchTolerance
+bool ema200FirstTouch = barstate.isconfirmed and enable200 and
+     (ema200ReachedFromBelow or ema200ReachedFromAbove)
+
+// The first bar of a new week starts a fresh VWAP anchor. It is excluded from
+// contact detection because the reset creates a discontinuous jump rather than
+// a line approaching and touching the ribbon.
+bool weeklyVwapWasBelowRibbon = weeklyVwap[1] < ribbonLower[1] - touchTolerance
+bool weeklyVwapWasAboveRibbon = weeklyVwap[1] > ribbonUpper[1] + touchTolerance
+bool weeklyVwapReachedFromBelow = weeklyVwapWasBelowRibbon and weeklyVwap >= ribbonLower - touchTolerance
+bool weeklyVwapReachedFromAbove = weeklyVwapWasAboveRibbon and weeklyVwap <= ribbonUpper + touchTolerance
+bool weeklyVwapFirstTouch = barstate.isconfirmed and enableWeeklyVwap and not weeklyReset and
+     (weeklyVwapReachedFromBelow or weeklyVwapReachedFromAbove)
+
+bool buy200Signal = ema200FirstTouch and bullishBand
+bool sell200Signal = ema200FirstTouch and bearishBand
+bool buyWeeklyVwapSignal = weeklyVwapFirstTouch and bullishBand
+bool sellWeeklyVwapSignal = weeklyVwapFirstTouch and bearishBand
+
+// The four band states visible in the Style tab:
+// 1. Bullish and the candle low is inside the EMA band.
+// 2. Bullish with price outside the EMA band.
+// 3. Bearish and the candle high is inside the EMA band.
+// 4. Bearish with price outside the EMA band.
+color bandColor = bullishBand ?
+     (longEma < low and low < shortEma ? color.rgb(0, 236, 47, 74) : color.rgb(0, 255, 51, 91)) :
+     (longEma > high and high > shortEma ? color.rgb(255, 0, 0, 72) : color.rgb(255, 0, 0, 89))
+
+// ── VISIBLE PLOTS ───────────────────────────────────────────────────────────
+// Titles are deliberately left as "Plot" so the Style tab matches the source
+// screenshots for the original EMA lines. Weekly VWAP is added as a named plot.
+plot(shortEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(0, 234, 183) : color.rgb(227, 13, 13))
+
+plot(longEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(3, 237, 69) : color.rgb(255, 0, 144),
+     style = plot.style_linebr)
+
+plot(enable200 ? ema200 : na,
+     title = "Plot",
+     color = bullish200 ? color.rgb(38, 166, 154) : color.rgb(242, 54, 69),
+     linewidth = 2)
+
+plot(enableWeeklyVwap ? weeklyVwap : na,
+     title = "Weekly VWAP",
+     color = color.rgb(255, 193, 7),
+     linewidth = 2,
+     style = plot.style_linebr)
+
+// ── HIDDEN FILL ANCHORS ─────────────────────────────────────────────────────
+// These reproduce the two unchecked blue Plot rows in the Style tab.
+longAnchor = plot(longEma, title = "Plot", display = display.none)
+shortAnchor = plot(shortEma, title = "Plot", display = display.none)
+
+fill(longAnchor, shortAnchor,
+     title = "Plots Background",
+     color = bandColor,
+     editable = true)
+
+// ── SIGNALS AND ALERTS ──────────────────────────────────────────────────────
+plotshape(buy200Signal,
+     title = "EMA 200 Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sell200Signal,
+     title = "EMA 200 Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(buyWeeklyVwapSignal,
+     title = "Weekly VWAP Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY W",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sellWeeklyVwapSignal,
+     title = "Weekly VWAP Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL W",
+     textcolor = color.white,
+     size = size.tiny)
+
+alertcondition(buy200Signal,
+     title = "EMA 200 First Touch — Buy",
+     message = "BUY: EMA 200 made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sell200Signal,
+     title = "EMA 200 First Touch — Sell",
+     message = "SELL: EMA 200 made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(buyWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Buy",
+     message = "BUY: Weekly VWAP made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sellWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Sell",
+     message = "SELL: Weekly VWAP made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")

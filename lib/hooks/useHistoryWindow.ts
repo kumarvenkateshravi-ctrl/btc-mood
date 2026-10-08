@@ -9,10 +9,21 @@ import { HistoricalRequestGate, type HistoricalRequest } from '../historicalRequ
 
 export interface HistoryWindow {
   historyCandles: Candle[] | null;
+  focusTime: number | null;
   fitSignal: number;
   jumpToDate: (dateMs: number) => Promise<void>;
   returnToLive: () => void;
   loadOlderHistory: () => Promise<void>;
+}
+
+const HISTORY_WINDOW_LIMIT = 1000;
+
+/**
+ * Position a date within the fetched page, rather than at its right edge.
+ * This gives the chart enough newer candles to focus the selected day.
+ */
+export function historyWindowEndTime(dateMs: number, tf: Timeframe, nowMs = Date.now()): number {
+  return Math.min(dateMs + Math.floor(HISTORY_WINDOW_LIMIT / 2) * TF_MS[tf], nowMs);
 }
 
 /**
@@ -26,6 +37,7 @@ export function useHistoryWindow(
   symbol: CompareSymbol,
 ): HistoryWindow {
   const [historyCandles, setHistoryCandles] = useState<Candle[] | null>(null);
+  const [focusTime, setFocusTime] = useState<number | null>(null);
   const [fitSignal, setFitSignal] = useState(0);
   const requestGateRef = useRef(new HistoricalRequestGate());
   const historyLoadingRef = useRef<HistoricalRequest | null>(null);
@@ -42,6 +54,7 @@ export function useHistoryWindow(
   // Clear the window when TF or symbol changes.
   useEffect(() => {
     setHistoryCandles(null);
+    setFocusTime(null);
 
   }, [selected, symbol]);
 
@@ -50,13 +63,14 @@ export function useHistoryWindow(
   const jumpToDate = useCallback(
     async (dateMs: number) => {
       const tf = selected;
-      const endTime = dateMs + TF_MS[tf] * 30;
+      const endTime = historyWindowEndTime(dateMs, tf);
       const request = requestGateRef.current.begin(symbol, tf, 'history-window');
       historyLoadingRef.current = request;
       try {
         const window = await fetchKlinesBefore(tf, symbol, endTime, 1000, request.signal);
         if (window.length > 0) {
           setHistoryCandles((prev) => (request.isCurrent() ? window : prev));
+          setFocusTime((prev) => (request.isCurrent() ? dateMs : prev));
           setFitSignal((n) => (request.isCurrent() ? n + 1 : n));
         }
       } catch {
@@ -75,6 +89,7 @@ export function useHistoryWindow(
     requestGateRef.current.invalidate();
     historyLoadingRef.current = null;
     setHistoryCandles(null);
+    setFocusTime(null);
     setFitSignal((n) => n + 1);
   }, []);
 
@@ -108,5 +123,5 @@ export function useHistoryWindow(
     }
   }, [historyCandles, selected, symbol]);
 
-  return { historyCandles, fitSignal, jumpToDate, returnToLive, loadOlderHistory };
+  return { historyCandles, focusTime, fitSignal, jumpToDate, returnToLive, loadOlderHistory };
 }

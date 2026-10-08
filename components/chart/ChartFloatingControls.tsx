@@ -31,12 +31,12 @@ export function ChartFloatingControls({
   return (
     <>
       {/* Floating Controls & OHLC Legend */}
-      <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col gap-1">
+      <div className="chart-floating-summary pointer-events-none absolute left-2 top-2 z-10 flex flex-col gap-1">
         <div className="flex items-center gap-3">
           {(onQuickTrade || (type === 'renko' && onOpenRenkoSettings)) && (
             <div className="pointer-events-auto flex flex-row items-stretch gap-2">
               {onQuickTrade && (
-                <div className="flex items-center gap-1.5">
+                <div className="chart-quote-buttons flex items-center gap-1.5">
                   <button
                     onClick={() => onQuickTrade('sell')}
                     className="flex min-w-[70px] flex-col items-center justify-center rounded bg-surface-1/80 backdrop-blur-md px-2 py-1 text-[13px] border border-bear-bright/30 transition hover:border-bear-bright/60 hover:bg-bear-bright/10"

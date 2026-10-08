@@ -3,7 +3,7 @@
 // equity curve with its drawdown envelope, and an R-outcome distribution.
 // Pure and deterministic; the SVG panel just maps these to pixels.
 
-import type { VdTrade } from '../indicators/vdEngine';
+import type { TrackedTrade } from '../tradeWalker';
 import type { ScannerSignal } from './signals';
 
 export interface EquityPoint {
@@ -36,9 +36,9 @@ export interface BacktestSeries {
 }
 
 /** Resolved trades in chronological (resolution) order → equity + histogram. */
-export function buildBacktestSeries(trades: Array<VdTrade<ScannerSignal>>, bucketCount = 9): BacktestSeries {
+export function buildBacktestSeries(trades: Array<TrackedTrade<ScannerSignal>>, bucketCount = 9): BacktestSeries {
   const resolved = trades
-    .filter((t): t is VdTrade<ScannerSignal> & { realizedR: number } => t.realizedR != null)
+    .filter((t): t is TrackedTrade<ScannerSignal> & { realizedR: number } => t.realizedR != null)
     .slice()
     .sort((a, b) => (a.resolvedTime ?? 0) - (b.resolvedTime ?? 0));
 

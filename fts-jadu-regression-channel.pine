@@ -1,0 +1,416 @@
+//@version=6
+indicator("FTS Jadu Setup — Reconstruction", shorttitle="FTS Jadu", overlay=true)
+
+//────────────────────────────────────────────────────────────────────────────
+// INPUTS
+//────────────────────────────────────────────────────────────────────────────
+
+GRP_INPUTS = "Inputs"
+GRP_STYLE = "Style"
+GRP_BG = "Background"
+
+sourceChoice = input.string("Close", "Open/close", options=["Open", "Close"], group=GRP_INPUTS)
+shortLength = input.int(9, "Shorter EMA", minval=1, group=GRP_INPUTS)
+longLength = input.int(21, "Longer EMA", minval=1, group=GRP_INPUTS)
+enable200 = input.bool(true, "Enable 200 Ema", group=GRP_INPUTS)
+
+showShort = input.bool(true, "Show Short EMA", group=GRP_STYLE)
+showLong = input.bool(true, "Show Long EMA", group=GRP_STYLE)
+show200 = input.bool(true, "Show 200 EMA", group=GRP_STYLE)
+
+shortBullColor = input.color(color.rgb(0, 220, 190), "Short EMA Bullish Color", group=GRP_STYLE)
+shortBearColor = input.color(color.rgb(225, 25, 45), "Short EMA Bearish Color", group=GRP_STYLE)
+
+longBullColor = input.color(color.rgb(0, 235, 60), "Long EMA Bullish Color", group=GRP_STYLE)
+longBearColor = input.color(color.rgb(245, 0, 150), "Long EMA Bearish Color", group=GRP_STYLE)
+
+ema200BullColor = input.color(color.rgb(40, 170, 160), "200 EMA Bullish Color", group=GRP_STYLE)
+ema200BearColor = input.color(color.rgb(225, 35, 65), "200 EMA Bearish Color", group=GRP_STYLE)
+
+lineWidth = input.int(1, "EMA Line Width", minval=1, maxval=4, group=GRP_STYLE)
+
+showBackground = input.bool(true, "Plots Background", group=GRP_BG)
+backgroundTransparency = input.int(88, "Background Transparency", minval=0, maxval=100, group=GRP_BG)
+
+backgroundBullStrong = input.color(color.rgb(0, 115, 75), "Bullish Strong", group=GRP_BG)
+backgroundBullWeak = input.color(color.rgb(0, 75, 60), "Bullish Weak", group=GRP_BG)
+backgroundBearStrong = input.color(color.rgb(135, 0, 25), "Bearish Strong", group=GRP_BG)
+backgroundBearWeak = input.color(color.rgb(75, 0, 25), "Bearish Weak", group=GRP_BG)
+
+//────────────────────────────────────────────────────────────────────────────
+// CALCULATIONS
+//────────────────────────────────────────────────────────────────────────────
+
+source = sourceChoice == "Open" ? open : close
+
+shortEma = ta.ema(source, shortLength)
+longEma = ta.ema(source, longLength)
+ema200 = ta.ema(source, 200)
+
+shortBull = shortEma >= longEma
+longBull = shortEma >= longEma
+priceBull = source >= shortEma
+trendBull = not enable200 or longEma >= ema200
+
+shortColor = shortBull ? shortBullColor : shortBearColor
+longColor = longBull ? longBullColor : longBearColor
+ema200Color = source >= ema200 ? ema200BullColor : ema200BearColor
+
+strongBull = priceBull and shortEma >= longEma and trendBull
+weakBull = shortEma >= longEma and not strongBull
+strongBear = not priceBull and shortEma < longEma and (not enable200 or longEma < ema200)
+weakBear = not strongBull and not strongBear
+
+backgroundColor = strongBull ? backgroundBullStrong :
+     weakBull ? backgroundBullWeak :
+     strongBear ? backgroundBearStrong :
+     backgroundBearWeak
+
+//────────────────────────────────────────────────────────────────────────────
+// OUTPUTS
+//────────────────────────────────────────────────────────────────────────────
+
+plot(
+     showShort ? shortEma : na,
+     title="Short EMA",
+     color=shortColor,
+     linewidth=lineWidth)
+
+plot(
+     showLong ? longEma : na,
+     title="Long EMA",
+     color=longColor,
+     linewidth=lineWidth)
+
+plot(
+     show200 and enable200 ? ema200 : na,
+     title="200 EMA",
+     color=ema200Color,
+     linewidth=lineWidth)
+
+bgcolor(
+     showBackground ? color.new(backgroundColor, backgroundTransparency) : na,
+     title="FTS Jadu Background")
+
+//────────────────────────────────────────────────────────────────────────────
+// REGRESSION CHANNEL [DW]
+// Converted from the attached Pine v4 Regression Channel.
+//────────────────────────────────────────────────────────────────────────────
+
+GRP_REGCH = "Regression Channel"
+
+regchSrc = input.source(close, "Source", group=GRP_REGCH)
+regchFilterType = input.string("SMA", "Base Average Type", options=["ALMA", "EMA", "SMA", "RMA", "LWMA", "VWMA"], group=GRP_REGCH)
+regchWindowType = input.string("Continuous", "Window Type", options=["Continuous", "Interval"], group=GRP_REGCH)
+regchLength = input.int(200, "Sampling Length", minval=2, group=GRP_REGCH)
+regchTimeframe = input.timeframe("D", "Interval Size", group=GRP_REGCH)
+regchDeviation = input.float(1.0, "Channel Width Coefficient", minval=0, group=GRP_REGCH)
+
+regchExtend = input.bool(false, "Extend Lines", group=GRP_REGCH) ? extend.right : extend.none
+
+regchShowCenter = input.bool(true, "Show Regression Line", group=GRP_REGCH)
+regchCenterWidth = input.int(4, "Regression Line Width", minval=1, group=GRP_REGCH)
+regchCenterStyle = input.string("Solid", "Regression Line Style", options=["Solid", "Dotted", "Dashed"], group=GRP_REGCH)
+regchCenterColorUp = input.color(color.lime, "Regression Positive Color", group=GRP_REGCH)
+regchCenterColorDown = input.color(color.red, "Regression Negative Color", group=GRP_REGCH)
+
+regchShowHigh = input.bool(true, "Show Channel High Line", group=GRP_REGCH)
+regchHighWidth = input.int(2, "Channel High Width", minval=1, group=GRP_REGCH)
+regchHighStyle = input.string("Solid", "Channel High Style", options=["Solid", "Dotted", "Dashed"], group=GRP_REGCH)
+regchHighColor = input.color(color.lime, "Channel High Color", group=GRP_REGCH)
+
+regchShowQ3 = input.bool(true, "Show Channel Q3 Line", group=GRP_REGCH)
+regchQ3Width = input.int(2, "Channel Q3 Width", minval=1, group=GRP_REGCH)
+regchQ3Style = input.string("Dashed", "Channel Q3 Style", options=["Solid", "Dotted", "Dashed"], group=GRP_REGCH)
+regchQ3Color = input.color(color.green, "Channel Q3 Color", group=GRP_REGCH)
+
+regchShowQ1 = input.bool(true, "Show Channel Q1 Line", group=GRP_REGCH)
+regchQ1Width = input.int(2, "Channel Q1 Width", minval=1, group=GRP_REGCH)
+regchQ1Style = input.string("Dashed", "Channel Q1 Style", options=["Solid", "Dotted", "Dashed"], group=GRP_REGCH)
+regchQ1Color = input.color(color.red, "Channel Q1 Color", group=GRP_REGCH)
+
+regchShowLow = input.bool(true, "Show Channel Low Line", group=GRP_REGCH)
+regchLowWidth = input.int(2, "Channel Low Width", minval=1, group=GRP_REGCH)
+regchLowStyle = input.string("Solid", "Channel Low Style", options=["Solid", "Dotted", "Dashed"], group=GRP_REGCH)
+regchLowColor = input.color(color.red, "Channel Low Color", group=GRP_REGCH)
+
+regchShowTracer = input.bool(true, "Show Regression Tracer", group=GRP_REGCH)
+regchTracerColor = input.color(color.white, "Tracer Color", group=GRP_REGCH)
+regchShowBars = input.bool(false, "Color Bars by Channel", group=GRP_REGCH)
+
+//────────────────────────────────────────────────────────────────────────────
+// REGRESSION CHANNEL FUNCTIONS
+//────────────────────────────────────────────────────────────────────────────
+
+regchNewBar(string timeframeValue) =>
+    timeValue = time(timeframeValue)
+    (na(timeValue[1]) and not na(timeValue)) or
+     nz(timeValue[1], timeValue) < timeValue
+
+regchAlma(sourceValue, lengthValue) =>
+    middle = 0.85 * (lengthValue - 1)
+    deviation = lengthValue / 6.0
+    weightedSum = 0.0
+    weightTotal = 0.0
+
+    for i = 0 to lengthValue - 1
+        weight = math.exp(
+             -math.pow(i - middle, 2) /
+             (2 * math.pow(deviation, 2)))
+
+        weightedSum += weight * nz(sourceValue[lengthValue - 1 - i], sourceValue)
+        weightTotal += weight
+
+    weightedSum / weightTotal
+
+regchEma(sourceValue, lengthValue) =>
+    var float output = na
+    output := na(output[1]) ?
+         sourceValue :
+         (sourceValue - nz(output[1])) *
+         (2 / (lengthValue + 1)) +
+         nz(output[1])
+    output
+
+regchSma(sourceValue, lengthValue) =>
+    total = 0.0
+
+    for i = 0 to lengthValue - 1
+        total += nz(sourceValue[i], sourceValue)
+
+    total / lengthValue
+
+regchRma(sourceValue, lengthValue) =>
+    var float output = na
+    output := na(output[1]) ?
+         regchSma(sourceValue, lengthValue) :
+         (nz(output[1]) * (lengthValue - 1) + sourceValue) /
+         lengthValue
+    output
+
+regchLwma(sourceValue, lengthValue) =>
+    numerator = 0.0
+    denominator = 0.0
+
+    for i = 0 to lengthValue - 1
+        numerator += (lengthValue - i) * nz(sourceValue[i], sourceValue)
+        denominator += lengthValue - i
+
+    numerator / denominator
+
+regchVwma(sourceValue, lengthValue) =>
+    tickSize = syminfo.mintick
+    candleRange = high - low
+
+    var float tickRange = tickSize
+    tickRange := math.abs(candleRange) < tickSize ? tickRange : candleRange
+
+    tickVolume = math.abs(tickRange) / tickSize
+    usedVolume = na(volume) ? tickVolume : volume
+    volumePrice = sourceValue * usedVolume
+
+    volumePriceSum = 0.0
+    volumeSum = 0.0
+
+    for i = 0 to lengthValue - 1
+        volumePriceSum += nz(volumePrice[i], volumePrice)
+        volumeSum += nz(usedVolume[i], usedVolume)
+
+    volumePriceSum / volumeSum
+
+regchFilter(sourceValue, lengthValue, filterType) =>
+    filterType == "ALMA" ? regchAlma(sourceValue, lengthValue) :
+     filterType == "EMA" ? regchEma(sourceValue, lengthValue) :
+     filterType == "SMA" ? regchSma(sourceValue, lengthValue) :
+     filterType == "RMA" ? regchRma(sourceValue, lengthValue) :
+     filterType == "LWMA" ? regchLwma(sourceValue, lengthValue) :
+     regchVwma(sourceValue, lengthValue)
+
+regchStdev(sourceValue, lengthValue, filterType, multiplier) =>
+    math.sqrt(
+         regchFilter(
+             math.pow(
+                 sourceValue -
+                 regchFilter(sourceValue, lengthValue, filterType),
+                 2),
+             lengthValue,
+             filterType)) * multiplier
+
+regchCorrelation(sourceValue, lengthValue, filterType) =>
+    xDeviation = math.round(lengthValue / 2)
+    yDeviation = sourceValue -
+         regchFilter(sourceValue, lengthValue, filterType)
+
+    xySum = 0.0
+    x2Sum = 0.0
+    y2Sum = 0.0
+
+    for i = 0 to lengthValue - 1
+        currentY = nz(yDeviation[i], yDeviation)
+
+        xySum += xDeviation * currentY
+        x2Sum += math.pow(xDeviation, 2)
+        y2Sum += math.pow(currentY, 2)
+
+    denominator = math.sqrt(x2Sum * y2Sum)
+
+    denominator == 0 ? 0 : xySum / denominator
+
+regchLinearRegression(sourceValue, lengthValue, filterType, multiplier) =>
+    currentBar = bar_index
+    correlation = regchCorrelation(sourceValue, lengthValue, filterType)
+    standardDeviation = regchStdev(sourceValue, lengthValue, filterType, multiplier)
+    xScale = math.round(lengthValue / 2)
+    meanValue = regchFilter(sourceValue, lengthValue, filterType)
+    meanBar = nz(bar_index[xScale], 0)
+
+    slope = lengthValue == 1 ? 0 : correlation * (standardDeviation / xScale)
+    intercept = meanValue - slope * meanBar
+
+    lineStart = intercept +
+         slope * nz(currentBar[lengthValue - 1], currentBar)
+
+    lineEnd = intercept + slope * currentBar
+
+    [lineStart, lineEnd]
+
+regchLineStyle(styleValue) =>
+    styleValue == "Solid" ? line.style_solid :
+     styleValue == "Dotted" ? line.style_dotted :
+     line.style_dashed
+
+regchDrawLine(
+     lineStart,
+     lineEnd,
+     lengthValue,
+     lineColor,
+     styleValue,
+     widthValue,
+     extensionValue) =>
+
+    x1 = nz(bar_index[lengthValue - 1], 0)
+    x2 = bar_index
+
+    var line channelLine = na
+
+    if bar_index != nz(bar_index[1], 0)
+        line.delete(channelLine)
+
+        channelLine := line.new(
+             x1=x1,
+             y1=lineStart,
+             x2=x2,
+             y2=lineEnd,
+             xloc=xloc.bar_index,
+             extend=extensionValue,
+             color=lineColor,
+             style=regchLineStyle(styleValue),
+             width=widthValue)
+
+//────────────────────────────────────────────────────────────────────────────
+// REGRESSION CHANNEL CALCULATIONS
+//────────────────────────────────────────────────────────────────────────────
+
+regchIntervalStarted = regchNewBar(regchTimeframe)
+
+var int regchIntervalBars = 1
+
+regchIntervalBars :=
+     regchIntervalStarted ? 1 : regchIntervalBars + 1
+
+regchPeriod =
+     regchWindowType == "Interval" ?
+         regchIntervalBars :
+         regchLength
+
+[regchY1, regchY2] =
+     regchLinearRegression(
+         regchSrc,
+         regchPeriod,
+         regchFilterType,
+         regchDeviation)
+
+regchStandardDeviation =
+     regchStdev(
+         regchSrc,
+         regchPeriod,
+         regchFilterType,
+         regchDeviation)
+
+regchCenterColor =
+     regchY2 > regchY1 ?
+         regchCenterColorUp :
+     regchY2 < regchY1 ?
+         regchCenterColorDown :
+         color.gray
+
+regchBarColor =
+     regchSrc > regchY2 and regchY2 <= regchY1 ? color.rgb(0, 139, 0) :
+     regchSrc > regchY2 and regchY2 > regchY1 ? color.green :
+     regchSrc < regchY2 and regchY2 >= regchY1 ? color.rgb(139, 0, 0) :
+     regchSrc < regchY2 and regchY2 < regchY1 ? color.red :
+     color.gray
+
+//────────────────────────────────────────────────────────────────────────────
+// REGRESSION CHANNEL OUTPUTS
+//────────────────────────────────────────────────────────────────────────────
+
+plot(
+     regchShowTracer ? regchY2 : na,
+     title="Regression Channel Tracer",
+     color=regchTracerColor,
+     linewidth=1)
+
+if regchShowCenter
+    regchDrawLine(
+         regchY1,
+         regchY2,
+         regchPeriod,
+         regchCenterColor,
+         regchCenterStyle,
+         regchCenterWidth,
+         regchExtend)
+
+if regchShowHigh
+    regchDrawLine(
+         regchY1 + regchStandardDeviation,
+         regchY2 + regchStandardDeviation,
+         regchPeriod,
+         regchHighColor,
+         regchHighStyle,
+         regchHighWidth,
+         regchExtend)
+
+if regchShowQ3
+    regchDrawLine(
+         regchY1 + regchStandardDeviation / 2,
+         regchY2 + regchStandardDeviation / 2,
+         regchPeriod,
+         regchQ3Color,
+         regchQ3Style,
+         regchQ3Width,
+         regchExtend)
+
+if regchShowQ1
+    regchDrawLine(
+         regchY1 - regchStandardDeviation / 2,
+         regchY2 - regchStandardDeviation / 2,
+         regchPeriod,
+         regchQ1Color,
+         regchQ1Style,
+         regchQ1Width,
+         regchExtend)
+
+if regchShowLow
+    regchDrawLine(
+         regchY1 - regchStandardDeviation,
+         regchY2 - regchStandardDeviation,
+         regchPeriod,
+         regchLowColor,
+         regchLowStyle,
+         regchLowWidth,
+         regchExtend)
+
+barcolor(regchShowBars ? regchBarColor : na)
+
+

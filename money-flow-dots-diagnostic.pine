@@ -1,0 +1,173 @@
+//@version=6
+indicator("Money Flow Dots - Exit Refined", shorttitle = "Flow Dots Exit", overlay = true, max_bars_back = 1000)
+
+// OHLCV reconstruction for BTCUSDT perpetual on 30-minute candles.
+// A dot confirms at the close of its own candle. No future pivot bars are used.
+
+string GRP_FLOW = "Directional Money Flow"
+string GRP_WAVE = "Wave Context"
+string GRP_EXIT = "Grey Exit Dots"
+string GRP_VIEW = "Display"
+
+int volumeLength = input.int(20, "Relative volume length", minval = 5, group = GRP_FLOW)
+int flowSmoothing = input.int(3, "Flow smoothing", minval = 1, group = GRP_FLOW)
+float minimumRelVolume = input.float(1.00, "Directional event minimum relative volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float weakSwingRelVolume = input.float(0.40, "Local swing minimum relative volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float continuationRelVolume = input.float(0.55, "Post-surge continuation minimum volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float flowThreshold = input.float(0.12, "Raw flow threshold", minval = 0.01, step = 0.01, group = GRP_FLOW)
+float sellerFlowThreshold = input.float(0.09, "Seller raw flow threshold", minval = 0.01, step = 0.01, group = GRP_FLOW)
+float bullishCloseLevel = input.float(0.58, "Buyer minimum close position", minval = 0.50, maxval = 1.00, step = 0.01, group = GRP_FLOW)
+float bearishCloseLevel = input.float(0.42, "Seller maximum close position", minval = 0.00, maxval = 0.50, step = 0.01, group = GRP_FLOW)
+float upperRejectionRelVolume = input.float(1.10, "Seller upper-wick minimum relative volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float minimumSellerBodyFraction = input.float(0.15, "Seller minimum body/range", minval = 0.0, maxval = 1.0, step = 0.01, group = GRP_FLOW)
+float maximumSellerBodyAtr = input.float(0.75, "Seller maximum body/ATR", minval = 0.1, step = 0.05, group = GRP_FLOW)
+
+int structureLookback = input.int(6, "Local swing lookback", minval = 2, group = GRP_WAVE)
+int impulseEmaLength = input.int(5, "Impulse EMA length", minval = 2, group = GRP_WAVE)
+int surgeLookback = input.int(7, "Continuation window", minval = 2, group = GRP_WAVE)
+float surgeRelVolume = input.float(2.0, "Volume surge threshold", minval = 1.0, step = 0.1, group = GRP_WAVE)
+
+int minimumWaveBars = input.int(1, "Minimum bars after first directional dot", minval = 1, group = GRP_EXIT)
+float minimumFavorableMoveAtr = input.float(0.35, "Minimum favorable move (ATR)", minval = 0.0, step = 0.05, group = GRP_EXIT)
+float exitRelVolume = input.float(0.80, "Ordinary exit minimum relative volume", minval = 0.0, step = 0.05, group = GRP_EXIT)
+float stallRelVolume = input.float(0.50, "New extreme stall minimum relative volume", minval = 0.0, step = 0.05, group = GRP_EXIT)
+float exitWickBodyRatio = input.float(1.0, "Exit rejection wick/body", minval = 0.0, step = 0.1, group = GRP_EXIT)
+float intrabarAbsorption = input.float(0.05, "Intrabar absorption threshold", minval = 0.0, maxval = 1.0, step = 0.01, group = GRP_EXIT)
+float shortReversalVolume = input.float(2.50, "Short exit reversal relative volume", minval = 0.5, step = 0.05, group = GRP_EXIT)
+int rearmBars = input.int(3, "Bars before a new wave after grey", minval = 0, group = GRP_EXIT)
+int maximumWaveBars = input.int(72, "Maximum wave age (bars)", minval = 5, group = GRP_EXIT)
+string pressureTimeframe = input.timeframe("1", "Intrabar pressure timeframe", group = GRP_EXIT)
+
+bool showDots = input.bool(true, "Show dots", group = GRP_VIEW)
+bool showDiagnosticData = input.bool(false, "Show diagnostic values in Data Window", group = GRP_VIEW)
+float dotDistanceAtr = input.float(0.10, "Dot distance (ATR)", minval = 0.0, step = 0.01, group = GRP_VIEW)
+
+float candleRange = math.max(high - low, syminfo.mintick)
+float signedBody = close - open
+float body = math.abs(signedBody)
+float safeBody = math.max(body, syminfo.mintick)
+float upperWick = high - math.max(open, close)
+float lowerWick = math.min(open, close) - low
+float closePosition = (close - low) / candleRange
+float sourceVolume = nz(volume, 0.0)
+float priorAverageVolume = ta.sma(sourceVolume, volumeLength)[1]
+float relativeVolume = priorAverageVolume > 0 ? sourceVolume / priorAverageVolume : na
+
+// Close-location flow is a directional OHLCV proxy, not actual order-flow data.
+float closeLocationValue = 2.0 * closePosition - 1.0
+float rawDirectionalFlow = nz(relativeVolume, 0.0) * closeLocationValue
+float directionalFlow = ta.ema(rawDirectionalFlow, flowSmoothing)
+float impulseEma = ta.ema(close, impulseEmaLength)
+float atr = ta.atr(14)
+
+bool localLow = low <= ta.lowest(low, structureLookback)[1]
+bool localHigh = high >= ta.highest(high, structureLookback)[1]
+bool lowerRejection = lowerWick >= safeBody and closePosition >= 0.50
+bool upperRejection = upperWick >= safeBody and closePosition <= 0.50
+bool bullishImpulse = close > open and close > impulseEma and close > high[1]
+bool bearishImpulse = close < open and close < impulseEma and close < low[1]
+bool crossedAboveEma = ta.crossover(close, impulseEma)
+bool crossedBelowEma = ta.crossunder(close, impulseEma)
+bool recentSurge = ta.highest(relativeVolume, surgeLookback)[1] >= surgeRelVolume
+
+// Preserve consecutive directional events in a single wave. A prior surge can
+// make low-volume continuation candles meaningful without marking every candle.
+bool buyerVolumeContext = relativeVolume >= minimumRelVolume or (localLow and relativeVolume >= weakSwingRelVolume) or (recentSurge and relativeVolume >= continuationRelVolume)
+bool sellerVolumeContext = relativeVolume >= minimumRelVolume or ((localHigh or localLow) and relativeVolume >= weakSwingRelVolume) or (recentSurge and relativeVolume >= continuationRelVolume)
+bool buyerStructure = localLow or lowerRejection or bullishImpulse or crossedAboveEma or (recentSurge and close > impulseEma)
+bool sellerStructure = localHigh or localLow or upperRejection or bearishImpulse or crossedBelowEma or (recentSurge and close < impulseEma)
+bool buyerCandidate = close > open and closePosition >= bullishCloseLevel and rawDirectionalFlow >= flowThreshold and buyerVolumeContext and buyerStructure
+bool sellerFlowPressure = closePosition <= bearishCloseLevel and rawDirectionalFlow <= -sellerFlowThreshold
+bool sellerUpperWickPressure = closePosition <= 0.50 and upperWick >= safeBody and relativeVolume >= upperRejectionRelVolume
+bool sellerCandidate = close < open and body / candleRange >= minimumSellerBodyFraction and body / atr <= maximumSellerBodyAtr and sellerVolumeContext and sellerStructure and (sellerFlowPressure or sellerUpperWickPressure)
+
+// One grey exit is allowed per established wave. Same-color directional dots
+// do not reset the first dot's price or the wave's favorable excursion.
+var int activeWave = 0
+var int waveStartBar = na
+var float waveStartPrice = na
+var float waveExtreme = na
+var int lastGreyBar = na
+
+// Approximate intrabar pressure from the direction and volume of 1-minute bars.
+[subOpen, subClose, subVolume] = request.security_lower_tf(syminfo.tickerid, pressureTimeframe, [open, close, volume])
+float upVolume = 0.0
+float downVolume = 0.0
+int subCount = array.size(subVolume)
+if subCount > 0
+    for i = 0 to subCount - 1
+        float v = nz(array.get(subVolume, i), 0.0)
+        if array.get(subClose, i) >= array.get(subOpen, i)
+            upVolume += v
+        else
+            downVolume += v
+float intrabarDelta = upVolume + downVolume > 0 ? (upVolume - downVolume) / (upVolume + downVolume) : 0.0
+
+if barstate.isconfirmed and activeWave != 0 and not na(waveStartBar) and bar_index - waveStartBar > maximumWaveBars
+    activeWave := 0
+    waveStartBar := na
+    waveStartPrice := na
+    waveExtreme := na
+
+if activeWave == 1
+    waveExtreme := math.max(nz(waveExtreme, high), high)
+else if activeWave == -1
+    waveExtreme := math.min(nz(waveExtreme, low), low)
+
+float favorableMove = activeWave == 1 ? waveExtreme - waveStartPrice : activeWave == -1 ? waveStartPrice - waveExtreme : 0.0
+bool establishedWave = activeWave != 0 and not na(waveStartBar) and bar_index - waveStartBar >= minimumWaveBars and favorableMove >= minimumFavorableMoveAtr * atr
+bool significantVolume = relativeVolume >= exitRelVolume
+bool stalledNewExtreme = recentSurge and relativeVolume >= stallRelVolume and ((activeWave == 1 and high >= high[1]) or (activeWave == -1 and low <= low[1]))
+bool flowFadingLong = directionalFlow < directionalFlow[1]
+
+// Long exit: rejected high, failed continuation, or buyers absorbed by
+// intrabar selling. Short exit is the mirror image.
+bool longRejection = upperWick >= safeBody * exitWickBodyRatio and closePosition <= 0.55
+bool longAbsorption = intrabarDelta <= -intrabarAbsorption and close > open
+bool longFailedContinuation = close < open and closePosition <= 0.45 and (close < impulseEma or upperWick >= safeBody)
+bool shortFailedContinuation = close > open and closePosition >= 0.50 and (close > impulseEma or lowerWick >= safeBody)
+
+bool longExit = activeWave == 1 and establishedWave and (significantVolume or stalledNewExtreme) and ((longRejection and flowFadingLong) or longAbsorption or (longFailedContinuation and flowFadingLong))
+bool shortExit = activeWave == -1 and establishedWave and relativeVolume >= shortReversalVolume and close > impulseEma and close > high[1] and shortFailedContinuation
+bool greyDot = barstate.isconfirmed and (longExit or shortExit)
+bool rearmReady = na(lastGreyBar) or bar_index - lastGreyBar >= rearmBars or relativeVolume >= surgeRelVolume
+bool greenDot = barstate.isconfirmed and not greyDot and activeWave != -1 and rearmReady and buyerCandidate
+bool redDot = barstate.isconfirmed and not greyDot and activeWave != 1 and rearmReady and sellerCandidate
+
+if greyDot
+    lastGreyBar := bar_index
+    activeWave := 0
+    waveStartBar := na
+    waveStartPrice := na
+    waveExtreme := na
+else if greenDot
+    if activeWave != 1
+        activeWave := 1
+        waveStartBar := bar_index
+        waveStartPrice := close
+        waveExtreme := high
+else if redDot
+    if activeWave != -1
+        activeWave := -1
+        waveStartBar := bar_index
+        waveStartPrice := close
+        waveExtreme := low
+
+float lowerDotPrice = low - atr * dotDistanceAtr
+float upperDotPrice = high + atr * dotDistanceAtr
+float greyDotPrice = close >= open ? upperDotPrice : lowerDotPrice
+
+plotshape(showDots and greenDot ? lowerDotPrice : na, "Buyers' money", shape.circle, location.absolute, color.rgb(35, 180, 110), size = size.small)
+plotshape(showDots and redDot ? upperDotPrice : na, "Sellers' money", shape.circle, location.absolute, color.rgb(239, 68, 68), size = size.small)
+plotshape(showDots and greyDot ? greyDotPrice : na, "Exit / exhaustion", shape.circle, location.absolute, color.rgb(95, 99, 104), size = size.small)
+
+diagnosticDisplay = showDiagnosticData ? display.data_window : display.none
+plot(relativeVolume, "Relative volume", display = diagnosticDisplay)
+plot(directionalFlow, "Directional flow", display = diagnosticDisplay)
+plot(intrabarDelta, "Intrabar pressure", display = diagnosticDisplay)
+plot(activeWave, "Active wave: buyers 1 / sellers -1", display = diagnosticDisplay)
+plot(favorableMove / atr, "Favorable move (ATR)", display = diagnosticDisplay)
+
+alertcondition(greenDot, "Buyers' money dot", "Buyers' money detected on {{ticker}} {{interval}}.")
+alertcondition(redDot, "Sellers' money dot", "Sellers' money detected on {{ticker}} {{interval}}.")
+alertcondition(greyDot, "Grey exit dot", "A confirmed money-flow exit dot appeared on {{ticker}} {{interval}}.")

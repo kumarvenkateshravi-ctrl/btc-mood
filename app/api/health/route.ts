@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getCounters } from '../klines/route';
+import { fetchBinanceRest } from '@/lib/marketData/binanceRest';
+import { getKlinesCounters } from '@/lib/marketData/klinesCounters';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const BINANCE_PING = 'https://data-api.binance.vision/api/v3/ping';
 const TIMEOUT_MS = 3000;
 
 export async function GET() {
-  const counters = getCounters();
+  const counters = getKlinesCounters();
 
   // Ping Binance to confirm the upstream is reachable right now.
   const ac = new AbortController();
@@ -16,9 +16,12 @@ export async function GET() {
   let upstreamStatus: 'up' | 'down' | 'timeout' = 'up';
   let upstreamLatencyMs: number | null = null;
   let upstreamHttpStatus: number | null = null;
+  let upstreamBase: string | null = null;
   try {
     const t0 = Date.now();
-    const res = await fetch(BINANCE_PING, { cache: 'no-store', signal: ac.signal });
+    const result = await fetchBinanceRest('/api/v3/ping', { signal: ac.signal }, TIMEOUT_MS);
+    const res = result.response;
+    upstreamBase = result.baseUrl;
     upstreamLatencyMs = Date.now() - t0;
     upstreamHttpStatus = res.status;
     if (!res.ok) upstreamStatus = 'down';
@@ -35,6 +38,7 @@ export async function GET() {
       status: upstreamStatus,
       httpStatus: upstreamHttpStatus,
       latencyMs: upstreamLatencyMs,
+      endpoint: upstreamBase,
     },
     counters: {
       ...counters,

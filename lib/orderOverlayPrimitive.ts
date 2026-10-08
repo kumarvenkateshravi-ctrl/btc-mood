@@ -7,6 +7,17 @@ import {
 } from 'lightweight-charts';
 import type { ChartOverlay, OverlayKind } from '@/components/Chart';
 
+/** Wide enough to catch a moving pointer without obscuring neighbouring chart work. */
+export const ORDER_LINE_DRAG_HIT_SLOP_PX = 22;
+
+/** Human-readable size label for chart overlays; execution keeps full precision. */
+export function formatOverlayQuantity(units: number): string {
+  if (!Number.isFinite(units)) return '—';
+  return units.toLocaleString('en-US', {
+    maximumFractionDigits: Math.abs(units) < 0.01 ? 6 : 4,
+  });
+}
+
 /** Overlay chrome options, set per-render by the Chart host (see Chart.tsx). */
 export interface OrderOverlayOptions {
   side?: 'buy' | 'sell' | null;
@@ -208,7 +219,7 @@ export class OrderOverlayPrimitive implements ISeriesPrimitive {
     for (const o of this.overlays) {
       if (!o.draggable) continue;
       const py = series.priceToCoordinate(o.price);
-      if (py !== null && Math.abs(y - py) < 15) {
+      if (py !== null && Math.abs(y - py) <= ORDER_LINE_DRAG_HIT_SLOP_PX) {
         return { kind: o.kind, draggable: true, price: o.price };
       }
     }

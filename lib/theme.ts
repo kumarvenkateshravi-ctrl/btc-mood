@@ -2,7 +2,7 @@
 // CryptoVision is an alternate that overrides the SEMANTIC token layer via a
 // `data-theme` attribute on <html> (see app/globals.css). Persisted per-browser.
 
-export const THEMES = ['obsidian', 'cryptovision', 'cobalt', 'bitcoin', 'material', 'lorento'] as const;
+export const THEMES = ['obsidian', 'cryptovision', 'tradingview', 'cobalt', 'bitcoin', 'material', 'lorento'] as const;
 export type Theme = (typeof THEMES)[number];
 
 export const DEFAULT_THEME: Theme = 'obsidian';
@@ -11,6 +11,7 @@ export const THEME_KEY = 'mcs:theme';
 export const THEME_LABEL: Record<Theme, string> = {
   obsidian: 'Obsidian',
   cryptovision: 'CryptoVision',
+  tradingview: 'TradingView Dark',
   cobalt: 'Cobalt',
   bitcoin: 'Bitcoin',
   material: 'Material Dark',
@@ -35,6 +36,12 @@ export const THEME_META: Record<
     surface: '#1e1e21',
     accent: '#b7a8f5',
     blurb: 'Charcoal + lavender',
+  },
+  tradingview: {
+    base: '#0F0F0F',
+    surface: '#1B1B1B',
+    accent: '#2962FF',
+    blurb: 'Neutral black trading canvas',
   },
   cobalt: {
     base: '#1a2233',

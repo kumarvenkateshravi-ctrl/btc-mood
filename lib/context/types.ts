@@ -3,7 +3,6 @@
 // config (revisedMTF refinements 1-2, 12): the numbers here are DEFAULTS.
 
 import type { Timeframe, Candle } from '../types';
-import type { VdSignal } from '../indicators/vdEngine';
 
 export type ContextState = 'bullish' | 'bearish' | 'neutral';
 
@@ -81,46 +80,3 @@ export interface MarketContext {
 // ---------------------------------------------------------------------------
 // Decision engine contracts
 // ---------------------------------------------------------------------------
-
-export interface DecisionWeights {
-  context: number; zone: number; trend: number; momentum: number;
-  volume: number; risk: number; liquidity: number;
-}
-
-export interface DecisionConfig {
-  weights: DecisionWeights;
-  /** Zone weight scales with zone confidence inside this range (refinement 7);
-   *  the remaining weights renormalize to fill 1 − zoneWeight. */
-  zoneWeightRange: [number, number];
-  minDecisionScore: number;
-  htfFloor: number;
-}
-
-export const DEFAULT_DECISION_CONFIG: DecisionConfig = {
-  weights: { context: 30, zone: 25, trend: 15, momentum: 10, volume: 10, risk: 5, liquidity: 5 },
-  zoneWeightRange: [0.20, 0.45],
-  minDecisionScore: 65,
-  htfFloor: 55,
-};
-
-export type SignalGrade = 'A+' | 'A' | 'B' | 'C' | 'D';
-export type RiskProfile = 'low' | 'medium' | 'high';
-
-export interface Decision {
-  signal: VdSignal;
-  decisionScore: number;
-  grade: SignalGrade;
-  riskProfile: RiskProfile;
-  contextScore: number;
-  htfAgreement: number;
-  conflictScore: number;
-  reasons: string[];
-  warnings: string[];
-}
-
-/** WHY NOT (refinement 10): rejected candidates are explained, never dropped silently. */
-export interface Rejection {
-  signal: VdSignal;
-  decisionScore: number;
-  failedGates: string[];
-}

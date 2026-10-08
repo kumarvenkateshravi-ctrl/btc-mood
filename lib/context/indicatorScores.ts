@@ -1,13 +1,13 @@
 // Market Context Engine — the fixed indicator roster (revisedMTF: independent
 // of chart toggles), each adapted to a 0-100 directional ContextIndicatorScore.
 // REUSES the existing indicator engines (no recalculation): pineMath EMA, the
-// SuperTrend/MACD/RSI/ADX/OBV compute functions, and vdEngine's ATR.
+// SuperTrend/MACD/RSI/ADX/OBV compute functions and shared Wilder ATR.
 // Callers pass CLOSED bars only.
 
 import type { Timeframe } from '../types';
 import type { IndicatorPlot } from '../indicatorFramework';
 import * as pm from '../pineMath';
-import { vdAtr } from '../indicators/vdEngine';
+import { wilderAtr } from '../tradeWalker';
 import { computeSuperTrend } from '../indicators/superTrend';
 import { computeMacd } from '../indicators/macd';
 import { computeRsi } from '../indicators/rsi';
@@ -53,7 +53,7 @@ export const emaAlignScore: ContextScoreProducer = (candles, tf) => {
   const closes = candles.map((c) => c.close);
   const e9 = pm.ema(closes, 9)[n - 1];
   const e21 = pm.ema(closes, 21)[n - 1];
-  const a = vdAtr(candles)[n - 1] ?? 0;
+  const a = wilderAtr(candles)[n - 1] ?? 0;
   if (e9 == null || e21 == null || a <= 0) return mk('ema', tf, 50, conf, 'EMA unavailable');
   const gap = clamp((e9 - e21) / a, -1, 1);
   return mk('ema', tf, 50 + 50 * gap, conf,
@@ -66,7 +66,7 @@ export const supertrendScore: ContextScoreProducer = (candles, tf) => {
   if (n < 15) return mk('supertrend', tf, 50, conf, 'Supertrend warm-up');
   const res = computeSuperTrend(candles);
   const st = lastNum(plotOf(res.plots, 'supertrend'));
-  const a = vdAtr(candles)[n - 1] ?? 0;
+  const a = wilderAtr(candles)[n - 1] ?? 0;
   const close = candles[n - 1].close;
   if (st == null || a <= 0) return mk('supertrend', tf, 50, conf, 'Supertrend unavailable');
   const mag = clamp(Math.abs(close - st) / (2 * a), 0, 1);
@@ -82,7 +82,7 @@ export const macdScore: ContextScoreProducer = (candles, tf) => {
   const res = computeMacd(candles);
   const line = lastNum(plotOf(res.plots, 'macd'));
   const hist = lastNum(plotOf(res.plots, 'hist'));
-  const a = vdAtr(candles)[n - 1] ?? 0;
+  const a = wilderAtr(candles)[n - 1] ?? 0;
   if (line == null || hist == null || a <= 0) return mk('macd', tf, 50, conf, 'MACD unavailable');
   // Line vs zero = trend direction; histogram = momentum change. A steady
   // trend has hist≈0 but a strongly signed line — both must contribute.

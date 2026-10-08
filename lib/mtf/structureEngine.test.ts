@@ -214,7 +214,7 @@ describe('createMarketStructureSnapshot', () => {
     expect(items.map((i) => i.label)).toEqual([
       'Sell-side Liquidity Sweep', 'Bullish FVG Created', 'Bullish CHoCH', 'Bullish BOS',
     ]);
-    expect(items[0]).toMatchObject({ eventType: 'LIQUIDITY_SWEEP', barIndex: 2, timestamp: T0 - 98 * HOUR });
+    expect(items[0]).toMatchObject({ eventType: 'LIQUIDITY_SWEEP', barIndex: 2, timestamp: T0 - 98 * HOUR, barsAgo: 97 });
     expect(items[0].eventId).toBeTruthy();
     const capped = createMarketStructureSnapshot(input(snap({ events })), { timelineLength: 2 });
     expect(capped.timeline.data!.items).toHaveLength(2);

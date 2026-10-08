@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import MobileSheet from '@/components/ui/MobileSheet';
+import { useEffect } from 'react';
 import {
   Eye,
   EyeOff,
@@ -17,7 +18,6 @@ import {
   TrendingUp,
   Type,
   Undo2,
-  X,
 } from 'lucide-react';
 import { DRAWING_COLORS, type Tool } from '@/lib/drawings';
 
@@ -38,8 +38,6 @@ interface DrawingToolbarProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
-  selected: boolean;
-  onDeleteSelected: () => void;
   mobileOpen: boolean;
   onMobileClose: () => void;
   scopeLabel: string;
@@ -73,42 +71,35 @@ export default function DrawingToolbar({
   onRedo,
   canUndo,
   canRedo,
-  selected,
-  onDeleteSelected,
   mobileOpen,
   onMobileClose,
   scopeLabel,
 }: DrawingToolbarProps) {
-  const [confirmingClear, setConfirmingClear] = useState(false);
   useEffect(() => {
-    if (!mobileOpen && !confirmingClear) return;
+    if (!mobileOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (confirmingClear) setConfirmingClear(false);
-      else onMobileClose();
+      onMobileClose();
       event.preventDefault();
       event.stopImmediatePropagation();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [confirmingClear, mobileOpen, onMobileClose]);
-  const clearLabel = `Clear drawings for ${scopeLabel}`;
+  }, [mobileOpen, onMobileClose]);
+  const clearLabel = `Delete all drawings for ${scopeLabel}`;
   const selectTool = (next: Tool) => {
     onToolChange(next);
     onMobileClose();
   };
-  const requestClear = () => {
-    if (count > 0) setConfirmingClear(true);
-  };
-  const confirmClear = () => {
+  const deleteDrawings = () => {
+    if (count === 0) return;
     onClear();
-    setConfirmingClear(false);
-    onMobileClose();
+    if (mobileOpen) onMobileClose();
   };
 
   return (
     <>
-      <div data-testid="drawing-rail" className="hidden w-10 shrink-0 flex-col items-center gap-1 border-r border-line bg-base py-2 sm:flex">
+      <div data-testid="drawing-rail" className="hidden w-10 shrink-0 flex-col items-center gap-1 border-r border-line bg-base py-2 lg:flex">
         {TOOLS.map((t) => (
           <RailButton key={t.tool} label={t.label} active={tool === t.tool} onClick={() => onToolChange(t.tool)}>
             {t.icon}
@@ -132,10 +123,7 @@ export default function DrawingToolbar({
         <RailButton label="Redo drawing" onClick={onRedo} disabled={!canRedo}>
           <Redo2 className="h-5 w-5" />
         </RailButton>
-        <RailButton label="Delete selected drawing" onClick={onDeleteSelected} disabled={!selected || locked} danger>
-          <Trash2 className="h-5 w-5" />
-        </RailButton>
-        <RailButton label={clearLabel} onClick={requestClear} disabled={count === 0} danger>
+        <RailButton label={clearLabel} onClick={deleteDrawings} disabled={count === 0 || locked} danger>
           <Trash2 className="h-5 w-5" />
         </RailButton>
 
@@ -160,16 +148,9 @@ export default function DrawingToolbar({
       </div>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-[90] flex items-end bg-base/65 px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-16 sm:hidden" role="dialog" aria-modal="true" aria-label="Drawing tools">
-          <button type="button" aria-label="Close drawing tools" className="absolute inset-0 cursor-default" onClick={onMobileClose} />
-          <div className="relative z-10 w-full rounded-xl border border-line-strong bg-surface-1 p-3 shadow-2xl">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <div>
-                <span className="text-xs font-semibold text-ink">Draw</span>
-                <span className="ml-2 text-[10px] text-ink-faint">{scopeLabel}</span>
-              </div>
-              <button type="button" onClick={onMobileClose} className="focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-ink-muted hover:bg-surface-2" aria-label="Close drawing tools"><X className="h-4 w-4" /></button>
-            </div>
+        <MobileSheet title="Drawing tools" onClose={onMobileClose}>
+          <div className="relative w-full">
+            <p className="mb-3 text-xs text-ink-muted">{scopeLabel}</p>
             <div className="grid grid-cols-4 gap-2" role="group" aria-label="Drawing tools">
               {TOOLS.map((t) => (
                 <button key={t.tool} type="button" onClick={() => selectTool(t.tool)} aria-pressed={tool === t.tool} className={[
@@ -192,24 +173,10 @@ export default function DrawingToolbar({
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button type="button" onClick={onUndo} disabled={!canUndo} className="focus-ring min-h-11 rounded-md border border-line bg-surface-2 text-xs font-semibold text-ink-muted disabled:opacity-40"><Undo2 className="mr-1 inline h-4 w-4" />Undo</button>
               <button type="button" onClick={onRedo} disabled={!canRedo} className="focus-ring min-h-11 rounded-md border border-line bg-surface-2 text-xs font-semibold text-ink-muted disabled:opacity-40"><Redo2 className="mr-1 inline h-4 w-4" />Redo</button>
-              <button type="button" onClick={onDeleteSelected} disabled={!selected || locked} className="focus-ring min-h-11 rounded-md border border-line bg-surface-2 text-xs font-semibold text-ink-muted disabled:opacity-40"><Trash2 className="mr-1 inline h-4 w-4" />Delete selected</button>
-              <button type="button" onClick={requestClear} disabled={count === 0} className="focus-ring min-h-11 rounded-md border border-bear/40 bg-bear/10 text-xs font-semibold text-bear-bright disabled:opacity-40">Clear drawings</button>
+              <button type="button" onClick={deleteDrawings} disabled={count === 0 || locked} aria-label={clearLabel} className="focus-ring col-span-2 min-h-11 rounded-md border border-bear/40 bg-bear/10 text-xs font-semibold text-bear-bright disabled:opacity-40"><Trash2 className="mr-1 inline h-4 w-4" />Delete drawings</button>
             </div>
           </div>
-        </div>
-      )}
-
-      {confirmingClear && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-base/70 px-4" role="dialog" aria-modal="true" aria-label={clearLabel}>
-          <div className="w-full max-w-sm rounded-xl border border-line-strong bg-surface-1 p-4 shadow-2xl">
-            <h2 className="text-sm font-semibold text-ink">Clear all drawings for {scopeLabel}?</h2>
-            <p className="mt-1 text-xs text-ink-muted">This removes the saved drawings for this symbol only.</p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setConfirmingClear(false)} className="focus-ring min-h-11 rounded-md border border-line px-3 text-xs font-semibold text-ink-muted">Cancel</button>
-              <button type="button" onClick={confirmClear} className="focus-ring min-h-11 rounded-md bg-bear px-3 text-xs font-bold text-base">Clear Drawings</button>
-            </div>
-          </div>
-        </div>
+        </MobileSheet>
       )}
     </>
   );

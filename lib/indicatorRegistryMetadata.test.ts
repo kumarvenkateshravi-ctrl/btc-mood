@@ -2,11 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { CUSTOM_INDICATORS } from './customIndicatorsLibrary';
 
 const REQUIRED_IDS = [
-  'session_volume_profile', 'sma', 'sma_crossover_bb', 'squeeze_momentum', 'ma_ribbon_tv',
+  'poc_mrp_zones', 'session_volume_profile', 'sma', 'ma_ribbon_tv',
   'ma_fvg', 'macd', 'bollinger_bands', 'rsi', 'atr', 'parabolic_sar', 'stochastic',
-  'keltner_channels', 'volume', 'obv', 'vwap', 'adx', 'supertrend', 'vwap_bands',
-  'williams_r', 'sd_zones', 'sd_signals', 'volume_distribution_zones', 'scanner_signals',
-  'vol_spike', 'magic_sr', 'fib_pivot', 'smc', 'elephant_zone', 'jumbo_zones', 'regression_gchannel',
+  'keltner_channels', 'volume', 'obv', 'vwap', 'adx', 'supertrend', 'dsmart_line', 'vwap_bands',
+  'williams_r', 'smc',
 ];
 
 describe('indicator source/finality registry', () => {
@@ -39,10 +38,10 @@ describe('indicator source/finality registry', () => {
 
   it('classifies structural indicators as raw and visual indicators as display', () => {
     const byId = new Map(CUSTOM_INDICATORS.map((def) => [def.id, def]));
-    for (const id of ['session_volume_profile', 'sd_zones', 'sd_signals', 'volume_distribution_zones', 'smc', 'fib_pivot']) {
+    for (const id of ['poc_mrp_zones', 'session_volume_profile', 'smc']) {
       expect(byId.get(id)!.evaluation!.sourcePolicy).toBe('raw');
     }
-    for (const id of ['sma', 'ema', 'macd', 'bollinger_bands', 'rsi', 'atr', 'vwap', 'regression_gchannel']) {
+    for (const id of ['sma', 'macd', 'bollinger_bands', 'rsi', 'atr', 'vwap']) {
       const def = byId.get(id);
       if (def) expect(def.evaluation!.sourcePolicy).toBe('display');
     }
@@ -54,7 +53,6 @@ describe('indicator source/finality registry', () => {
     expect(byId.get('volume')!.evaluation!.volumeInterpretation).toBe('raw-volume');
     expect(byId.get('obv')!.evaluation!.volumeInterpretation).toBe('estimated-directional-volume');
     expect(byId.get('session_volume_profile')!.evaluation!.volumeInterpretation).toBe('estimated-directional-volume');
-    expect(byId.get('volume_distribution_zones')!.evaluation!.volumeInterpretation).toBe('estimated-directional-volume');
     for (const def of CUSTOM_INDICATORS) expect(def.evaluation!.volumeInterpretation).toBeDefined();
   });
 
@@ -62,7 +60,5 @@ describe('indicator source/finality registry', () => {
     const svp = CUSTOM_INDICATORS.find((def) => def.id === 'session_volume_profile')!;
     const volumeInput = svp.inputs!.find((input) => input.id === 'volume')!;
     expect(volumeInput.options!.find((option) => option.value === 'delta')!.label.toLowerCase()).toContain('estimated');
-    const vd = CUSTOM_INDICATORS.find((def) => def.id === 'volume_distribution_zones')!;
-    expect(vd.description.toLowerCase()).toContain('estimated');
   });
 });

@@ -15,6 +15,16 @@ import { cx, scoreColor } from './util';
 
 interface Base { className?: string }
 
+function formatUsdMicros(value: bigint, signed = false, whole = false): string {
+  const negative = value < BigInt(0);
+  const absolute = negative ? -value : value;
+  const dollars = absolute / BigInt(1_000_000);
+  const cents = (absolute % BigInt(1_000_000)) / BigInt(10_000);
+  const prefix = negative ? '-' : signed && value > BigInt(0) ? '+' : '';
+  const grouped = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(dollars);
+  return whole ? `${prefix}$${grouped}` : `${prefix}$${grouped}.${cents.toString().padStart(2, '0')}`;
+}
+
 /** Generic formatted number (escape hatch). Prefer a semantic variant below. */
 function NumBase({ value, currency, compact, signed, precision, tone, className }: Base & {
   value: number; currency?: Currency; compact?: boolean; signed?: boolean; precision?: number; tone?: boolean;
@@ -30,6 +40,18 @@ function Price({ value, currency = 'USD', precision, className }: Base & { value
 /** A money amount (cents). Optional sign + semantic color. */
 function Money({ value, currency = 'USD', signed, tone, className }: Base & { value: number; currency?: Currency; signed?: boolean; tone?: boolean }) {
   return <span className={cx('num', tone && toneClass(value), className)}>{formatNumber(value, { currency, signed })}</span>;
+}
+
+/** Exact Challenge-domain USD micros. Domain values remain bigint. */
+function MoneyMicros({ value, signed, tone, whole, className }: Base & { value: bigint; signed?: boolean; tone?: boolean; whole?: boolean }) {
+  const numericTone = value > BigInt(0) ? 1 : value < BigInt(0) ? -1 : 0;
+  return <span className={cx('num', tone && toneClass(numericTone), className)}>{formatUsdMicros(value, signed, whole)}</span>;
+}
+
+/** Exact Challenge-domain P&L in USD micros. */
+function PnlMicros({ value, className }: Base & { value: bigint }) {
+  const numericTone = value > BigInt(0) ? 1 : value < BigInt(0) ? -1 : 0;
+  return <span className={cx('num font-semibold', toneClass(numericTone), className)}>{formatUsdMicros(value, true)}</span>;
 }
 
 /** Profit / loss. ALWAYS signed and semantic-colored (the flagship money value). */
@@ -70,7 +92,7 @@ function Compact({ value, currency, className }: Base & { value: number; currenc
 }
 
 /** The Num namespace: `<Num.Pnl />`, `<Num.Price />`, ... plus `<Num />` as the escape hatch. */
-const Num = Object.assign(NumBase, { Price, Money, Pnl, Pct, Delta, RR, Qty, Score, Compact });
+const Num = Object.assign(NumBase, { Price, Money, MoneyMicros, Pnl, PnlMicros, Pct, Delta, RR, Qty, Score, Compact });
 export default Num;
 
 /** Convenience for KpiCard / callers that need a delta node. */

@@ -121,6 +121,7 @@ function TooltipContainer({
 
 export default function Chart({
   candles,
+  dataContextKey,
   candlesByTf,
   type,
   tf,
@@ -170,6 +171,8 @@ export default function Chart({
   onRemoveIndicator,
   onUpdateIndicatorSettingsFor,
   resetTick,
+  focusTime,
+  followLatest = false,
   maskTimeAxis = false,
   chartSettings,
   additionalPanes,
@@ -351,6 +354,27 @@ export default function Chart({
     }
   }, []);
 
+  const applyFocusedDateView = useCallback((dateMs: number) => {
+    const chart = chartRef.current;
+    const baseCandles = hoverInputsRef.current.base;
+    if (!chart || baseCandles.length === 0) return;
+
+    const targetSeconds = dateMs / 1000;
+    const locatedIndex = baseCandles.findIndex((c) => Number(c.time) >= targetSeconds);
+    const targetIndex = locatedIndex >= 0 ? locatedIndex : baseCandles.length - 1;
+    const timeScale = chart.timeScale();
+    const barSpacing = timeScale.options().barSpacing ?? 6;
+    const scaleWidth = timeScale.width();
+    const visibleBars = scaleWidth > 0 ? Math.max(50, Math.round(scaleWidth / barSpacing)) : 150;
+    const from = targetIndex - Math.floor(visibleBars / 2);
+
+    try {
+      timeScale.setVisibleLogicalRange({ from, to: from + visibleBars });
+    } catch (err) {
+      console.warn('Unable to focus historical date:', err);
+    }
+  }, []);
+
   const prevOpenRef = useRef<number | null>(null);
   const prevCloseRef = useRef<number | null>(null);
   const prevTfRef = useRef<string | null>(null);
@@ -480,14 +504,39 @@ export default function Chart({
   }, [chartSettings?.showCrosshairSnap, chartRef]);
 
   // ---- Data push + indicator stack (extracted) ----
-  useChartData(refs, candles, type, tf, symbol, isRenko, visibleResults, indicatorSettingsMap, hiddenKeys, applyDefaultView);
+  useChartData(refs, candles, dataContextKey, type, tf, symbol, isRenko, visibleResults, indicatorSettingsMap, hiddenKeys, applyDefaultView);
+
+  useEffect(() => {
+    if (focusTime == null || !chartRef.current) return;
+    applyFocusedDateView(focusTime);
+  }, [focusTime, resetTick, applyFocusedDateView]);
+
+  // Replay advances one completed bar at a time. Anchor the existing window to
+  // the final real candle, not scrollToRealTime(): the chart also has a long
+  // invisible whitespace series for future room, which otherwise pushes the
+  // actual replay bar out of view.
+  const latestCandleTime = candles[candles.length - 1]?.time ?? null;
+  useEffect(() => {
+    if (!followLatest || latestCandleTime == null || focusTime != null || !chartRef.current) return;
+    try {
+      const scale = chartRef.current.timeScale();
+      const range = scale.getVisibleLogicalRange();
+      if (!range) return;
+      const span = range.to - range.from;
+      const rightGap = Math.max(3, Math.min(10, Math.round(span * 0.08)));
+      const lastCandleIndex = candles.length - 1;
+      const right = lastCandleIndex + rightGap;
+      scale.setVisibleLogicalRange({ from: right - span, to: right });
+      setIsScrolledBack(false);
+    } catch { /* chart may be rebuilding */ }
+  }, [followLatest, latestCandleTime, focusTime, candles.length, tradeOverlay?.entryPrice]);
 
   // ---- FX: bear hatching + pulse (extracted) ----
   useChartFx(fxPrimitiveRef, candleSeriesRef, chartRef, prevCloseRef, candles, type, renko);
 
   // ---- Signal markers (extracted) ----
   const activeDivMarkers = hasDivergenceIndicator ? divMarkersData.markers : [];
-  useSignalMarkers(markersRef, candles, showSignals, isRenko, visibleResults, palette, activeDivMarkers);
+  useSignalMarkers(markersRef, candles, showSignals, isRenko, activeDivMarkers);
 
   // ---- Order overlays sync (extracted) ----
   useOrderOverlays(
@@ -507,9 +556,9 @@ export default function Chart({
 
   // ---- Reset Chart View ----
   useEffect(() => {
-    if (!resetTick || !chartRef.current) return;
+    if (!resetTick || focusTime != null || !chartRef.current) return;
     applyDefaultView();
-  }, [resetTick, applyDefaultView]);
+  }, [resetTick, focusTime, applyDefaultView]);
 
   // ---- Day Separator Lines (extracted) ----
   useDaySeparators(

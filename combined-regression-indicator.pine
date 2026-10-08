@@ -1,0 +1,655 @@
+//@version=6
+// Trend Magic & HL OTT: this source code is subject to the terms of the Mozilla Public License 2.0
+// at https://mozilla.org/MPL/2.0/ — © KivancOzbilgic (both modules share this author/license, so no
+// license conflict in combining them). HL OTT additionally credits @Anil_Ozeksi as creator/developer.
+//
+// Dual Trend Magic (independent timeframes) + Opening Range Breakout + HL OTT + VWAP + G-Channel
+// -----------------------------------------------------------------------------------------------
+// TM1 = fast/lower-timeframe Trend Magic, TM2 = slow/higher-timeframe Trend Magic — BUY fires when
+// TM1 crosses above TM2, SELL on the opposite cross. ORB tracks a configurable opening-range window
+// (UTC-anchored by default for 24/7 crypto). HL OTT is a separate, independent trend-tracking band
+// built from the highest-high/lowest-low over a lookback, each smoothed by a selectable moving
+// average type, with a highlighted zone between the two bands — ported from Pine v5, prefixed
+// `ott_` throughout to avoid any collision with the Trend Magic / ORB variable names above. VWAP
+// (single band) is ported from TradingView's built-in VWAP script, prefixed `vwap_` — Bands #2/#3
+// from that source were dropped entirely rather than just hidden, since only one was requested.
+// G-Channel Trend Detection is ported from Pine v4 to v6, prefixed `gc_`, including the v6
+// na-comparison warm-up fix already validated earlier in this project (v6 resolves na comparisons
+// to false immediately instead of propagating na the way v4/v5 did, which otherwise shifts signal
+// timing until both a crossup and a crossdn have each fired at least once).
+// -----------------------------------------------------------------------------------------------
+
+indicator("Dual Trend Magic + ORB + HL OTT + VWAP + G-Channel + Regression", shorttitle = "Dual-TM+ORB+OTT+VWAP+GC+Reg", overlay = true, format = format.price, precision = 2, max_bars_back = 5000)
+
+// ═══════════════════════════════════════════════════════════════════════
+// TREND MAGIC 1 (fast / lower timeframe)
+// ═══════════════════════════════════════════════════════════════════════
+GRP_TM1 = "Trend Magic 1 (fast)"
+tm1Show   = input.bool(true, "Show TM1", group = GRP_TM1)
+tm1Period = input.int(20, "CCI period", group = GRP_TM1)
+tm1Coeff  = input.float(1, "ATR Multiplier", group = GRP_TM1)
+tm1AP     = input.int(5, "ATR Period", group = GRP_TM1)
+tm1Src    = input.source(close, "Source", group = GRP_TM1)
+tm1Tf     = input.timeframe("", "Timeframe", group = GRP_TM1,
+     tooltip = "Leave blank to use the chart's own timeframe. This is meant to be the FASTER of the two — e.g. blank (chart TF) or a low timeframe like 5m/15m.")
+tm1Color = input.color(#2d7dff, "Line Color", group = GRP_TM1)
+
+trendMagic1() =>
+    tmAtr = ta.sma(ta.tr, tm1AP)
+    upT   = low  - tmAtr * tm1Coeff
+    downT = high + tmAtr * tm1Coeff
+    cciVal = ta.cci(tm1Src, tm1Period)
+
+    var float mt = na
+    float prevMt = na(mt) ? close : mt
+    mt := cciVal >= 0 ? (upT < prevMt ? prevMt : upT) : (downT > prevMt ? prevMt : downT)
+    mt
+
+MagicTrend1 = request.security(syminfo.tickerid, tm1Tf, trendMagic1())
+plot(tm1Show ? MagicTrend1 : na, title = "Trend Magic 1", color = tm1Color, linewidth = 2)
+
+// ═══════════════════════════════════════════════════════════════════════
+// TREND MAGIC 2 (slow / higher timeframe)
+// ═══════════════════════════════════════════════════════════════════════
+GRP_TM2 = "Trend Magic 2 (slow)"
+tm2Show   = input.bool(true, "Show TM2", group = GRP_TM2)
+tm2Period = input.int(20, "CCI period", group = GRP_TM2)
+tm2Coeff  = input.float(1, "ATR Multiplier", group = GRP_TM2)
+tm2AP     = input.int(5, "ATR Period", group = GRP_TM2)
+tm2Src    = input.source(close, "Source", group = GRP_TM2)
+tm2Tf     = input.timeframe("60", "Timeframe", group = GRP_TM2,
+     tooltip = "This is meant to be the SLOWER of the two — e.g. 1h/4h/1D while TM1 runs on the chart's own (lower) timeframe. Defaults to 60 minutes.")
+tm2Color = input.color(#ff8c00, "Line Color", group = GRP_TM2)
+
+trendMagic2() =>
+    tmAtr = ta.sma(ta.tr, tm2AP)
+    upT   = low  - tmAtr * tm2Coeff
+    downT = high + tmAtr * tm2Coeff
+    cciVal = ta.cci(tm2Src, tm2Period)
+
+    var float mt = na
+    float prevMt = na(mt) ? close : mt
+    mt := cciVal >= 0 ? (upT < prevMt ? prevMt : upT) : (downT > prevMt ? prevMt : downT)
+    mt
+
+MagicTrend2 = request.security(syminfo.tickerid, tm2Tf, trendMagic2())
+plot(tm2Show ? MagicTrend2 : na, title = "Trend Magic 2", color = tm2Color, linewidth = 2)
+
+// ═══════════════════════════════════════════════════════════════════════
+// MTF CROSS SIGNAL — TM1 crossing TM2
+// BUY:  TM1 crosses above TM2 (fast timeframe trend agreeing upward with the slow one)
+// SELL: TM1 crosses below TM2
+// ═══════════════════════════════════════════════════════════════════════
+GRP_SIG = "MTF Cross Signal"
+showCrossSignal = input.bool(true, "Show BUY/SELL Labels", group = GRP_SIG)
+buyColor  = input.color(color.new(color.lime, 0), "BUY Color", group = GRP_SIG)
+sellColor = input.color(color.new(color.red, 0), "SELL Color", group = GRP_SIG)
+
+tmBuySignal  = ta.crossover(MagicTrend1, MagicTrend2)
+tmSellSignal = ta.crossunder(MagicTrend1, MagicTrend2)
+
+plotshape(showCrossSignal and tmBuySignal, title = "TM BUY", style = shape.labelup, location = location.belowbar, color = buyColor, text = "BUY", textcolor = color.white, size = size.small)
+plotshape(showCrossSignal and tmSellSignal, title = "TM SELL", style = shape.labeldown, location = location.abovebar, color = sellColor, text = "SELL", textcolor = color.white, size = size.small)
+
+alertcondition(tmBuySignal, title = "TM BUY Signal", message = "Dual Trend Magic: TM1 crossed above TM2 — BUY.")
+alertcondition(tmSellSignal, title = "TM SELL Signal", message = "Dual Trend Magic: TM1 crossed below TM2 — SELL.")
+
+// Kept from the original single-TM script — cross/over/under against price itself, per TM1
+alertcondition(ta.cross(close, MagicTrend1), title = "TM1 Price Cross", message = "Price - TM1 Crossing!")
+alertcondition(ta.crossover(low, MagicTrend1), title = "TM1 Price CrossOver", message = "Price crossed above TM1 — BUY SIGNAL!")
+alertcondition(ta.crossunder(high, MagicTrend1), title = "TM1 Price CrossUnder", message = "Price crossed below TM1 — SELL SIGNAL!")
+
+// ═══════════════════════════════════════════════════════════════════════
+// OPENING RANGE BREAKOUT (ORB)
+// UTC-anchored by default (BTC trades 24/7 — no real local-exchange "market open" the way
+// equities/NSE do, so a timezone-agnostic clock-time session would drift/never reliably reset).
+// ═══════════════════════════════════════════════════════════════════════
+GRP_ORB = "Opening Range Breakout"
+orbShow    = input.bool(true, "Show ORB", group = GRP_ORB)
+orbMaxMin  = input.int(30, "ORB total time (minutes)", group = GRP_ORB)
+orbSession = input.session("0000-0015", "Session Time", group = GRP_ORB,
+     tooltip = "Defines the daily window tracked as the Opening Range. Anchored to the Timezone setting below.")
+orbTz      = input.string("UTC", "Timezone", group = GRP_ORB,
+     tooltip = "Timezone the Session Time above is interpreted in. UTC is the safe default for crypto data — avoids silently falling back to ambiguous exchange metadata.")
+orbHighColor = input.color(color.green, "ORB High Color", group = GRP_ORB)
+orbLowColor  = input.color(color.red, "ORB Low Color", group = GRP_ORB)
+
+orbT = time(timeframe.period, orbSession + ":1234567", orbTz)
+orbHide = timeframe.isintraday and timeframe.multiplier <= orbMaxMin
+
+orbInSession = not na(orbT)
+orbIsFirst = orbInSession and not orbInSession[1]
+
+var float orbHigh = na
+var float orbLow  = na
+
+if orbIsFirst
+    orbHigh := high
+    orbLow  := low
+else
+    orbHigh := orbHigh[1]
+    orbLow  := orbLow[1]
+
+if high > orbHigh and orbInSession
+    orbHigh := high
+if low < orbLow and orbInSession
+    orbLow := low
+
+plot(orbShow and orbHide ? orbHigh : na, style = plot.style_line, color = orbHigh[1] != orbHigh ? na : orbHighColor, title = "ORB High", linewidth = 2)
+plot(orbShow and orbHide ? orbLow  : na, style = plot.style_line, color = orbLow[1]  != orbLow  ? na : orbLowColor,  title = "ORB Low",  linewidth = 2)
+
+alertcondition(ta.crossover(close, orbHigh), title = "ORB Breakout Up", message = "Price broke above ORB High — BUY SIGNAL!")
+alertcondition(ta.crossunder(close, orbLow), title = "ORB Breakout Down", message = "Price broke below ORB Low — SELL SIGNAL!")
+
+// ═══════════════════════════════════════════════════════════════════════
+// HL OTT — HIGH AND LOW OPTIMIZED TREND TRACKER
+// Ported from Pine v5. All identifiers prefixed `ott_` to avoid collision with the sections above.
+// HOTT (High OTT) and LOTT (Low OTT) are the same Optimized Trend Tracker formula run once on the
+// rolling highest-high and once on the rolling lowest-low, forming a highlighted band between them.
+// ═══════════════════════════════════════════════════════════════════════
+GRP_OTT = "HL OTT"
+ott_show          = input.bool(true, "Show HL OTT", group = GRP_OTT)
+ott_length        = input.int(2, "OTT Period", minval = 1, group = GRP_OTT)
+ott_percent       = input.float(0.6, "OTT Optimization Coeff", step = 0.1, minval = 0, group = GRP_OTT)
+ott_hlLength      = input.int(10, "Highest and Lowest Length", minval = 1, group = GRP_OTT)
+ott_highlighting  = input.bool(true, "Highlighter On/Off?", group = GRP_OTT)
+ott_mavType       = input.string("VAR", "Moving Average Type", options = ["SMA", "EMA", "WMA", "DEMA", "TMA", "VAR", "WWMA", "ZLEMA", "TSF", "HULL"], group = GRP_OTT)
+ott_hottColor     = input.color(color.blue, "HOTT (Upper) Color", group = GRP_OTT)
+ott_lottColor     = input.color(color.red, "LOTT (Lower) Color", group = GRP_OTT)
+ott_fillColor     = input.color(#9915FF, "Highlight Fill Color", group = GRP_OTT)
+ott_bullBarColor  = input.color(#00FFFF, "Bar Color Above HOTT", group = GRP_OTT)
+ott_bearBarColor  = input.color(#FF00FF, "Bar Color Below LOTT", group = GRP_OTT)
+ott_showBarColor  = input.bool(true, "Show Bar Color", group = GRP_OTT)
+
+ott_src  = ta.highest(high, ott_hlLength)
+ott_srcl = ta.lowest(low, ott_hlLength)
+
+ott_varFunc(src, length) =>
+    valpha = 2 / (length + 1)
+    vud1 = src > src[1] ? src - src[1] : 0
+    vdd1 = src < src[1] ? src[1] - src : 0
+    vUD = math.sum(vud1, 9)
+    vDD = math.sum(vdd1, 9)
+    vCMO = nz((vUD - vDD) / (vUD + vDD))
+    var_ = 0.0
+    var_ := nz(valpha * math.abs(vCMO) * src) + (1 - valpha * math.abs(vCMO)) * nz(var_[1])
+    var_
+ottVAR = ott_varFunc(ott_src, ott_length)
+ottDEMA = 2 * ta.ema(ott_src, ott_length) - ta.ema(ta.ema(ott_src, ott_length), ott_length)
+
+ott_wwmaFunc(src, length) =>
+    wwalpha = 1 / length
+    wwma = 0.0
+    wwma := wwalpha * src + (1 - wwalpha) * nz(wwma[1])
+    wwma
+ottWWMA = ott_wwmaFunc(ott_src, ott_length)
+
+ott_zlemaFunc(src, length) =>
+    zxLag = length / 2 == math.round(length / 2) ? length / 2 : (length - 1) / 2
+    zxEMAData = src + src - src[zxLag]
+    zlema = ta.ema(zxEMAData, length)
+    zlema
+ottZLEMA = ott_zlemaFunc(ott_src, ott_length)
+
+ott_tsfFunc(src, length) =>
+    lrc = ta.linreg(src, length, 0)
+    lrc1 = ta.linreg(src, length, 1)
+    lrs = lrc - lrc1
+    tsf = ta.linreg(src, length, 0) + lrs
+    tsf
+ottTSF = ott_tsfFunc(ott_src, ott_length)
+
+ottHMA = ta.wma(2 * ta.wma(ott_src, ott_length / 2) - ta.wma(ott_src, ott_length), math.round(math.sqrt(ott_length)))
+
+ott_varFuncLow(srcl, length) =>
+    valphal = 2 / (length + 1)
+    vud1l = srcl > srcl[1] ? srcl - srcl[1] : 0
+    vdd1l = srcl < srcl[1] ? srcl[1] - srcl : 0
+    vUDl = math.sum(vud1l, 9)
+    vDDl = math.sum(vdd1l, 9)
+    vCMOl = nz((vUDl - vDDl) / (vUDl + vDDl))
+    varl = 0.0
+    varl := nz(valphal * math.abs(vCMOl) * srcl) + (1 - valphal * math.abs(vCMOl)) * nz(varl[1])
+    varl
+ottVARl = ott_varFuncLow(ott_srcl, ott_length)
+ottDEMAl = 2 * ta.ema(ott_srcl, ott_length) - ta.ema(ta.ema(ott_srcl, ott_length), ott_length)
+
+ott_wwmaFuncLow(srcl, length) =>
+    wwalphal = 1 / length
+    wwmal = 0.0
+    wwmal := wwalphal * srcl + (1 - wwalphal) * nz(wwmal[1])
+    wwmal
+ottWWMAl = ott_wwmaFuncLow(ott_srcl, ott_length)
+
+ott_zlemaFuncLow(srcl, length) =>
+    zxLagl = length / 2 == math.round(length / 2) ? length / 2 : (length - 1) / 2
+    zxEMADatal = srcl + srcl - srcl[zxLagl]
+    zlemal = ta.ema(zxEMADatal, length)
+    zlemal
+ottZLEMAl = ott_zlemaFuncLow(ott_srcl, ott_length)
+
+ott_tsfFuncLow(srcl, length) =>
+    lrcl = ta.linreg(srcl, length, 0)
+    lrc1l = ta.linreg(srcl, length, 1)
+    lrsl = lrcl - lrc1l
+    tsfl = ta.linreg(srcl, length, 0) + lrsl
+    tsfl
+ottTSFl = ott_tsfFuncLow(ott_srcl, ott_length)
+
+ottHMAl = ta.wma(2 * ta.wma(ott_srcl, ott_length / 2) - ta.wma(ott_srcl, ott_length), math.round(math.sqrt(ott_length)))
+
+ott_getMA(src, length) =>
+    ma = 0.0
+    if ott_mavType == "SMA"
+        ma := ta.sma(src, length)
+    if ott_mavType == "EMA"
+        ma := ta.ema(src, length)
+    if ott_mavType == "WMA"
+        ma := ta.wma(src, length)
+    if ott_mavType == "DEMA"
+        ma := ottDEMA
+    if ott_mavType == "TMA"
+        ma := ta.sma(ta.sma(src, math.ceil(length / 2)), math.floor(length / 2) + 1)
+    if ott_mavType == "VAR"
+        ma := ottVAR
+    if ott_mavType == "WWMA"
+        ma := ottWWMA
+    if ott_mavType == "ZLEMA"
+        ma := ottZLEMA
+    if ott_mavType == "TSF"
+        ma := ottTSF
+    if ott_mavType == "HULL"
+        ma := ottHMA
+    ma
+
+ott_getMAl(srcl, length) =>
+    mal = 0.0
+    if ott_mavType == "SMA"
+        mal := ta.sma(srcl, length)
+    if ott_mavType == "EMA"
+        mal := ta.ema(srcl, length)
+    if ott_mavType == "WMA"
+        mal := ta.wma(srcl, length)
+    if ott_mavType == "DEMA"
+        mal := ottDEMAl
+    if ott_mavType == "TMA"
+        mal := ta.sma(ta.sma(srcl, math.ceil(length / 2)), math.floor(length / 2) + 1)
+    if ott_mavType == "VAR"
+        mal := ottVARl
+    if ott_mavType == "WWMA"
+        mal := ottWWMAl
+    if ott_mavType == "ZLEMA"
+        mal := ottZLEMAl
+    if ott_mavType == "TSF"
+        mal := ottTSFl
+    if ott_mavType == "HULL"
+        mal := ottHMAl
+    mal
+
+ottMAvg = ott_getMA(ott_src, ott_length)
+ottFark = ottMAvg * ott_percent * 0.01
+ottLongStop = ottMAvg - ottFark
+ottLongStopPrev = nz(ottLongStop[1], ottLongStop)
+ottLongStop := ottMAvg > ottLongStopPrev ? math.max(ottLongStop, ottLongStopPrev) : ottLongStop
+ottShortStop = ottMAvg + ottFark
+ottShortStopPrev = nz(ottShortStop[1], ottShortStop)
+ottShortStop := ottMAvg < ottShortStopPrev ? math.min(ottShortStop, ottShortStopPrev) : ottShortStop
+ottDir = 1
+ottDir := nz(ottDir[1], ottDir)
+ottDir := ottDir == -1 and ottMAvg > ottShortStopPrev ? 1 : ottDir == 1 and ottMAvg < ottLongStopPrev ? -1 : ottDir
+ottMT = ottDir == 1 ? ottLongStop : ottShortStop
+ottHOTT = ottMAvg > ottMT ? ottMT * (200 + ott_percent) / 200 : ottMT * (200 - ott_percent) / 200
+
+ottMAvgl = ott_getMAl(ott_srcl, ott_length)
+ottFarkl = ottMAvgl * ott_percent * 0.01
+ottLongStopl = ottMAvgl - ottFarkl
+ottLongStopPrevl = nz(ottLongStopl[1], ottLongStopl)
+ottLongStopl := ottMAvgl > ottLongStopPrevl ? math.max(ottLongStopl, ottLongStopPrevl) : ottLongStopl
+ottShortStopl = ottMAvgl + ottFarkl
+ottShortStopPrevl = nz(ottShortStopl[1], ottShortStopl)
+ottShortStopl := ottMAvgl < ottShortStopPrevl ? math.min(ottShortStopl, ottShortStopPrevl) : ottShortStopl
+ottDirl = 1
+ottDirl := nz(ottDirl[1], ottDirl)
+ottDirl := ottDirl == -1 and ottMAvgl > ottShortStopPrevl ? 1 : ottDirl == 1 and ottMAvgl < ottLongStopPrevl ? -1 : ottDirl
+ottMTl = ottDirl == 1 ? ottLongStopl : ottShortStopl
+ottLOTT = ottMAvgl > ottMTl ? ottMTl * (200 + ott_percent) / 200 : ottMTl * (200 - ott_percent) / 200
+
+ottHOTTLine = plot(ott_show ? nz(ottHOTT[2]) : na, title = "HOTT", color = color.new(ott_hottColor, 0), linewidth = 2, style = plot.style_line)
+ottLOTTLine = plot(ott_show ? nz(ottLOTT[2]) : na, title = "LOTT", color = color.new(ott_lottColor, 0), linewidth = 2, style = plot.style_line)
+ottFillColorFinal = ott_show and ott_highlighting ? color.new(ott_fillColor, 80) : na
+fill(ottHOTTLine, ottLOTTLine, title = "HL OTT Highlighter", color = ottFillColorFinal)
+
+ottBarColor = close > ottHOTT[2] ? ott_bullBarColor : close < ottLOTT[2] ? ott_bearBarColor : na
+barcolor(ott_show and ott_showBarColor ? ottBarColor : na, title = "HL OTT Bar Color")
+
+alertcondition(ta.crossover(close, ottHOTT[2]), title = "HL OTT Price Crossover", message = "PRICE OVER HOTT - BUY SIGNAL!")
+alertcondition(ta.crossunder(close, ottLOTT[2]), title = "HL OTT Price Crossunder", message = "PRICE UNDER LOTT - SELL SIGNAL!")
+
+// ═══════════════════════════════════════════════════════════════════════
+// VWAP (single band). Ported from TradingView's built-in VWAP script; all identifiers prefixed
+// `vwap_` to avoid collision with the sections above. Only Band #1 is included (multiplier count
+// trimmed from 3 to 1 per request) — Bands #2/#3 from the source were dropped, not just hidden.
+// ═══════════════════════════════════════════════════════════════════════
+GRP_VWAP = "VWAP"
+vwap_show      = input.bool(true, "Show VWAP", group = GRP_VWAP)
+vwap_hideOnDWM = input.bool(false, "Hide VWAP on 1D or Above", group = GRP_VWAP, display = display.none)
+var vwap_anchor = input.string(defval = "Session", title = "Anchor Period",
+     options = ["Session", "Week", "Month", "Quarter", "Year", "Decade", "Century", "Earnings", "Dividends", "Splits"], group = GRP_VWAP)
+vwap_src    = input(title = "Source", defval = hlc3, group = GRP_VWAP, display = display.none)
+vwap_offset = input.int(0, title = "Offset", group = GRP_VWAP, display = display.none)
+vwap_color  = input.color(#2962FF, "VWAP Color", group = GRP_VWAP, display = display.none)
+
+vwap_calcMode = input.string("Standard Deviation", "Bands Calculation Mode", options = ["Standard Deviation", "Percentage"], group = GRP_VWAP,
+     tooltip = "Determines the units used to calculate the distance of the band. When 'Percentage' is selected, a multiplier of 1 means 1%.", display = display.none)
+vwap_showBand = input.bool(true, "Show Band", group = GRP_VWAP, inline = "vwap_band")
+vwap_bandMult = input.float(1.0, "Multiplier", group = GRP_VWAP, inline = "vwap_band", step = 0.5, minval = 0)
+vwap_bandColor = input.color(color.green, "Band Color", group = GRP_VWAP)
+
+if vwap_show
+    vwap_cumVolume = ta.cum(volume)
+    if barstate.islast and vwap_cumVolume == 0
+        runtime.error("No volume is provided by the data vendor.")
+
+vwap_isNewPeriod = switch vwap_anchor
+    "Earnings" =>
+        vwap_newEarningsActual = request.earnings(syminfo.tickerid, earnings.actual, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol = true)
+        vwap_newEarningsStd = request.earnings(syminfo.tickerid, earnings.standardized, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol = true)
+        not na(vwap_newEarningsActual) or not na(vwap_newEarningsStd)
+    "Dividends" =>
+        vwap_newDividends = request.dividends(syminfo.tickerid, dividends.gross, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol = true)
+        not na(vwap_newDividends)
+    "Splits" =>
+        vwap_newSplit = request.splits(syminfo.tickerid, splits.denominator, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol = true)
+        not na(vwap_newSplit)
+    "Session" => timeframe.change("D")
+    "Week"    => timeframe.change("W")
+    "Month"   => timeframe.change("M")
+    "Quarter" => timeframe.change("3M")
+    "Year"    => timeframe.change("12M")
+    "Decade"  => timeframe.change("12M") and year % 10 == 0
+    "Century" => timeframe.change("12M") and year % 100 == 0
+    => false
+
+vwap_isEsdAnchor = vwap_anchor == "Earnings" or vwap_anchor == "Dividends" or vwap_anchor == "Splits"
+if na(vwap_src[1]) and not vwap_isEsdAnchor
+    vwap_isNewPeriod := true
+
+float vwapValue = na
+float vwapUpperBand1 = na
+float vwapLowerBand1 = na
+
+if vwap_show and not (vwap_hideOnDWM and timeframe.isdwm)
+    [vwap_v, vwap_stdevUpper, vwap_unused] = ta.vwap(vwap_src, vwap_isNewPeriod, 1)
+    vwapValue := vwap_v
+    vwap_stdevAbs = vwap_stdevUpper - vwap_v
+    vwap_bandBasis = vwap_calcMode == "Standard Deviation" ? vwap_stdevAbs : vwap_v * 0.01
+    vwapUpperBand1 := vwap_v + vwap_bandBasis * vwap_bandMult
+    vwapLowerBand1 := vwap_v - vwap_bandBasis * vwap_bandMult
+
+vwap_display = vwap_show ? display.all : display.none
+plot(vwapValue, title = "VWAP", color = vwap_color, offset = vwap_offset, display = vwap_display)
+
+vwap_displayBand = (vwap_show and vwap_showBand) ? display.all : display.none
+vwap_upperPlot = plot(vwapUpperBand1, title = "VWAP Upper Band", color = vwap_bandColor, offset = vwap_offset, display = vwap_displayBand, editable = vwap_showBand)
+vwap_lowerPlot = plot(vwapLowerBand1, title = "VWAP Lower Band", color = vwap_bandColor, offset = vwap_offset, display = vwap_displayBand, editable = vwap_showBand)
+fill(vwap_upperPlot, vwap_lowerPlot, title = "VWAP Band Fill", color = color.new(vwap_bandColor, 95), display = vwap_displayBand, editable = vwap_showBand)
+
+// ═══════════════════════════════════════════════════════════════════════
+// G-CHANNEL TREND DETECTION
+// Ported from Pine v4 to v6 (same port already validated earlier in this project): study()->
+// indicator() (n/a here, joins the shared indicator() call), unprefixed max/min/avg/barssince ->
+// math.max/math.min/math.avg/ta.barssince, deprecated transp= -> color.new(), and the v6 na-
+// comparison warm-up guard (v6 resolves na comparisons to false immediately instead of propagating
+// na the way v4/v5 did, which previously shifted signal timing until fixed). All identifiers
+// prefixed `gc_` to avoid collision with the sections above.
+// ═══════════════════════════════════════════════════════════════════════
+GRP_GC = "G-Channel Trend"
+gc_show      = input.bool(true, "Show G-Channel", group = GRP_GC)
+gc_length    = input.int(100, "Length", group = GRP_GC)
+gc_src       = input.source(close, "Source", group = GRP_GC)
+gc_bullColor = input.color(color.lime, "Bullish Color", group = GRP_GC)
+gc_bearColor = input.color(color.red, "Bearish Color", group = GRP_GC)
+gc_showCross = input.bool(true, "Show Buy/Sell Labels", group = GRP_GC)
+
+gc_a = 0.0
+gc_b = 0.0
+gc_a := math.max(gc_src, nz(gc_a[1])) - nz(gc_a[1] - gc_b[1]) / gc_length
+gc_b := math.min(gc_src, nz(gc_b[1])) + nz(gc_a[1] - gc_b[1]) / gc_length
+gc_avg = math.avg(gc_a, gc_b)
+
+gc_crossup = gc_b[1] < close[1] and gc_b > close
+gc_crossdn = gc_a[1] < close[1] and gc_a > close
+
+var bool gc_everCrossUp = false
+var bool gc_everCrossDn = false
+gc_everCrossUp := gc_everCrossUp or gc_crossup
+gc_everCrossDn := gc_everCrossDn or gc_crossdn
+gc_warmedUp = gc_everCrossUp and gc_everCrossDn
+
+gcBarsSinceDn = ta.barssince(gc_crossdn)
+gcBarsSinceUp = ta.barssince(gc_crossup)
+
+gc_bullish = gc_warmedUp ? gcBarsSinceDn <= gcBarsSinceUp : false
+gc_c = gc_bullish ? gc_bullColor : gc_bearColor
+
+gc_p1 = plot(gc_show ? gc_avg : na, title = "G-Channel Average", color = color.new(gc_c, 90), linewidth = 1)
+gc_p2 = plot(gc_show ? close : na, title = "G-Channel Close Anchor", color = color.new(gc_c, 100), linewidth = 1)
+fill(gc_p1, gc_p2, title = "G-Channel Fill", color = color.new(gc_c, 90))
+
+gc_sellSignal = gc_show and gc_showCross and gc_warmedUp and not gc_bullish and gc_bullish[1]
+gc_buySignal  = gc_show and gc_showCross and gc_warmedUp and gc_bullish and not gc_bullish[1]
+
+plotshape(gc_sellSignal ? gc_avg : na, title = "G-Channel Sell", location = location.absolute, style = shape.labeldown, color = gc_bearColor, size = size.tiny, text = "Sell", textcolor = color.white, offset = -1)
+plotshape(gc_buySignal ? gc_avg : na, title = "G-Channel Buy", location = location.absolute, style = shape.labelup, color = gc_bullColor, size = size.tiny, text = "Buy", textcolor = color.white, offset = -1)
+
+alertcondition(gc_buySignal, title = "G-Channel Buy Signal", message = "G-Channel: trend flipped bullish.")
+alertcondition(gc_sellSignal, title = "G-Channel Sell Signal", message = "G-Channel: trend flipped bearish.")
+
+// ═══════════════════════════════════════════════════════════════════════
+// TREND MAGIC / WEEKLY VWAP SIGNAL
+//   BUY:  the selected Trend Magic line crosses ABOVE the Weekly VWAP.
+//   SELL: the selected Trend Magic line crosses BELOW the Weekly VWAP.
+// "MTF trend magic" is ambiguous between TM1/TM2 — exposed as a selector, defaulted to TM1 (fast).
+// The Weekly VWAP here is a DEDICATED calculation, always anchored weekly regardless of what the
+// "Anchor Period" dropdown in the VWAP section is set to. Reuses that section's Source setting.
+// ═══════════════════════════════════════════════════════════════════════
+GRP_TMVWAP = "Trend Magic / Weekly VWAP Signal"
+showTmVwapSignal = input.bool(true, "Show Buy/Sell Signals", group = GRP_TMVWAP)
+tmVwapLineChoice = input.string("TM1 (fast)", "Trend Magic Line", options = ["TM1 (fast)", "TM2 (slow)"], group = GRP_TMVWAP,
+     tooltip = "Which Trend Magic line to compare against the Weekly VWAP. Defaulted to TM1 since it's the faster/primary line — switch to TM2 if you meant the slower one.")
+tmVwapBuyColor  = input.color(color.lime, "Buy Color", group = GRP_TMVWAP)
+tmVwapSellColor = input.color(color.red, "Sell Color", group = GRP_TMVWAP)
+
+tmVwap_weeklyNewPeriod = timeframe.change("W")
+if na(vwap_src[1])
+    tmVwap_weeklyNewPeriod := true
+[tmVwapWeeklyValue, tmVwap_wUpper, tmVwap_wLower] = ta.vwap(vwap_src, tmVwap_weeklyNewPeriod, 1)
+
+tmVwapLineValue = tmVwapLineChoice == "TM1 (fast)" ? MagicTrend1 : MagicTrend2
+
+tmVwapBuySignal  = ta.crossover(tmVwapLineValue, tmVwapWeeklyValue)
+tmVwapSellSignal = ta.crossunder(tmVwapLineValue, tmVwapWeeklyValue)
+
+plotshape(showTmVwapSignal and tmVwapBuySignal, title = "TM/Weekly VWAP Buy", style = shape.labelup, location = location.belowbar, color = tmVwapBuyColor, text = "BUY", textcolor = color.white, size = size.small)
+plotshape(showTmVwapSignal and tmVwapSellSignal, title = "TM/Weekly VWAP Sell", style = shape.labeldown, location = location.abovebar, color = tmVwapSellColor, text = "SELL", textcolor = color.white, size = size.small)
+
+alertcondition(tmVwapBuySignal, title = "TM/Weekly VWAP Buy Signal", message = "Trend Magic crossed above the Weekly VWAP — BUY.")
+alertcondition(tmVwapSellSignal, title = "TM/Weekly VWAP Sell Signal", message = "Trend Magic crossed below the Weekly VWAP — SELL.")
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// REGRESSION LINE [DW]
+// Added from the attached Regression Line indicator. The duplicate G-Channel
+// section and duplicate indicator() declaration were intentionally omitted.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════
+src = input.source(close, "Source")
+
+filtType = input.string("SMA", "Base Average Type", options = ["ALMA", "EMA", "SMA", "RMA", "LWMA", "VWMA"])
+wType    = input.string("Continuous", "Window Type", options = ["Continuous", "Interval"])
+len      = input.int(200, "Sampling Length (for Continuous Window Type)", minval = 2)
+res      = input.timeframe("D", "Interval Size (for Interval Window Type)")
+
+extendLines = input.bool(false, "Extend Line Right") ? extend.right : extend.none
+
+showLine = input.bool(true, "Show Regression Line")
+lineWidth = input.int(4, "Line Width", minval = 1)
+lineStyle = input.string("Solid", "Line Style", options = ["Solid", "Dotted", "Dashed"])
+posColor  = input.color(color.lime, "Positive Slope Color")
+negColor  = input.color(color.red, "Negative Slope Color")
+flatColor = input.color(color.new(#cccccc, 0), "Flat Slope Color")
+
+showTracer = input.bool(true, "Show Tracer (current-value plot)",
+     tooltip = "A thin plot() of the regression line's current bar value only — functionally a Least Squares Moving Average (LSMA). Useful if you want other scripts/request.security() to reference this value, since the diagonal line itself is drawn as a line object, not a plot series.")
+tracerColor = input.color(color.white, "Tracer Color")
+
+showBarColor = input.bool(true, "Color Bars by Position/Slope",
+     tooltip = "4-state coloring: bright vs dark shade distinguishes 'trending in your favor' from 'just starting to turn' — not just simple above/below.")
+
+// ═══════════════════════════════════════════════════════════════════════
+// FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════
+
+// Interval renewal — true on the first bar of a new `res`-sized period
+f_newbar(res) =>
+    t = time(res)
+    (na(t[1]) and not na(t)) or (nz(t[1], t) < t)
+
+f_alma(y, t) =>
+    m = 0.85 * (t - 1)
+    s = t / 6
+    wtsum = 0.0
+    cumwt = 0.0
+    for i = 0 to t - 1
+        wt = math.exp(-math.pow(i - m, 2) / (2 * math.pow(s, 2)))
+        wtsum += wt * nz(y[t - 1 - i], y)
+        cumwt += wt
+    wtsum / cumwt
+
+f_ema(y, t) =>
+    var float out = na
+    out := na(out[1]) ? y : (y - nz(out[1])) * (2 / (t + 1)) + nz(out[1])
+    out
+
+f_sma(y, t) =>
+    sum = 0.0
+    for i = 0 to t - 1
+        sum += nz(y[i], y)
+    sum / t
+
+f_rma(y, t) =>
+    var float out = na
+    out := na(out[1]) ? f_sma(y, t) : (nz(out[1]) * (t - 1) + y) / t
+    out
+
+f_lwma(y, t) =>
+    numSum = 0.0
+    denSum = 0.0
+    for i = 0 to t - 1
+        numSum += (t - i) * nz(y[i], y)
+        denSum += (t - i)
+    numSum / denSum
+
+f_vwma(y, t) =>
+    tick = syminfo.mintick
+    rng = high - low
+    var float tickrng = tick
+    tickrng := math.abs(rng) < tick ? tickrng : rng
+    tickvol = math.abs(tickrng) / tick
+    vol = na(volume) ? tickvol : volume
+    vp = y * vol
+    vpsum = 0.0
+    vsum = 0.0
+    for i = 0 to t - 1
+        vpsum += nz(vp[i], vp)
+        vsum  += nz(vol[i], vol)
+    vpsum / vsum
+
+f_filt(y, t, fType) =>
+    fType == "ALMA" ? f_alma(y, t) :
+     fType == "EMA"  ? f_ema(y, t) :
+     fType == "SMA"  ? f_sma(y, t) :
+     fType == "RMA"  ? f_rma(y, t) :
+     fType == "LWMA" ? f_lwma(y, t) :
+     f_vwma(y, t)
+
+// Standard deviation of y around its filtered mean, over t bars, using fType as the base average.
+// mult is a plain scaling factor (kept for reuse; slope math below always calls this with mult=1
+// to avoid coupling the line's own trajectory to an unrelated setting).
+f_stdev(y, t, fType, mult) =>
+    math.sqrt(f_filt(math.pow(y - f_filt(y, t, fType), 2), t, fType)) * mult
+
+f_corr(x, y, t, fType) =>
+    xDev = math.round(t / 2)
+    yDev = y - f_filt(y, t, fType)
+    xySum = 0.0
+    x2Sum = 0.0
+    y2Sum = 0.0
+    for i = 0 to t - 1
+        xySum += xDev * nz(yDev[i], yDev)
+        x2Sum += math.pow(xDev, 2)
+        y2Sum += math.pow(nz(yDev[i], yDev), 2)
+    den = math.sqrt(x2Sum * y2Sum)
+    den == 0 ? 0 : xySum / den
+
+// Returns [Y1, Y2] — the regression line's value at the start and end of the window.
+f_linRegFilt(y, t, fType) =>
+    x = bar_index
+    r = f_corr(x, y, t, fType)
+    sy = f_stdev(y, t, fType, 1.0)   // fixed multiplier — slope must not depend on channel width
+    sx = math.round(t / 2)
+    yMean = f_filt(y, t, fType)
+    xMean = nz(bar_index[sx], 0)
+    b = t == 1 ? 0 : r * (sy / sx)
+    a = yMean - b * xMean
+    y1 = a + b * nz(x[t - 1], x)
+    y2 = a + b * x
+    [y1, y2]
+
+f_lineStyle(s) =>
+    s == "Solid" ? line.style_solid : s == "Dotted" ? line.style_dotted : line.style_dashed
+
+f_drawLine(y1, y2, t, col, styleStr, lw, ext) =>
+    int x1 = nz(bar_index[t - 1], 0)
+    int x2 = bar_index
+    var line ln = na
+    if bar_index != nz(bar_index[1], 0)
+        line.delete(ln)
+        ln := line.new(x1 = x1, y1 = y1, x2 = x2, y2 = y2, xloc = xloc.bar_index, extend = ext, color = col, style = f_lineStyle(styleStr), width = lw)
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════
+newInt = f_newbar(res)
+
+var int interBars = 1
+interBars := newInt ? 1 : interBars + 1
+
+int per = wType == "Interval" ? interBars : int(len)
+
+[y1, y2] = f_linRegFilt(src, per, filtType)
+
+regColor = y2 > y1 ? posColor : y2 < y1 ? negColor : flatColor
+
+barColorVal = (src > y2) and (y2 <= y1) ? color.new(posColor, 40) :
+     (src > y2) and (y2 > y1) ? posColor :
+     (src < y2) and (y2 >= y1) ? color.new(negColor, 40) :
+     (src < y2) and (y2 < y1) ? negColor :
+     flatColor
+
+// ═══════════════════════════════════════════════════════════════════════
+// OUTPUTS
+// ═══════════════════════════════════════════════════════════════════════
+plot(showTracer ? y2 : na, color = tracerColor, linewidth = 1, title = "Regression Line Current Value")
+
+if showLine
+    f_drawLine(y1, y2, per, regColor, lineStyle, lineWidth, extendLines)
+
+barcolor(showBarColor ? barColorVal : na)
+
+// ═══════════════════════════════════════════════════════════════════════
+

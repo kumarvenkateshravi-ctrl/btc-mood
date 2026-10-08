@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, ScanLine, Layers, SlidersHorizontal, Gauge, Target, Bell, FlaskConical, BookOpen,
-  Briefcase, Boxes, FileBarChart, BrainCircuit, HelpCircle, Settings, TrendingUp, type LucideIcon,
+  Briefcase, Boxes, FileBarChart, BrainCircuit, HelpCircle, Settings, TrendingUp, ShieldCheck, type LucideIcon,
 } from 'lucide-react';
 
 import { RegimeTag, VolatilityTag, LiquidityTag, type Regime, type VolLevel, type LiqLevel } from '@/components/ui/marketState';
@@ -24,6 +24,7 @@ const ITEMS: { label: string; icon: LucideIcon; href?: string; badge?: string }[
   { label: 'Trade Setup', icon: Target, href: '/trade-setup' },
   { label: 'Alerts', icon: Bell, href: '/alerts' },
   { label: 'Backtester', icon: FlaskConical, href: '/backtester' },
+  { label: 'Prop Challenges', icon: ShieldCheck, href: '/challenges' },
   { label: 'Journal', icon: BookOpen, href: '/journal' },
   { label: 'Positions', icon: Briefcase, href: '/positions' },
   { label: 'Strategies', icon: Boxes, href: '/strategies' },

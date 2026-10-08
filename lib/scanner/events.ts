@@ -5,7 +5,7 @@
 // timeline is reconstructable from history at any time.
 
 import type { Candle, Timeframe } from '../types';
-import type { VdTrade } from '../indicators/vdEngine';
+import type { TrackedTrade } from '../tradeWalker';
 import { TF_SECONDS } from './evaluate';
 import type { ConditionSnapshot } from './types';
 import type { ScannerSignal } from './signals';
@@ -28,7 +28,7 @@ export interface ScannerEvent {
 
 /** Derive the full event timeline for walked scanner trades. */
 export function deriveScannerEvents(
-  trades: Array<VdTrade<ScannerSignal>>,
+  trades: Array<TrackedTrade<ScannerSignal>>,
   candles: Candle[],
   tf: Timeframe,
   now: number = Date.now(),

@@ -2,10 +2,8 @@
 
 // Compact Market Context widget (MTFPlan Phase 11): bias, context score,
 // confidence/conflict, trend/momentum/volume strength, risk — plus the latest
-// WHY-NOT rejection so non-signals teach (refinement 10). Clicking opens the
-// detailed MTF view. Reads the SAME MarketContext as the decision gate.
+// detailed MTF view. Reads the shared MarketContext.
 
-import { latestVdDecisions } from '@/lib/context/contextStore';
 import type { MarketContext } from '@/lib/context/types';
 
 /** Directional strength stars: |score − 50| × 2 mapped to 0..5. */
@@ -34,9 +32,6 @@ export default function MarketContextWidget({
   onOpenDetails?: () => void;
 }) {
   const ui = BIAS_UI[ctx.overallBias];
-  const snap = latestVdDecisions();
-  const lastRejection = snap?.gated ? snap.rejections[snap.rejections.length - 1] : undefined;
-
   return (
     <button
       type="button"
@@ -63,11 +58,6 @@ export default function MarketContextWidget({
         <div className="flex justify-between"><dt>Volume</dt><dd className="font-mono">{strengthStars(ctx.volumeScore)}</dd></div>
         <div className="flex justify-between"><dt>Risk</dt><dd>{riskLabel(ctx)}</dd></div>
       </dl>
-      {lastRejection && (
-        <p className="mt-1 border-t border-line pt-1 text-[10px] leading-tight text-ink-faint">
-          No {lastRejection.signal.side === 'buy' ? 'BUY' : 'SELL'} — {lastRejection.failedGates[0]}
-        </p>
-      )}
     </button>
   );
 }

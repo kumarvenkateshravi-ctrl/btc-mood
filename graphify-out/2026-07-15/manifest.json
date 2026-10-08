@@ -5,13 +5,13 @@
     "semantic_hash": "5300a9feb8255cdd3c0f819a6fd8fb24"
   },
   ".remember/tmp/last-ndc.ts": {
-    "mtime": 1784119665.1032782,
-    "ast_hash": "f96cdf8a94ac63a3967c3c494d80ecec",
+    "mtime": 1784135447.8019588,
+    "ast_hash": "1b1d6d69ef3f424a8506fcbee6e7a797",
     "semantic_hash": ""
   },
   ".remember/tmp/last-save.json": {
-    "mtime": 1784119663.4937422,
-    "ast_hash": "83b52fe3cef1ab47aa68f41e71c3f469",
+    "mtime": 1784135446.216902,
+    "ast_hash": "45d98b809f12f30fde2c7d9ded33b3d6",
     "semantic_hash": ""
   },
   ".storybook/main.ts": {
@@ -45,8 +45,8 @@
     "semantic_hash": "c2705194f47a747ef8063834f50dc2f2"
   },
   "app/app/page.tsx": {
-    "mtime": 1784120345.8565078,
-    "ast_hash": "f8733302ed008c13a85f63af12e512fd",
+    "mtime": 1784137752.9735596,
+    "ast_hash": "a59fdcac9aecc03aadb12c56bbf77702",
     "semantic_hash": ""
   },
   "app/backtester/page.tsx": {
@@ -155,8 +155,8 @@
     "semantic_hash": ""
   },
   "components/ChartPanel.tsx": {
-    "mtime": 1784104609.6157534,
-    "ast_hash": "dca8bbab4a52457a3ac8468f405eb6db",
+    "mtime": 1784136071.3775992,
+    "ast_hash": "f2b96c5ac336c9a56b215689bcbb093f",
     "semantic_hash": ""
   },
   "components/ChartToolbar.tsx": {
@@ -235,8 +235,8 @@
     "semantic_hash": "f5a024e6b79c94385ce17117ea43a06f"
   },
   "components/MultiChartGrid.tsx": {
-    "mtime": 1784037564.1610925,
-    "ast_hash": "e998069c6a00dcbec89bed83b70d190c",
+    "mtime": 1784137646.0779648,
+    "ast_hash": "ab2ac3454044e72a7d187c9178b477c1",
     "semantic_hash": ""
   },
   "components/OrderFlowPanel.tsx": {
@@ -255,8 +255,8 @@
     "semantic_hash": ""
   },
   "components/RightDock.tsx": {
-    "mtime": 1783939859.684813,
-    "ast_hash": "3c1c7f4e483439e75a883c0bfc11e15d",
+    "mtime": 1784121809.3442256,
+    "ast_hash": "871bfeefabad7780c6d2b4736fe845ac",
     "semantic_hash": ""
   },
   "components/SignalMatrix.tsx": {
@@ -345,8 +345,8 @@
     "semantic_hash": ""
   },
   "components/chart/useChartData.ts": {
-    "mtime": 1784076483.4756896,
-    "ast_hash": "6c8a356c8b82f120f7d92a6d55e50802",
+    "mtime": 1784121182.5054767,
+    "ast_hash": "59a7efb8774d3ecf565d9386fd98658e",
     "semantic_hash": ""
   },
   "components/chart/useChartEvents.ts": {
@@ -830,13 +830,13 @@
     "semantic_hash": "667be03a6d1baf7f5f30cb17580b39df"
   },
   "lib/gridLayout.test.ts": {
-    "mtime": 1783939859.7527916,
-    "ast_hash": "22f7b89d9cc8e3988600671997f3d399",
+    "mtime": 1784129983.3675892,
+    "ast_hash": "02dc887088f036f886a37121f14fa27f",
     "semantic_hash": ""
   },
   "lib/gridLayout.ts": {
-    "mtime": 1783939859.7527916,
-    "ast_hash": "117702ac54fc6291bb881c40090fed3e",
+    "mtime": 1784129665.9545977,
+    "ast_hash": "09374d0a1be8bd57fc248b2378dc1bd3",
     "semantic_hash": ""
   },
   "lib/heikinAshi.test.ts": {
@@ -970,8 +970,8 @@
     "semantic_hash": "5311c1c86680a4d1a86538aa287ced33"
   },
   "lib/indicators/maRibbonTV.ts": {
-    "mtime": 1783064343.3951013,
-    "ast_hash": "f6ea8011e7118a788d5cb605a9d22ce1",
+    "mtime": 1784136071.3916166,
+    "ast_hash": "d9ee46674458d2d820ff30ace519bbfe",
     "semantic_hash": ""
   },
   "lib/indicators/macd.golden.test.ts": {
@@ -1590,7 +1590,7 @@
     "semantic_hash": "3f3c0159a639662449303d5753913b9f"
   },
   ".remember/now.md": {
-    "mtime": 1784119684.6642783,
+    "mtime": 1784135467.1261413,
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": ""
   },
@@ -2790,8 +2790,8 @@
     "semantic_hash": ""
   },
   ".remember/today-2026-07-15.md": {
-    "mtime": 1784119684.6489346,
-    "ast_hash": "2e01d9156ca396306b113a3d1cfb7f8a",
+    "mtime": 1784135467.123866,
+    "ast_hash": "f1a4630b2414023cfad6fb43c2a1e3fe",
     "semantic_hash": ""
   },
   "components/trade/ActivePositionWidget.tsx": {
@@ -2812,6 +2812,11 @@
   "docs/superpowers/plans/2026-07-15-active-trade-overlay.md": {
     "mtime": 1784105220.1983855,
     "ast_hash": "0a0016eaedbb6db4132edd8286880bfc",
+    "semantic_hash": ""
+  },
+  "components/WidgetsPanel.tsx": {
+    "mtime": 1784121761.9713147,
+    "ast_hash": "6a884766dec0a0dd0efdaef051668bd9",
     "semantic_hash": ""
   }
 }

@@ -15,6 +15,9 @@ describe('trading command feedback', () => {
     expect(feedbackForTradingCommand({ status: 'rejected', mode: 'live', reason: 'Market data is not trusted/live' })).toEqual({
       tone: 'error', title: 'Command rejected', message: 'Market data is not trusted/live',
     });
+    expect(feedbackForTradingCommand({ status: 'pending', mode: 'replay', reason: 'Saving Challenge action.' })).toEqual({
+      tone: 'info', title: 'Saving Challenge', message: 'Saving Challenge action.',
+    });
     expect(feedbackForTradingCommand({ status: 'unsupported', mode: 'replay', reason: 'Replay command unsupported' })).toEqual({
       tone: 'info', title: 'Command unavailable', message: 'Replay command unsupported',
     });
@@ -22,6 +25,7 @@ describe('trading command feedback', () => {
 
   it('keeps a context menu or ticket open after rejection and closes only after acceptance', () => {
     expect(shouldDismissTradingControl({ status: 'accepted', mode: 'live' })).toBe(true);
+    expect(shouldDismissTradingControl({ status: 'pending', mode: 'replay', reason: 'Saving Challenge action.' })).toBe(false);
     expect(shouldDismissTradingControl({ status: 'rejected', mode: 'live', reason: 'Insufficient margin' })).toBe(false);
     expect(shouldDismissTradingControl({ status: 'unsupported', mode: 'replay', reason: 'Replay command unsupported' })).toBe(false);
   });

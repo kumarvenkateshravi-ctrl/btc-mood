@@ -1,0 +1,104 @@
+//@version=6
+indicator("AI Renko Supertrend — Transparent Reconstruction", shorttitle = "AI Renko ST", overlay = true, max_bars_back = 5000)
+
+// Independent reconstruction from the supplied settings screenshots.
+// No machine-learning model was supplied, so "AI" is treated as the source
+// indicator's name. The calculation below is deterministic and auditable.
+
+// ── INPUTS ──────────────────────────────────────────────────────────────────
+atrLength = input.int(14, "ATR Length", minval = 1)
+baseFactor = input.float(3.0, "Base Factor", minval = 0.1, step = 0.1)
+autoBrickSize = input.bool(true, "Auto Brick Size")
+manualBrickSize = input.float(10.0, "Manual Brick Size", minval = 0.00000001, step = 0.1)
+useChoppyFilter = input.bool(false, "Choppy Filter (ADX)")
+adxThreshold = input.float(15.0, "ADX Threshold", minval = 0.0, maxval = 100.0, step = 0.5)
+
+// ── BRICK SIZE ──────────────────────────────────────────────────────────────
+// Automatic mode uses current ATR. Manual mode uses an absolute price value.
+float atrValue = ta.atr(atrLength)
+float brickSize = autoBrickSize ? nz(atrValue, manualBrickSize) : manualBrickSize
+brickSize := math.max(brickSize, syminfo.mintick)
+
+// ── CONFIRMED RENKO REFERENCE ───────────────────────────────────────────────
+// The reference moves only in whole bricks. Updating on confirmed bars keeps
+// historical and live behavior aligned and prevents an open bar from creating
+// a temporary brick that disappears before its close.
+var float renkoRef = na
+var int renkoDirection = 0
+
+if na(renkoRef)
+    renkoRef := close
+
+if barstate.isconfirmed and brickSize > 0
+    float distance = close - renkoRef
+    int completedBricks = int(math.floor(math.abs(distance) / brickSize))
+    if completedBricks > 0
+        int nextDirection = distance > 0 ? 1 : -1
+        renkoRef += nextDirection * completedBricks * brickSize
+        renkoDirection := nextDirection
+
+// ── RENKO SUPERTREND ────────────────────────────────────────────────────────
+// Standard trailing-band behavior, centered on the synthetic Renko reference.
+float basicUpper = renkoRef + baseFactor * brickSize
+float basicLower = renkoRef - baseFactor * brickSize
+
+var float finalUpper = na
+var float finalLower = na
+
+float previousRef = nz(renkoRef[1], renkoRef)
+finalUpper := na(finalUpper[1]) or basicUpper < finalUpper[1] or previousRef > finalUpper[1] ? basicUpper : finalUpper[1]
+finalLower := na(finalLower[1]) or basicLower > finalLower[1] or previousRef < finalLower[1] ? basicLower : finalLower[1]
+
+var int trend = 1
+int previousTrend = nz(trend[1], 1)
+trend := previousTrend
+
+if previousTrend == -1 and renkoRef > finalUpper[1]
+    trend := 1
+else if previousTrend == 1 and renkoRef < finalLower[1]
+    trend := -1
+
+float supertrend = trend == 1 ? finalLower : finalUpper
+
+// ── ADX CHOP FILTER ─────────────────────────────────────────────────────────
+// The screenshot exposes one ADX threshold, so ATR Length is reused for both
+// the directional-index length and ADX smoothing.
+[plusDI, minusDI, adxValue] = ta.dmi(atrLength, atrLength)
+bool trendStrengthPasses = not useChoppyFilter or adxValue >= adxThreshold
+
+// Signals occur only when the confirmed Renko Supertrend changes direction.
+bool buySignal = barstate.isconfirmed and trend == 1 and previousTrend == -1 and trendStrengthPasses
+bool sellSignal = barstate.isconfirmed and trend == -1 and previousTrend == 1 and trendStrengthPasses
+
+// ── STYLE OUTPUTS ───────────────────────────────────────────────────────────
+// Separate plots expose the bull/bear colors in TradingView's Style tab.
+bullLine = plot(trend == 1 ? supertrend : na, "Supertrend Line — Bull Color",
+     color = color.rgb(0, 145, 18), linewidth = 2, style = plot.style_linebr)
+bearLine = plot(trend == -1 ? supertrend : na, "Supertrend Line — Bear Color",
+     color = color.rgb(255, 20, 20), linewidth = 2, style = plot.style_linebr)
+
+// Fully transparent by default: it anchors both clouds without adding clutter.
+priceRef = plot(renkoRef, "Price Ref (cloud anchor)",
+     color = color.new(color.gray, 100), linewidth = 1, style = plot.style_stepline)
+
+fill(bullLine, priceRef, color = trend == 1 ? color.new(color.rgb(50, 125, 82), 82) : na,
+     title = "Bullish Cloud", fillgaps = false)
+fill(bearLine, priceRef, color = trend == -1 ? color.new(color.rgb(145, 65, 65), 84) : na,
+     title = "Bearish Cloud", fillgaps = false)
+
+plotshape(buySignal, title = "Buy Signal", style = shape.labelup, location = location.belowbar,
+     color = color.rgb(0, 145, 18), text = "BUY", textcolor = color.white, size = size.tiny)
+plotshape(sellSignal, title = "Sell Signal", style = shape.labeldown, location = location.abovebar,
+     color = color.rgb(255, 20, 20), text = "SELL", textcolor = color.white, size = size.tiny)
+
+// ── ALERTS ──────────────────────────────────────────────────────────────────
+alertcondition(buySignal, title = "AI Renko Supertrend Buy",
+     message = "AI Renko Supertrend BUY on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sellSignal, title = "AI Renko Supertrend Sell",
+     message = "AI Renko Supertrend SELL on {{ticker}} {{interval}} at {{close}}")
+
+// ── DATA WINDOW ─────────────────────────────────────────────────────────────
+plot(brickSize, "Active Brick Size", display = display.data_window)
+plot(adxValue, "ADX", display = display.data_window)
+plot(renkoDirection, "Renko Direction", display = display.data_window)
+plot(trend, "Supertrend Direction", display = display.data_window)

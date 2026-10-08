@@ -55,3 +55,13 @@ next-env.d.ts
 /tsc_out.txt
 /*.jpeg
 /playwright/.cache/
+
+# local checkpoints and generated analysis
+/.tokensave/
+/graphify-out/20*/
+/graphify-out/cache/ast/
+/debug.log
+/stage7-*.log
+/stage7-*.json
+/artifacts/stage7-mobile/lint*.json
+/artifacts/stage7-mobile/ui-final-results.json

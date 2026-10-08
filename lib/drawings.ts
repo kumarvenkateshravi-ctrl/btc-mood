@@ -32,17 +32,6 @@ export interface Drawing {
   text?: string;
 }
 
-/** How many points each tool needs before it commits. */
-export const TOOL_POINTS: Record<DrawingType, 1 | 2> = {
-  horizontal: 1,
-  text: 1,
-  trendline: 2,
-  ray: 2,
-  rectangle: 2,
-  fib: 2,
-  measure: 2,
-};
-
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 
 export const DRAWING_COLORS = ['#5aa2e6', '#f5b13b', '#22d39a', '#fb5168', '#e9eef7'];
@@ -225,3 +214,11 @@ export function useDrawings(symbol: string): Drawing[] {
   return all[symbol] ?? EMPTY;
 }
 
+/** Test-only reset for isolated creation, persistence, and history assertions. */
+export function __resetDrawingsForTest(): void {
+  cache = null;
+  for (const key of Object.keys(undoStack)) delete undoStack[key];
+  for (const key of Object.keys(redoStack)) delete redoStack[key];
+  if (typeof window !== 'undefined') window.localStorage.removeItem(KEY);
+  for (const listener of listeners) listener();
+}

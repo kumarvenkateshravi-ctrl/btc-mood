@@ -124,7 +124,7 @@ export interface MarketData {
     maxPages: number,
     onProgress?: (p: { tf: Timeframe; pages: number; oldestMs: number }) => void,
     signal?: AbortSignal,
-  ) => Promise<void>;
+  ) => Promise<Candle[] | undefined>;
 }
 
 /**
@@ -817,6 +817,9 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
       unlinkAbort();
       request.finish();
     }
+    // State propagation is asynchronous. Return the merge-owned snapshot so a
+    // replay date selection can use the exact history it just requested.
+    return candleMergeRef.current[tf].candles as Candle[];
   };
 
   // ---- WebSocket: ticker for 24hr live price/change ----
@@ -825,8 +828,11 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
 
     // REST seeds the display only. Execution trust remains non-live until this
     // supervisor receives a valid current-epoch ticker event.
-    fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`)
-      .then((res) => res.json())
+    fetch(`/api/ticker?symbol=${encodeURIComponent(symbol)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Ticker request failed (${res.status})`);
+        return res.json();
+      })
       .then((data) => {
         if (active && data && data.lastPrice) {
           setTicker24h({
@@ -837,7 +843,10 @@ export function useMarketData(symbol: CompareSymbol): MarketData {
           });
         }
       })
-      .catch(console.error);
+      .catch(() => {
+        // The supervised ticker WebSocket can still populate this value. Its
+        // transport state is already surfaced by the market-data health UI.
+      });
 
     const dispose = subscribeTicker(
       symbol,

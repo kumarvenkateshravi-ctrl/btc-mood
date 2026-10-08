@@ -6,7 +6,7 @@
 import type { Candle } from '../types';
 import { TIMEFRAMES } from '../types';
 import * as pm from '../pineMath';
-import { vdAtr } from '../indicators/vdEngine';
+import { wilderAtr } from '../tradeWalker';
 import { computeVwap } from '../indicators/vwap';
 import { computeBollingerBands } from '../indicators/bollingerBands';
 import { computeStochastic } from '../indicators/stochastic';
@@ -15,7 +15,6 @@ import { computeMacd } from '../indicators/macd';
 import { computeRsi } from '../indicators/rsi';
 import { computeAdx } from '../indicators/adx';
 import { computeObv } from '../indicators/obv';
-import { computeVdZoneObjects } from '../indicators/volumeDistributionZones';
 import {
   plotSeries, structureScoreSeries,
   trendScoreSeries, momentumScoreSeries, volumeScoreSeries, contextScoreSeries,
@@ -91,7 +90,7 @@ export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries
   src({
     id: 'atr', name: 'ATR', group: 'standard', costWeight: 1, params: lengthParam(14),
     outputs: [{ id: 'value', label: 'ATR' }], operators: CMP_OPS, tfs: TIMEFRAMES,
-    series: (c, p) => vdAtr(c, num(p.length, 14)),
+    series: (c, p) => wilderAtr(c, num(p.length, 14)),
   }),
   src({
     id: 'adx', name: 'ADX (14)', group: 'standard', params: [],
@@ -134,41 +133,6 @@ export const SCANNER_SOURCES: Record<string, ScannerSource> = Object.fromEntries
     operators: CMP_OPS, tfs: TIMEFRAMES,
     series: (c) => structureScoreSeries(c),
   }),
-  src({
-    id: 'vdZone', name: 'VD Zone', group: 'structure', costWeight: 6, params: [],
-    outputs: [
-      { id: 'distanceAtr', label: 'Distance to nearest zone (ATRs)' },
-      { id: 'inside', label: 'Inside zone (0/1)', range: [0, 1] as [number, number] },
-      { id: 'confidence', label: 'Nearest zone confidence', range: [0, 100] as [number, number] },
-    ],
-    operators: CMP_OPS, tfs: TIMEFRAMES,
-    series: (c, _p, out) => {
-      const n = c.length;
-      const res: Series = new Array(n).fill(null);
-      if (n === 0) return res;
-      const { zones } = computeVdZoneObjects(c); // default D+4H config
-      const healthy = zones.filter((z) => z.health > 0);
-      const atr = vdAtr(c);
-      for (let i = 0; i < n; i++) {
-        const a = atr[i];
-        let best: { dist: number; conf: number; inside: boolean } | null = null;
-        for (const z of healthy) {
-          if (z.formedAtIndex > i || (z.endIndex != null && z.endIndex < i)) continue;
-          const px = c[i].close;
-          const inside = px >= z.lower && px <= z.upper;
-          const dist = inside ? 0 : Math.min(Math.abs(px - z.upper), Math.abs(px - z.lower));
-          if (best == null || dist < best.dist) best = { dist, conf: z.confidence, inside };
-        }
-        if (best) {
-          res[i] = out === 'inside' ? (best.inside ? 1 : 0)
-            : out === 'confidence' ? best.conf
-            : a != null && a > 0 ? best.dist / a : null;
-        }
-      }
-      return res;
-    },
-  }),
-
   // ---- Intelligence (the USP) --------------------------------------------------
   src({
     id: 'trendScore', name: 'Trend Score', group: 'intelligence', costWeight: 5, params: [],

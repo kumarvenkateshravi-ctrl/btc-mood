@@ -13,7 +13,6 @@ const props: ChartToolbarProps = {
   renko: { method: 'traditional', boxSize: 100, atrLength: 14, percentage: 0.5 }, onRenkoChange: () => {},
   activeIndicatorIds: [], onToggleIndicator: () => {}, onClearIndicators: () => {}, replayActive: false, onReplayToggle: () => {},
   historyActive: false, gridCount: 1, onGridChange: () => {},
-  workspaceCurrent: { chartType: 'candlestick', symbol: 'BTCUSDT', tf: '5m', indicatorIds: [] }, onWorkspaceApply: () => {},
 };
 
 function toolbar(overrides: Partial<ChartToolbarProps> = {}) {
@@ -68,5 +67,31 @@ describe('Stage 7 Task 2 ChartToolbar responsive composition', () => {
     expect(toolbar({ executionMode: 'live', marketIntegrity: 'live' })).toContain('PAPER');
     expect(toolbar({ executionMode: 'replay', replayActive: true, marketIntegrity: 'replay' })).toContain('REPLAY');
     expect(toolbar({ marketIntegrity: 'stale' })).toContain('Trading paused');
+  });
+  it('surfaces featured and restored indicators at the top of the indicator picker', async () => {
+    const onToggleIndicator = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    await act(async () => { root.render(<ChartToolbar {...props} onToggleIndicator={onToggleIndicator} />); });
+
+    const indicators = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Indicators"]')).find((button) => !button.disabled);
+    await act(async () => { indicators?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    const menuItems = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    expect(container.textContent).toContain('Featured indicators');
+    expect(menuItems.map((item) => item.textContent)).toEqual(expect.arrayContaining([
+      'Moving Average Ribbon', 'Moving Averages & FVG', 'Volume Profile (SVP HD)', 'D Smart Line',
+    ]));
+
+    const maFvg = menuItems.find((item) => item.textContent === 'Moving Averages & FVG');
+    await act(async () => { maFvg?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onToggleIndicator).toHaveBeenCalledWith('ma_fvg');
+
+    const indicatorsAgain = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Indicators"]')).find((button) => !button.disabled);
+    await act(async () => { indicatorsAgain?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const dsmart = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find((item) => item.textContent === 'D Smart Line');
+    await act(async () => { dsmart?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onToggleIndicator).toHaveBeenCalledWith('dsmart_line');
+    await act(async () => { root.unmount(); });
   });
 });

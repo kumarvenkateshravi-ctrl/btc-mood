@@ -22,7 +22,8 @@ export const DEFAULT_INDICATORS: IndicatorDefinition[] = [
     kind: 'label',
     category: 'trend',
     defaultWeight: 1,
-    evaluate: (candles) => evaluateEma(candles),
+    evaluate: (candles, settings) => evaluateEma(candles, settings),
+    subFor: (s) => String(s.inputs.fast ?? 20) + ' > ' + String(s.inputs.slow ?? 50) + ' > ' + String(s.inputs.long ?? 200),
   },
   {
     id: 'supertrend',

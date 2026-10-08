@@ -1,0 +1,928 @@
+//@version=6
+indicator(title="Adaptive Demand & Supply Zones — Exact 4H POC Timing", shorttitle="ADSZ + DC + QFT", overlay=true, max_labels_count=500, max_lines_count=500, max_bars_back=5000)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Adaptive Demand & Supply Zones (ADSZ)
+//
+// ATR-based volatility zones that work universally on any asset and timeframe.
+// Plots demand/supply zones across 6 timeframes (4H, Daily, Weekly, Monthly,
+// Quarterly, Half-Yearly) using statistical volatility derived from Average
+// True Range. Zones auto-adapt — wider during high volatility, tighter during
+// calm periods.
+//
+// Core formula:
+//   • Effective Volatility = ATR Slope × Annualized ATR%
+//   • Zone spread (σ) simplifies to: σ = Slope × ATR
+//   • Strong zones at ±1σ from open, Weak zones at ±σ/2.83 (or σ/2.77)
+//   • 3 fixed display layers — 4H primary, Daily confirmation, Weekly confirmation
+//   • Independent zone and POC visibility toggles for all three fixed layers
+//   • Four zone-entry alerts: 4H Buy/Sell plus 4H+Daily+Weekly Strong Buy/Sell
+//
+// Works on: Stocks, Indices, Crypto, Commodities, Forex
+//
+// NOTE: If quarterly or half-yearly zones appear different on lower-timeframe
+// charts (e.g., 4H) with multi-panel layouts, switch from "Extended Trading
+// Hours" to "Regular Trading Hours" in chart settings. Extended hours load
+// extra bars per day, reducing historical depth for higher-timeframe ATR.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── INPUTS ───────────────────────────────────────────────────────────────────
+
+// Frozen zone calibration — intentionally not exposed in Inputs
+// These are the original defaults and cannot be changed from indicator settings.
+const int   d_atr_period  = 20
+const float d_slope       = 0.69
+const float d_intercept   = 0.0
+const int   w_atr_period  = 5
+const float w_slope       = 0.68
+const float w_intercept   = 0.0
+const int   m_atr_period  = 20
+const float m_slope       = 0.90
+const float m_intercept   = 0.0
+const int   h4_atr_period = 20
+const float h4_slope      = 0.92
+const int   q_atr_period  = 20
+const float q_slope       = 0.89
+const int   hy_atr_period = 20
+const float hy_slope      = 0.88
+
+// Fixed confluence layers — timeframe assignments are intentionally locked.
+const string layer1_tf = "4H"
+const string layer2_tf = "Daily"
+const string layer3_tf = "Weekly"
+
+grp_layers = "── Fixed Zone Layers ──"
+bool show_l1_zones = input.bool(true, title="Show Layer 1 — 4H Zones", group=grp_layers)
+bool show_l2_zones = input.bool(true, title="Show Layer 2 — Daily Zones", group=grp_layers)
+bool show_l3_zones = input.bool(true, title="Show Layer 3 — Weekly Zones", group=grp_layers)
+bool show_l1_poc   = input.bool(true, title="Show Layer 1 — 4H POC", group=grp_layers)
+
+grp_h4_poc_style = "── 4H POC Appearance ──"
+color h4_poc_above_color = input.color(#00C853, "Above Daily POC", group=grp_h4_poc_style)
+color h4_poc_below_color = input.color(#FF1744, "Below Daily POC", group=grp_h4_poc_style)
+color h4_poc_equal_color = input.color(#9E9E9E, "Equal to Daily POC", group=grp_h4_poc_style)
+int h4_poc_line_width = input.int(3, "Line Width", minval=1, maxval=5, group=grp_h4_poc_style)
+bool show_l2_poc   = input.bool(true, title="Show Layer 2 — Daily POC", group=grp_layers)
+bool show_l3_poc   = input.bool(true, title="Show Layer 3 — Weekly POC", group=grp_layers)
+bool show_labels        = input.bool(true, title="Show Plain Zone Names", group=grp_layers)
+bool show_alert_labels  = input.bool(true, title="Show Compact BUY/SELL Markers", group=grp_layers)
+
+// Daily/session VWAP uses the symbol's daily boundaries; Weekly VWAP uses its
+// weekly boundaries. On Binance BTCUSDT these are midnight UTC (05:30 IST).
+grp_mrp = "MRP / WMRP"
+bool show_mrp = input.bool(true, "Show MRP — Daily / Session VWAP", group=grp_mrp)
+bool show_wmrp = input.bool(true, "Show WMRP — Weekly VWAP", group=grp_mrp)
+bool show_vwap_names = input.bool(true, "Show MRP / WMRP End Names", group=grp_mrp)
+// Endpoint names use positioned label objects. Their text colors are editable
+// here; plotted VWAP colors and zone fill colors remain editable in Style.
+mrp_name_color = input.color(#0B46F0, "MRP End Text Color", group=grp_mrp)
+wmrp_name_color = input.color(#C57A00, "WMRP End Text Color", group=grp_mrp)
+
+// This display needs chart bars of 4H or less to represent each 4H period.
+if timeframe.in_seconds() > timeframe.in_seconds("240")
+    runtime.error("Use a time-based chart of 4 hours or lower for the 4H POC display.")
+
+grp_dc = "Donchian Channels"
+bool dc_show = input.bool(true, "Show Donchian Channels", group=grp_dc)
+int dc_length = input.int(20, "Length", minval=1, group=grp_dc)
+int dc_offset = input.int(0, "Offset", group=grp_dc)
+string dc_timeframe = input.timeframe("", "Indicator Timeframe", group=grp_dc,
+     tooltip="Blank uses chart candles. This timeframe setting applies only to Donchian Channels.")
+bool dc_timeframe_gaps = input.bool(true, "Wait for Timeframe Closes", group=grp_dc,
+     tooltip="Uses gaps between higher-timeframe updates, as in the supplied Donchian script. Uncheck to carry values between updates; developing higher-timeframe values may change.")
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+
+float phi     = 1.618034
+float sqrt2   = math.sqrt(2)
+float sqrt252 = math.sqrt(252)
+
+// Ensure sufficient history for higher-timeframe zone calculations
+max_bars_back(time,   5000)
+max_bars_back(open,   5000)
+max_bars_back(high,   5000)
+max_bars_back(low,    5000)
+max_bars_back(close,  5000)
+
+// ── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
+// Map a layer's timeframe selection to the correct zone value
+f_z(string tf, float v4h, float vd, float vw, float vm, float vq, float vhy) =>
+    tf == "None" ? na : tf == "4H" ? v4h : tf == "Daily" ? vd : tf == "Weekly" ? vw : tf == "Monthly" ? vm : tf == "Quarterly" ? vq : vhy
+
+// f_c removed — inline ternaries used instead to avoid series-type promotion from function returns
+// (PineScript functions promote return types to series, which doubles plot counts for colors)
+
+// ── DAILY ZONES ──────────────────────────────────────────────────────────────
+
+[day_open, day_atr, day_close_prev, day_high_prev, day_low_prev] = request.security(syminfo.tickerid, "D", [open, ta.atr(d_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Effective Volatility from annualized ATR%
+float atr_ann_pct = day_atr / day_close_prev * sqrt252 * 100
+// float atr_ann_pct = day_atr / day_open * sqrt252 * 100          // ← Gap fix: uncomment this, comment line above
+float effvol      = d_slope * atr_ann_pct + d_intercept
+
+// Zone geometry
+float P          = math.round(day_open)
+float sigma      = P * effvol / (100.0 * sqrt252)
+float dist_strong = sigma
+float dist_weak   = sigma / (2.0 * sqrt2)
+float ws          = math.round(sigma / 4.0)
+float ww          = math.round(sigma / (4.0 * phi))
+
+// Daily zone boundaries
+float sd_low   = math.round(P - dist_strong - ws / 2)
+float sd_high  = math.round(P - dist_strong + ws / 2)
+float wd_low   = math.round(P - dist_weak   - ww / 2)
+float wd_high  = math.round(P - dist_weak   + ww / 2)
+float wsp_low  = math.round(P + dist_weak   - ww / 2)
+float wsp_high = math.round(P + dist_weak   + ww / 2)
+float ss_low   = math.round(P + dist_strong - ws / 2)
+float ss_high  = math.round(P + dist_strong + ws / 2)
+
+// Daily POC = CPR Central Pivot of previous day
+float dpoc = math.round((day_high_prev + day_low_prev + day_close_prev) / 3)
+
+// ── WEEKLY ZONES ─────────────────────────────────────────────────────────────
+
+[week_open, w_atr_weekly, w_close_prev] = request.security(syminfo.tickerid, "W", [open, ta.atr(w_atr_period)[1], close[1]], lookahead=barmerge.lookahead_on)
+
+// Weekly Effective Volatility
+float w_atr_ann_pct = w_atr_weekly / w_close_prev * math.sqrt(52) * 100
+// float w_atr_ann_pct = w_atr_weekly / week_open * math.sqrt(52) * 100  // ← Gap fix: uncomment this, comment line above
+
+var float effvol_w = na
+bool new_week = ta.change(time("W")) != 0
+if new_week
+    effvol_w := w_slope * w_atr_ann_pct + w_intercept
+if na(effvol_w)
+    effvol_w := w_slope * w_atr_ann_pct + w_intercept
+
+float P_w          = math.round(week_open)
+float sigma_w      = P_w * effvol_w / (100.0 * math.sqrt(252.0 / 5.0))
+float dist_strong_w = sigma_w
+float dist_weak_w   = sigma_w / (2.0 * sqrt2)
+float ws_w          = math.round(sigma_w / 4.0)
+float ww_w          = math.round(sigma_w / (4.0 * phi))
+
+// Weekly zone boundaries
+float wsd_low  = math.round(P_w - dist_strong_w - ws_w / 2)
+float wsd_high = math.round(P_w - dist_strong_w + ws_w / 2)
+float wwd_low  = math.round(P_w - dist_weak_w   - ww_w / 2)
+float wwd_high = math.round(P_w - dist_weak_w   + ww_w / 2)
+float wws_low  = math.round(P_w + dist_weak_w   - ww_w / 2)
+float wws_high = math.round(P_w + dist_weak_w   + ww_w / 2)
+float wss_low  = math.round(P_w + dist_strong_w - ws_w / 2)
+float wss_high = math.round(P_w + dist_strong_w + ws_w / 2)
+float wpoc     = P_w + 8
+
+// ── MONTHLY ZONES ────────────────────────────────────────────────────────────
+
+[month_open, m_atr_monthly, m_close_prev, m_high_prev, m_low_prev] = request.security(syminfo.tickerid, "M", [open, ta.atr(m_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Monthly Effective Volatility
+float m_atr_ann_pct = m_atr_monthly / month_open * math.sqrt(12) * 100
+
+var float effvol_m = na
+bool new_month = ta.change(time("M")) != 0
+if new_month
+    effvol_m := m_slope * m_atr_ann_pct + m_intercept
+if na(effvol_m)
+    effvol_m := m_slope * m_atr_ann_pct + m_intercept
+
+float P_m           = math.round(month_open)
+float sigma_m       = P_m * effvol_m / (100.0 * math.sqrt(12.0))
+float dist_strong_m = sigma_m
+float dist_weak_m   = sigma_m / 2.77
+float ws_m          = math.round(sigma_m / 4.35)
+float ww_m          = math.round(sigma_m / 5.1)
+
+// Monthly zone boundaries
+float msd_low  = math.round(P_m - dist_strong_m - ws_m / 2)
+float msd_high = math.round(P_m - dist_strong_m + ws_m / 2)
+float mwd_low  = math.round(P_m - dist_weak_m   - ww_m / 2)
+float mwd_high = math.round(P_m - dist_weak_m   + ww_m / 2)
+float mws_low  = math.round(P_m + dist_weak_m   - ww_m / 2)
+float mws_high = math.round(P_m + dist_weak_m   + ww_m / 2)
+float mss_low  = math.round(P_m + dist_strong_m - ws_m / 2)
+float mss_high = math.round(P_m + dist_strong_m + ws_m / 2)
+
+// Monthly POC = Standard Pivot of previous month
+float mpoc = math.round((m_high_prev + m_low_prev + m_close_prev) / 3)
+
+// ── QUARTERLY ZONES ──────────────────────────────────────────────────────────
+
+[q_open, q_atr_val, q_close_prev, q_high_prev, q_low_prev] = request.security(syminfo.tickerid, "3M", [open, ta.atr(q_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Quarterly Effective Volatility (normalize by q_open to handle gaps)
+float q_atr_ann_pct = q_atr_val / q_open * math.sqrt(4) * 100
+
+var float effvol_q = na
+bool new_quarter = ta.change(time("3M")) != 0
+if new_quarter
+    effvol_q := q_slope * q_atr_ann_pct
+if na(effvol_q)
+    effvol_q := q_slope * q_atr_ann_pct
+
+float P_q           = math.round(q_open)
+float sigma_q       = P_q * effvol_q / (100.0 * math.sqrt(4.0))
+float dist_strong_q = sigma_q
+float dist_weak_q   = sigma_q / 2.77
+float ws_q          = math.round(sigma_q / 4.35)
+float ww_q          = math.round(sigma_q / 5.1)
+
+// Quarterly zone boundaries
+float qsd_low  = math.round(P_q - dist_strong_q - ws_q / 2)
+float qsd_high = math.round(P_q - dist_strong_q + ws_q / 2)
+float qwd_low  = math.round(P_q - dist_weak_q   - ww_q / 2)
+float qwd_high = math.round(P_q - dist_weak_q   + ww_q / 2)
+float qws_low  = math.round(P_q + dist_weak_q   - ww_q / 2)
+float qws_high = math.round(P_q + dist_weak_q   + ww_q / 2)
+float qss_low  = math.round(P_q + dist_strong_q - ws_q / 2)
+float qss_high = math.round(P_q + dist_strong_q + ws_q / 2)
+
+// Quarterly POC = Standard Pivot of previous quarter
+float qpoc = math.round((q_high_prev + q_low_prev + q_close_prev) / 3)
+
+// ── HALF-YEARLY ZONES ────────────────────────────────────────────────────────
+
+[hy_open, hy_atr_val, hy_close_prev, hy_high_prev, hy_low_prev] = request.security(syminfo.tickerid, "6M", [open, ta.atr(hy_atr_period)[1], close[1], high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Half-Yearly Effective Volatility (normalize by hy_open to handle gaps)
+float hy_atr_ann_pct = hy_atr_val / hy_open * math.sqrt(2) * 100
+
+var float effvol_hy = na
+bool new_half = ta.change(time("6M")) != 0
+if new_half
+    effvol_hy := hy_slope * hy_atr_ann_pct
+if na(effvol_hy)
+    effvol_hy := hy_slope * hy_atr_ann_pct
+
+float P_hy           = math.round(hy_open)
+float sigma_hy       = P_hy * effvol_hy / (100.0 * math.sqrt(2.0))
+float dist_strong_hy = sigma_hy
+float dist_weak_hy   = sigma_hy / 2.77
+float ws_hy          = math.round(sigma_hy / 4.35)
+float ww_hy          = math.round(sigma_hy / 5.1)
+
+// Half-Yearly zone boundaries
+float hysd_low  = math.round(P_hy - dist_strong_hy - ws_hy / 2)
+float hysd_high = math.round(P_hy - dist_strong_hy + ws_hy / 2)
+float hywd_low  = math.round(P_hy - dist_weak_hy   - ww_hy / 2)
+float hywd_high = math.round(P_hy - dist_weak_hy   + ww_hy / 2)
+float hyws_low  = math.round(P_hy + dist_weak_hy   - ww_hy / 2)
+float hyws_high = math.round(P_hy + dist_weak_hy   + ww_hy / 2)
+float hyss_low  = math.round(P_hy + dist_strong_hy - ws_hy / 2)
+float hyss_high = math.round(P_hy + dist_strong_hy + ws_hy / 2)
+
+// Half-Yearly POC = Standard Pivot of previous half-year
+float hypoc = math.round((hy_high_prev + hy_low_prev + hy_close_prev) / 3)
+
+// ── 4H ZONES ─────────────────────────────────────────────────────────────────
+
+[h4_open, h4_atr, h4_close_prev, h4_high_prev, h4_low_prev, h4_high_prev2, h4_low_prev2, h4_close_prev2] = request.security(syminfo.tickerid, "240", [open, ta.atr(h4_atr_period)[1], close[1], high[1], low[1], high[2], low[2], close[2]], lookahead=barmerge.lookahead_on)
+
+// 4H Effective Volatility (normalize by h4_open to handle overnight gaps)
+float h4_atr_ann_pct = h4_atr / h4_open * math.sqrt(504) * 100
+// float h4_atr_ann_pct = h4_atr / h4_close_prev * math.sqrt(504) * 100  // ← No gap fix: uncomment this, comment line above
+
+var float effvol_4h = na
+bool new_4h = ta.change(time("240")) != 0
+if new_4h
+    effvol_4h := h4_slope * h4_atr_ann_pct
+if na(effvol_4h)
+    effvol_4h := h4_slope * h4_atr_ann_pct
+
+float P_4h          = math.round(h4_open)
+float sigma_4h      = P_4h * effvol_4h / (100.0 * math.sqrt(504.0))
+float dist_strong_4h = sigma_4h
+float dist_weak_4h   = sigma_4h / 2.77
+float ws_4h          = math.round(sigma_4h / 4.35)
+float ww_4h          = math.round(sigma_4h / 5.1)
+
+// 4H zone boundaries
+float h4sd_low  = math.round(P_4h - dist_strong_4h - ws_4h / 2)
+float h4sd_high = math.round(P_4h - dist_strong_4h + ws_4h / 2)
+float h4wd_low  = math.round(P_4h - dist_weak_4h   - ww_4h / 2)
+float h4wd_high = math.round(P_4h - dist_weak_4h   + ww_4h / 2)
+float h4ws_low  = math.round(P_4h + dist_weak_4h   - ww_4h / 2)
+float h4ws_high = math.round(P_4h + dist_weak_4h   + ww_4h / 2)
+float h4ss_low  = math.round(P_4h + dist_strong_4h - ws_4h / 2)
+float h4ss_high = math.round(P_4h + dist_strong_4h + ws_4h / 2)
+
+// 4H POC: first session averages last 2 pivots (overnight smoothing),
+// second session uses simple prev 4H pivot
+float h4_pivot1 = (h4_high_prev + h4_low_prev + h4_close_prev) / 3
+float h4_pivot2 = (h4_high_prev2 + h4_low_prev2 + h4_close_prev2) / 3
+
+// Read the first-block flag in native 4H context so loading history mid-day
+// cannot incorrectly mark its first chart bar as the first daily 4H block.
+// This flag depends only on timestamps, which are known at the block opening.
+bool in_first_4h_session = request.security(syminfo.tickerid, "240", timeframe.change("D"), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+float h4poc = in_first_4h_session ? math.round((h4_pivot1 + h4_pivot2) / 2) : math.round(h4_pivot1)
+
+// Freeze the comparison at the opening of each 4H block. The 4H pivot uses
+// completed 4H candles and dpoc uses the completed day, so no bar-close wait
+// is needed. Realtime rollback re-evaluates the same confirmed values on each
+// tick of the opening chart bar. Do not gate this assignment by barstate.isnew.
+var int h4_poc_bias = na
+if barstate.isfirst or new_4h
+    h4_poc_bias := na(h4poc) or na(dpoc) ? na : h4poc > dpoc ? 1 : h4poc < dpoc ? -1 : 0
+
+// Literal color choices also provide the original 4H POC name color.
+color h4_poc_color = na(h4_poc_bias) ? na : h4_poc_bias == 1 ? h4_poc_above_color : h4_poc_bias == -1 ? h4_poc_below_color : h4_poc_equal_color
+
+// A timed segment has both exact boundary timestamps at creation. Consequently,
+// the first UTC block appears as 05:30–09:30 IST, the next as 09:30–13:30,
+// and every adjacent segment shares the precise boundary without joining prices.
+if show_l1_poc and (barstate.isfirst or new_4h) and not na(h4poc) and not na(h4_poc_color)
+    line.new(x1=time("240"), y1=h4poc, x2=time_close("240"), y2=h4poc,
+         xloc=xloc.bar_time, extend=extend.none, color=h4_poc_color, width=h4_poc_line_width)
+
+
+// ── ZONE DISPLAY (3 Fixed Layers) ───────────────────────────────────────────
+// Fixed layers map 4H, Daily and Weekly to the pre-computed zone boundaries.
+// All plot colors use literal choices; no runtime color calculations suppress
+// TradingView Style-tab color selectors.
+// Layer 1 (4H): filled zones; POC colored by its fixed comparison with Daily POC.
+// Layer 2 (Daily): Cyan/Teal demand / Magenta/Crimson supply / Dark Green POC
+// Layer 3 (Weekly): Blue demand / Purple supply / Gold POC
+
+// Layer 1 — zone boundaries (hidden when show_l1_zones is off)
+float l1_sd_l = show_l1_zones ? f_z(layer1_tf, h4sd_low,  sd_low,  wsd_low,  msd_low,  qsd_low,  hysd_low) : na
+float l1_sd_h = show_l1_zones ? f_z(layer1_tf, h4sd_high, sd_high, wsd_high, msd_high, qsd_high, hysd_high) : na
+float l1_wd_l = show_l1_zones ? f_z(layer1_tf, h4wd_low,  wd_low,  wwd_low,  mwd_low,  qwd_low,  hywd_low) : na
+float l1_wd_h = show_l1_zones ? f_z(layer1_tf, h4wd_high, wd_high, wwd_high, mwd_high, qwd_high, hywd_high) : na
+float l1_ws_l = show_l1_zones ? f_z(layer1_tf, h4ws_low,  wsp_low, wws_low,  mws_low,  qws_low,  hyws_low) : na
+float l1_ws_h = show_l1_zones ? f_z(layer1_tf, h4ws_high, wsp_high,wws_high, mws_high, qws_high, hyws_high) : na
+float l1_ss_l = show_l1_zones ? f_z(layer1_tf, h4ss_low,  ss_low,  wss_low,  mss_low,  qss_low,  hyss_low) : na
+float l1_ss_h = show_l1_zones ? f_z(layer1_tf, h4ss_high, ss_high, wss_high, mss_high, qss_high, hyss_high) : na
+
+// Break POC transitions by inserting na at period boundaries (avoids diagonal)
+bool new_day = ta.change(time("D")) != 0
+float h4poc_c  = h4poc // Preserve the opening value; the plot color breaks joins.
+float dpoc_c   = new_day ? na : dpoc
+float wpoc_c   = new_week ? na : wpoc
+float mpoc_c   = new_month ? na : mpoc
+float qpoc_c   = new_quarter ? na : qpoc
+float hypoc_c  = new_half ? na : hypoc
+
+float l1_poc  = show_l1_poc ? f_z(layer1_tf, h4poc_c, dpoc_c, wpoc_c, mpoc_c, qpoc_c, hypoc_c) : na
+
+// Layer 1: Style-editable zone boundaries and backgrounds with period breaks.
+zone_l1_sd_lower = plot(new_4h ? na : l1_sd_l, title="4H — Strong Demand Lower", color=#388E3C, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l1_sd_upper = plot(new_4h ? na : l1_sd_h, title="4H — Strong Demand Upper", color=#388E3C, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l1_sd_lower, zone_l1_sd_upper, color=color.new(#388E3C,75), title="4H — Strong Demand Background", fillgaps=false, editable=true)
+zone_l1_wd_lower = plot(new_4h ? na : l1_wd_l, title="4H — Weak Demand Lower", color=#76B852, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l1_wd_upper = plot(new_4h ? na : l1_wd_h, title="4H — Weak Demand Upper", color=#76B852, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l1_wd_lower, zone_l1_wd_upper, color=color.new(#76B852,82), title="4H — Weak Demand Background", fillgaps=false, editable=true)
+zone_l1_ws_lower = plot(new_4h ? na : l1_ws_l, title="4H — Weak Supply Lower", color=#FB8C00, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l1_ws_upper = plot(new_4h ? na : l1_ws_h, title="4H — Weak Supply Upper", color=#FB8C00, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l1_ws_lower, zone_l1_ws_upper, color=color.new(#FB8C00,82), title="4H — Weak Supply Background", fillgaps=false, editable=true)
+zone_l1_ss_lower = plot(new_4h ? na : l1_ss_l, title="4H — Strong Supply Lower", color=#E53935, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l1_ss_upper = plot(new_4h ? na : l1_ss_h, title="4H — Strong Supply Upper", color=#E53935, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l1_ss_lower, zone_l1_ss_upper, color=color.new(#E53935,75), title="4H — Strong Supply Background", fillgaps=false, editable=true)
+// Suppress only the segment from the previous block to this one. The new
+// starting value remains available immediately; no starting-dot markers are drawn.
+// The 4H POC is drawn above with exact time-based segments. line.new()
+// drawings use the dedicated Appearance inputs because Pine does not expose
+// drawing-object colors or widths in TradingView's Style tab.
+
+
+// Layer 2 — zone boundaries (hidden when show_l2_zones is off)
+float l2_sd_l = show_l2_zones ? f_z(layer2_tf, h4sd_low,  sd_low,  wsd_low,  msd_low,  qsd_low,  hysd_low) : na
+float l2_sd_h = show_l2_zones ? f_z(layer2_tf, h4sd_high, sd_high, wsd_high, msd_high, qsd_high, hysd_high) : na
+float l2_wd_l = show_l2_zones ? f_z(layer2_tf, h4wd_low,  wd_low,  wwd_low,  mwd_low,  qwd_low,  hywd_low) : na
+float l2_wd_h = show_l2_zones ? f_z(layer2_tf, h4wd_high, wd_high, wwd_high, mwd_high, qwd_high, hywd_high) : na
+float l2_ws_l = show_l2_zones ? f_z(layer2_tf, h4ws_low,  wsp_low, wws_low,  mws_low,  qws_low,  hyws_low) : na
+float l2_ws_h = show_l2_zones ? f_z(layer2_tf, h4ws_high, wsp_high,wws_high, mws_high, qws_high, hyws_high) : na
+float l2_ss_l = show_l2_zones ? f_z(layer2_tf, h4ss_low,  ss_low,  wss_low,  mss_low,  qss_low,  hyss_low) : na
+float l2_ss_h = show_l2_zones ? f_z(layer2_tf, h4ss_high, ss_high, wss_high, mss_high, qss_high, hyss_high) : na
+float l2_poc  = show_l2_poc ? f_z(layer2_tf, h4poc_c, dpoc_c, wpoc_c, mpoc_c, qpoc_c, hypoc_c) : na
+
+// Plot Layer 2 (cyan demand, magenta supply, dark green POC)
+zone_l2_sd_lower = plot(new_day ? na : l2_sd_l, title="Daily — Strong Demand Lower", color=#00838F, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l2_sd_upper = plot(new_day ? na : l2_sd_h, title="Daily — Strong Demand Upper", color=#00838F, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l2_sd_lower, zone_l2_sd_upper, color=color.new(#00838F,75), title="Daily — Strong Demand Background", fillgaps=false, editable=true)
+zone_l2_wd_lower = plot(new_day ? na : l2_wd_l, title="Daily — Weak Demand Lower", color=#00BCD4, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l2_wd_upper = plot(new_day ? na : l2_wd_h, title="Daily — Weak Demand Upper", color=#00BCD4, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l2_wd_lower, zone_l2_wd_upper, color=color.new(#00BCD4,82), title="Daily — Weak Demand Background", fillgaps=false, editable=true)
+zone_l2_ws_lower = plot(new_day ? na : l2_ws_l, title="Daily — Weak Supply Lower", color=#E91E63, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l2_ws_upper = plot(new_day ? na : l2_ws_h, title="Daily — Weak Supply Upper", color=#E91E63, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l2_ws_lower, zone_l2_ws_upper, color=color.new(#E91E63,82), title="Daily — Weak Supply Background", fillgaps=false, editable=true)
+zone_l2_ss_lower = plot(new_day ? na : l2_ss_l, title="Daily — Strong Supply Lower", color=#AD1457, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l2_ss_upper = plot(new_day ? na : l2_ss_h, title="Daily — Strong Supply Upper", color=#AD1457, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l2_ss_lower, zone_l2_ss_upper, color=color.new(#AD1457,75), title="Daily — Strong Supply Background", fillgaps=false, editable=true)
+plot(l2_poc, title="Daily POC", color=#2E7D32, linewidth=3, style=plot.style_linebr, editable=true)
+
+// Layer 3 — Weekly zone boundaries
+float l3_sd_l = show_l3_zones ? f_z(layer3_tf, h4sd_low,  sd_low,  wsd_low,  msd_low,  qsd_low,  hysd_low) : na
+float l3_sd_h = show_l3_zones ? f_z(layer3_tf, h4sd_high, sd_high, wsd_high, msd_high, qsd_high, hysd_high) : na
+float l3_wd_l = show_l3_zones ? f_z(layer3_tf, h4wd_low,  wd_low,  wwd_low,  mwd_low,  qwd_low,  hywd_low) : na
+float l3_wd_h = show_l3_zones ? f_z(layer3_tf, h4wd_high, wd_high, wwd_high, mwd_high, qwd_high, hywd_high) : na
+float l3_ws_l = show_l3_zones ? f_z(layer3_tf, h4ws_low,  wsp_low, wws_low,  mws_low,  qws_low,  hyws_low) : na
+float l3_ws_h = show_l3_zones ? f_z(layer3_tf, h4ws_high, wsp_high,wws_high, mws_high, qws_high, hyws_high) : na
+float l3_ss_l = show_l3_zones ? f_z(layer3_tf, h4ss_low,  ss_low,  wss_low,  mss_low,  qss_low,  hyss_low) : na
+float l3_ss_h = show_l3_zones ? f_z(layer3_tf, h4ss_high, ss_high, wss_high, mss_high, qss_high, hyss_high) : na
+float l3_poc  = show_l3_poc ? f_z(layer3_tf, h4poc_c, dpoc_c, wpoc_c, mpoc_c, qpoc_c, hypoc_c) : na
+
+zone_l3_sd_lower = plot(new_week ? na : l3_sd_l, title="Weekly — Strong Demand Lower", color=#1565C0, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l3_sd_upper = plot(new_week ? na : l3_sd_h, title="Weekly — Strong Demand Upper", color=#1565C0, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l3_sd_lower, zone_l3_sd_upper, color=color.new(#1565C0,75), title="Weekly — Strong Demand Background", fillgaps=false, editable=true)
+zone_l3_wd_lower = plot(new_week ? na : l3_wd_l, title="Weekly — Weak Demand Lower", color=#42A5F5, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l3_wd_upper = plot(new_week ? na : l3_wd_h, title="Weekly — Weak Demand Upper", color=#42A5F5, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l3_wd_lower, zone_l3_wd_upper, color=color.new(#42A5F5,82), title="Weekly — Weak Demand Background", fillgaps=false, editable=true)
+zone_l3_ws_lower = plot(new_week ? na : l3_ws_l, title="Weekly — Weak Supply Lower", color=#AB47BC, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l3_ws_upper = plot(new_week ? na : l3_ws_h, title="Weekly — Weak Supply Upper", color=#AB47BC, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l3_ws_lower, zone_l3_ws_upper, color=color.new(#AB47BC,82), title="Weekly — Weak Supply Background", fillgaps=false, editable=true)
+zone_l3_ss_lower = plot(new_week ? na : l3_ss_l, title="Weekly — Strong Supply Lower", color=#6A1B9A, linewidth=1, style=plot.style_linebr, editable=true)
+zone_l3_ss_upper = plot(new_week ? na : l3_ss_h, title="Weekly — Strong Supply Upper", color=#6A1B9A, linewidth=1, style=plot.style_linebr, editable=true)
+fill(zone_l3_ss_lower, zone_l3_ss_upper, color=color.new(#6A1B9A,75), title="Weekly — Strong Supply Background", fillgaps=false, editable=true)
+plot(l3_poc, title="Weekly POC", color=#FBC02D, linewidth=3, style=plot.style_linebr, editable=true)
+
+
+// ── CLEAN CURRENT ZONE NAMES ─────────────────────────────────────────────────
+// Plain text only: no label boxes and no price text covering the chart.
+// Names are positioned at the midpoint of each active timeframe period, so
+// overlapping timeframes naturally spread across the chart horizontally.
+
+f_plain_zone_name(int xTime, float zoneLow, float zoneHigh, string zoneName, color txtColor) =>
+    label.new(xTime, math.avg(zoneLow, zoneHigh), zoneName,
+         xloc=xloc.bar_time, yloc=yloc.price, style=label.style_none,
+         textcolor=txtColor, size=size.normal, textalign=text.align_center,
+         tooltip=zoneName + "\n" + str.tostring(zoneLow, format.mintick) + " — " + str.tostring(zoneHigh, format.mintick))
+
+f_plain_poc_name(int xTime, float pocPrice, string pocName, color txtColor) =>
+    label.new(xTime, pocPrice, pocName,
+         xloc=xloc.bar_time, yloc=yloc.price, style=label.style_none,
+         textcolor=txtColor, size=size.normal, textalign=text.align_center,
+         tooltip=pocName + ": " + str.tostring(pocPrice, format.mintick))
+
+// Midpoint between each timeframe's opening time and the current candle.
+int h4NameTime = time("240") + int((time - time("240")) / 2)
+int dayNameTime = time("D") + int((time - time("D")) / 2)
+int weekNameTime = time("W") + int((time - time("W")) / 2)
+
+var label lbl_h4_sd = na
+var label lbl_h4_wd = na
+var label lbl_h4_ws = na
+var label lbl_h4_ss = na
+var label lbl_h4_poc = na
+var label lbl_d_sd = na
+var label lbl_d_wd = na
+var label lbl_d_ws = na
+var label lbl_d_ss = na
+var label lbl_d_poc = na
+var label lbl_w_sd = na
+var label lbl_w_wd = na
+var label lbl_w_ws = na
+var label lbl_w_ss = na
+var label lbl_w_poc = na
+
+if barstate.islast
+    label.delete(lbl_h4_sd)
+    label.delete(lbl_h4_wd)
+    label.delete(lbl_h4_ws)
+    label.delete(lbl_h4_ss)
+    label.delete(lbl_h4_poc)
+    label.delete(lbl_d_sd)
+    label.delete(lbl_d_wd)
+    label.delete(lbl_d_ws)
+    label.delete(lbl_d_ss)
+    label.delete(lbl_d_poc)
+    label.delete(lbl_w_sd)
+    label.delete(lbl_w_wd)
+    label.delete(lbl_w_ws)
+    label.delete(lbl_w_ss)
+    label.delete(lbl_w_poc)
+
+    lbl_h4_sd := show_labels and show_l1_zones and not na(h4sd_low) ? f_plain_zone_name(h4NameTime, h4sd_low, h4sd_high, "4H — STRONG DEMAND", #66BB6A) : na
+    lbl_h4_wd := show_labels and show_l1_zones and not na(h4wd_low) ? f_plain_zone_name(h4NameTime, h4wd_low, h4wd_high, "4H — WEAK DEMAND", #9CCC65) : na
+    lbl_h4_ws := show_labels and show_l1_zones and not na(h4ws_low) ? f_plain_zone_name(h4NameTime, h4ws_low, h4ws_high, "4H — WEAK SUPPLY", #FFA726) : na
+    lbl_h4_ss := show_labels and show_l1_zones and not na(h4ss_low) ? f_plain_zone_name(h4NameTime, h4ss_low, h4ss_high, "4H — STRONG SUPPLY", #EF5350) : na
+    lbl_h4_poc := show_labels and show_l1_poc and not na(h4poc) ? f_plain_poc_name(h4NameTime, h4poc, "4H POC", h4_poc_color) : na
+
+    lbl_d_sd := show_labels and show_l2_zones and not na(sd_low) ? f_plain_zone_name(dayNameTime, sd_low, sd_high, "DAILY — STRONG DEMAND", #26C6DA) : na
+    lbl_d_wd := show_labels and show_l2_zones and not na(wd_low) ? f_plain_zone_name(dayNameTime, wd_low, wd_high, "DAILY — WEAK DEMAND", #4DD0E1) : na
+    lbl_d_ws := show_labels and show_l2_zones and not na(wsp_low) ? f_plain_zone_name(dayNameTime, wsp_low, wsp_high, "DAILY — WEAK SUPPLY", #EC407A) : na
+    lbl_d_ss := show_labels and show_l2_zones and not na(ss_low) ? f_plain_zone_name(dayNameTime, ss_low, ss_high, "DAILY — STRONG SUPPLY", #F06292) : na
+    lbl_d_poc := show_labels and show_l2_poc and not na(dpoc) ? f_plain_poc_name(dayNameTime, dpoc, "DAILY POC", #66BB6A) : na
+
+    lbl_w_sd := show_labels and show_l3_zones and not na(wsd_low) ? f_plain_zone_name(weekNameTime, wsd_low, wsd_high, "WEEKLY — STRONG DEMAND", #42A5F5) : na
+    lbl_w_wd := show_labels and show_l3_zones and not na(wwd_low) ? f_plain_zone_name(weekNameTime, wwd_low, wwd_high, "WEEKLY — WEAK DEMAND", #64B5F6) : na
+    lbl_w_ws := show_labels and show_l3_zones and not na(wws_low) ? f_plain_zone_name(weekNameTime, wws_low, wws_high, "WEEKLY — WEAK SUPPLY", #BA68C8) : na
+    lbl_w_ss := show_labels and show_l3_zones and not na(wss_low) ? f_plain_zone_name(weekNameTime, wss_low, wss_high, "WEEKLY — STRONG SUPPLY", #CE93D8) : na
+    lbl_w_poc := show_labels and show_l3_poc and not na(wpoc) ? f_plain_poc_name(weekNameTime, wpoc, "WEEKLY POC", #FFD54F) : na
+
+// ── FIXED 4H-PRIMARY ZONE ALERTS ─────────────────────────────────────────────
+// Full candle range is used, so bodies, wicks and doji candles all qualify.
+f_zone_touched(float zoneLow, float zoneHigh) =>
+    not na(zoneLow) and not na(zoneHigh) and low <= zoneHigh and high >= zoneLow
+
+// The three zones must share a real common price interval, and the candle must
+// touch that shared interval.
+f_three_zone_overlap_touched(float aLow, float aHigh, float bLow, float bHigh, float cLow, float cHigh) =>
+    float overlapLow = math.max(aLow, math.max(bLow, cLow))
+    float overlapHigh = math.min(aHigh, math.min(bHigh, cHigh))
+    not na(overlapLow) and not na(overlapHigh) and overlapLow <= overlapHigh and low <= overlapHigh and high >= overlapLow
+
+bool h4DemandTouched = f_zone_touched(h4sd_low, h4sd_high) or f_zone_touched(h4wd_low, h4wd_high)
+bool h4SupplyTouched = f_zone_touched(h4ws_low, h4ws_high) or f_zone_touched(h4ss_low, h4ss_high)
+
+bool tripleDemandTouched =
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, sd_low, sd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, sd_low, sd_high, wwd_low, wwd_high) or
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, wd_low, wd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4sd_low, h4sd_high, wd_low, wd_high, wwd_low, wwd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, sd_low, sd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, sd_low, sd_high, wwd_low, wwd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, wd_low, wd_high, wsd_low, wsd_high) or
+     f_three_zone_overlap_touched(h4wd_low, h4wd_high, wd_low, wd_high, wwd_low, wwd_high)
+
+bool tripleSupplyTouched =
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, wsp_low, wsp_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, wsp_low, wsp_high, wss_low, wss_high) or
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, ss_low, ss_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ws_low, h4ws_high, ss_low, ss_high, wss_low, wss_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, wsp_low, wsp_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, wsp_low, wsp_high, wss_low, wss_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, ss_low, ss_high, wws_low, wws_high) or
+     f_three_zone_overlap_touched(h4ss_low, h4ss_high, ss_low, ss_high, wss_low, wss_high)
+
+// Fire only on entry; leaving the area rearms the relevant alert.
+// Strong confluence supersedes the normal 4H alert on the same candle.
+bool strongBuyEntry  = tripleDemandTouched and not tripleDemandTouched[1]
+bool strongSellEntry = tripleSupplyTouched and not tripleSupplyTouched[1]
+bool buyEntry  = h4DemandTouched and not h4DemandTouched[1] and not tripleDemandTouched
+bool sellEntry = h4SupplyTouched and not h4SupplyTouched[1] and not tripleSupplyTouched
+
+// Compact chart markers show alert events without covering candles.
+plotshape(show_alert_labels and buyEntry, title="VISIBLE 4H BUY",
+     style=shape.triangleup, location=location.belowbar, color=#00C853,
+     text="BUY", textcolor=#00C853, size=size.small)
+plotshape(show_alert_labels and sellEntry, title="VISIBLE 4H SELL",
+     style=shape.triangledown, location=location.abovebar, color=#FF5252,
+     text="SELL", textcolor=#FF5252, size=size.small)
+plotshape(show_alert_labels and strongBuyEntry, title="VISIBLE STRONG BUY",
+     style=shape.arrowup, location=location.belowbar, color=#00E676,
+     text="STRONG BUY", textcolor=#00E676, size=size.normal)
+plotshape(show_alert_labels and strongSellEntry, title="VISIBLE STRONG SELL",
+     style=shape.arrowdown, location=location.abovebar, color=#FF1744,
+     text="STRONG SELL", textcolor=#FF1744, size=size.normal)
+
+alertcondition(buyEntry, title="4H Demand — BUY",
+     message="BUY: Price entered a 4H demand zone ({{ticker}} @ {{close}})")
+alertcondition(sellEntry, title="4H Supply — SELL",
+     message="SELL: Price entered a 4H supply zone ({{ticker}} @ {{close}})")
+alertcondition(strongBuyEntry, title="4H + Daily + Weekly — STRONG BUY",
+     message="STRONG BUY: Price entered a common 4H + Daily + Weekly demand overlap ({{ticker}} @ {{close}})")
+alertcondition(strongSellEntry, title="4H + Daily + Weekly — STRONG SELL",
+     message="STRONG SELL: Price entered a common 4H + Daily + Weekly supply overlap ({{ticker}} @ {{close}})")
+
+// ── DAILY / SESSION AND WEEKLY VWAP ─────────────────────────────────────────
+// HLC3 volume-weighted averages on chart candles. Both evolve on the live bar.
+// Reset anchors follow the same exchange periods as the existing daily and
+// weekly levels. Initialization begins at the first available chart candle.
+float mrp = ta.vwap(hlc3, barstate.isfirst or timeframe.change("D"))
+float wmrp = ta.vwap(hlc3, barstate.isfirst or timeframe.change("W"))
+
+plot(show_mrp ? mrp : na, title="MRP — Daily / Session VWAP", color=#0B46F0, linewidth=2, editable=true)
+plot(show_wmrp ? wmrp : na, title="WMRP — Weekly VWAP", color=#C57A00, linewidth=2, editable=true)
+
+// Maintain one name at each VWAP's actual latest plotted coordinate.
+// The left-pointing label anchor sits at (bar_index, VWAP); its transparent
+// background leaves only the text immediately to the right of that endpoint.
+// Reposition the same labels on every live update; no bar or price offset.
+var label mrp_endpoint_name = na
+var label wmrp_endpoint_name = na
+if barstate.islast
+    if show_mrp and show_vwap_names and not na(mrp)
+        if na(mrp_endpoint_name)
+            mrp_endpoint_name := label.new(bar_index, mrp, "𝗠𝗥𝗣",
+                 xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left,
+                 color=color.new(color.white,100), textcolor=mrp_name_color,
+                 size=size.normal, textalign=text.align_left)
+        label.set_xy(mrp_endpoint_name, bar_index, mrp)
+        label.set_textcolor(mrp_endpoint_name, mrp_name_color)
+    else
+        label.delete(mrp_endpoint_name)
+        mrp_endpoint_name := na
+
+    if show_wmrp and show_vwap_names and not na(wmrp)
+        if na(wmrp_endpoint_name)
+            wmrp_endpoint_name := label.new(bar_index, wmrp, "𝗪𝗠𝗥𝗣",
+                 xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left,
+                 color=color.new(color.white,100), textcolor=wmrp_name_color,
+                 size=size.normal, textalign=text.align_left)
+        label.set_xy(wmrp_endpoint_name, bar_index, wmrp)
+        label.set_textcolor(wmrp_endpoint_name, wmrp_name_color)
+    else
+        label.delete(wmrp_endpoint_name)
+        wmrp_endpoint_name := na
+
+// ── DONCHIAN CHANNELS ───────────────────────────────────────────────────────
+// Same calculation as the supplied script: include the current candle in the
+// rolling highest-high and lowest-low range. Offset affects drawing only.
+f_donchian() =>
+    float dc_lower_value = ta.lowest(dc_length)
+    float dc_upper_value = ta.highest(dc_length)
+    float dc_basis_value = math.avg(dc_upper_value, dc_lower_value)
+    [dc_lower_value, dc_upper_value, dc_basis_value]
+
+// Use a per-component request rather than indicator(timeframe=...), because
+// this combined script has zone labels and other independent timeframes.
+string dc_resolved_timeframe = dc_timeframe == "" ? timeframe.period : dc_timeframe
+[dc_lower, dc_upper, dc_basis] = request.security(syminfo.tickerid, dc_resolved_timeframe, f_donchian(),
+     gaps=dc_timeframe_gaps ? barmerge.gaps_on : barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+plot(dc_show ? dc_basis : na, title="Donchian — Basis", color=#FF6D00, offset=dc_offset, editable=true)
+dc_u = plot(dc_show ? dc_upper : na, title="Donchian — Upper", color=#2962FF, offset=dc_offset, editable=true)
+dc_l = plot(dc_show ? dc_lower : na, title="Donchian — Lower", color=#2962FF, offset=dc_offset, editable=true)
+
+// ═════════════════════════════════════════════════════════════════════════════
+// QUANTUM FLUXTREND [CHE] — supplied source, namespaced for this combined script.
+// Attribution retained to CHE. QFT is independent of the zone/VWAP/DC logic.
+// Its event-anchored VWAP drawing is separate from daily MRP and weekly WMRP.
+// The supplied realtime signal behavior and event/extension calculations are
+// retained, including the compatibility input documented below.
+// ═════════════════════════════════════════════════════════════════════════════
+// ——— SECTION: Constants & Enums
+int qft_MS_IN_MINUTE = 60 * 1000
+int qft_MS_IN_HOUR = qft_MS_IN_MINUTE * 60
+int qft_MS_IN_DAY = qft_MS_IN_HOUR * 24
+// ——— SECTION: Inputs (grouped; inline)
+string qft_GROUP_PARAMETERS = "QFT — Parameters"
+qft_len_input = input.int(20, "SMA Length", minval=1, group=qft_GROUP_PARAMETERS, tooltip="Period for SMA of High/Low.")
+qft_mult_input = input.float(1.0, "Multiplier", minval=0.1, step=0.1, group=qft_GROUP_PARAMETERS, tooltip="Factor on half SMA range.")
+
+string qft_GROUP_VISIBILITY = "QFT — Visibility"
+qft_show_bands_input = input.bool(false, "Show Bands", group=qft_GROUP_VISIBILITY, inline="vis", tooltip="Show upper/lower/basic bands.")
+
+string qft_GROUP_PARAMS = "QFT — Event Display Parameters"
+qft_line_width_input = input.int(2, "Line Width", minval=1, maxval=5, group=qft_GROUP_PARAMS, tooltip="Width for lines.")
+qft_extend_after_bars_input = input.int(20, "+Bars after next event (finalize old, then delete)", minval=0, group=qft_GROUP_PARAMS, tooltip="Bars to extend line after event.")
+qft_allow_repainting_input = input.bool(false, "Allow Repainting", group=qft_GROUP_PARAMS, tooltip="Compatibility input from the supplied QFT script. Its calculation does not use this switch; live-bar flips may change before candle close.")
+
+// Pine line/label objects do not expose individual Style-tab color controls.
+// Their dedicated Inputs colors are used directly; plotted visuals use Style.
+string qft_GROUP_DRAWING = "QFT — Drawing Appearance"
+qft_break_bull_color = input.color(color.lime, "Bull Event Line / Text", group=qft_GROUP_DRAWING)
+qft_break_bear_color = input.color(color.red, "Bear Event Line / Text", group=qft_GROUP_DRAWING)
+qft_trap_color = input.color(color.gray, "Trap Text", group=qft_GROUP_DRAWING)
+qft_vwap_bull_color = input.color(color.yellow, "Bull Event VWAP Line", group=qft_GROUP_DRAWING)
+qft_vwap_bear_color = input.color(color.orange, "Bear Event VWAP Line", group=qft_GROUP_DRAWING)
+
+string qft_GROUP_EXT1 = "QFT — Extension 1 — Label↕Close Δ%"
+qft_show_ext1_input = input.bool(true, "Show Extension 1", group=qft_GROUP_EXT1, tooltip="Draw dotted line between label and close incl. Δ%.")
+qft_ext1_line_width_input = input.int(2, "Dotted Line Width", minval=1, maxval=5, group=qft_GROUP_EXT1, tooltip="Width for dotted line.")
+qft_ext1_txt_size_input = input.string("normal", "Text Size", options=["tiny", "small", "normal", "large"], group=qft_GROUP_EXT1, tooltip="Size for delta text.")
+qft_ext1_decimals_input = input.int(2, "Decimals for Δ%", minval=0, maxval=6, group=qft_GROUP_EXT1, tooltip="Decimals in delta percent.")
+qft_ext1_color_pos_input = input.color(color.lime, "Positive Δ Color", group=qft_GROUP_EXT1, tooltip="Color for positive delta.")
+qft_ext1_color_neg_input = input.color(color.red, "Negative Δ Color", group=qft_GROUP_EXT1, tooltip="Color for negative delta.")
+qft_ext1_color_line_input = input.color(color.new(color.gray, 0), "Dotted Line Color", group=qft_GROUP_EXT1, tooltip="Color for dotted line.")
+
+string qft_GROUP_EXT2 = "QFT — Extension 2 — VWAP End Stop-Loss"
+qft_show_ext2_input = input.bool(true, "Show Extension 2", group=qft_GROUP_EXT2, tooltip="Stop-Loss at end of VWAP line.")
+qft_ext2_method_input = input.string("Percent", "Stop Method", options=["Percent", "Ticks"], group=qft_GROUP_EXT2, tooltip="Calculation relative to VWAP end.")
+qft_ext2_stop_pct_input = input.float(1.0, "Stop %", step=0.05, minval=0.0, group=qft_GROUP_EXT2, tooltip="Percent from VWAP.")
+qft_ext2_stop_ticks_input = input.int(20, "Stop Ticks", minval=0, group=qft_GROUP_EXT2, tooltip="Ticks * mintick from VWAP.")
+qft_ext2_decimals_input = input.int(4, "Price Decimals", minval=0, maxval=10, group=qft_GROUP_EXT2, tooltip="Decimals for stop price.")
+qft_ext2_txt_size_input = input.string("normal", "Text Size", options=["tiny", "small", "normal", "large"], group=qft_GROUP_EXT2, tooltip="Size for stop text.")
+qft_ext2_txt_color_input = input.color(color.white, "Text Color", group=qft_GROUP_EXT2, tooltip="Color for stop text.")
+
+string qft_GROUP_ALERTS = "QFT — Alerts"
+qft_alert_bull_break_enable_input = input.bool(true, "Alert: Bull Breakout", group=qft_GROUP_ALERTS, tooltip="Alert on new bull breakout.")
+qft_alert_bear_break_enable_input = input.bool(true, "Alert: Bear Breakout", group=qft_GROUP_ALERTS, tooltip="Alert on new bear breakout.")
+qft_alert_cont_enable_input = input.bool(true, "Alert: Continuation", group=qft_GROUP_ALERTS, tooltip="Alert on bull/bear continuation.")
+qft_alert_trap_enable_input = input.bool(true, "Alert: Trap", group=qft_GROUP_ALERTS, tooltip="Alert on bull/bear trap.")
+qft_alert_warning_enable_input = input.bool(true, "Alert: VWAP Warning", group=qft_GROUP_ALERTS, tooltip="Alert when price crosses VWAP adversely.")
+// ——— SECTION: Types (if any)
+// ——— SECTION: Persistent Vars → Runtime Vars
+var float qft_upper_band = na
+var float qft_lower_band = na
+var int qft_dir = 1
+var line qft_last_line = na
+var label qft_last_label = na
+var float qft_break_price = na
+var bool qft_last_is_bull = true
+var bool qft_is_active = false
+var line qft_last_vwap_line = na
+var int qft_vwap_anchor_bar = na
+var float qft_sum_pv = 0.0
+var float qft_sum_v = 0.0
+var line qft_ext1_line = na
+var label qft_ext1_mid_label = na
+var label qft_ext2_sl_label = na
+var string qft_last_status = ""
+var bool qft_was_warning = false
+// ——— SECTION: Helpers (pure, no side effects)
+qft_fmt_mask(qft_decimals) =>
+    qft_decimals <= 0 ? "0" :
+     qft_decimals == 1 ? "0.0" :
+     qft_decimals == 2 ? "0.00" :
+     qft_decimals == 3 ? "0.000" :
+     qft_decimals == 4 ? "0.0000" :
+     qft_decimals == 5 ? "0.00000" : "0.000000"
+qft_text_size_from_string(qft_size_str) =>
+    qft_size_str == "tiny" ? size.tiny :
+     qft_size_str == "small" ? size.small :
+     qft_size_str == "large" ? size.large : size.normal
+qft_fmt_mask_ext2(qft_decimals) =>
+    qft_decimals <= 0 ? "0" :
+     qft_decimals == 1 ? "0.0" :
+     qft_decimals == 2 ? "0.00" :
+     qft_decimals == 3 ? "0.000" :
+     qft_decimals == 4 ? "0.0000" :
+     qft_decimals == 5 ? "0.00000" :
+     qft_decimals == 6 ? "0.000000" :
+     qft_decimals == 7 ? "0.0000000" :
+     qft_decimals == 8 ? "0.00000000" :
+     qft_decimals == 9 ? "0.000000000" : "0.0000000000"
+qft_text_size_from_string_ext2(qft_size_str) =>
+    qft_size_str == "tiny" ? size.tiny :
+     qft_size_str == "small" ? size.small :
+     qft_size_str == "large" ? size.large : size.normal
+// ——— SECTION: Core Calculations
+qft_sma_high = ta.sma(high, qft_len_input)
+qft_sma_low = ta.sma(low, qft_len_input)
+qft_midline = (qft_sma_high + qft_sma_low) * 0.5
+qft_vol_proxy = (qft_sma_high - qft_sma_low) * 0.5
+qft_basic_upper = qft_midline + qft_mult_input * qft_vol_proxy
+qft_basic_lower = qft_midline - qft_mult_input * qft_vol_proxy
+qft_prev_upper = nz(qft_upper_band[1], qft_basic_upper)
+qft_prev_lower = nz(qft_lower_band[1], qft_basic_lower)
+qft_prev_dir = nz(qft_dir[1], 1)
+qft_long_flip = close > qft_prev_upper
+qft_short_flip = close < qft_prev_lower
+qft_dir := qft_long_flip ? 1 : qft_short_flip ? -1 : qft_prev_dir
+qft_upper_band := qft_dir == -1 ? math.min(qft_basic_upper, qft_prev_upper) : qft_basic_upper
+qft_lower_band := qft_dir == 1 ? math.max(qft_basic_lower, qft_prev_lower) : qft_basic_lower
+qft_supertrend = qft_dir == 1 ? qft_lower_band : qft_upper_band
+qft_bull_event = ta.change(qft_dir) > 0
+qft_bear_event = ta.change(qft_dir) < 0
+qft_new_break = qft_bull_event or qft_bear_event
+qft_create_break_elements(qft_is_bull, qft_price) =>
+    qft_new_line = line.new(bar_index, qft_price, bar_index, qft_price, color=qft_is_bull ? qft_break_bull_color : qft_break_bear_color, width=qft_line_width_input)
+    qft_new_label = label.new(bar_index, qft_price, "", textcolor=qft_is_bull ? qft_break_bull_color : qft_break_bear_color, color=color.new(color.white,100), style=label.style_none)
+    [qft_new_line, qft_new_label]
+qft_create_vwap_element(qft_is_bull, qft_anchor_bar, qft_initial_price) =>
+    qft_new_vwap_line = line.new(qft_anchor_bar, qft_initial_price, qft_anchor_bar, qft_initial_price, color=qft_is_bull ? qft_vwap_bull_color : qft_vwap_bear_color, width=qft_line_width_input, style=line.style_dashed)
+    qft_new_vwap_line
+qft_update_break_label(qft_label_id, qft_is_bull, qft_price) =>
+    qft_do_eval = true
+    qft_new_txt = ""
+    if qft_do_eval
+        qft_continuation_bull = qft_is_bull and close >= qft_price
+        qft_continuation_bear = not qft_is_bull and close <= qft_price
+        qft_new_txt := qft_continuation_bull ? "Bull Cont." : qft_continuation_bear ? "Bear Cont." : qft_is_bull ? "Bull Trap" : "Bear Trap"
+        qft_c = qft_continuation_bull ? qft_break_bull_color : qft_continuation_bear ? qft_break_bear_color : qft_trap_color
+        label.set_text(qft_label_id, qft_new_txt)
+        label.set_color(qft_label_id, color.new(color.white,100))
+        label.set_textcolor(qft_label_id, qft_c)
+    qft_new_txt
+if qft_is_active and not na(qft_last_line)
+    line.set_x2(qft_last_line, bar_index)
+    if not na(qft_last_label)
+        label.set_x(qft_last_label, bar_index)
+        label.set_y(qft_last_label, qft_break_price)
+        qft_current_status = qft_update_break_label(qft_last_label, qft_last_is_bull, qft_break_price)
+        if qft_current_status != qft_last_status
+            if qft_alert_cont_enable_input and str.contains(qft_current_status, "Cont.")
+                qft_alert_msg = str.replace(qft_current_status, ".", "") + " at " + str.tostring(qft_break_price, "#.####")
+                alert("QFT: " + qft_alert_msg, alert.freq_once_per_bar)
+            if qft_alert_trap_enable_input and str.contains(qft_current_status, "Trap")
+                qft_alert_msg = str.replace(qft_current_status, ".", "") + " at " + str.tostring(qft_break_price, "#.####")
+                alert("QFT: " + qft_alert_msg, alert.freq_once_per_bar)
+            qft_last_status := qft_current_status
+    if not na(qft_last_vwap_line) and not na(qft_vwap_anchor_bar)
+        qft_typical_price = hlc3
+        if bar_index == qft_vwap_anchor_bar
+            qft_sum_pv := qft_typical_price * volume
+            qft_sum_v := volume
+        else
+            if bar_index > qft_vwap_anchor_bar
+                qft_sum_pv += qft_typical_price * volume
+                qft_sum_v += volume
+        qft_current_vwap = qft_sum_v > 0 ? qft_sum_pv / qft_sum_v : na
+        if not na(qft_current_vwap)
+            line.set_x2(qft_last_vwap_line, bar_index)
+            line.set_y2(qft_last_vwap_line, qft_current_vwap)
+qft_current_vwap = qft_sum_v > 0 ? qft_sum_pv / qft_sum_v : na
+qft_warning_condition = false
+if not na(qft_current_vwap)
+    if qft_last_is_bull
+        qft_warning_condition := close < qft_current_vwap
+    else
+        qft_warning_condition := close > qft_current_vwap
+if qft_alert_warning_enable_input and qft_warning_condition and not qft_was_warning
+    qft_alert_msg = qft_last_is_bull ? "Bull: Price below VWAP Warning" : "Bear: Price above VWAP Warning" + " | VWAP: " + str.tostring(qft_current_vwap, "#.####")
+    alert("QFT: " + qft_alert_msg, alert.freq_once_per_bar)
+    qft_was_warning := true
+if qft_new_break
+    if qft_is_active and not na(qft_last_line)
+        qft_final_x = bar_index + qft_extend_after_bars_input
+        line.set_x2(qft_last_line, qft_final_x)
+        if not na(qft_last_label)
+            label.set_x(qft_last_label, qft_final_x)
+            label.set_y(qft_last_label, qft_break_price)
+            qft_final_status = qft_update_break_label(qft_last_label, qft_last_is_bull, qft_break_price)
+            label.delete(qft_last_label)
+        line.delete(qft_last_line)
+        if not na(qft_last_vwap_line)
+            line.set_x2(qft_last_vwap_line, qft_final_x)
+            line.delete(qft_last_vwap_line)
+        qft_last_label := na
+        qft_last_line := na
+        qft_last_vwap_line := na
+        qft_vwap_anchor_bar := na
+        qft_sum_pv := 0.0
+        qft_sum_v := 0.0
+        qft_was_warning := false
+        qft_last_status := ""
+    qft_break_price := qft_bull_event ? qft_prev_upper : qft_prev_lower
+    qft_last_is_bull := qft_bull_event
+    [qft_new_line, qft_new_label] = qft_create_break_elements(qft_last_is_bull, qft_break_price)
+    qft_last_line := qft_new_line
+    qft_last_label := qft_new_label
+    qft_last_vwap_line := qft_create_vwap_element(qft_last_is_bull, bar_index, qft_break_price)
+    qft_vwap_anchor_bar := bar_index
+    qft_sum_pv := 0.0
+    qft_sum_v := 0.0
+    qft_is_active := true
+    qft_last_status := ""
+    if qft_bull_event and qft_alert_bull_break_enable_input
+        alert("QFT: Bull Breakout at " + str.tostring(qft_break_price, "#.####"), alert.freq_once_per_bar)
+    if qft_bear_event and qft_alert_bear_break_enable_input
+        alert("QFT: Bear Breakout at " + str.tostring(qft_break_price, "#.####"), alert.freq_once_per_bar)
+// ——— SECTION: Rendering/UI (GLOBAL ONLY; single-line calls)
+plot(qft_show_bands_input ? qft_basic_upper : na, title="QFT — Basic Upper", color=color.new(color.red, 70), linewidth=1)
+plot(qft_show_bands_input ? qft_basic_lower : na, title="QFT — Basic Lower", color=color.new(color.lime, 70), linewidth=1)
+plot(qft_show_bands_input ? qft_upper_band : na, title="QFT — Upper Band", color=color.new(color.red, 0), linewidth=1)
+plot(qft_show_bands_input ? qft_lower_band : na, title="QFT — Lower Band", color=color.new(color.lime, 0), linewidth=1)
+plot(qft_supertrend, title="QFT — Supertrend", color=qft_dir == 1 ? color.lime : color.red, linewidth=2)
+plotshape(ta.change(qft_dir) > 0, title="QFT — Flip Up", style=shape.labelup, size=size.tiny, color=color.lime, location=location.belowbar, text="▲", textcolor=color.white)
+plotshape(ta.change(qft_dir) < 0, title="QFT — Flip Down", style=shape.labeldown, size=size.tiny, color=color.red, location=location.abovebar, text="▼", textcolor=color.white)
+qft_can_draw = qft_show_ext1_input and qft_is_active and not na(qft_last_label) and not na(qft_break_price)
+qft_cur_x = bar_index
+qft_label_x = not na(qft_last_label) ? label.get_x(qft_last_label) : na
+qft_label_y = not na(qft_last_label) ? label.get_y(qft_last_label) : na
+qft_close_y = close
+qft_delta_pct = not na(qft_label_y) and qft_label_y != 0.0 ? (qft_close_y / qft_label_y - 1.0) * 100.0 : na
+qft_fmt = qft_fmt_mask(qft_ext1_decimals_input)
+qft_txt_delta = na(qft_delta_pct) ? "" : (qft_delta_pct > 0 ? "+" : "") + str.tostring(qft_delta_pct, qft_fmt) + "%"
+qft_mid_y = not na(qft_label_y) ? (qft_label_y + qft_close_y) * 0.5 : na
+qft_has_vwap_line = not na(qft_last_vwap_line)
+qft_vwap_x2 = qft_has_vwap_line ? line.get_x2(qft_last_vwap_line) : na
+qft_vwap_y2 = qft_has_vwap_line ? line.get_y2(qft_last_vwap_line) : na
+qft_pct = math.max(qft_ext2_stop_pct_input, 0.0) * 0.01
+qft_tick_offset = math.max(qft_ext2_stop_ticks_input, 0) * syminfo.mintick
+qft_sl_price_pct = not na(qft_vwap_y2) ? (qft_last_is_bull ? qft_vwap_y2 * (1.0 - qft_pct) : qft_vwap_y2 * (1.0 + qft_pct)) : na
+qft_sl_price_ticks = not na(qft_vwap_y2) ? (qft_last_is_bull ? qft_vwap_y2 - qft_tick_offset : qft_vwap_y2 + qft_tick_offset) : na
+qft_stop_price = qft_ext2_method_input == "Percent" ? qft_sl_price_pct : qft_sl_price_ticks
+qft_fmt_ext2 = qft_fmt_mask_ext2(qft_ext2_decimals_input)
+qft_sl_txt = na(qft_stop_price) ? "" : "SL: " + str.tostring(qft_stop_price, qft_fmt_ext2) + (qft_ext2_method_input == "Percent" ? " (" + (qft_last_is_bull ? "−" : "+") + str.tostring(qft_ext2_stop_pct_input, "0.##") + "%)" : " (" + str.tostring(qft_ext2_stop_ticks_input) + "t)")
+qft_vwap_color = qft_ext1_color_line_input
+qft_bg_color = color.new(color.white,100)
+qft_can_draw_ext2 = qft_show_ext2_input and qft_has_vwap_line and not na(qft_vwap_x2) and not na(qft_vwap_y2) and not na(qft_stop_price)
+if barstate.islast
+    if qft_can_draw
+        if na(qft_ext1_line) or line.get_x1(qft_ext1_line) != qft_cur_x
+            line.delete(qft_ext1_line)
+            qft_ext1_line := line.new(qft_cur_x, qft_label_y, qft_cur_x, qft_close_y, xloc=xloc.bar_index, extend=extend.none, style=line.style_dotted, width=qft_ext1_line_width_input, color=qft_ext1_color_line_input)
+        else
+            line.set_xy1(qft_ext1_line, qft_cur_x, qft_label_y)
+            line.set_xy2(qft_ext1_line, qft_cur_x, qft_close_y)
+        qft_pos_color = qft_delta_pct >= 0 ? qft_ext1_color_pos_input : qft_ext1_color_neg_input
+        qft_bg_col_ext1 = color.new(color.white,100)
+        if na(qft_ext1_mid_label) or label.get_x(qft_ext1_mid_label) != qft_cur_x
+            label.delete(qft_ext1_mid_label)
+            qft_ext1_mid_label := label.new(qft_cur_x, qft_mid_y, qft_txt_delta, xloc=xloc.bar_index, style=label.style_none, textcolor=qft_pos_color, color=qft_bg_col_ext1, size=qft_text_size_from_string(qft_ext1_txt_size_input))
+        else
+            label.set_x(qft_ext1_mid_label, qft_cur_x)
+            label.set_y(qft_ext1_mid_label, qft_mid_y)
+            label.set_text(qft_ext1_mid_label, qft_txt_delta)
+            label.set_textcolor(qft_ext1_mid_label, qft_pos_color)
+            label.set_color(qft_ext1_mid_label, qft_bg_col_ext1)
+            label.set_size(qft_ext1_mid_label, qft_text_size_from_string(qft_ext1_txt_size_input))
+    else
+        if not na(qft_ext1_line)
+            line.delete(qft_ext1_line)
+            qft_ext1_line := na
+        if not na(qft_ext1_mid_label)
+            label.delete(qft_ext1_mid_label)
+            qft_ext1_mid_label := na
+    if qft_can_draw_ext2
+        if na(qft_ext2_sl_label) or label.get_x(qft_ext2_sl_label) != qft_vwap_x2
+            label.delete(qft_ext2_sl_label)
+            qft_ext2_sl_label := label.new(qft_vwap_x2, qft_vwap_y2, qft_sl_txt, xloc=xloc.bar_index, style=label.style_none, textcolor=qft_ext2_txt_color_input, color=qft_bg_color, size=qft_text_size_from_string_ext2(qft_ext2_txt_size_input))
+        else
+            label.set_x(qft_ext2_sl_label, qft_vwap_x2)
+            label.set_y(qft_ext2_sl_label, qft_vwap_y2)
+            label.set_text(qft_ext2_sl_label, qft_sl_txt)
+            label.set_textcolor(qft_ext2_sl_label, qft_ext2_txt_color_input)
+            label.set_color(qft_ext2_sl_label, qft_bg_color)
+            label.set_size(qft_ext2_sl_label, qft_text_size_from_string_ext2(qft_ext2_txt_size_input))
+    else
+        if not na(qft_ext2_sl_label)
+            label.delete(qft_ext2_sl_label)
+            qft_ext2_sl_label := na

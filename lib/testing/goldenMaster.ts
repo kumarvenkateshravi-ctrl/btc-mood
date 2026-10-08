@@ -37,7 +37,7 @@ export interface GoldenTolerance {
 export type ExpectedCell = number | null | { upper: number; lower: number };
 
 export interface GoldenFixture {
-  /** Indicator identifier, e.g. 'squeezeMomentum'. */
+  /** Indicator identifier, e.g. 'bollingerBands'. */
   indicator: string;
   source: GoldenSource;
   /** ISO date (YYYY-MM-DD) the expected values were captured. */

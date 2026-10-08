@@ -1,0 +1,333 @@
+{
+  "schemaVersion": 1,
+  "scope": {
+    "task": "Task 0: freeze domain decisions and characterize existing behavior",
+    "instrument": "BTC",
+    "symbolId": "BTCUSDT",
+    "productionImplementationIncluded": false,
+    "goldIncluded": false
+  },
+  "challengeV1": {
+    "arithmetic": {
+      "moneyScale": 6,
+      "quantityScale": 8,
+      "rounding": "round-half-to-even at each ledger posting"
+    },
+    "accounting": {
+      "cash": "starting cash plus settled gross P&L minus every charged commission",
+      "equity": "cash plus unrealized P&L",
+      "usedMargin": "sum of open-position entry notional divided by admitted leverage",
+      "reservedMargin": "sum of accepted unfilled order notional divided by admitted leverage",
+      "freeMargin": "equity minus used margin minus reserved margin",
+      "marginIsExpense": false
+    },
+    "execution": {
+      "marketSlippageTicks": 1,
+      "sameBarPath": {
+        "upCandle": [
+          "open",
+          "low",
+          "high",
+          "close"
+        ],
+        "downCandle": [
+          "open",
+          "high",
+          "low",
+          "close"
+        ]
+      },
+      "gapThroughProtectiveStop": "fill at the first observable executable price when it is worse than the stop; otherwise fill at the stop",
+      "reversal": "close the existing quantity first, allocate the fill commission by notional, then open the residual quantity with fresh protective-order state",
+      "replayActionTiming": "an action recorded after the current candle is consumed can execute no earlier than the next causal market observation"
+    },
+    "rules": {
+      "oneStepTargets": [
+        "0.10"
+      ],
+      "twoStepTargets": [
+        "0.10",
+        "0.08"
+      ],
+      "minimumActiveDays": 3,
+      "minimumProfitableDays": 3,
+      "profitableDayThreshold": "0.001",
+      "inactivityDays": 30,
+      "maximumLeverage": 20,
+      "dailyLossLimit": "0.05",
+      "maximumLossLimit": "0.10",
+      "maximumLossMode": "static",
+      "trailingLossSupported": true,
+      "trailingLossEnabledForPreset": false,
+      "dayTimezone": "UTC",
+      "breachComparison": "less-than-or-equal",
+      "simultaneousTargetAndBreach": "breach-wins",
+      "targetBasis": "cash",
+      "targetRequiresFlatAccount": true
+    },
+    "instrumentPolicy": {
+      "symbol": "BTCUSDT",
+      "policyVersion": "mcs.btcusdt/1",
+      "priceScale": 6,
+      "quantityScale": 8,
+      "priceTick": "0.1",
+      "quantityStep": "0.00001",
+      "minimumQuantity": "0.00001",
+      "minimumNotional": "5",
+      "priceRounding": {
+        "command": "reject",
+        "derived": "adverse"
+      },
+      "quantityRounding": {
+        "command": "reject",
+        "derived": "towardZero"
+      }
+    }
+  },
+  "fixtures": {
+    "roundTrip": {
+      "description": "Prices are post-slippage execution prices.",
+      "startingCash": "10000.00",
+      "leverage": 20,
+      "entryPrice": "100.00",
+      "quantity": "10.00000000",
+      "entryNotional": "1000.00",
+      "commissionRate": "0.001",
+      "entryCommission": "1.00",
+      "exitPrice": "110.00",
+      "exitNotional": "1100.00",
+      "grossRealizedPnl": "100.00",
+      "exitCommission": "1.10",
+      "totalCommissions": "2.10",
+      "netRealizedPnl": "97.90",
+      "states": [
+        {
+          "at": "start",
+          "cash": "10000.00",
+          "unrealizedPnl": "0.00",
+          "equity": "10000.00",
+          "usedMargin": "0.00",
+          "reservedMargin": "0.00",
+          "freeMargin": "10000.00"
+        },
+        {
+          "at": "order-reserved",
+          "cash": "10000.00",
+          "unrealizedPnl": "0.00",
+          "equity": "10000.00",
+          "usedMargin": "0.00",
+          "reservedMargin": "50.00",
+          "freeMargin": "9950.00"
+        },
+        {
+          "at": "entry-filled",
+          "cash": "9999.00",
+          "unrealizedPnl": "0.00",
+          "equity": "9999.00",
+          "usedMargin": "50.00",
+          "reservedMargin": "0.00",
+          "freeMargin": "9949.00"
+        },
+        {
+          "at": "marked-105",
+          "cash": "9999.00",
+          "unrealizedPnl": "50.00",
+          "equity": "10049.00",
+          "usedMargin": "50.00",
+          "reservedMargin": "0.00",
+          "freeMargin": "9999.00"
+        },
+        {
+          "at": "exit-filled",
+          "cash": "10097.90",
+          "unrealizedPnl": "0.00",
+          "equity": "10097.90",
+          "usedMargin": "0.00",
+          "reservedMargin": "0.00",
+          "freeMargin": "10097.90"
+        }
+      ]
+    },
+    "increase": {
+      "startingCash": "10000.00",
+      "leverage": 20,
+      "fills": [
+        {
+          "side": "buy",
+          "price": "100.00",
+          "quantity": "10.00000000",
+          "commission": "1.00"
+        },
+        {
+          "side": "buy",
+          "price": "120.00",
+          "quantity": "10.00000000",
+          "commission": "1.20"
+        }
+      ],
+      "markPrice": "120.00",
+      "expected": {
+        "side": "long",
+        "quantity": "20.00000000",
+        "averageEntryPrice": "110.00",
+        "cash": "9997.80",
+        "unrealizedPnl": "200.00",
+        "equity": "10197.80",
+        "usedMargin": "110.00",
+        "reservedMargin": "0.00",
+        "freeMargin": "10087.80"
+      }
+    },
+    "partialClose": {
+      "startingCash": "10000.00",
+      "leverage": 20,
+      "entry": {
+        "side": "buy",
+        "price": "100.00",
+        "quantity": "10.00000000",
+        "commission": "1.00"
+      },
+      "protectiveState": {
+        "stopLoss": "95.00",
+        "takeProfit": "120.00",
+        "trailing": true,
+        "bestPrice": "110.00"
+      },
+      "close": {
+        "side": "sell",
+        "price": "110.00",
+        "quantity": "4.00000000",
+        "commission": "0.44"
+      },
+      "expected": {
+        "side": "long",
+        "quantity": "6.00000000",
+        "averageEntryPrice": "100.00",
+        "allocatedEntryCommissionClosed": "0.40",
+        "allocatedEntryCommissionRemaining": "0.60",
+        "grossRealizedPnl": "40.00",
+        "closedLifecycleNetPnl": "39.16",
+        "cash": "10038.56",
+        "unrealizedPnlAt110": "60.00",
+        "equityAt110": "10098.56",
+        "usedMargin": "30.00",
+        "reservedMargin": "0.00",
+        "freeMarginAt110": "10068.56",
+        "preserveProtectiveState": true
+      },
+      "legacyKernelObserved": {
+        "remainingSide": "flat",
+        "remainingQuantity": "0",
+        "tradePnlExcludesAllocatedEntryCommission": true
+      }
+    },
+    "reversal": {
+      "startingCash": "10000.00",
+      "leverage": 20,
+      "entry": {
+        "side": "buy",
+        "price": "100.00",
+        "quantity": "10.00000000",
+        "commission": "1.00"
+      },
+      "reverse": {
+        "side": "sell",
+        "price": "110.00",
+        "quantity": "15.00000000",
+        "commission": "1.65"
+      },
+      "expected": {
+        "closedQuantity": "10.00000000",
+        "closingCommission": "1.10",
+        "closedLifecycleNetPnl": "97.90",
+        "newSide": "short",
+        "newQuantity": "5.00000000",
+        "newEntryPrice": "110.00",
+        "newAllocatedEntryCommission": "0.55",
+        "cash": "10097.35",
+        "equity": "10097.35",
+        "usedMargin": "27.50",
+        "reservedMargin": "0.00",
+        "freeMargin": "10069.85",
+        "protectiveState": "fresh"
+      }
+    },
+    "sameBar": {
+      "longPosition": {
+        "entry": "100.00",
+        "stopLoss": "98.00",
+        "takeProfit": "105.00"
+      },
+      "upCandle": {
+        "open": "100.00",
+        "high": "106.00",
+        "low": "97.00",
+        "close": "105.00",
+        "firstExit": "stop-loss"
+      },
+      "downCandle": {
+        "open": "100.00",
+        "high": "106.00",
+        "low": "97.00",
+        "close": "98.50",
+        "firstExit": "take-profit"
+      }
+    },
+    "gapThroughStop": {
+      "position": {
+        "side": "long",
+        "entry": "100.00",
+        "quantity": "10.00000000",
+        "entryCommission": "1.00",
+        "stopLoss": "95.00"
+      },
+      "firstObservablePrice": "90.00",
+      "legacyFillPrice": "95.00",
+      "challengeV1FillPrice": "90.00",
+      "challengeV1ExitCommission": "0.90",
+      "challengeV1GrossRealizedPnl": "-100.00",
+      "challengeV1NetRealizedPnl": "-101.90",
+      "challengeV1FinalCash": "9898.10"
+    },
+    "rounding": {
+      "commissionRatePartsPerMillion": 1000,
+      "halfwayToEvenZero": {
+        "notional": "0.000500",
+        "commission": "0.000000"
+      },
+      "halfwayToEvenTwo": {
+        "notional": "0.001500",
+        "commission": "0.000002"
+      }
+    },
+    "rules": {
+      "phaseStartingCash": "10000.00",
+      "daily": {
+        "dayStartCash": "10000.00",
+        "allowance": "500.00",
+        "floor": "9500.00",
+        "breachAt": "9500.00"
+      },
+      "maximumStatic": {
+        "allowance": "1000.00",
+        "floor": "9000.00",
+        "breachAt": "9000.00"
+      },
+      "maximumTrailingExample": {
+        "peakEquity": "11000.00",
+        "allowance": "1000.00",
+        "floor": "10000.00"
+      },
+      "phaseOneTargetCash": "11000.00",
+      "phaseTwoTargetCash": "10800.00",
+      "profitableDayMinimumNetPnl": "10.00",
+      "boundaryTimestampSeconds": 86400,
+      "boundaryBelongsToUtcDay": 1,
+      "simultaneous": {
+        "cash": "11000.00",
+        "equity": "9000.00",
+        "outcome": "failed"
+      }
+    }
+  }
+}

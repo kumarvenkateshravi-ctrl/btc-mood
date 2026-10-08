@@ -31,7 +31,7 @@ export function ChartOHLCStrip({ mode, symbol = 'BTCUSDT' }: { mode: ChartType; 
       role="status"
       aria-label="Chart OHLCV"
       className={[
-        'flex flex-wrap items-center gap-2 text-[13px] font-mono drop-shadow-md',
+        'chart-ohlc-strip flex flex-wrap items-center gap-2 text-[13px] font-mono drop-shadow-md',
         isLive ? 'text-ink' : 'text-ink-muted',
       ].join(' ')}
     >

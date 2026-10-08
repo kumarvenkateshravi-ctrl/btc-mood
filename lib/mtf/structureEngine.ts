@@ -90,6 +90,8 @@ export interface PremiumDiscountData { zone: ZoneName; description: string; }
 export interface TimelineItem {
   eventId: string; eventType: SmcEventType; barIndex: number; timestamp: number;
   direction: SmcDirection; label: string;
+  /** Exact distance from the last closed bar in this timeframe. */
+  barsAgo: number;
 }
 export interface QualityData {
   classification: StructureQuality;
@@ -408,7 +410,7 @@ export function createMarketStructureSnapshot(
   }
   const items: TimelineItem[] = collapsed.slice(-cfg.timelineLength).map((e) => ({
     eventId: e.id, eventType: e.type, barIndex: e.barIndex, timestamp: e.time,
-    direction: e.direction, label: timelineLabel(e),
+    direction: e.direction, label: timelineLabel(e), barsAgo: Math.max(0, lastBarIndex - e.barIndex),
   }));
   const timeline: Section<{ items: TimelineItem[] }> =
     items.length > 0 ? { state: 'ready', data: { items } } : { state: 'warming_up', data: null };

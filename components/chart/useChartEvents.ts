@@ -4,6 +4,7 @@ import type { ChartRefs } from './refs';
 import type { HoverPayload } from '@/lib/chartHoverStore';
 import type { OverlayKind } from './types';
 import { isChartLifecycleActive } from '@/lib/chartLifecycle';
+import { ORDER_LINE_DRAG_HIT_SLOP_PX } from '@/lib/orderOverlayPrimitive';
 
 export function useChartEvents(refs: ChartRefs) {
   useEffect(() => {
@@ -466,14 +467,14 @@ export function useChartEvents(refs: ChartRefs) {
       
       const hit = prim.customHitTest(localX, localY);
       let nextState: { kind: OverlayKind; price: number; y: number } | null = null;
-      if (hit) {
+      if (hit?.draggable) {
         const price = series.coordinateToPrice(localY);
         if (price != null && Number.isFinite(price)) {
           nextState = { kind: hit.kind, price: price as number, y: localY };
         }
-      } else {
+      } else if (!hit) {
         let best: { kind: OverlayKind; y: number; price: number; dist: number } | null = null;
-        const pad = 15;
+        const pad = ORDER_LINE_DRAG_HIT_SLOP_PX;
         for (const o of prim.overlays) {
           if (!o.draggable) continue;
           const ly = series.priceToCoordinate(o.price);
@@ -493,9 +494,14 @@ export function useChartEvents(refs: ChartRefs) {
         if (prev !== null && nextState !== null && prev.kind === nextState.kind && prev.price === nextState.price && prev.y === nextState.y) return prev;
         return nextState;
       });
+      container.style.cursor = hit?.action === 'cancel' ? 'pointer' : nextState ? 'ns-resize' : '';
     };
     
-    const onLeave = () => { if (active()) setHoverLine(null); };
+    const onLeave = () => {
+      if (!active()) return;
+      setHoverLine(null);
+      if (dragKind === null) container.style.cursor = '';
+    };
     
     const onContextMenu = (e: MouseEvent) => {
       if (!active()) return;

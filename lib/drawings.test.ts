@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { distToSegment, fibLevelPrices, TOOL_POINTS, isDrawing, FIB_LEVELS } from './drawings';
+import { distToSegment, fibLevelPrices, isDrawing, FIB_LEVELS } from './drawings';
 
 describe('distToSegment', () => {
   it('is 0 on the segment', () => {
@@ -33,12 +33,6 @@ describe('fibLevelPrices', () => {
 });
 
 describe('model', () => {
-  it('1-point tools need one point, 2-point tools two', () => {
-    expect(TOOL_POINTS.horizontal).toBe(1);
-    expect(TOOL_POINTS.text).toBe(1);
-    expect(TOOL_POINTS.trendline).toBe(2);
-    expect(TOOL_POINTS.fib).toBe(2);
-  });
   it('validates drawing shape', () => {
     expect(isDrawing({ id: 'a', type: 'trendline', points: [{ time: 1, price: 2 }], color: '#fff' })).toBe(true);
     expect(isDrawing({ id: 'a', type: 'trendline', points: [{ time: 1 }], color: '#fff' })).toBe(false);

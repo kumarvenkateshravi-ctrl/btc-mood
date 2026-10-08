@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import SmcScreenerPanel from '@/components/scanner/SmcScreenerPanel';
 import IntelligenceHome from '@/components/scanner/workstation/IntelligenceHome';
-import { walkVdTrades } from '@/lib/indicators/vdEngine';
+import { walkTrades } from '@/lib/tradeWalker';
 import { DEFAULT_COMPARE_SYMBOL, type CompareSymbol } from '@/lib/compare';
 import { TIMEFRAMES, type Candle, type Timeframe } from '@/lib/types';
 import type { ChartType } from '@/components/Chart';
@@ -273,7 +273,7 @@ function computePreviewSnapshot(
     if (arr && arr.length > 1) closedByTf[tf] = arr.slice(0, arr.length - 1);
   }
   const signals = generateScannerSignals(strategy, closedByTf, evalTf, Date.now());
-  const trades = walkVdTrades(closed, signals);
+  const trades = walkTrades(closed, signals);
   const events = deriveScannerEvents(trades, closed, evalTf);
   return {
     evalTf,
@@ -451,14 +451,12 @@ export default function TechnicalScannerWorkstation() {
       showVolume
       bid={bid}
       ask={ask}
-      activeIndicatorIds={['scanner_signals']}
+      activeIndicatorIds={[]}
       onToggleIndicator={() => {}}
       onClearIndicators={() => {}}
       onLoadOlder={() => { void loadOlder(selectedTf); }}
       gridCount={1}
       onGridChange={() => {}}
-      workspaceCurrent={{ chartType, symbol, tf: selectedTf, indicatorIds: ['scanner_signals'] }}
-      onWorkspaceApply={() => {}}
     />
   );
 
@@ -2084,7 +2082,5 @@ function paramSummary(params?: Record<string, number | string>): string | undefi
   if (!params || Object.keys(params).length === 0) return undefined;
   return Object.entries(params).map(([key, value]) => `${key} ${value}`).join(' / ');
 }
-
-
 
 

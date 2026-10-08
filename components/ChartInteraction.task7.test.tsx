@@ -15,7 +15,6 @@ const toolbarProps: ChartToolbarProps = {
   renko: { method: 'traditional', boxSize: 100, atrLength: 14, percentage: 0.5 }, onRenkoChange: vi.fn(),
   activeIndicatorIds: [], onToggleIndicator: vi.fn(), onClearIndicators: vi.fn(), replayActive: false, onReplayToggle: vi.fn(),
   historyActive: false, gridCount: 1, onGridChange: vi.fn(),
-  workspaceCurrent: { chartType: 'candlestick', symbol: 'BTCUSDT', tf: '5m', indicatorIds: [] }, onWorkspaceApply: vi.fn(),
   onOpenDrawings: vi.fn(),
 };
 
@@ -36,8 +35,6 @@ const drawingProps = {
   onRedo: vi.fn(),
   canUndo: true,
   canRedo: false,
-  selected: false,
-  onDeleteSelected: vi.fn(),
   mobileOpen: false,
   onMobileClose: vi.fn(),
   scopeLabel: 'BTCUSDT',
@@ -62,22 +59,21 @@ describe('Stage 7 Task 7 interaction polish', () => {
     const html = renderToStaticMarkup(<DrawingToolbar {...drawingProps} />);
     expect(html).toContain('Undo drawing');
     expect(html).toContain('Redo drawing');
-    expect(html).toContain('Clear drawings for BTCUSDT');
-    expect(html).toContain('Delete selected drawing');
+    expect(html).toContain('Delete all drawings for BTCUSDT');
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    expect(container.querySelectorAll('button[aria-label="Delete all drawings for BTCUSDT"]')).toHaveLength(1);
   });
 
-  it('requires explicit confirmation before clearing drawings', async () => {
+  it('deletes drawings immediately without opening a confirmation', async () => {
     const onClear = vi.fn();
     const container = document.createElement('div');
     const root = createRoot(container);
     await act(async () => { root.render(<DrawingToolbar {...drawingProps} onClear={onClear} />); });
-    const clear = Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label')?.startsWith('Clear drawings'));
+    const clear = Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label')?.startsWith('Delete all drawings'));
     await act(async () => { clear?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).toContain('Clear all drawings for BTCUSDT?');
-    expect(onClear).not.toHaveBeenCalled();
-    const confirm = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Clear Drawings'));
-    await act(async () => { confirm?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(onClear).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('Clear all drawings for BTCUSDT?');
     await act(async () => { root.unmount(); });
   });
 });

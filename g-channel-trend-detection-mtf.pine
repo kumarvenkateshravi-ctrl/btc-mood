@@ -1,0 +1,206 @@
+//@version=4
+// Full credit for the G-Channel calculation to Alex Grover:
+// https://www.tradingview.com/script/fIvlS64B-G-Channels-Efficient-Calculation-Of-Upper-Lower-Extremities/
+
+// resolution="" adds TradingView's built-in "Indicator Timeframe" selector.
+// resolution_gaps=true adds "Wait for timeframe closes" and prevents an
+// unfinished higher-timeframe value from being carried into every chart bar.
+study(
+     "G-Channel Trend Detection MTF",
+     shorttitle="G-Trend MTF",
+     overlay=true,
+     resolution="",
+     resolution_gaps=true)
+
+length = input(100, title="G-Channel Length", minval=1)
+src = input(close, title="Source", type=input.source)
+
+showBoundaries = input(false, title="Show Upper/Lower Boundaries")
+showEarly = input(true, title="Show PRE-BUY / PRE-SELL Warnings")
+showConfirmed = input(true, title="Show Confirmed BUY / SELL")
+showStrong = input(true, title="Show STRONG Boundary-Break Signals")
+
+atrLength = input(14, title="ATR Length", minval=1)
+atrBuffer = input(0.10, title="ATR Confirmation Buffer", minval=0.0, step=0.01)
+slopeLookback = input(3, title="Average Slope Lookback", minval=1)
+confirmationWindow = input(3, title="Confirmation Window (Bars)", minval=0, maxval=20)
+cooldownBars = input(6, title="Confirmed Signal Cooldown (Bars)", minval=0)
+earlyCooldownBars = input(6, title="Early Warning Cooldown (Bars)", minval=0)
+requireExpansion = input(true, title="Require Two-Bar Channel Expansion")
+
+// G-Channel.
+a = 0.0
+b = 0.0
+a := max(src, nz(a[1])) - nz(a[1] - b[1]) / length
+b := min(src, nz(b[1])) + nz(a[1] - b[1]) / length
+channelAvg = avg(a, b)
+channelWidth = max(a - b, syminfo.mintick)
+
+atrValue = atr(atrLength)
+confirmationBuffer = atrValue * atrBuffer
+normalizedWidth = channelWidth / max(atrValue, syminfo.mintick)
+
+avgRising = channelAvg > channelAvg[slopeLookback]
+avgFalling = channelAvg < channelAvg[slopeLookback]
+
+// A contracting channel represents stored energy. Two consecutive increases
+// in its width confirm that price is leaving compression rather than making a
+// one-bar probe.
+widthExpanding = normalizedWidth > normalizedWidth[1] and normalizedWidth[1] >= normalizedWidth[2]
+widthTurnedUp = normalizedWidth > normalizedWidth[1] and normalizedWidth[1] <= normalizedWidth[2]
+expansionConfirmed = not requireExpansion or widthExpanding
+
+// Trend state.
+crossup = b[1] < close[1] and b > close
+crossdn = a[1] < close[1] and a > close
+bullish = barssince(crossdn) <= barssince(crossup)
+trendColor = bullish ? color.lime : color.red
+
+// Channel-to-price cloud.
+averagePlot = plot(channelAvg, "Average", color=trendColor, linewidth=1, transp=90)
+closePlot = plot(close, "Close price", color=trendColor, linewidth=1, transp=100)
+fill(averagePlot, closePlot, color=trendColor, transp=90)
+
+plot(showBoundaries ? a : na, title="Upper Boundary", color=color.blue, linewidth=1, transp=35)
+plot(showBoundaries ? b : na, title="Lower Boundary", color=color.orange, linewidth=1, transp=35)
+
+// ============================================================================
+// THREE-LEVEL SIGNAL ENGINE
+// ============================================================================
+
+// The original state change remains the directional authority. A state flip
+// opens a short confirmation window; it does not automatically become a trade.
+rawBuyFlip = bullish and not bullish[1]
+rawSellFlip = not bullish and bullish[1]
+
+var int buyBarsLeft = 0
+var int sellBarsLeft = 0
+
+if rawBuyFlip
+    buyBarsLeft := confirmationWindow
+    sellBarsLeft := 0
+
+if rawSellFlip
+    sellBarsLeft := confirmationWindow
+    buyBarsLeft := 0
+
+buyAttemptActive = rawBuyFlip or buyBarsLeft > 0
+sellAttemptActive = rawSellFlip or sellBarsLeft > 0
+
+buyLocationConfirmed = close > channelAvg + confirmationBuffer
+sellLocationConfirmed = close < channelAvg - confirmationBuffer
+
+buyFilters = bullish and close > open and buyLocationConfirmed and avgRising and expansionConfirmed
+sellFilters = not bullish and close < open and sellLocationConfirmed and avgFalling and expansionConfirmed
+
+var int lastConfirmedBar = na
+confirmedCooldownOk = na(lastConfirmedBar) or bar_index - lastConfirmedBar > cooldownBars
+
+buySignal = showConfirmed and barstate.isconfirmed and buyAttemptActive and buyFilters and confirmedCooldownOk
+sellSignal = showConfirmed and barstate.isconfirmed and sellAttemptActive and sellFilters and confirmedCooldownOk
+
+if buySignal or sellSignal
+    lastConfirmedBar := bar_index
+    buyBarsLeft := 0
+    sellBarsLeft := 0
+else
+    if buyBarsLeft > 0 and not rawBuyFlip
+        buyBarsLeft := buyBarsLeft - 1
+    if sellBarsLeft > 0 and not rawSellFlip
+        sellBarsLeft := sellBarsLeft - 1
+
+// PRE signals are warnings only. They deliberately occur while the primary
+// G-Trend still points the other way, so they must never be treated as entries.
+preBuyCandidate = not bullish and crossover(close, channelAvg) and avgRising and widthTurnedUp
+preSellCandidate = bullish and crossunder(close, channelAvg) and avgFalling and widthTurnedUp
+
+var int lastEarlyBar = na
+earlyCooldownOk = na(lastEarlyBar) or bar_index - lastEarlyBar > earlyCooldownBars
+
+preBuySignal = showEarly and barstate.isconfirmed and preBuyCandidate and earlyCooldownOk
+preSellSignal = showEarly and barstate.isconfirmed and preSellCandidate and earlyCooldownOk
+
+if preBuySignal or preSellSignal
+    lastEarlyBar := bar_index
+
+// A break beyond an outer boundary is a trend-acceleration signal. Direction
+// is still restricted by the primary G-Trend state.
+strongBuyBreak = close > a[1] + confirmationBuffer and close[1] <= a[1] + nz(confirmationBuffer[1])
+strongSellBreak = close < b[1] - confirmationBuffer and close[1] >= b[1] - nz(confirmationBuffer[1])
+
+var int lastStrongBar = na
+strongCooldownOk = na(lastStrongBar) or bar_index - lastStrongBar > cooldownBars
+
+strongBuySignal = showStrong and barstate.isconfirmed and bullish and close > open and avgRising and expansionConfirmed and strongBuyBreak and strongCooldownOk
+strongSellSignal = showStrong and barstate.isconfirmed and not bullish and close < open and avgFalling and expansionConfirmed and strongSellBreak and strongCooldownOk
+
+if strongBuySignal or strongSellSignal
+    lastStrongBar := bar_index
+
+// Early warnings use small amber triangles. Confirmed and strong entries are
+// printed on the bar where they become known; no historical offset/backdating.
+plotshape(
+     preBuySignal,
+     title="PRE-BUY Warning",
+     location=location.belowbar,
+     style=shape.triangleup,
+     color=color.orange,
+     size=size.tiny,
+     text="PRE-BUY",
+     textcolor=color.white,
+     transp=0)
+
+plotshape(
+     preSellSignal,
+     title="PRE-SELL Warning",
+     location=location.abovebar,
+     style=shape.triangledown,
+     color=color.orange,
+     size=size.tiny,
+     text="PRE-SELL",
+     textcolor=color.white,
+     transp=0)
+
+plotshape(
+     sellSignal and not strongSellSignal ? channelAvg : na,
+     title="Confirmed Sell",
+     location=location.absolute,
+     style=shape.labeldown,
+     color=color.red,
+     size=size.tiny,
+     text="SELL",
+     textcolor=#ffffff,
+     transp=0)
+
+plotshape(
+     buySignal and not strongBuySignal ? channelAvg : na,
+     title="Confirmed Buy",
+     location=location.absolute,
+     style=shape.labelup,
+     color=color.lime,
+     size=size.tiny,
+     text="BUY",
+     textcolor=#ffffff,
+     transp=0)
+
+plotshape(
+     strongBuySignal ? b : na,
+     title="Strong Buy",
+     location=location.absolute,
+     style=shape.labelup,
+     color=color.green,
+     size=size.small,
+     text="STRONG BUY",
+     textcolor=color.white,
+     transp=0)
+
+plotshape(
+     strongSellSignal ? a : na,
+     title="Strong Sell",
+     location=location.absolute,
+     style=shape.labeldown,
+     color=color.maroon,
+     size=size.small,
+     text="STRONG SELL",
+     textcolor=color.white,
+     transp=0)

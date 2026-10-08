@@ -1,6 +1,6 @@
 // One-call golden test for a library-backed or ported indicator. Keeps each
 // indicator's *.golden.test.ts to a few lines. See
-// lib/indicators/squeezeMomentum.golden.test.ts for the explicit long form and
+// individual indicator golden tests for the explicit long form and
 // docs/PORTING_PINESCRIPT.md for the workflow.
 //
 // Record / refresh the fixture: UPDATE_GOLDEN=1 npx vitest run <name>.golden

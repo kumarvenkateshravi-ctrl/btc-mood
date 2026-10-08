@@ -1,0 +1,682 @@
+//@version=6
+indicator("Dual Pivot Trend Breaks + Zero-Lag TEMA + Renko + 2 EMAs", shorttitle="Dual PTB + Renko + EMA", overlay=true, max_bars_back=5000)
+
+// Two independent copies of the supplied indicator. Original defaults and
+// formulas are preserved. With identical settings, both copies overlap.
+
+// COPY 1 — independent settings, state, plots and alerts
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PIVOT TRENDLINE SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c1_GRP_TREND = "Copy 1 — Pivot Trendlines"
+c1_GRP_TREND_STYLE = "Copy 1 — Pivot Trendline Style"
+c1_GRP_TEMA = "Copy 1 — Zero-Lag TEMA"
+c1_GRP_SIGNALS = "Copy 1 — Signals"
+
+c1_pivotLeft = input.int(
+     7,
+     "Pivot Left Bars",
+     minval = 1,
+     group = c1_GRP_TREND
+)
+
+c1_pivotRight = input.int(
+     5,
+     "Pivot Right Bars",
+     minval = 1,
+     group = c1_GRP_TREND
+)
+
+c1_slopeMethod = input.string(
+     "ATR",
+     "Slope Method",
+     options = ["ATR", "Standard Deviation", "Fixed Ticks"],
+     group = c1_GRP_TREND
+)
+
+c1_slopeLength = input.int(
+     14,
+     "Slope Length",
+     minval = 1,
+     group = c1_GRP_TREND
+)
+
+c1_slopeFactor = input.float(
+     1.0,
+     "Slope Multiplier",
+     minval = 0.1,
+     step = 0.1,
+     group = c1_GRP_TREND
+)
+
+c1_fixedTicks = input.int(
+     10,
+     "Fixed Slope Ticks",
+     minval = 1,
+     group = c1_GRP_TREND,
+     tooltip = "Used only with the Fixed Ticks slope method."
+)
+
+c1_showTrendlines = input.bool(
+     true,
+     "Show Trendlines",
+     group = c1_GRP_TREND_STYLE
+)
+
+c1_resistanceColor = input.color(
+     color.red,
+     "Resistance Color",
+     group = c1_GRP_TREND_STYLE
+)
+
+c1_supportColor = input.color(
+     color.lime,
+     "Support Color",
+     group = c1_GRP_TREND_STYLE
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ZERO-LAG TEMA SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c1_temaSource = input.source(close, "Source", group = c1_GRP_TEMA)
+
+c1_temaFastLength = input.int(
+     22,
+     "Fast Length",
+     minval = 1,
+     group = c1_GRP_TEMA
+)
+
+c1_temaSlowLength = input.int(
+     144,
+     "Slow Length",
+     minval = 1,
+     group = c1_GRP_TEMA
+)
+
+c1_showTema = input.bool(
+     true,
+     "Show Zero-Lag TEMA Lines",
+     group = c1_GRP_TEMA
+)
+
+c1_useTemaFilter = input.bool(
+     true,
+     "Require TEMA Trend Confirmation",
+     group = c1_GRP_TEMA,
+     tooltip = "Long breakouts require Fast TEMA above Slow TEMA. Short breakouts require Fast TEMA below Slow TEMA."
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SIGNAL SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c1_showBreakSignals = input.bool(
+     true,
+     "Show Trendline Break Signals",
+     group = c1_GRP_SIGNALS
+)
+
+c1_showTemaCrossSignals = input.bool(
+     false,
+     "Show TEMA Cross Signals",
+     group = c1_GRP_SIGNALS
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ZERO-LAG TEMA FUNCTION
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c1_f_zeroLagTema(source, length) =>
+    firstEma = ta.ema(source, length)
+    secondEma = ta.ema(firstEma, length)
+    thirdEma = ta.ema(secondEma, length)
+
+    firstTema = 3 * firstEma - 3 * secondEma + thirdEma
+
+    smoothOne = ta.ema(firstTema, length)
+    smoothTwo = ta.ema(smoothOne, length)
+    smoothThree = ta.ema(smoothTwo, length)
+
+    3 * smoothOne - 3 * smoothTwo + smoothThree
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TEMA CALCULATIONS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c1_temaFast = c1_f_zeroLagTema(c1_temaSource, c1_temaFastLength)
+c1_temaSlow = c1_f_zeroLagTema(c1_temaSource, c1_temaSlowLength)
+
+c1_temaBullish = c1_temaFast > c1_temaSlow
+c1_temaBearish = c1_temaFast < c1_temaSlow
+
+c1_temaFastColor = c1_temaBullish ? color.lime : color.red
+
+plot(
+     c1_showTema ? c1_temaFast : na,
+     title = "Copy 1 — Zero-Lag TEMA Fast",
+     color = c1_temaFastColor,
+     linewidth = 2
+)
+
+plot(
+     c1_showTema ? c1_temaSlow : na,
+     title = "Copy 1 — Zero-Lag TEMA Slow",
+     color = color.white,
+     linewidth = 1
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ORIGINAL PIVOT-TRENDLINE ENGINE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// All slope components are calculated on every bar.
+c1_atrSlope = ta.atr(c1_slopeLength) / c1_slopeLength * c1_slopeFactor
+c1_stdevSlope = ta.stdev(close, c1_slopeLength) / c1_slopeLength * c1_slopeFactor
+c1_tickSlope = syminfo.mintick * c1_fixedTicks
+
+c1_slopeStep = switch c1_slopeMethod
+    "ATR" => c1_atrSlope
+    "Standard Deviation" => c1_stdevSlope
+    "Fixed Ticks" => c1_tickSlope
+    => c1_atrSlope
+
+c1_pivotHigh = ta.pivothigh(high, c1_pivotLeft, c1_pivotRight)
+c1_pivotLow = ta.pivotlow(low, c1_pivotLeft, c1_pivotRight)
+
+var float c1_resistanceLevel = na
+var float c1_supportLevel = na
+var float c1_resistanceSlope = na
+var float c1_supportSlope = na
+
+// A confirmed pivot high begins a downward-sloping resistance level.
+if not na(c1_pivotHigh)
+    c1_resistanceSlope := c1_slopeStep
+    c1_resistanceLevel := c1_pivotHigh - c1_resistanceSlope * c1_pivotRight
+else if not na(c1_resistanceLevel)
+    c1_resistanceLevel -= c1_resistanceSlope
+
+// A confirmed pivot low begins an upward-sloping support level.
+if not na(c1_pivotLow)
+    c1_supportSlope := c1_slopeStep
+    c1_supportLevel := c1_pivotLow + c1_supportSlope * c1_pivotRight
+else if not na(c1_supportLevel)
+    c1_supportLevel += c1_supportSlope
+
+c1_resistancePlot = plot(
+     c1_showTrendlines ? c1_resistanceLevel : na,
+     title = "Copy 1 — Custom Resistance",
+     color = c1_resistanceColor,
+     linewidth = 2,
+     style = plot.style_linebr
+)
+
+c1_supportPlot = plot(
+     c1_showTrendlines ? c1_supportLevel : na,
+     title = "Copy 1 — Custom Support",
+     color = c1_supportColor,
+     linewidth = 2,
+     style = plot.style_linebr
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BREAKOUTS AND CONFIRMATION
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c1_rawUpBreak = ta.crossover(close, c1_resistanceLevel)
+c1_rawDownBreak = ta.crossunder(close, c1_supportLevel)
+
+c1_upBreak = barstate.isconfirmed and c1_rawUpBreak
+c1_downBreak = barstate.isconfirmed and c1_rawDownBreak
+
+c1_longSignal = c1_upBreak and (not c1_useTemaFilter or c1_temaBullish)
+c1_shortSignal = c1_downBreak and (not c1_useTemaFilter or c1_temaBearish)
+
+c1_temaLongCross = barstate.isconfirmed and ta.crossover(c1_temaFast, c1_temaSlow)
+c1_temaShortCross = barstate.isconfirmed and ta.crossunder(c1_temaFast, c1_temaSlow)
+
+plotshape(
+     c1_showBreakSignals and c1_longSignal ? low : na,
+     title = "Copy 1 — Trend Break Long",
+     style = shape.labelup,
+     location = location.absolute,
+     color = color.lime,
+     text = "1 Break\nLong",
+     textcolor = color.white,
+     size = size.tiny
+)
+
+plotshape(
+     c1_showBreakSignals and c1_shortSignal ? high : na,
+     title = "Copy 1 — Trend Break Short",
+     style = shape.labeldown,
+     location = location.absolute,
+     color = color.red,
+     text = "1 Break\nShort",
+     textcolor = color.white,
+     size = size.tiny
+)
+
+plotshape(
+     c1_showTemaCrossSignals and c1_temaLongCross ? low : na,
+     title = "Copy 1 — TEMA Long",
+     style = shape.triangleup,
+     location = location.absolute,
+     color = color.yellow,
+     text = "T1",
+     textcolor = color.black,
+     size = size.normal
+)
+
+plotshape(
+     c1_showTemaCrossSignals and c1_temaShortCross ? high : na,
+     title = "Copy 1 — TEMA Short",
+     style = shape.triangledown,
+     location = location.absolute,
+     color = color.fuchsia,
+     text = "T1",
+     textcolor = color.white,
+     size = size.normal
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ALERTS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+alertcondition(
+     c1_longSignal,
+     title = "Copy 1 — Trend Break Long",
+     message = "Copy 1: Pivot Trend Breaks + Zero-Lag TEMA: confirmed bullish trendline breakout."
+)
+
+alertcondition(
+     c1_shortSignal,
+     title = "Copy 1 — Trend Break Short",
+     message = "Copy 1: Pivot Trend Breaks + Zero-Lag TEMA: confirmed bearish trendline breakdown."
+)
+
+alertcondition(
+     c1_temaLongCross,
+     title = "Copy 1 — TEMA Bullish Cross",
+     message = "Copy 1: Zero-Lag TEMA Fast crossed above Zero-Lag TEMA Slow."
+)
+
+alertcondition(
+     c1_temaShortCross,
+     title = "Copy 1 — TEMA Bearish Cross",
+     message = "Copy 1: Zero-Lag TEMA Fast crossed below Zero-Lag TEMA Slow."
+)
+
+// COPY 2 — independent settings, state, plots and alerts
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PIVOT TRENDLINE SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c2_GRP_TREND = "Copy 2 — Pivot Trendlines"
+c2_GRP_TREND_STYLE = "Copy 2 — Pivot Trendline Style"
+c2_GRP_TEMA = "Copy 2 — Zero-Lag TEMA"
+c2_GRP_SIGNALS = "Copy 2 — Signals"
+
+c2_pivotLeft = input.int(
+     7,
+     "Pivot Left Bars",
+     minval = 1,
+     group = c2_GRP_TREND
+)
+
+c2_pivotRight = input.int(
+     5,
+     "Pivot Right Bars",
+     minval = 1,
+     group = c2_GRP_TREND
+)
+
+c2_slopeMethod = input.string(
+     "ATR",
+     "Slope Method",
+     options = ["ATR", "Standard Deviation", "Fixed Ticks"],
+     group = c2_GRP_TREND
+)
+
+c2_slopeLength = input.int(
+     14,
+     "Slope Length",
+     minval = 1,
+     group = c2_GRP_TREND
+)
+
+c2_slopeFactor = input.float(
+     1.0,
+     "Slope Multiplier",
+     minval = 0.1,
+     step = 0.1,
+     group = c2_GRP_TREND
+)
+
+c2_fixedTicks = input.int(
+     10,
+     "Fixed Slope Ticks",
+     minval = 1,
+     group = c2_GRP_TREND,
+     tooltip = "Used only with the Fixed Ticks slope method."
+)
+
+c2_showTrendlines = input.bool(
+     true,
+     "Show Trendlines",
+     group = c2_GRP_TREND_STYLE
+)
+
+c2_resistanceColor = input.color(
+     color.red,
+     "Resistance Color",
+     group = c2_GRP_TREND_STYLE
+)
+
+c2_supportColor = input.color(
+     color.lime,
+     "Support Color",
+     group = c2_GRP_TREND_STYLE
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ZERO-LAG TEMA SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c2_temaSource = input.source(close, "Source", group = c2_GRP_TEMA)
+
+c2_temaFastLength = input.int(
+     22,
+     "Fast Length",
+     minval = 1,
+     group = c2_GRP_TEMA
+)
+
+c2_temaSlowLength = input.int(
+     144,
+     "Slow Length",
+     minval = 1,
+     group = c2_GRP_TEMA
+)
+
+c2_showTema = input.bool(
+     true,
+     "Show Zero-Lag TEMA Lines",
+     group = c2_GRP_TEMA
+)
+
+c2_useTemaFilter = input.bool(
+     true,
+     "Require TEMA Trend Confirmation",
+     group = c2_GRP_TEMA,
+     tooltip = "Long breakouts require Fast TEMA above Slow TEMA. Short breakouts require Fast TEMA below Slow TEMA."
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SIGNAL SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c2_showBreakSignals = input.bool(
+     true,
+     "Show Trendline Break Signals",
+     group = c2_GRP_SIGNALS
+)
+
+c2_showTemaCrossSignals = input.bool(
+     false,
+     "Show TEMA Cross Signals",
+     group = c2_GRP_SIGNALS
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ZERO-LAG TEMA FUNCTION
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c2_f_zeroLagTema(source, length) =>
+    firstEma = ta.ema(source, length)
+    secondEma = ta.ema(firstEma, length)
+    thirdEma = ta.ema(secondEma, length)
+
+    firstTema = 3 * firstEma - 3 * secondEma + thirdEma
+
+    smoothOne = ta.ema(firstTema, length)
+    smoothTwo = ta.ema(smoothOne, length)
+    smoothThree = ta.ema(smoothTwo, length)
+
+    3 * smoothOne - 3 * smoothTwo + smoothThree
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TEMA CALCULATIONS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c2_temaFast = c2_f_zeroLagTema(c2_temaSource, c2_temaFastLength)
+c2_temaSlow = c2_f_zeroLagTema(c2_temaSource, c2_temaSlowLength)
+
+c2_temaBullish = c2_temaFast > c2_temaSlow
+c2_temaBearish = c2_temaFast < c2_temaSlow
+
+c2_temaFastColor = c2_temaBullish ? color.lime : color.red
+
+plot(
+     c2_showTema ? c2_temaFast : na,
+     title = "Copy 2 — Zero-Lag TEMA Fast",
+     color = c2_temaFastColor,
+     linewidth = 2
+)
+
+plot(
+     c2_showTema ? c2_temaSlow : na,
+     title = "Copy 2 — Zero-Lag TEMA Slow",
+     color = color.white,
+     linewidth = 1
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ORIGINAL PIVOT-TRENDLINE ENGINE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// All slope components are calculated on every bar.
+c2_atrSlope = ta.atr(c2_slopeLength) / c2_slopeLength * c2_slopeFactor
+c2_stdevSlope = ta.stdev(close, c2_slopeLength) / c2_slopeLength * c2_slopeFactor
+c2_tickSlope = syminfo.mintick * c2_fixedTicks
+
+c2_slopeStep = switch c2_slopeMethod
+    "ATR" => c2_atrSlope
+    "Standard Deviation" => c2_stdevSlope
+    "Fixed Ticks" => c2_tickSlope
+    => c2_atrSlope
+
+c2_pivotHigh = ta.pivothigh(high, c2_pivotLeft, c2_pivotRight)
+c2_pivotLow = ta.pivotlow(low, c2_pivotLeft, c2_pivotRight)
+
+var float c2_resistanceLevel = na
+var float c2_supportLevel = na
+var float c2_resistanceSlope = na
+var float c2_supportSlope = na
+
+// A confirmed pivot high begins a downward-sloping resistance level.
+if not na(c2_pivotHigh)
+    c2_resistanceSlope := c2_slopeStep
+    c2_resistanceLevel := c2_pivotHigh - c2_resistanceSlope * c2_pivotRight
+else if not na(c2_resistanceLevel)
+    c2_resistanceLevel -= c2_resistanceSlope
+
+// A confirmed pivot low begins an upward-sloping support level.
+if not na(c2_pivotLow)
+    c2_supportSlope := c2_slopeStep
+    c2_supportLevel := c2_pivotLow + c2_supportSlope * c2_pivotRight
+else if not na(c2_supportLevel)
+    c2_supportLevel += c2_supportSlope
+
+c2_resistancePlot = plot(
+     c2_showTrendlines ? c2_resistanceLevel : na,
+     title = "Copy 2 — Custom Resistance",
+     color = c2_resistanceColor,
+     linewidth = 2,
+     style = plot.style_linebr
+)
+
+c2_supportPlot = plot(
+     c2_showTrendlines ? c2_supportLevel : na,
+     title = "Copy 2 — Custom Support",
+     color = c2_supportColor,
+     linewidth = 2,
+     style = plot.style_linebr
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BREAKOUTS AND CONFIRMATION
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+c2_rawUpBreak = ta.crossover(close, c2_resistanceLevel)
+c2_rawDownBreak = ta.crossunder(close, c2_supportLevel)
+
+c2_upBreak = barstate.isconfirmed and c2_rawUpBreak
+c2_downBreak = barstate.isconfirmed and c2_rawDownBreak
+
+c2_longSignal = c2_upBreak and (not c2_useTemaFilter or c2_temaBullish)
+c2_shortSignal = c2_downBreak and (not c2_useTemaFilter or c2_temaBearish)
+
+c2_temaLongCross = barstate.isconfirmed and ta.crossover(c2_temaFast, c2_temaSlow)
+c2_temaShortCross = barstate.isconfirmed and ta.crossunder(c2_temaFast, c2_temaSlow)
+
+plotshape(
+     c2_showBreakSignals and c2_longSignal ? low : na,
+     title = "Copy 2 — Trend Break Long",
+     style = shape.labelup,
+     location = location.absolute,
+     color = color.lime,
+     text = "2 Break\nLong",
+     textcolor = color.white,
+     size = size.tiny
+)
+
+plotshape(
+     c2_showBreakSignals and c2_shortSignal ? high : na,
+     title = "Copy 2 — Trend Break Short",
+     style = shape.labeldown,
+     location = location.absolute,
+     color = color.red,
+     text = "2 Break\nShort",
+     textcolor = color.white,
+     size = size.tiny
+)
+
+plotshape(
+     c2_showTemaCrossSignals and c2_temaLongCross ? low : na,
+     title = "Copy 2 — TEMA Long",
+     style = shape.triangleup,
+     location = location.absolute,
+     color = color.yellow,
+     text = "T2",
+     textcolor = color.black,
+     size = size.normal
+)
+
+plotshape(
+     c2_showTemaCrossSignals and c2_temaShortCross ? high : na,
+     title = "Copy 2 — TEMA Short",
+     style = shape.triangledown,
+     location = location.absolute,
+     color = color.fuchsia,
+     text = "T2",
+     textcolor = color.white,
+     size = size.normal
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ALERTS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+alertcondition(
+     c2_longSignal,
+     title = "Copy 2 — Trend Break Long",
+     message = "Copy 2: Pivot Trend Breaks + Zero-Lag TEMA: confirmed bullish trendline breakout."
+)
+
+alertcondition(
+     c2_shortSignal,
+     title = "Copy 2 — Trend Break Short",
+     message = "Copy 2: Pivot Trend Breaks + Zero-Lag TEMA: confirmed bearish trendline breakdown."
+)
+
+alertcondition(
+     c2_temaLongCross,
+     title = "Copy 2 — TEMA Bullish Cross",
+     message = "Copy 2: Zero-Lag TEMA Fast crossed above Zero-Lag TEMA Slow."
+)
+
+alertcondition(
+     c2_temaShortCross,
+     title = "Copy 2 — TEMA Bearish Cross",
+     message = "Copy 2: Zero-Lag TEMA Fast crossed below Zero-Lag TEMA Slow."
+)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ZIGZAG VIA RENKO EMULATOR — Pine v6 conversion
+// Original: Zack_the_Lego (ZTLs % Renko Emulator). Modification: capissimo.
+// The supplied calculation is percentage-based despite its ATR Channel label.
+// Developing bricks/projections can change before the current candle closes.
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+string renko_group = "Renko Emulator"
+bool renko_show = input.bool(true, "Show Renko Emulator", group=renko_group)
+bool renko_show_projection = input.bool(false, "Show projected ATR Channel", group=renko_group)
+
+float renko_resolution = switch timeframe.period
+    "1" => 0.00005
+    "3" => 0.0001
+    "5" => 0.0002
+    "15" => 0.0003
+    "30" => 0.0004
+    "45" => 0.0005
+    "60" => 0.0006
+    "120" => 0.0007
+    "180" => 0.0008
+    "240" => 0.0009
+    "1D" => 0.01
+    "D" => 0.01
+    "1W" => 0.02
+    "W" => 0.02
+    "1M" => 0.03
+    "M" => 0.03
+    => 0.04
+
+float renko_brick_size = close[1] * renko_resolution
+float renko_brick1 = 0.0
+float renko_brick2 = 0.0
+renko_brick1 := high > nz(renko_brick1[1], close) + renko_brick_size ? nz(renko_brick1[1], close) + renko_brick_size : low < nz(renko_brick1[1], close) - renko_brick_size ? nz(renko_brick1[1], close) - renko_brick_size : nz(renko_brick1[1], close)
+renko_brick2 := renko_brick1 != renko_brick1[1] ? renko_brick1[1] : nz(renko_brick2[1], close)
+
+float renko_projected1 = renko_brick1 > renko_brick2 ? renko_brick_size + renko_brick1 : renko_brick1 - renko_brick_size
+float renko_projected2 = renko_brick1 > renko_brick2 ? renko_brick2 - renko_brick_size : renko_brick2 + renko_brick_size
+color renko_color = renko_brick1 > renko_brick1[2] ? color.green : renko_brick1 < renko_brick1[2] ? color.red : color.silver
+
+plot(renko_show and renko_show_projection ? renko_projected1 : na,
+     title="Renko — Projection 1", color=color.orange)
+plot(renko_show and renko_show_projection ? renko_projected2 : na,
+     title="Renko — Projection 2", color=color.orange)
+renko_plot1 = plot(renko_show ? renko_brick1 : na,
+     title="Renko — Brick 1", color=renko_color, linewidth=2)
+renko_plot2 = plot(renko_show ? renko_brick2 : na,
+     title="Renko — Brick 2", color=renko_color, linewidth=2)
+fill(renko_plot1, renko_plot2, color=color.new(color.gray, 80), title="Renko — Fill")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TWO INDEPENDENT EMAS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+string ema_group = "EMA Lines"
+bool ema1_show = input.bool(true, "Show EMA 1", group=ema_group)
+int ema1_length = input.int(20, "EMA 1 Length", minval=1, group=ema_group)
+float ema1_source = input.source(close, "EMA 1 Source", group=ema_group)
+bool ema2_show = input.bool(true, "Show EMA 2", group=ema_group)
+int ema2_length = input.int(200, "EMA 2 Length", minval=1, group=ema_group)
+float ema2_source = input.source(close, "EMA 2 Source", group=ema_group)
+
+float ema1_value = ta.ema(ema1_source, ema1_length)
+float ema2_value = ta.ema(ema2_source, ema2_length)
+plot(ema1_show ? ema1_value : na, title="EMA 1", color=#FF9800, linewidth=2)
+plot(ema2_show ? ema2_value : na, title="EMA 2", color=#2196F3, linewidth=2)

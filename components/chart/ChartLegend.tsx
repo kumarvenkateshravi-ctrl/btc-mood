@@ -1,4 +1,5 @@
 import { Eye, EyeOff, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 import { CUSTOM_INDICATORS } from '@/lib/customIndicatorsLibrary';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
 import IndicatorSettingsModal from '../trade/IndicatorSettingsModal';
@@ -39,13 +40,15 @@ export function ChartLegend({
   onCloseSettings,
   onSaveSettings,
 }: ChartLegendProps) {
+  const [mobileExpanded, setMobileExpanded] = useState(false);
   if (legendKeys.length === 0) return null;
   const resultByKey = new Map(renderResults.map((r) => [r.key, r.result] as const));
 
   return (
     <>
-      <div className="pointer-events-none absolute left-2 top-[60px] z-10 flex flex-col gap-0">
-        {isLegendExpanded && legendKeys.map((key) => {
+      <div className="chart-indicator-legend pointer-events-none absolute left-2 top-[60px] z-10 flex flex-col gap-0" data-mobile-expanded={mobileExpanded}>
+        <button type="button" className="chart-mobile-legend-toggle pointer-events-auto focus-ring lg:hidden" aria-expanded={mobileExpanded} onClick={() => setMobileExpanded(value => !value)}>{legendKeys.length} indicators {mobileExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button>
+        {(isLegendExpanded || mobileExpanded) && legendKeys.map((key) => {
           const def = CUSTOM_INDICATORS.find((d) => d.id === key.split('::')[0]);
           if (!def) return null;
           const result = resultByKey.get(key);
@@ -87,9 +90,9 @@ export function ChartLegend({
           return (
             <div
               key={key}
-              className={`pointer-events-auto group flex cursor-default items-center gap-2 rounded px-2 py-0 transition-colors ${isOpen ? 'bg-white/[0.08]' : 'bg-transparent hover:bg-white/[0.04]'}`}
+              className={`chart-legend-row pointer-events-auto group flex cursor-default items-center gap-2 rounded px-2 py-0 transition-colors ${!isLegendExpanded ? 'lg:!hidden' : ''} ${isOpen ? 'bg-white/[0.08]' : 'bg-transparent hover:bg-white/[0.04]'}`}
             >
-              <div className={`flex items-baseline gap-1.5 text-[12px] transition-opacity duration-200 ${hidden ? 'opacity-40' : 'opacity-100'}`}>
+              <div className={`chart-legend-values flex items-baseline gap-1.5 text-[12px] transition-opacity duration-200 ${hidden ? 'opacity-40' : 'opacity-100'}`}>
                 {/* TV-style: the name is a quiet anchor (regular weight, muted
                     until active); the live plot values carry the colour. */}
                 <span
@@ -98,7 +101,7 @@ export function ChartLegend({
                 >
                   {def.name}
                 </span>
-                {paramText && (
+                {showValuesInStatusLine && paramText && (
                   <span className="rounded bg-white/[0.05] px-1.5 py-px font-mono text-[10px] tabular-nums text-ink-faint">
                     {paramText}
                   </span>
@@ -109,7 +112,7 @@ export function ChartLegend({
                   </span>
                 ))}
               </div>
-              <div className={`flex items-center transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              <div className={`chart-legend-actions flex items-center transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 <button
                   className="rounded p-0.5 text-ink/50 transition hover:bg-ink/10 hover:text-ink"
                   title={hidden ? 'Show' : 'Hide'}
@@ -135,7 +138,7 @@ export function ChartLegend({
             </div>
           );
         })}
-        <div className="pointer-events-auto mt-0.5 flex">
+        <div className="pointer-events-auto mt-0.5 hidden lg:flex">
           <button
             className="flex h-[20px] w-[20px] items-center justify-center rounded border border-line bg-surface-1/80 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
             title={isLegendExpanded ? 'Hide indicator legend' : 'Show indicator legend'}

@@ -1,0 +1,514 @@
+// © The Good, the Bad and the Bitcoin
+//@version=6
+
+indicator("Modern Adaptive Supertrend [GBB] + FVG+EMA Band", overlay = true, max_boxes_count = 100, max_labels_count = 500)
+
+tfSec = timeframe.in_seconds()
+
+// ----------------------------------------------------------------------------
+// Mode
+//   Modern (auto): TF-aware confluence preset. L2(percentile)+L3 at <=1h where
+//     whipsaw dominates; L3 only above 1h where trends are cleaner. L1 stays an
+//     experimental opt-in (it did not earn its place OOS).
+//   Classic: textbook Supertrend, bar-for-bar (all layers off).
+//   Custom: drive each layer from its own toggle (for ablation / power users).
+// ----------------------------------------------------------------------------
+gMode = "Mode"
+preset = input.string("Modern (auto, TF-aware)", "Preset", options = ["Modern (auto, TF-aware)", "Classic (textbook)", "Custom"], group = gMode, tooltip = "Modern auto-tunes per timeframe. Classic = textbook. Custom = use the layer toggles.")
+
+// ----------------------------------------------------------------------------
+// Inputs
+// ----------------------------------------------------------------------------
+gBase = "Base (L0)"
+atrPeriodInput = input.int(10, "ATR Period (L0 fallback)", minval = 1, group = gBase, tooltip = "Used when Adaptive Period (L1) is off.")
+multInput      = input.float(3.0, "Multiplier (L0 fallback)", minval = 0.1, step = 0.1, group = gBase, tooltip = "Used when Regime Multiplier (L2) is off.")
+
+gL1 = "L1 - Adaptive ATR period (experimental; Custom mode only)"
+useL1c    = input.bool(false, "Enable adaptive period", group = gL1, tooltip = "Ehlers homodyne dominant cycle. Off by default: did not earn its place OOS (on 1h BTC the cycle is near-stable, so it just runs slower than fixed-10). Only active in Custom mode.")
+minPeriod = input.int(5,  "Min period", minval = 2, group = gL1)
+maxPeriod = input.int(50, "Max period", minval = 3, group = gL1)
+
+gL2 = "L2 - Regime-scaled multiplier"
+useL2c      = input.bool(false, "Enable regime multiplier (Custom)", group = gL2, tooltip = "Convex KER hinge. In Modern mode this auto-enables at <=1h. Only this toggle applies in Custom mode.")
+kerLen      = input.int(20, "KER lookback", minval = 2, group = gL2)
+kerPctileIn = input.bool(true, "Rank KER vs its own distribution", group = gL2, tooltip = "Recommended: raw KER on crypto sits below the pivot almost always, collapsing the hinge to a constant wide band. Modern mode forces this on.")
+kerPctWin   = input.int(500, "KER percentile window", minval = 20, group = gL2)
+pivot       = input.float(0.5, "Hinge pivot", minval = 0.05, maxval = 0.95, step = 0.05, group = gL2)
+trendGain   = input.float(0.8, "Trend gain", minval = 0.0, step = 0.1, group = gL2)
+chopGain    = input.float(0.5, "Chop gain",  minval = 0.0, step = 0.1, group = gL2)
+multMin     = input.float(1.0, "Mult min", minval = 0.1, step = 0.1, group = gL2)
+multMax     = input.float(6.0, "Mult max", minval = 0.1, step = 0.1, group = gL2)
+
+gL3 = "L3 - Hysteresis flip filter"
+useL3c   = input.bool(true, "Enable hysteresis (Custom)", group = gL3, tooltip = "In Modern mode this is always on. Only this toggle applies in Custom mode.")
+hystAtr  = input.float(0.5, "Penetration buffer (xATR)", minval = 0.0, step = 0.1, group = gL3, tooltip = "Close must clear the opposing band by this many ATRs to flip.")
+hystBars = input.int(1, "Persistence bars", minval = 0, group = gL3, tooltip = "Penetration must hold this many confirmed bars. 0 = buffer only.")
+
+// --- Preset resolution -------------------------------------------------------
+isModern  = preset == "Modern (auto, TF-aware)"
+isCustom  = preset == "Custom"
+useL1 = isCustom and useL1c
+useL2 = isModern ? (tfSec <= 3600) : (isCustom and useL2c)   // L2 only <=1h in Modern
+useL3 = isModern ? true            : (isCustom and useL3c)
+kerPctile = isModern ? true : kerPctileIn
+
+gDisp = "Display"
+showLabel = input.bool(false, "Show regime readout", group = gDisp, tooltip = "Off by default. The on-chart label showing trend / regime / band state.")
+mode      = input.string("Beginner", "Readout mode", options = ["Beginner", "Pro"], group = gDisp, tooltip = "Only applies when the regime readout is shown.")
+showFill  = input.bool(true, "Fill price to line", group = gDisp)
+showFlips = input.bool(true, "Flip markers", group = gDisp)
+txtSize   = input.string("Normal", "UI text size", options = ["Small", "Normal", "Large"], group = gDisp)
+
+
+src = hl2
+var float period = 0.0
+var float smoothPeriod = 0.0
+
+quad(s, pPrev) => (0.0962 * s + 0.5769 * s[2] - 0.5769 * s[4] - 0.0962 * s[6]) * (0.075 * pPrev + 0.54)
+
+smooth    = (4 * src + 3 * src[1] + 2 * src[2] + src[3]) / 10.0
+detrender = quad(smooth, nz(period[1]))
+q1        = quad(detrender, nz(period[1]))
+i1        = detrender[3]
+jI        = quad(i1, nz(period[1]))
+jQ        = quad(q1, nz(period[1]))
+i2raw     = i1 - jQ
+q2raw     = q1 + jI
+var float i2 = 0.0
+var float q2 = 0.0
+i2 := 0.2 * i2raw + 0.8 * nz(i2[1])
+q2 := 0.2 * q2raw + 0.8 * nz(q2[1])
+reRaw = i2 * nz(i2[1]) + q2 * nz(q2[1])
+imRaw = i2 * nz(q2[1]) - q2 * nz(i2[1])
+var float re = 0.0
+var float im = 0.0
+re := 0.2 * reRaw + 0.8 * nz(re[1])
+im := 0.2 * imRaw + 0.8 * nz(im[1])
+float pRaw = (im != 0.0 and re != 0.0) ? 360.0 / math.todegrees(math.atan(im / re)) : nz(period[1])
+pPrev = nz(period[1])
+pLim  = pPrev > 0 ? math.max(math.min(pRaw, 1.5 * pPrev), 0.67 * pPrev) : pRaw
+pClamp = math.min(math.max(pLim, 6.0), 50.0)
+period := 0.2 * pClamp + 0.8 * pPrev
+smoothPeriod := bar_index < 1 ? period : 0.33 * period + 0.67 * nz(smoothPeriod[1])
+
+// Clamp + round the adaptive period; fall back to the fixed base period early.
+adaptPeriod = math.min(math.max(math.round(smoothPeriod), minPeriod), maxPeriod)
+periodUsed  = useL1 and bar_index >= 6 ? adaptPeriod : atrPeriodInput
+
+// ----------------------------------------------------------------------------
+// ATR - fixed (ta.atr) or adaptive (hand-rolled Wilder, per-bar alpha).
+//   NOTE: ta.rma cannot take a series length, so the adaptive ATR is a manual
+//   Wilder recursion atr := atr[1] + (1/len)*(tr - atr[1]). Seeded with the
+//   fixed ATR so the two paths agree at the seam.
+// ----------------------------------------------------------------------------
+tr = ta.tr(true)
+atrFixed = ta.atr(atrPeriodInput)
+var float atrAdaptive = na
+atrAdaptive := na(atrAdaptive[1]) ? atrFixed : atrAdaptive[1] + (1.0 / periodUsed) * (tr - atrAdaptive[1])
+atr = useL1 ? atrAdaptive : atrFixed
+
+// ----------------------------------------------------------------------------
+// L2 - regime-scaled multiplier (convex hinge on KER)
+// ----------------------------------------------------------------------------
+kerDir = math.abs(close - close[kerLen])
+kerVol = math.sum(math.abs(close - close[1]), kerLen)
+ker    = kerVol > 0 ? kerDir / kerVol : 0.0
+// Optional percentile rank of KER vs its own rolling window.
+kerRank = ta.percentrank(ker, kerPctWin) / 100.0
+kerSig  = kerPctile ? kerRank : ker
+fTrend  = math.max(0.0, (kerSig - pivot) / (1.0 - pivot))
+fChop   = math.max(0.0, (pivot - kerSig) / pivot)
+multHinge = multInput * (1.0 + trendGain * fTrend + chopGain * fChop)
+multEff   = useL2 ? math.min(math.max(multHinge, multMin), multMax) : multInput
+
+// ----------------------------------------------------------------------------
+// Bands + direction (shared L0 math). L3 only gates the flip.
+// ----------------------------------------------------------------------------
+upperBasic = hl2 + multEff * atr
+lowerBasic = hl2 - multEff * atr
+
+var float upperBand = na
+var float lowerBand = na
+var int   dir = 1
+var int   candDir = 0
+var int   candCount = 0
+
+ubPrev = nz(upperBand[1], upperBasic)
+lbPrev = nz(lowerBand[1], lowerBasic)
+upperBand := (upperBasic < ubPrev or close[1] > ubPrev) ? upperBasic : ubPrev
+lowerBand := (lowerBasic > lbPrev or close[1] < lbPrev) ? lowerBasic : lbPrev
+
+prevDir = nz(dir[1], 1)
+int newDir = prevDir
+if not useL3
+    newDir := close > ubPrev ? 1 : close < lbPrev ? -1 : prevDir
+else
+    buf = hystAtr * atr
+    if prevDir == 1
+        if close < lbPrev - buf
+            candCount := candDir == -1 ? candCount + 1 : 1
+            candDir := -1
+            if candCount >= hystBars
+                newDir := -1
+                candDir := 0
+                candCount := 0
+        else
+            candDir := 0
+            candCount := 0
+    else
+        if close > ubPrev + buf
+            candCount := candDir == 1 ? candCount + 1 : 1
+            candDir := 1
+            if candCount >= hystBars
+                newDir := 1
+                candDir := 0
+                candCount := 0
+        else
+            candDir := 0
+            candCount := 0
+dir := newDir
+
+float supertrend = dir == 1 ? lowerBand : upperBand
+flip = dir != prevDir
+
+// ----------------------------------------------------------------------------
+// Display
+// ----------------------------------------------------------------------------
+upCol   = color.new(color.teal, 0)
+downCol = color.new(color.red, 0)
+stCol   = dir == 1 ? upCol : downCol
+
+stPlot   = plot(supertrend, "Supertrend", color = stCol, linewidth = 2, style = plot.style_linebr)
+priceAnchor = plot(close, "", color = color.new(color.gray, 100))   // scale anchor; not display.none
+fill(priceAnchor, stPlot, color = showFill ? (dir == 1 ? color.new(color.teal, 88) : color.new(color.red, 88)) : na)
+
+plotshape(showFlips and flip and dir == 1  ? supertrend : na, "Flip Up",   style = shape.triangleup,   location = location.absolute, color = upCol,   size = size.tiny)
+plotshape(showFlips and flip and dir == -1 ? supertrend : na, "Flip Down", style = shape.triangledown, location = location.absolute, color = downCol, size = size.tiny)
+
+// Regime readout (Beginner = plain language, Pro = raw numbers).
+tSize = txtSize == "Small" ? size.small : txtSize == "Large" ? size.large : size.normal
+atrRank = ta.percentrank(atr, 100) / 100.0
+trendingTxt = kerSig >= pivot ? "strong / wide for trend hold" : "weak / wide to suppress whipsaw"
+quadrant = (kerSig >= pivot and atrRank >= 0.5) ? "strong trend, high vol" : (kerSig >= pivot ? "quiet trend" : (atrRank >= 0.5 ? "volatile chop" : "quiet chop"))
+dirTxt = dir == 1 ? "UP" : "DOWN"
+
+var label tag = na
+if barstate.islast and showLabel
+    label.delete(tag)
+    txt = mode == "Beginner" ? "Trend: " + dirTxt + "\nRegime: " + quadrant + "\nBand: " + trendingTxt : "Dir: " + dirTxt + "  KER: " + str.tostring(kerSig, "#.00") + "\nMult: " + str.tostring(multEff, "#.00") + "  Period: " + str.tostring(periodUsed, "#") + "\nATR%ile: " + str.tostring(atrRank, "#.00") + (useL3 ? "  L3:on" : "  L3:off")
+    tag := label.new(bar_index, supertrend, txt, style = dir == 1 ? label.style_label_up : label.style_label_down, color = dir == 1 ? color.new(color.teal, 20) : color.new(color.red, 20), textcolor = color.white, size = tSize)
+
+// ----------------------------------------------------------------------------
+// Alerts (named conditions, per the OIPQ pattern) + optional JSON payload.
+// ----------------------------------------------------------------------------
+alertcondition(flip and dir == 1,  "Flip to uptrend",   "Modern Supertrend flipped UP")
+alertcondition(flip and dir == -1, "Flip to downtrend", "Modern Supertrend flipped DOWN")
+if flip
+    payload = '{"indicator":"ModernSupertrend","dir":"' + dirTxt + '","price":' + str.tostring(close) + ',"ker":' + str.tostring(kerSig, "#.000") + ',"mult":' + str.tostring(multEff, "#.00") + '}'
+    alert(payload, alert.freq_once_per_bar_close)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FVG+EMA Band
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Inputs ─────────────────────────────────────────────────────────────────
+gLength = input.int(100, "G-Trend Length", minval = 1, group = "G-Trend")
+gSource = input.source(close, "G-Trend Source", group = "G-Trend")
+showGTrendCross = input.bool(true, "Show G-Trend Buy/Sell", group = "G-Trend")
+
+maxAgeBars    = input.int(200, "Maximum FVG Age (Bars)", minval = 1, group = "Fair Value Gaps")
+maxActiveFvgs = input.int(30, "Maximum Active FVGs", minval = 1, maxval = 100, group = "Fair Value Gaps")
+showFvg       = input.bool(true, "Show Active FVGs", group = "Fair Value Gaps")
+bullFvgColor  = input.color(color.new(color.rgb(0, 168, 138), 84), "Bullish FVG", group = "Fair Value Gaps")
+bearFvgColor  = input.color(color.new(color.rgb(224, 82, 96), 84), "Bearish FVG", group = "Fair Value Gaps")
+bullFvgBorder = input.color(color.rgb(0, 168, 138), "Bullish FVG Border", group = "Fair Value Gaps")
+bearFvgBorder = input.color(color.rgb(224, 82, 96), "Bearish FVG Border", group = "Fair Value Gaps")
+
+showSessionVwap = input.bool(true, "Show Session VWAP", group = "Session VWAP")
+sessionVwapSource = input.source(hlc3, "Source", group = "Session VWAP")
+
+showEma200 = input.bool(true, "Show 200 EMA", group = "200 EMA")
+ema200Source = input.source(close, "Source", group = "200 EMA")
+
+// ── Session VWAP and 200 EMA ────────────────────────────────────────────────
+newVwapSession = timeframe.change("1D") or barstate.isfirst
+sessionVwap = ta.vwap(sessionVwapSource, newVwapSession)
+ema200 = ta.ema(ema200Source, 200)
+
+plot(showSessionVwap ? sessionVwap : na, title = "Session VWAP", color = color.blue, linewidth = 2, editable = true)
+plot(
+     showEma200 ? ema200 : na,
+     title = "200 EMA",
+     color = ema200Source >= ema200 ? color.lime : color.red,
+     linewidth = 2,
+     editable = true
+)
+
+// ── Original G-Channel Trend Detection ─────────────────────────────────────
+// Pine v6 port of the supplied Pine v4 code. Its calculations and signal
+// conditions are unchanged.
+float a = 0.0
+float b = 0.0
+a := math.max(gSource, nz(a[1])) - nz(a[1] - b[1]) / gLength
+b := math.min(gSource, nz(b[1])) + nz(a[1] - b[1]) / gLength
+gAverage = math.avg(a, b)
+
+crossup = b[1] < close[1] and b > close
+crossdn = a[1] < close[1] and a > close
+gBullish = ta.barssince(crossdn) <= ta.barssince(crossup)
+
+// Keep the bullish and bearish colors directly in every visual call. This
+// exposes both state colors, visibility, line style, and width in TradingView's
+// Style tab instead of hiding the controls behind a calculated color variable.
+gAveragePlot = plot(
+     gAverage,
+     title = "Average",
+     color = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90),
+     linewidth = 1,
+     editable = true
+)
+
+gClosePlot = plot(
+     close,
+     title = "Close price",
+     color = gBullish ? color.new(color.lime, 100) : color.new(color.red, 100),
+     linewidth = 1,
+     editable = true
+)
+
+fill(
+     gAveragePlot,
+     gClosePlot,
+     color = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90),
+     title = "G-Trend Background",
+     editable = true
+)
+
+plotshape(showGTrendCross and not gBullish and gBullish[1] ? gAverage : na, title = "G-Trend Sell", location = location.absolute, style = shape.labeldown, color = color.red, size = size.tiny, text = "Sell", textcolor = color.white, offset = -1, editable = true)
+plotshape(showGTrendCross and gBullish and not gBullish[1] ? gAverage : na, title = "G-Trend Buy", location = location.absolute, style = shape.labelup, color = color.lime, size = size.tiny, text = "Buy", textcolor = color.white, offset = -1, editable = true)
+
+// ── FVG storage ─────────────────────────────────────────────────────────────
+// Direction: 1 = bullish FVG, -1 = bearish FVG.
+var box[] fvgBoxes = array.new_box()
+var float[] fvgTops = array.new_float()
+var float[] fvgBottoms = array.new_float()
+var int[] fvgDirections = array.new_int()
+var int[] fvgCreatedBars = array.new_int()
+
+removeFvg(index) =>
+    box.delete(array.get(fvgBoxes, index))
+    array.remove(fvgBoxes, index)
+    array.remove(fvgTops, index)
+    array.remove(fvgBottoms, index)
+    array.remove(fvgDirections, index)
+    array.remove(fvgCreatedBars, index)
+
+addFvg(top, bottom, direction) =>
+    zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+    borderColor = direction == 1 ? bullFvgBorder : bearFvgBorder
+    newBox = box.new(
+         left = bar_index - 2,
+         top = top,
+         right = bar_index,
+         bottom = bottom,
+         xloc = xloc.bar_index,
+         bgcolor = showFvg ? zoneColor : na,
+         border_color = showFvg ? borderColor : na
+     )
+
+    array.push(fvgBoxes, newBox)
+    array.push(fvgTops, top)
+    array.push(fvgBottoms, bottom)
+    array.push(fvgDirections, direction)
+    array.push(fvgCreatedBars, bar_index)
+
+    if array.size(fvgBoxes) > maxActiveFvgs
+        removeFvg(0)
+
+// ── FVG lifecycle ───────────────────────────────────────────────────────────
+// Historical bars are confirmed. On live data, this prevents a new FVG from
+// appearing until the confirming candle closes.
+if barstate.isconfirmed
+    // Update or expire existing FVGs.
+    if array.size(fvgBoxes) > 0
+        for i = array.size(fvgBoxes) - 1 to 0
+            fvgBox = array.get(fvgBoxes, i)
+            top = array.get(fvgTops, i)
+            bottom = array.get(fvgBottoms, i)
+            direction = array.get(fvgDirections, i)
+            createdBar = array.get(fvgCreatedBars, i)
+
+            expired = bar_index - createdBar > maxAgeBars
+            mitigated = direction == 1 ? close < bottom : close > top
+
+            if expired or mitigated
+                removeFvg(i)
+            else
+                zoneColor = direction == 1 ? bullFvgColor : bearFvgColor
+                borderColor = direction == 1 ? bullFvgBorder : bearFvgBorder
+                box.set_right(fvgBox, bar_index)
+                box.set_bgcolor(fvgBox, showFvg ? zoneColor : na)
+                box.set_border_color(fvgBox, showFvg ? borderColor : na)
+
+    // Create new FVGs only from confirmed candles.
+    bullishFvg = bar_index >= 2 and low > high[2] and close[1] > high[2]
+    bearishFvg = bar_index >= 2 and high < low[2] and close[1] < low[2]
+
+    if bullishFvg
+        addFvg(low, high[2], 1)
+
+    if bearishFvg
+        addFvg(low[2], high, -1)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Simple EMA Band — Reconstruction
+// ══════════════════════════════════════════════════════════════════════════════
+// Reconstructed from the supplied chart and settings screenshots.
+// The original four inputs are preserved, with Weekly VWAP and touch controls
+// added below them.
+
+// ── INPUTS ──────────────────────────────────────────────────────────────────
+source = input.source(close, "Open/close")
+shortLength = input.int(9, "Shorter EMA", minval = 1)
+longLength = input.int(21, "Longer EMA", minval = 1)
+enable200 = input.bool(true, "Enable 200 Ema")
+enableWeeklyVwap = input.bool(true, "Enable Weekly VWAP")
+weeklyVwapSource = input.source(hlc3, "Weekly VWAP Source")
+touchToleranceTicks = input.float(1.0, "Touch Tolerance (Ticks)", minval = 0.0, step = 0.25,
+     tooltip = "Allows a near-equal EMA value to count as a visual touch. Set to 0 for strict line contact.")
+
+// ── CALCULATIONS ────────────────────────────────────────────────────────────
+shortEma = ta.ema(source, shortLength)
+longEma = ta.ema(source, longLength)
+bandEma200 = ta.ema(source, 200)
+bool weeklyReset = barstate.isfirst or timeframe.change("W")
+weeklyVwap = ta.vwap(weeklyVwapSource, weeklyReset)
+
+bool bullishBand = shortEma > longEma
+bool bearishBand = shortEma < longEma
+bool bullish200 = shortEma > bandEma200
+
+// ── FIRST CONTACT SIGNALS ───────────────────────────────────────────────────
+// The complete area between the short and long EMAs is the ribbon. Each
+// reference line can approach it from either side. A signal is emitted on the
+// first bar where relative line movement reaches or passes the nearest edge.
+// No crossover is required, and continued contact cannot repeat a signal.
+float ribbonUpper = math.max(shortEma, longEma)
+float ribbonLower = math.min(shortEma, longEma)
+float touchTolerance = touchToleranceTicks * syminfo.mintick
+
+bool ema200WasBelowRibbon = bandEma200[1] < ribbonLower[1] - touchTolerance
+bool ema200WasAboveRibbon = bandEma200[1] > ribbonUpper[1] + touchTolerance
+bool ema200ReachedFromBelow = ema200WasBelowRibbon and bandEma200 >= ribbonLower - touchTolerance
+bool ema200ReachedFromAbove = ema200WasAboveRibbon and bandEma200 <= ribbonUpper + touchTolerance
+bool ema200FirstTouch = barstate.isconfirmed and enable200 and
+     (ema200ReachedFromBelow or ema200ReachedFromAbove)
+
+// The first bar of a new week starts a fresh VWAP anchor. It is excluded from
+// contact detection because the reset creates a discontinuous jump rather than
+// a line approaching and touching the ribbon.
+bool weeklyVwapWasBelowRibbon = weeklyVwap[1] < ribbonLower[1] - touchTolerance
+bool weeklyVwapWasAboveRibbon = weeklyVwap[1] > ribbonUpper[1] + touchTolerance
+bool weeklyVwapReachedFromBelow = weeklyVwapWasBelowRibbon and weeklyVwap >= ribbonLower - touchTolerance
+bool weeklyVwapReachedFromAbove = weeklyVwapWasAboveRibbon and weeklyVwap <= ribbonUpper + touchTolerance
+bool weeklyVwapFirstTouch = barstate.isconfirmed and enableWeeklyVwap and not weeklyReset and
+     (weeklyVwapReachedFromBelow or weeklyVwapReachedFromAbove)
+
+bool buy200Signal = ema200FirstTouch and bullishBand
+bool sell200Signal = ema200FirstTouch and bearishBand
+bool buyWeeklyVwapSignal = weeklyVwapFirstTouch and bullishBand
+bool sellWeeklyVwapSignal = weeklyVwapFirstTouch and bearishBand
+
+// The four band states visible in the Style tab:
+// 1. Bullish and the candle low is inside the EMA band.
+// 2. Bullish with price outside the EMA band.
+// 3. Bearish and the candle high is inside the EMA band.
+// 4. Bearish with price outside the EMA band.
+color bandColor = bullishBand ?
+     (longEma < low and low < shortEma ? color.rgb(0, 236, 47, 74) : color.rgb(0, 255, 51, 91)) :
+     (longEma > high and high > shortEma ? color.rgb(255, 0, 0, 72) : color.rgb(255, 0, 0, 89))
+
+// ── VISIBLE PLOTS ───────────────────────────────────────────────────────────
+// Titles are deliberately left as "Plot" so the Style tab matches the source
+// screenshots for the original EMA lines. Weekly VWAP is added as a named plot.
+plot(shortEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(0, 234, 183) : color.rgb(227, 13, 13))
+
+plot(longEma,
+     title = "Plot",
+     color = bullishBand ? color.rgb(3, 237, 69) : color.rgb(255, 0, 144),
+     style = plot.style_linebr)
+
+plot(enable200 ? bandEma200 : na,
+     title = "Plot",
+     color = bullish200 ? color.rgb(38, 166, 154) : color.rgb(242, 54, 69),
+     linewidth = 2)
+
+plot(enableWeeklyVwap ? weeklyVwap : na,
+     title = "Weekly VWAP",
+     color = color.rgb(255, 193, 7),
+     linewidth = 2,
+     style = plot.style_linebr)
+
+// ── HIDDEN FILL ANCHORS ─────────────────────────────────────────────────────
+// These reproduce the two unchecked blue Plot rows in the Style tab.
+longAnchor = plot(longEma, title = "Plot", display = display.none)
+shortAnchor = plot(shortEma, title = "Plot", display = display.none)
+
+fill(longAnchor, shortAnchor,
+     title = "Plots Background",
+     color = bandColor,
+     editable = true)
+
+// ── SIGNALS AND ALERTS ──────────────────────────────────────────────────────
+plotshape(buy200Signal,
+     title = "EMA 200 Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sell200Signal,
+     title = "EMA 200 Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL 200",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(buyWeeklyVwapSignal,
+     title = "Weekly VWAP Buy Signal",
+     style = shape.labelup,
+     location = location.belowbar,
+     color = color.rgb(0, 166, 126),
+     text = "BUY W",
+     textcolor = color.white,
+     size = size.tiny)
+
+plotshape(sellWeeklyVwapSignal,
+     title = "Weekly VWAP Sell Signal",
+     style = shape.labeldown,
+     location = location.abovebar,
+     color = color.rgb(242, 54, 69),
+     text = "SELL W",
+     textcolor = color.white,
+     size = size.tiny)
+
+alertcondition(buy200Signal,
+     title = "EMA 200 First Touch — Buy",
+     message = "BUY: EMA 200 made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sell200Signal,
+     title = "EMA 200 First Touch — Sell",
+     message = "SELL: EMA 200 made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(buyWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Buy",
+     message = "BUY: Weekly VWAP made first contact with the green EMA ribbon on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(sellWeeklyVwapSignal,
+     title = "Weekly VWAP First Touch — Sell",
+     message = "SELL: Weekly VWAP made first contact with the red EMA ribbon on {{ticker}} {{interval}} at {{close}}")

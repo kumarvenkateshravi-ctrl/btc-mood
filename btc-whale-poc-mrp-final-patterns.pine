@@ -1,0 +1,991 @@
+//@version=6
+indicator(title="BTC Whale Hunter's POC & MRP + Final Patterns", shorttitle="Whale Final Patterns", overlay=true, max_bars_back=5000, max_lines_count=500, max_labels_count=500)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Adaptive Demand & Supply Zones (ADSZ)
+//
+// ATR-based volatility zones that work universally on any asset and timeframe.
+// Plots demand/supply zones across the three fixed display timeframes (4H,
+// Daily, Weekly) using statistical volatility derived from Average True Range.
+// Zones auto-adapt — wider during high volatility, tighter during calm periods.
+//
+// Core formula:
+//   • Effective Volatility = ATR Slope × Annualized ATR%
+//   • Zone spread (σ) simplifies to: σ = Slope × ATR
+//   • Strong zones at ±1σ from open, Weak zones at ±σ/2.83 (or σ/2.77)
+//   • 3 fixed display layers — 4H primary, Daily confirmation, Weekly confirmation
+//   • Independent zone visibility toggles for all three fixed layers
+//
+// Works on time-based charts of 4H or lower for Stocks, Indices, Crypto,
+// Commodities, and Forex.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── INPUTS ───────────────────────────────────────────────────────────────────
+
+// Frozen zone calibration — intentionally not exposed in Inputs
+// These are the original defaults and cannot be changed from indicator settings.
+const int   d_atr_period  = 20
+const float d_slope       = 0.69
+const float d_intercept   = 0.0
+const int   w_atr_period  = 5
+const float w_slope       = 0.68
+const float w_intercept   = 0.0
+const int   h4_atr_period = 20
+const float h4_slope      = 0.92
+
+grp_layers = "── Fixed Zone Layers ──"
+bool show_l1_zones = input.bool(true, title="Show Layer 1 — 4H Zones", group=grp_layers)
+bool show_l2_zones = input.bool(true, title="Show Layer 2 — Daily Zones", group=grp_layers)
+bool show_l3_zones = input.bool(true, title="Show Layer 3 — Weekly Zones", group=grp_layers)
+
+// This display needs chart bars of 4H or less to represent each 4H period.
+if timeframe.in_seconds() > timeframe.in_seconds("240")
+    runtime.error("Use a time-based chart of 4 hours or lower for the 4H zones and POC display.")
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+
+float phi     = 1.618034
+float sqrt2   = math.sqrt(2)
+float sqrt252 = math.sqrt(252)
+
+// Ensure sufficient history for higher-timeframe zone calculations
+max_bars_back(time,   5000)
+max_bars_back(open,   5000)
+max_bars_back(high,   5000)
+max_bars_back(low,    5000)
+max_bars_back(close,  5000)
+
+// ── DAILY ZONES ──────────────────────────────────────────────────────────────
+
+[day_open, day_atr, day_close_prev] = request.security(syminfo.tickerid, "D", [open, ta.atr(d_atr_period)[1], close[1]], lookahead=barmerge.lookahead_on)
+
+// Effective Volatility from annualized ATR%
+float atr_ann_pct = day_atr / day_close_prev * sqrt252 * 100
+// float atr_ann_pct = day_atr / day_open * sqrt252 * 100          // ← Gap fix: uncomment this, comment line above
+float effvol      = d_slope * atr_ann_pct + d_intercept
+
+// Zone geometry
+float P          = math.round(day_open)
+float sigma      = P * effvol / (100.0 * sqrt252)
+float dist_strong = sigma
+float dist_weak   = sigma / (2.0 * sqrt2)
+float ws          = math.round(sigma / 4.0)
+float ww          = math.round(sigma / (4.0 * phi))
+
+// Daily zone boundaries
+float sd_low   = math.round(P - dist_strong - ws / 2)
+float sd_high  = math.round(P - dist_strong + ws / 2)
+float wd_low   = math.round(P - dist_weak   - ww / 2)
+float wd_high  = math.round(P - dist_weak   + ww / 2)
+float wsp_low  = math.round(P + dist_weak   - ww / 2)
+float wsp_high = math.round(P + dist_weak   + ww / 2)
+float ss_low   = math.round(P + dist_strong - ws / 2)
+float ss_high  = math.round(P + dist_strong + ws / 2)
+
+// ── WEEKLY ZONES ─────────────────────────────────────────────────────────────
+
+[week_open, w_atr_weekly, w_close_prev] = request.security(syminfo.tickerid, "W", [open, ta.atr(w_atr_period)[1], close[1]], lookahead=barmerge.lookahead_on)
+
+// Weekly Effective Volatility
+float w_atr_ann_pct = w_atr_weekly / w_close_prev * math.sqrt(52) * 100
+// float w_atr_ann_pct = w_atr_weekly / week_open * math.sqrt(52) * 100  // ← Gap fix: uncomment this, comment line above
+
+var float effvol_w = na
+bool new_week = ta.change(time("W")) != 0
+if new_week
+    effvol_w := w_slope * w_atr_ann_pct + w_intercept
+if na(effvol_w)
+    effvol_w := w_slope * w_atr_ann_pct + w_intercept
+
+float P_w          = math.round(week_open)
+float sigma_w      = P_w * effvol_w / (100.0 * math.sqrt(252.0 / 5.0))
+float dist_strong_w = sigma_w
+float dist_weak_w   = sigma_w / (2.0 * sqrt2)
+float ws_w          = math.round(sigma_w / 4.0)
+float ww_w          = math.round(sigma_w / (4.0 * phi))
+
+// Weekly zone boundaries
+float wsd_low  = math.round(P_w - dist_strong_w - ws_w / 2)
+float wsd_high = math.round(P_w - dist_strong_w + ws_w / 2)
+float wwd_low  = math.round(P_w - dist_weak_w   - ww_w / 2)
+float wwd_high = math.round(P_w - dist_weak_w   + ww_w / 2)
+float wws_low  = math.round(P_w + dist_weak_w   - ww_w / 2)
+float wws_high = math.round(P_w + dist_weak_w   + ww_w / 2)
+float wss_low  = math.round(P_w + dist_strong_w - ws_w / 2)
+float wss_high = math.round(P_w + dist_strong_w + ws_w / 2)
+
+// ── 4H ZONES ─────────────────────────────────────────────────────────────────
+
+[h4_open, h4_atr] = request.security(syminfo.tickerid, "240", [open, ta.atr(h4_atr_period)[1]], lookahead=barmerge.lookahead_on)
+
+// 4H Effective Volatility (normalize by h4_open to handle overnight gaps)
+float h4_atr_ann_pct = h4_atr / h4_open * math.sqrt(504) * 100
+
+var float effvol_4h = na
+bool new_4h = ta.change(time("240")) != 0
+if new_4h
+    effvol_4h := h4_slope * h4_atr_ann_pct
+if na(effvol_4h)
+    effvol_4h := h4_slope * h4_atr_ann_pct
+
+float P_4h          = math.round(h4_open)
+float sigma_4h      = P_4h * effvol_4h / (100.0 * math.sqrt(504.0))
+float dist_strong_4h = sigma_4h
+float dist_weak_4h   = sigma_4h / 2.77
+float ws_4h          = math.round(sigma_4h / 4.35)
+float ww_4h          = math.round(sigma_4h / 5.1)
+
+// 4H zone boundaries
+float h4sd_low  = math.round(P_4h - dist_strong_4h - ws_4h / 2)
+float h4sd_high = math.round(P_4h - dist_strong_4h + ws_4h / 2)
+float h4wd_low  = math.round(P_4h - dist_weak_4h   - ww_4h / 2)
+float h4wd_high = math.round(P_4h - dist_weak_4h   + ww_4h / 2)
+float h4ws_low  = math.round(P_4h + dist_weak_4h   - ww_4h / 2)
+float h4ws_high = math.round(P_4h + dist_weak_4h   + ww_4h / 2)
+float h4ss_low  = math.round(P_4h + dist_strong_4h - ws_4h / 2)
+float h4ss_high = math.round(P_4h + dist_strong_4h + ws_4h / 2)
+
+
+// ── ZONE DISPLAY (3 Fixed Layers) ───────────────────────────────────────────
+// Fixed layers map 4H, Daily and Weekly to the pre-computed zone boundaries.
+// All plot colors use literal choices; no runtime color calculations suppress
+// TradingView Style-tab color selectors.
+// Layer 1 (4H): Green demand / Orange-Red supply
+// Layer 2 (Daily): Cyan/Teal demand / Magenta/Crimson supply
+// Layer 3 (Weekly): Blue demand / Purple supply
+
+// Layer 1 — zone boundaries (hidden when show_l1_zones is off)
+float l1_sd_l = show_l1_zones ? h4sd_low : na
+float l1_sd_h = show_l1_zones ? h4sd_high : na
+float l1_wd_l = show_l1_zones ? h4wd_low : na
+float l1_wd_h = show_l1_zones ? h4wd_high : na
+float l1_ws_l = show_l1_zones ? h4ws_low : na
+float l1_ws_h = show_l1_zones ? h4ws_high : na
+float l1_ss_l = show_l1_zones ? h4ss_low : na
+float l1_ss_h = show_l1_zones ? h4ss_high : na
+
+
+// Layer 1: stepped boundaries activate on the exact first bar of each 4H block.
+zone_l1_sd_lower = plot(l1_sd_l, title="4H — Strong Demand Lower", color=#388E3C, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l1_sd_upper = plot(l1_sd_h, title="4H — Strong Demand Upper", color=#388E3C, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l1_sd_lower, zone_l1_sd_upper, color=color.new(#388E3C,75), title="4H — Strong Demand Background", fillgaps=false, editable=true)
+zone_l1_wd_lower = plot(l1_wd_l, title="4H — Weak Demand Lower", color=#76B852, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l1_wd_upper = plot(l1_wd_h, title="4H — Weak Demand Upper", color=#76B852, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l1_wd_lower, zone_l1_wd_upper, color=color.new(#76B852,82), title="4H — Weak Demand Background", fillgaps=false, editable=true)
+zone_l1_ws_lower = plot(l1_ws_l, title="4H — Weak Supply Lower", color=#FB8C00, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l1_ws_upper = plot(l1_ws_h, title="4H — Weak Supply Upper", color=#FB8C00, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l1_ws_lower, zone_l1_ws_upper, color=color.new(#FB8C00,82), title="4H — Weak Supply Background", fillgaps=false, editable=true)
+zone_l1_ss_lower = plot(l1_ss_l, title="4H — Strong Supply Lower", color=#E53935, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l1_ss_upper = plot(l1_ss_h, title="4H — Strong Supply Upper", color=#E53935, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l1_ss_lower, zone_l1_ss_upper, color=color.new(#E53935,75), title="4H — Strong Supply Background", fillgaps=false, editable=true)
+
+
+// Layer 2 — zone boundaries (hidden when show_l2_zones is off)
+float l2_sd_l = show_l2_zones ? sd_low : na
+float l2_sd_h = show_l2_zones ? sd_high : na
+float l2_wd_l = show_l2_zones ? wd_low : na
+float l2_wd_h = show_l2_zones ? wd_high : na
+float l2_ws_l = show_l2_zones ? wsp_low : na
+float l2_ws_h = show_l2_zones ? wsp_high : na
+float l2_ss_l = show_l2_zones ? ss_low : na
+float l2_ss_h = show_l2_zones ? ss_high : na
+
+// Plot Layer 2 (cyan demand and magenta supply)
+zone_l2_sd_lower = plot(l2_sd_l, title="Daily — Strong Demand Lower", color=#00838F, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l2_sd_upper = plot(l2_sd_h, title="Daily — Strong Demand Upper", color=#00838F, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l2_sd_lower, zone_l2_sd_upper, color=color.new(#00838F,75), title="Daily — Strong Demand Background", fillgaps=false, editable=true)
+zone_l2_wd_lower = plot(l2_wd_l, title="Daily — Weak Demand Lower", color=#00BCD4, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l2_wd_upper = plot(l2_wd_h, title="Daily — Weak Demand Upper", color=#00BCD4, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l2_wd_lower, zone_l2_wd_upper, color=color.new(#00BCD4,82), title="Daily — Weak Demand Background", fillgaps=false, editable=true)
+zone_l2_ws_lower = plot(l2_ws_l, title="Daily — Weak Supply Lower", color=#E91E63, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l2_ws_upper = plot(l2_ws_h, title="Daily — Weak Supply Upper", color=#E91E63, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l2_ws_lower, zone_l2_ws_upper, color=color.new(#E91E63,82), title="Daily — Weak Supply Background", fillgaps=false, editable=true)
+zone_l2_ss_lower = plot(l2_ss_l, title="Daily — Strong Supply Lower", color=#AD1457, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l2_ss_upper = plot(l2_ss_h, title="Daily — Strong Supply Upper", color=#AD1457, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l2_ss_lower, zone_l2_ss_upper, color=color.new(#AD1457,75), title="Daily — Strong Supply Background", fillgaps=false, editable=true)
+
+// Layer 3 — Weekly zone boundaries
+float l3_sd_l = show_l3_zones ? wsd_low : na
+float l3_sd_h = show_l3_zones ? wsd_high : na
+float l3_wd_l = show_l3_zones ? wwd_low : na
+float l3_wd_h = show_l3_zones ? wwd_high : na
+float l3_ws_l = show_l3_zones ? wws_low : na
+float l3_ws_h = show_l3_zones ? wws_high : na
+float l3_ss_l = show_l3_zones ? wss_low : na
+float l3_ss_h = show_l3_zones ? wss_high : na
+
+zone_l3_sd_lower = plot(l3_sd_l, title="Weekly — Strong Demand Lower", color=#1565C0, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l3_sd_upper = plot(l3_sd_h, title="Weekly — Strong Demand Upper", color=#1565C0, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l3_sd_lower, zone_l3_sd_upper, color=color.new(#1565C0,75), title="Weekly — Strong Demand Background", fillgaps=false, editable=true)
+zone_l3_wd_lower = plot(l3_wd_l, title="Weekly — Weak Demand Lower", color=#42A5F5, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l3_wd_upper = plot(l3_wd_h, title="Weekly — Weak Demand Upper", color=#42A5F5, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l3_wd_lower, zone_l3_wd_upper, color=color.new(#42A5F5,82), title="Weekly — Weak Demand Background", fillgaps=false, editable=true)
+zone_l3_ws_lower = plot(l3_ws_l, title="Weekly — Weak Supply Lower", color=#AB47BC, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l3_ws_upper = plot(l3_ws_h, title="Weekly — Weak Supply Upper", color=#AB47BC, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l3_ws_lower, zone_l3_ws_upper, color=color.new(#AB47BC,82), title="Weekly — Weak Supply Background", fillgaps=false, editable=true)
+zone_l3_ss_lower = plot(l3_ss_l, title="Weekly — Strong Supply Lower", color=#6A1B9A, linewidth=1, style=plot.style_stepline, editable=true)
+zone_l3_ss_upper = plot(l3_ss_h, title="Weekly — Strong Supply Upper", color=#6A1B9A, linewidth=1, style=plot.style_stepline, editable=true)
+fill(zone_l3_ss_lower, zone_l3_ss_upper, color=color.new(#6A1B9A,75), title="Weekly — Strong Supply Background", fillgaps=false, editable=true)
+
+// ── BTC WHALE HUNTER'S — POC & MRP [4H Exact Fit] ──
+// Functional reconstruction from observed chart values. This is not the
+// protected source code and does not use volume-profile bins.
+
+GRP_MRP = "MRP"
+GRP_POC = "POC LINES"
+
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "W MRP", inline = "mrp", group = GRP_MRP)
+
+showWeeklyPoc = input.bool(true, "Show Weekly POC", group = GRP_POC)
+showDailyPoc = input.bool(true, "Show Daily POC", group = GRP_POC)
+showFourHourPoc = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+
+weeklyPocColor = input.color(#F59E0B, "Weekly POC Color", group = GRP_POC)
+dailyPocColor = input.color(#14532D, "Daily POC Color", group = GRP_POC)
+fourHourPocColor = input.color(#22D3EE, "4-Hour POC Color", group = GRP_POC)
+pocLineWidth = input.int(2, "POC Line Width", minval = 1, maxval = 4, group = GRP_POC)
+
+MRP_COLOR = #0B46F0
+WEEKLY_MRP_COLOR = #C57A00
+
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// Developing chart-timeframe Daily and Weekly HLC3 VWAPs.
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float whaleMrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float weeklyMrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+plot(showMrp ? whaleMrp : na, "MRP", color = MRP_COLOR, linewidth = 2)
+plot(showWMrp ? weeklyMrp : na, "W MRP", color = WEEKLY_MRP_COLOR, linewidth = 1)
+
+// Exact cyan reconstruction:
+// Build a UTC-day VWAP from native 4H candles, using each completed 4H
+// candle's HLC3 and volume. The [1] value is the cumulative 4H VWAP known at
+// the opening of the current block. Therefore the historical line is stable
+// and does not use the unfinished current 4H candle.
+f_developingDailyVwapFrom4H() =>
+    const int LOCAL_DAY_MS = 24 * 60 * 60 * 1000
+    int localDayKey = int(math.floor(time / LOCAL_DAY_MS))
+    bool localNewDay = barstate.isfirst or localDayKey != localDayKey[1]
+
+    float localVolume = nz(volume, 0.0)
+    var float localPvSum = 0.0
+    var float localVolumeSum = 0.0
+
+    if localNewDay
+        localPvSum := 0.0
+        localVolumeSum := 0.0
+
+    localPvSum += hlc3 * localVolume
+    localVolumeSum += localVolume
+    localVolumeSum > 0 ? localPvSum / localVolumeSum : na
+
+float fourHourPoc = request.security(
+     syminfo.tickerid, "240", f_developingDailyVwapFrom4H()[1],
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// Weekly POC and confirmed prior-day pivot retained from the reconstruction.
+float weeklyPoc = request.security(
+     syminfo.tickerid, "1W", open,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+float dailyPoc = request.security(
+     syminfo.tickerid, "1D",
+     (high[1] + low[1] + close[1]) / 3,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+color dailyPlotColor = newDay and not barstate.isfirst ? na : dailyPocColor
+color weeklyPlotColor = newWeek and not barstate.isfirst ? na : weeklyPocColor
+
+plot(showWeeklyPoc ? weeklyPoc : na, "Weekly POC", color = weeklyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showDailyPoc ? dailyPoc : na, "Daily POC", color = dailyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+
+// Keep the value in the status line and Data Window. The visible plot must be
+// a time-anchored line: bar-based plots stop at the preceding 5-minute bar.
+plot(showFourHourPoc ? fourHourPoc : na, "4-Hour POC", display = display.status_line + display.data_window)
+
+// UTC 00:00/04:00/... boundaries display as 05:30/09:30/... in India.
+// Each segment ends exactly where the next one starts, with no chart-bar gap.
+if showFourHourPoc and newFourHour and not na(fourHourPoc)
+    int blockStart = fourHourKey * FOUR_HOURS_MS
+    line.new(x1 = blockStart, y1 = fourHourPoc, x2 = blockStart + FOUR_HOURS_MS, y2 = fourHourPoc, xloc = xloc.bar_time, extend = extend.none, color = fourHourPocColor, width = pocLineWidth)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FINAL WHALE / SHARK / FOUR-FLAG SIGNAL ENGINE
+//
+// Transparent reconstruction from the supplied examples:
+//   • Whale W/M: two confirmed swing extremes and a meaningful middle wave.
+//   • Shark W/M: an oversized first extreme followed by a weaker level retest.
+//   • Four Flag: R-G-R-G is bullish; G-R-G-R is bearish.
+//   • Master Doji: exhaustion/retracement setup confirmed by its high/low break.
+//   • Relative volume is a public-data proxy for the proprietary whale bubbles.
+//
+// All actionable signals use closed candles. Confirmed pivots need right-side
+// bars, so candidate labels placed on a pivot are historical annotations. The
+// default BUY/SELL placement remains the real confirmation bar.
+// ══════════════════════════════════════════════════════════════════════════════
+
+string GRP_SIG_WM = "SIGNALS — Whale & Shark W/M"
+string GRP_SIG_FLAG = "SIGNALS — Four Flag"
+string GRP_SIG_DOJI = "SIGNALS — Master Doji"
+string GRP_SIG_VOLUME = "SIGNALS — Whale Volume Proxy"
+string GRP_SIG_FILTER = "SIGNALS — Entry Control"
+string GRP_SIG_COMPRESSION = "SIGNALS — POC Compression"
+string GRP_SIG_DISPLAY = "SIGNALS — Display"
+
+bool sigEnabled = input.bool(true, "Enable pattern signals", group = GRP_SIG_WM)
+bool sigWmOnly15m = input.bool(false, "Restrict W/M detection to 15-minute chart", group = GRP_SIG_WM,
+     tooltip = "The supplied material prefers 15 minutes. Disabled by default so the same confirmed logic can be inspected on other chart timeframes.")
+int sigPivotLeft = input.int(3, "Pivot bars left", minval = 1, maxval = 20, group = GRP_SIG_WM)
+int sigPivotRight = input.int(3, "Pivot bars right", minval = 1, maxval = 20, group = GRP_SIG_WM,
+     tooltip = "A swing is confirmed only after this many right-side candles close.")
+int sigMinPivotGap = input.int(4, "Minimum bars between matching swings", minval = 1, maxval = 100, group = GRP_SIG_WM)
+int sigMaxPivotGap = input.int(24, "Maximum bars between matching swings", minval = 2, maxval = 200, group = GRP_SIG_WM)
+int sigAtrLength = input.int(14, "ATR length", minval = 1, maxval = 100, group = GRP_SIG_WM)
+float sigWhaleMaxDifferenceAtr = input.float(0.75, "Whale swing difference maximum (ATR)", minval = 0.05, maxval = 5.0, step = 0.05, group = GRP_SIG_WM)
+float sigMiddleWaveAtr = input.float(0.75, "Minimum middle-wave height (ATR)", minval = 0.05, maxval = 10.0, step = 0.05, group = GRP_SIG_WM)
+float sigSecondLegRetracement = input.float(0.60, "Minimum second-leg retracement", minval = 0.10, maxval = 1.50, step = 0.05, group = GRP_SIG_WM)
+float sigSharkMinAsymmetryAtr = input.float(0.50, "Shark minimum first/second asymmetry (ATR)", minval = 0.05, maxval = 5.0, step = 0.05, group = GRP_SIG_WM)
+float sigSharkMaxAsymmetryAtr = input.float(3.00, "Shark maximum first/second asymmetry (ATR)", minval = 0.10, maxval = 10.0, step = 0.10, group = GRP_SIG_WM)
+float sigSharkMinRetest = input.float(0.25, "Shark minimum retest / first wave", minval = 0.05, maxval = 1.0, step = 0.05, group = GRP_SIG_WM)
+float sigSharkMaxRetest = input.float(0.75, "Shark maximum retest / first wave", minval = 0.10, maxval = 1.25, step = 0.05, group = GRP_SIG_WM)
+string sigNecklineMode = input.string("Off", "W/M neckline confirmation", options = ["Close", "Wick", "Off"], group = GRP_SIG_WM,
+     tooltip = "Off signals when the second swing has been confirmed by the right-side pivot bars. Close/Wick additionally wait for a neckline break.")
+int sigWmConfirmationWindow = input.int(12, "W/M confirmation window", minval = 1, maxval = 100, group = GRP_SIG_WM)
+float sigInvalidationAtr = input.float(0.25, "W/M invalidation beyond extreme (ATR)", minval = 0.0, maxval = 3.0, step = 0.05, group = GRP_SIG_WM)
+
+bool sigEnableFourFlag = input.bool(true, "Enable Four-Flag patterns", group = GRP_SIG_FLAG)
+bool sigFlagRequire30m = input.bool(true, "Require chart timeframe of 30 minutes or higher", group = GRP_SIG_FLAG)
+float sigFlagBodyTolerance = input.float(0.45, "Body Size Tolerance (0.45 = 45%)", minval = 0.0, maxval = 2.0, step = 0.05, group = GRP_SIG_FLAG)
+float sigFlagLevelTolerancePct = input.float(0.50, "Same Level Tolerance (%)", minval = 0.01, maxval = 5.0, step = 0.05, group = GRP_SIG_FLAG)
+float sigFlagMinBodyAtr = input.float(0.10, "Minimum body size (ATR)", minval = 0.0, maxval = 2.0, step = 0.05, group = GRP_SIG_FLAG)
+string sigFlagConfirmation = input.string("Range breakout", "Four-Flag confirmation", options = ["Range breakout", "Pattern close"], group = GRP_SIG_FLAG)
+int sigFlagBreakoutWindow = input.int(8, "Four-Flag breakout window", minval = 1, maxval = 50, group = GRP_SIG_FLAG)
+
+bool sigEnableDoji = input.bool(true, "Enable Master-Doji setups", group = GRP_SIG_DOJI)
+float sigDojiBodyRatio = input.float(0.15, "Maximum body / candle range", minval = 0.01, maxval = 0.50, step = 0.01, group = GRP_SIG_DOJI)
+float sigDojiMinRangeAtr = input.float(0.35, "Minimum Doji range (ATR)", minval = 0.0, maxval = 3.0, step = 0.05, group = GRP_SIG_DOJI)
+int sigDojiTrendLookback = input.int(5, "Prior trend lookback", minval = 2, maxval = 50, group = GRP_SIG_DOJI)
+int sigDojiConfirmationWindow = input.int(6, "Doji high/low break window", minval = 1, maxval = 50, group = GRP_SIG_DOJI)
+
+int sigVolumeLength = input.int(20, "Relative-volume lookback", minval = 2, maxval = 200, group = GRP_SIG_VOLUME)
+float sigWhaleVolumeRatio = input.float(1.50, "Whale volume / average", minval = 0.10, maxval = 10.0, step = 0.05, group = GRP_SIG_VOLUME)
+bool sigUseVolumeZScore = input.bool(false, "Also require volume Z-score", group = GRP_SIG_VOLUME)
+float sigVolumeZThreshold = input.float(1.50, "Minimum volume Z-score", minval = 0.0, maxval = 10.0, step = 0.10, group = GRP_SIG_VOLUME)
+bool sigRequireWhaleVolume = input.bool(true, "Require matching green/red money dot", group = GRP_SIG_VOLUME,
+     tooltip = "BUY requires a green buyers-money dot near the bullish setup or on confirmation. SELL requires a red sellers-money dot near the bearish setup or on confirmation. Black exhaustion dots never authorize entries.")
+
+int sigWaveSlopeBars = input.int(3, "MRP slope lookback for tooltip score", minval = 1, maxval = 20, group = GRP_SIG_FILTER,
+     tooltip = "POC, MRP, zones and slope only describe signal quality. They never block a pattern entry.")
+int sigCooldownBars = input.int(3, "Signal cooldown", minval = 0, maxval = 100, group = GRP_SIG_FILTER)
+
+bool sigEnableCompression = input.bool(false, "Enable separate three-POC compression setup", group = GRP_SIG_COMPRESSION,
+     tooltip = "Disabled by default because this is a separate POC-based signal and is not part of the independent pattern entry rules.")
+string sigCompressionDetection = input.string("All-POC touch", "Compression detection", options = ["All-POC touch", "ATR convergence + touch"], group = GRP_SIG_COMPRESSION)
+float sigPocConvergenceAtr = input.float(0.75, "Maximum strict POC spread (ATR)", minval = 0.01, maxval = 5.0, step = 0.05, group = GRP_SIG_COMPRESSION)
+string sigCompressionTrigger = input.string("Touch candle direction", "Compression trigger", options = ["Touch candle direction", "Touch close outside cluster", "Arm then breakout"], group = GRP_SIG_COMPRESSION)
+float sigCompressionBufferAtr = input.float(0.05, "Compression breakout buffer (ATR)", minval = 0.0, maxval = 2.0, step = 0.01, group = GRP_SIG_COMPRESSION)
+int sigCompressionWindow = input.int(12, "Compression breakout window", minval = 1, maxval = 100, group = GRP_SIG_COMPRESSION)
+
+bool sigCleanChart = input.bool(true, "Clean chart — show only dots and BUY/SELL", group = GRP_SIG_DISPLAY,
+     tooltip = "Hides W/M, Shark, Four-Flag, Doji, POC3, rejected-signal and neckline diagnostics. BUY/SELL labels and green/red/black dots remain visible.")
+bool sigShowCandidates = input.bool(false, "Show pattern candidates", group = GRP_SIG_DISPLAY)
+bool sigShowWhaleBubbles = input.bool(true, "Show whale-volume bubbles", group = GRP_SIG_DISPLAY)
+bool sigShowDojiMarkers = input.bool(false, "Show Master-Doji markers", group = GRP_SIG_DISPLAY)
+bool sigShowCompressionMarkers = input.bool(false, "Show POC-compression markers", group = GRP_SIG_DISPLAY)
+bool sigShowNecklines = input.bool(false, "Show active W/M necklines", group = GRP_SIG_DISPLAY)
+bool sigShowRejected = input.bool(false, "Show rejected confirmations", group = GRP_SIG_DISPLAY)
+bool sigShowSignals = input.bool(true, "Show BUY / SELL labels", group = GRP_SIG_DISPLAY)
+string sigSignalPlacement = input.string("Confirmation bar", "Signal placement", options = ["Confirmation bar", "Pattern origin (backpainted)"], group = GRP_SIG_DISPLAY,
+     tooltip = "Backpainted labels are visual annotations. A small C label remains on the real confirmation candle.")
+
+f_sigZoneOverlap(float candleLow, float candleHigh, float zoneLow, float zoneHigh) =>
+    not na(zoneLow) and not na(zoneHigh) and candleLow <= zoneHigh and candleHigh >= zoneLow
+
+float sigAtr = ta.atr(sigAtrLength)
+float sigAverageVolume = ta.sma(volume, sigVolumeLength)
+float sigVolumeDeviation = ta.stdev(volume, sigVolumeLength)
+float sigRelativeVolume = not na(sigAverageVolume) and sigAverageVolume > 0 ? nz(volume, 0.0) / sigAverageVolume : 0.0
+float sigVolumeZScore = not na(sigVolumeDeviation) and sigVolumeDeviation > 0 ? (nz(volume, 0.0) - sigAverageVolume) / sigVolumeDeviation : 0.0
+bool sigWhaleActivity = sigRelativeVolume >= sigWhaleVolumeRatio and (not sigUseVolumeZScore or sigVolumeZScore >= sigVolumeZThreshold)
+
+float sigCandleRange = math.max(high - low, syminfo.mintick)
+float sigBody = math.abs(close - open)
+bool sigDojiCore = sigBody / sigCandleRange <= sigDojiBodyRatio and sigCandleRange >= nz(sigAtr, 0.0) * sigDojiMinRangeAtr
+bool sigBullMoney = sigWhaleActivity and close > open and not sigDojiCore
+bool sigBearMoney = sigWhaleActivity and close < open and not sigDojiCore
+bool sigExitMoney = sigWhaleActivity and sigDojiCore
+
+// The bubble colors are transparent relative-volume classifications. They do
+// not claim access to exchange participant identity.
+plotshape(sigShowWhaleBubbles and sigBullMoney, title = "Whale Proxy — Buyers Money", style = shape.circle, location = location.belowbar, color = #10B981, size = size.tiny)
+plotshape(sigShowWhaleBubbles and sigBearMoney, title = "Whale Proxy — Sellers Money", style = shape.circle, location = location.abovebar, color = #EF4444, size = size.tiny)
+plotshape(sigShowWhaleBubbles and sigExitMoney, title = "Whale Proxy — Exhaustion", style = shape.circle, location = location.abovebar, color = color.black, size = size.tiny)
+
+// Three-POC compression: one candle spans all three POCs. Strict mode also
+// requires their total spread to fit inside the selected ATR allowance.
+float sigPocTop = math.max(weeklyPoc, math.max(dailyPoc, fourHourPoc))
+float sigPocBottom = math.min(weeklyPoc, math.min(dailyPoc, fourHourPoc))
+float sigPocSpread = sigPocTop - sigPocBottom
+bool sigPocsReady = not na(weeklyPoc) and not na(dailyPoc) and not na(fourHourPoc) and not na(sigAtr)
+bool sigPocsConverged = sigPocsReady and sigPocSpread <= sigAtr * sigPocConvergenceAtr
+bool sigTouchesAllPocs = sigPocsReady and low <= sigPocBottom and high >= sigPocTop
+bool sigCompressionSpreadPass = sigCompressionDetection == "All-POC touch" or sigPocsConverged
+bool sigCompressionEvent = sigEnabled and sigEnableCompression and barstate.isconfirmed and sigTouchesAllPocs and sigCompressionSpreadPass
+
+var bool sigCompressionArmed = false
+var int sigCompressionOrigin = na
+var int sigCompressionExpiry = na
+var float sigStoredCompressionTop = na
+var float sigStoredCompressionBottom = na
+
+if sigCompressionEvent
+    sigCompressionArmed := true
+    sigCompressionOrigin := bar_index
+    sigCompressionExpiry := bar_index + sigCompressionWindow
+    sigStoredCompressionTop := sigPocTop
+    sigStoredCompressionBottom := sigPocBottom
+    if not sigCleanChart and sigShowCompressionMarkers
+        label.new(bar_index, low, "POC3", style = label.style_label_up, color = #7C3AED, textcolor = color.white, size = size.tiny,
+             tooltip = "This candle spans Weekly, Daily and 4H POCs.")
+
+if sigCompressionArmed and bar_index > sigCompressionExpiry
+    sigCompressionArmed := false
+
+// Reusable institutional context on the current candle.
+bool sigCurrentDemand4h = f_sigZoneOverlap(low, high, h4sd_low, h4sd_high) or f_sigZoneOverlap(low, high, h4wd_low, h4wd_high)
+bool sigCurrentDemandD = f_sigZoneOverlap(low, high, sd_low, sd_high) or f_sigZoneOverlap(low, high, wd_low, wd_high)
+bool sigCurrentDemandW = f_sigZoneOverlap(low, high, wsd_low, wsd_high) or f_sigZoneOverlap(low, high, wwd_low, wwd_high)
+bool sigCurrentSupply4h = f_sigZoneOverlap(low, high, h4ws_low, h4ws_high) or f_sigZoneOverlap(low, high, h4ss_low, h4ss_high)
+bool sigCurrentSupplyD = f_sigZoneOverlap(low, high, wsp_low, wsp_high) or f_sigZoneOverlap(low, high, ss_low, ss_high)
+bool sigCurrentSupplyW = f_sigZoneOverlap(low, high, wws_low, wws_high) or f_sigZoneOverlap(low, high, wss_low, wss_high)
+
+int sigCurrentDemandCount = (sigCurrentDemand4h ? 1 : 0) + (sigCurrentDemandD ? 1 : 0) + (sigCurrentDemandW ? 1 : 0)
+int sigCurrentSupplyCount = (sigCurrentSupply4h ? 1 : 0) + (sigCurrentSupplyD ? 1 : 0) + (sigCurrentSupplyW ? 1 : 0)
+
+bool sigPriorDownTrend = not na(close[sigDojiTrendLookback]) and close < close[sigDojiTrendLookback]
+bool sigPriorUpTrend = not na(close[sigDojiTrendLookback]) and close > close[sigDojiTrendLookback]
+bool sigBullDojiSetup = sigEnabled and sigEnableDoji and barstate.isconfirmed and sigDojiCore and sigPriorDownTrend
+bool sigBearDojiSetup = sigEnabled and sigEnableDoji and barstate.isconfirmed and sigDojiCore and sigPriorUpTrend
+
+var bool sigBullDojiArmed = false
+var bool sigBearDojiArmed = false
+var float sigBullDojiHigh = na
+var float sigBullDojiLow = na
+var float sigBearDojiHigh = na
+var float sigBearDojiLow = na
+var int sigBullDojiOrigin = na
+var int sigBearDojiOrigin = na
+var int sigBullDojiExpiry = na
+var int sigBearDojiExpiry = na
+var int sigBullDojiZoneCount = 0
+var int sigBearDojiZoneCount = 0
+
+if sigBullDojiSetup
+    sigBullDojiArmed := true
+    sigBullDojiHigh := high
+    sigBullDojiLow := low
+    sigBullDojiOrigin := bar_index
+    sigBullDojiExpiry := bar_index + sigDojiConfirmationWindow
+    sigBullDojiZoneCount := sigCurrentDemandCount
+    if not sigCleanChart and sigShowDojiMarkers
+        label.new(bar_index, low, "DOJI", style = label.style_label_up, color = #FACC15, textcolor = color.black, size = size.tiny,
+             tooltip = "Bullish Master-Doji candidate. A later close above its high is required.")
+
+if sigBearDojiSetup
+    sigBearDojiArmed := true
+    sigBearDojiHigh := high
+    sigBearDojiLow := low
+    sigBearDojiOrigin := bar_index
+    sigBearDojiExpiry := bar_index + sigDojiConfirmationWindow
+    sigBearDojiZoneCount := sigCurrentSupplyCount
+    if not sigCleanChart and sigShowDojiMarkers
+        label.new(bar_index, high, "DOJI", style = label.style_label_down, color = #FACC15, textcolor = color.black, size = size.tiny,
+             tooltip = "Bearish Master-Doji candidate. A later close below its low is required.")
+
+// Per-bar raw confirmation payload. Pattern engines fill this once; priority
+// is W/M, Four Flag, Master Doji, then standalone POC compression.
+bool sigRawBuy = false
+bool sigRawSell = false
+string sigRawBuySource = ""
+string sigRawSellSource = ""
+bool sigRawBuyWhale = false
+bool sigRawSellWhale = false
+int sigRawBuyZoneCount = 0
+int sigRawSellZoneCount = 0
+bool sigRawBuyDoji = false
+bool sigRawSellDoji = false
+bool sigRawBuySpecial = false
+bool sigRawSellSpecial = false
+int sigRawBuyOriginIndex = bar_index
+int sigRawSellOriginIndex = bar_index
+float sigRawBuyOriginPrice = low
+float sigRawSellOriginPrice = high
+
+float sigPivotLow = ta.pivotlow(low, sigPivotLeft, sigPivotRight)
+float sigPivotHigh = ta.pivothigh(high, sigPivotLeft, sigPivotRight)
+bool sigNewPivotLow = not na(sigPivotLow)
+bool sigNewPivotHigh = not na(sigPivotHigh)
+bool sigWmTimeframeAllowed = not sigWmOnly15m or timeframe.in_seconds() == timeframe.in_seconds("15")
+
+var float sigPreviousLowPrice = na
+var int sigPreviousLowIndex = na
+var float sigPreviousHighPrice = na
+var int sigPreviousHighIndex = na
+
+var bool sigBullWmPending = false
+var float sigBullWmNeckline = na
+var float sigBullWmInvalidation = na
+var int sigBullWmExpiry = na
+var int sigBullWmOrigin = na
+var float sigBullWmOriginPrice = na
+var string sigBullWmType = ""
+var bool sigBullWmWhale = false
+var int sigBullWmZoneCount = 0
+var bool sigBullWmDoji = false
+var bool sigBullWmSpecial = false
+
+var bool sigBearWmPending = false
+var float sigBearWmNeckline = na
+var float sigBearWmInvalidation = na
+var int sigBearWmExpiry = na
+var int sigBearWmOrigin = na
+var float sigBearWmOriginPrice = na
+var string sigBearWmType = ""
+var bool sigBearWmWhale = false
+var int sigBearWmZoneCount = 0
+var bool sigBearWmDoji = false
+var bool sigBearWmSpecial = false
+
+if sigEnabled and sigWmTimeframeAllowed and sigNewPivotLow
+    int currentLowIndex = bar_index - sigPivotRight
+    float pivotAtr = math.max(nz(sigAtr[sigPivotRight], sigAtr), syminfo.mintick)
+    int lowGap = na(sigPreviousLowIndex) ? na : currentLowIndex - sigPreviousLowIndex
+    bool gapValid = not na(lowGap) and lowGap >= sigMinPivotGap and lowGap <= sigMaxPivotGap
+
+    if gapValid
+        float neckline = na
+        for historyOffset = 0 to sigMaxPivotGap + sigPivotRight
+            if historyOffset >= sigPivotRight and historyOffset <= sigPivotRight + lowGap
+                neckline := na(neckline) ? high[historyOffset] : math.max(neckline, high[historyOffset])
+
+        float firstWave = neckline - sigPreviousLowPrice
+        float secondWave = neckline - sigPivotLow
+        float secondRatio = firstWave > 0 ? secondWave / firstWave : 0.0
+        float asymmetryAtr = math.abs(sigPivotLow - sigPreviousLowPrice) / pivotAtr
+        bool meaningfulMiddle = not na(neckline) and firstWave >= pivotAtr * sigMiddleWaveAtr
+        bool sharkW = meaningfulMiddle and sigPreviousLowPrice < sigPivotLow and asymmetryAtr >= sigSharkMinAsymmetryAtr and asymmetryAtr <= sigSharkMaxAsymmetryAtr and secondRatio >= sigSharkMinRetest and secondRatio <= sigSharkMaxRetest
+        bool whaleW = meaningfulMiddle and asymmetryAtr <= sigWhaleMaxDifferenceAtr and secondRatio >= sigSecondLegRetracement
+        bool validW = whaleW or sharkW
+
+        if validW
+            bool demand4h = f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], h4sd_low[sigPivotRight], h4sd_high[sigPivotRight]) or f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], h4wd_low[sigPivotRight], h4wd_high[sigPivotRight])
+            bool demandD = f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], sd_low[sigPivotRight], sd_high[sigPivotRight]) or f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], wd_low[sigPivotRight], wd_high[sigPivotRight])
+            bool demandW = f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], wsd_low[sigPivotRight], wsd_high[sigPivotRight]) or f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], wwd_low[sigPivotRight], wwd_high[sigPivotRight])
+            int zoneCount = (demand4h ? 1 : 0) + (demandD ? 1 : 0) + (demandW ? 1 : 0)
+            bool pivotWhale = sigBullMoney[sigPivotRight + 1] or sigBullMoney[sigPivotRight] or sigBullMoney[sigPivotRight - 1]
+            bool pivotDoji = sigDojiCore[sigPivotRight + 1] or sigDojiCore[sigPivotRight] or sigDojiCore[sigPivotRight - 1]
+            string patternType = sharkW ? "SHARK-W" : sigPivotLow < sigPreviousLowPrice ? "W-SWEEP" : sigPivotLow > sigPreviousLowPrice ? "W-HL" : "W"
+
+            sigBullWmNeckline := neckline
+            sigBullWmInvalidation := math.min(sigPreviousLowPrice, sigPivotLow) - pivotAtr * sigInvalidationAtr
+            sigBullWmExpiry := bar_index + sigWmConfirmationWindow
+            sigBullWmOrigin := currentLowIndex
+            sigBullWmOriginPrice := sigPivotLow
+            sigBullWmType := patternType
+            sigBullWmWhale := pivotWhale
+            sigBullWmZoneCount := zoneCount
+            sigBullWmDoji := pivotDoji
+            sigBullWmSpecial := sharkW or sigPivotLow < sigPreviousLowPrice
+            sigBullWmPending := sigNecklineMode != "Off"
+
+            if not sigCleanChart and sigShowCandidates
+                label.new(currentLowIndex, sigPivotLow, patternType, xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_up,
+                     color = sharkW ? #0F766E : #22C55E, textcolor = color.white, size = size.tiny,
+                     tooltip = "Second W swing confirmed. Entry still waits for the selected neckline rule.")
+
+            if sigNecklineMode == "Off"
+                sigRawBuy := true
+                sigRawBuySource := patternType
+                sigRawBuyWhale := pivotWhale
+                sigRawBuyZoneCount := zoneCount
+                sigRawBuyDoji := pivotDoji
+                sigRawBuySpecial := sigBullWmSpecial
+                sigRawBuyOriginIndex := currentLowIndex
+                sigRawBuyOriginPrice := sigPivotLow
+
+    sigPreviousLowPrice := sigPivotLow
+    sigPreviousLowIndex := currentLowIndex
+
+if sigEnabled and sigWmTimeframeAllowed and sigNewPivotHigh
+    int currentHighIndex = bar_index - sigPivotRight
+    float pivotAtr = math.max(nz(sigAtr[sigPivotRight], sigAtr), syminfo.mintick)
+    int highGap = na(sigPreviousHighIndex) ? na : currentHighIndex - sigPreviousHighIndex
+    bool gapValid = not na(highGap) and highGap >= sigMinPivotGap and highGap <= sigMaxPivotGap
+
+    if gapValid
+        float neckline = na
+        for historyOffset = 0 to sigMaxPivotGap + sigPivotRight
+            if historyOffset >= sigPivotRight and historyOffset <= sigPivotRight + highGap
+                neckline := na(neckline) ? low[historyOffset] : math.min(neckline, low[historyOffset])
+
+        float firstWave = sigPreviousHighPrice - neckline
+        float secondWave = sigPivotHigh - neckline
+        float secondRatio = firstWave > 0 ? secondWave / firstWave : 0.0
+        float asymmetryAtr = math.abs(sigPivotHigh - sigPreviousHighPrice) / pivotAtr
+        bool meaningfulMiddle = not na(neckline) and firstWave >= pivotAtr * sigMiddleWaveAtr
+        bool sharkM = meaningfulMiddle and sigPreviousHighPrice > sigPivotHigh and asymmetryAtr >= sigSharkMinAsymmetryAtr and asymmetryAtr <= sigSharkMaxAsymmetryAtr and secondRatio >= sigSharkMinRetest and secondRatio <= sigSharkMaxRetest
+        bool whaleM = meaningfulMiddle and asymmetryAtr <= sigWhaleMaxDifferenceAtr and secondRatio >= sigSecondLegRetracement
+        bool validM = whaleM or sharkM
+
+        if validM
+            bool supply4h = f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], h4ws_low[sigPivotRight], h4ws_high[sigPivotRight]) or f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], h4ss_low[sigPivotRight], h4ss_high[sigPivotRight])
+            bool supplyD = f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], wsp_low[sigPivotRight], wsp_high[sigPivotRight]) or f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], ss_low[sigPivotRight], ss_high[sigPivotRight])
+            bool supplyW = f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], wws_low[sigPivotRight], wws_high[sigPivotRight]) or f_sigZoneOverlap(low[sigPivotRight], high[sigPivotRight], wss_low[sigPivotRight], wss_high[sigPivotRight])
+            int zoneCount = (supply4h ? 1 : 0) + (supplyD ? 1 : 0) + (supplyW ? 1 : 0)
+            bool pivotWhale = sigBearMoney[sigPivotRight + 1] or sigBearMoney[sigPivotRight] or sigBearMoney[sigPivotRight - 1]
+            bool pivotDoji = sigDojiCore[sigPivotRight + 1] or sigDojiCore[sigPivotRight] or sigDojiCore[sigPivotRight - 1]
+            string patternType = sharkM ? "SHARK-M" : sigPivotHigh > sigPreviousHighPrice ? "M-SWEEP" : sigPivotHigh < sigPreviousHighPrice ? "M-LH" : "M"
+
+            sigBearWmNeckline := neckline
+            sigBearWmInvalidation := math.max(sigPreviousHighPrice, sigPivotHigh) + pivotAtr * sigInvalidationAtr
+            sigBearWmExpiry := bar_index + sigWmConfirmationWindow
+            sigBearWmOrigin := currentHighIndex
+            sigBearWmOriginPrice := sigPivotHigh
+            sigBearWmType := patternType
+            sigBearWmWhale := pivotWhale
+            sigBearWmZoneCount := zoneCount
+            sigBearWmDoji := pivotDoji
+            sigBearWmSpecial := sharkM or sigPivotHigh > sigPreviousHighPrice
+            sigBearWmPending := sigNecklineMode != "Off"
+
+            if not sigCleanChart and sigShowCandidates
+                label.new(currentHighIndex, sigPivotHigh, patternType, xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_down,
+                     color = sharkM ? #9F1239 : #EF4444, textcolor = color.white, size = size.tiny,
+                     tooltip = "Second M swing confirmed. Entry still waits for the selected neckline rule.")
+
+            if sigNecklineMode == "Off"
+                sigRawSell := true
+                sigRawSellSource := patternType
+                sigRawSellWhale := pivotWhale
+                sigRawSellZoneCount := zoneCount
+                sigRawSellDoji := pivotDoji
+                sigRawSellSpecial := sigBearWmSpecial
+                sigRawSellOriginIndex := currentHighIndex
+                sigRawSellOriginPrice := sigPivotHigh
+
+    sigPreviousHighPrice := sigPivotHigh
+    sigPreviousHighIndex := currentHighIndex
+
+// W/M confirmation and invalidation.
+if sigBullWmPending
+    bool necklineBroken = sigNecklineMode == "Close" ? close > sigBullWmNeckline : high > sigBullWmNeckline
+    if barstate.isconfirmed and necklineBroken
+        sigRawBuy := true
+        sigRawBuySource := sigBullWmType
+        sigRawBuyWhale := sigBullWmWhale or sigBullMoney
+        sigRawBuyZoneCount := sigBullWmZoneCount
+        sigRawBuyDoji := sigBullWmDoji
+        sigRawBuySpecial := sigBullWmSpecial
+        sigRawBuyOriginIndex := sigBullWmOrigin
+        sigRawBuyOriginPrice := sigBullWmOriginPrice
+        sigBullWmPending := false
+    else if bar_index > sigBullWmExpiry or low < sigBullWmInvalidation
+        sigBullWmPending := false
+
+if sigBearWmPending
+    bool necklineBroken = sigNecklineMode == "Close" ? close < sigBearWmNeckline : low < sigBearWmNeckline
+    if barstate.isconfirmed and necklineBroken
+        sigRawSell := true
+        sigRawSellSource := sigBearWmType
+        sigRawSellWhale := sigBearWmWhale or sigBearMoney
+        sigRawSellZoneCount := sigBearWmZoneCount
+        sigRawSellDoji := sigBearWmDoji
+        sigRawSellSpecial := sigBearWmSpecial
+        sigRawSellOriginIndex := sigBearWmOrigin
+        sigRawSellOriginPrice := sigBearWmOriginPrice
+        sigBearWmPending := false
+    else if bar_index > sigBearWmExpiry or high > sigBearWmInvalidation
+        sigBearWmPending := false
+
+// Four Flag: four non-Doji bodies alternate at approximately the same levels.
+// R-G-R-G is the W/bullish flag; G-R-G-R is the M/bearish flag.
+bool sigFlagTimeframeAllowed = not sigFlagRequire30m or timeframe.in_seconds() >= timeframe.in_seconds("30")
+bool sigGreen0 = close > open
+bool sigGreen1 = close[1] > open[1]
+bool sigGreen2 = close[2] > open[2]
+bool sigGreen3 = close[3] > open[3]
+bool sigRed0 = close < open
+bool sigRed1 = close[1] < open[1]
+bool sigRed2 = close[2] < open[2]
+bool sigRed3 = close[3] < open[3]
+float sigFlagBody0 = math.abs(close - open)
+float sigFlagBody1 = math.abs(close[1] - open[1])
+float sigFlagBody2 = math.abs(close[2] - open[2])
+float sigFlagBody3 = math.abs(close[3] - open[3])
+float sigFlagMaxBody = math.max(sigFlagBody0, math.max(sigFlagBody1, math.max(sigFlagBody2, sigFlagBody3)))
+float sigFlagMinBody = math.min(sigFlagBody0, math.min(sigFlagBody1, math.min(sigFlagBody2, sigFlagBody3)))
+float sigFlagAverageBody = (sigFlagBody0 + sigFlagBody1 + sigFlagBody2 + sigFlagBody3) / 4.0
+float sigFlagTop0 = math.max(open, close)
+float sigFlagTop1 = math.max(open[1], close[1])
+float sigFlagTop2 = math.max(open[2], close[2])
+float sigFlagTop3 = math.max(open[3], close[3])
+float sigFlagBottom0 = math.min(open, close)
+float sigFlagBottom1 = math.min(open[1], close[1])
+float sigFlagBottom2 = math.min(open[2], close[2])
+float sigFlagBottom3 = math.min(open[3], close[3])
+float sigFlagHighestTop = math.max(sigFlagTop0, math.max(sigFlagTop1, math.max(sigFlagTop2, sigFlagTop3)))
+float sigFlagLowestTop = math.min(sigFlagTop0, math.min(sigFlagTop1, math.min(sigFlagTop2, sigFlagTop3)))
+float sigFlagHighestBottom = math.max(sigFlagBottom0, math.max(sigFlagBottom1, math.max(sigFlagBottom2, sigFlagBottom3)))
+float sigFlagLowestBottom = math.min(sigFlagBottom0, math.min(sigFlagBottom1, math.min(sigFlagBottom2, sigFlagBottom3)))
+float sigFlagAveragePrice = math.abs((open + close + open[1] + close[1] + open[2] + close[2] + open[3] + close[3]) / 8.0)
+float sigFlagLevelAllowance = sigFlagAveragePrice * sigFlagLevelTolerancePct / 100.0
+bool sigFlagBodiesLargeEnough = sigFlagMinBody >= nz(sigAtr, 0.0) * sigFlagMinBodyAtr
+bool sigFlagBodiesSimilar = sigFlagAverageBody > 0 and sigFlagMaxBody - sigFlagMinBody <= sigFlagAverageBody * sigFlagBodyTolerance
+bool sigFlagSameLevels = sigFlagHighestTop - sigFlagLowestTop <= sigFlagLevelAllowance and sigFlagHighestBottom - sigFlagLowestBottom <= sigFlagLevelAllowance
+bool sigBullFlagCandidate = sigEnabled and sigEnableFourFlag and sigFlagTimeframeAllowed and barstate.isconfirmed and sigRed3 and sigGreen2 and sigRed1 and sigGreen0 and sigFlagBodiesLargeEnough and sigFlagBodiesSimilar and sigFlagSameLevels
+bool sigBearFlagCandidate = sigEnabled and sigEnableFourFlag and sigFlagTimeframeAllowed and barstate.isconfirmed and sigGreen3 and sigRed2 and sigGreen1 and sigRed0 and sigFlagBodiesLargeEnough and sigFlagBodiesSimilar and sigFlagSameLevels
+float sigFlagRangeHigh = ta.highest(high, 4)
+float sigFlagRangeLow = ta.lowest(low, 4)
+
+var bool sigBullFlagPending = false
+var bool sigBearFlagPending = false
+var float sigBullFlagHigh = na
+var float sigBullFlagLow = na
+var float sigBearFlagHigh = na
+var float sigBearFlagLow = na
+var int sigBullFlagOrigin = na
+var int sigBearFlagOrigin = na
+var int sigBullFlagExpiry = na
+var int sigBearFlagExpiry = na
+var bool sigBullFlagWhale = false
+var bool sigBearFlagWhale = false
+var int sigBullFlagZoneCount = 0
+var int sigBearFlagZoneCount = 0
+
+if sigBullFlagCandidate
+    sigBullFlagHigh := sigFlagRangeHigh
+    sigBullFlagLow := sigFlagRangeLow
+    sigBullFlagOrigin := bar_index
+    sigBullFlagExpiry := bar_index + sigFlagBreakoutWindow
+    sigBullFlagWhale := sigBullMoney or sigBullMoney[1] or sigBullMoney[2] or sigBullMoney[3]
+    sigBullFlagZoneCount := sigCurrentDemandCount
+    sigBullFlagPending := sigFlagConfirmation == "Range breakout"
+    if not sigCleanChart and sigShowCandidates
+        label.new(bar_index, low, "4 FLAG W", style = label.style_label_up, color = #F59E0B, textcolor = color.white, size = size.tiny,
+             tooltip = "R-G-R-G bullish Four Flag.")
+    if sigFlagConfirmation == "Pattern close" and not sigRawBuy
+        sigRawBuy := true
+        sigRawBuySource := "4FLAG-W"
+        sigRawBuyWhale := sigBullFlagWhale
+        sigRawBuyZoneCount := sigBullFlagZoneCount
+        sigRawBuySpecial := true
+        sigRawBuyOriginIndex := bar_index
+        sigRawBuyOriginPrice := low
+
+if sigBearFlagCandidate
+    sigBearFlagHigh := sigFlagRangeHigh
+    sigBearFlagLow := sigFlagRangeLow
+    sigBearFlagOrigin := bar_index
+    sigBearFlagExpiry := bar_index + sigFlagBreakoutWindow
+    sigBearFlagWhale := sigBearMoney or sigBearMoney[1] or sigBearMoney[2] or sigBearMoney[3]
+    sigBearFlagZoneCount := sigCurrentSupplyCount
+    sigBearFlagPending := sigFlagConfirmation == "Range breakout"
+    if not sigCleanChart and sigShowCandidates
+        label.new(bar_index, high, "4 FLAG M", style = label.style_label_down, color = #F59E0B, textcolor = color.white, size = size.tiny,
+             tooltip = "G-R-G-R bearish Four Flag.")
+    if sigFlagConfirmation == "Pattern close" and not sigRawSell
+        sigRawSell := true
+        sigRawSellSource := "4FLAG-M"
+        sigRawSellWhale := sigBearFlagWhale
+        sigRawSellZoneCount := sigBearFlagZoneCount
+        sigRawSellSpecial := true
+        sigRawSellOriginIndex := bar_index
+        sigRawSellOriginPrice := high
+
+if sigBullFlagPending and bar_index > sigBullFlagOrigin
+    if barstate.isconfirmed and close > sigBullFlagHigh and not sigRawBuy
+        sigRawBuy := true
+        sigRawBuySource := "4FLAG-W"
+        sigRawBuyWhale := sigBullFlagWhale or sigBullMoney
+        sigRawBuyZoneCount := sigBullFlagZoneCount
+        sigRawBuySpecial := true
+        sigRawBuyOriginIndex := sigBullFlagOrigin
+        sigRawBuyOriginPrice := sigBullFlagLow
+        sigBullFlagPending := false
+    else if bar_index > sigBullFlagExpiry or close < sigBullFlagLow
+        sigBullFlagPending := false
+
+if sigBearFlagPending and bar_index > sigBearFlagOrigin
+    if barstate.isconfirmed and close < sigBearFlagLow and not sigRawSell
+        sigRawSell := true
+        sigRawSellSource := "4FLAG-M"
+        sigRawSellWhale := sigBearFlagWhale or sigBearMoney
+        sigRawSellZoneCount := sigBearFlagZoneCount
+        sigRawSellSpecial := true
+        sigRawSellOriginIndex := sigBearFlagOrigin
+        sigRawSellOriginPrice := sigBearFlagHigh
+        sigBearFlagPending := false
+    else if bar_index > sigBearFlagExpiry or close > sigBearFlagHigh
+        sigBearFlagPending := false
+
+// A Master Doji uses prior trend and then waits for its high/low to break.
+// Nearby POCs and institutional zones affect only the tooltip quality score.
+if sigBullDojiArmed and bar_index > sigBullDojiOrigin
+    if barstate.isconfirmed and close > sigBullDojiHigh and not sigRawBuy
+        sigRawBuy := true
+        sigRawBuySource := "DOJI-W"
+        sigRawBuyWhale := sigBullMoney
+        sigRawBuyZoneCount := sigBullDojiZoneCount
+        sigRawBuyDoji := true
+        sigRawBuyOriginIndex := sigBullDojiOrigin
+        sigRawBuyOriginPrice := sigBullDojiLow
+        sigBullDojiArmed := false
+    else if bar_index > sigBullDojiExpiry or close < sigBullDojiLow
+        sigBullDojiArmed := false
+
+if sigBearDojiArmed and bar_index > sigBearDojiOrigin
+    if barstate.isconfirmed and close < sigBearDojiLow and not sigRawSell
+        sigRawSell := true
+        sigRawSellSource := "DOJI-M"
+        sigRawSellWhale := sigBearMoney
+        sigRawSellZoneCount := sigBearDojiZoneCount
+        sigRawSellDoji := true
+        sigRawSellOriginIndex := sigBearDojiOrigin
+        sigRawSellOriginPrice := sigBearDojiHigh
+        sigBearDojiArmed := false
+    else if bar_index > sigBearDojiExpiry or close > sigBearDojiHigh
+        sigBearDojiArmed := false
+
+// Standalone compression setup. The default immediately follows the direction
+// of the candle that spans all POCs, matching the supplied red/green examples.
+float sigCompressionBuffer = nz(sigAtr, 0.0) * sigCompressionBufferAtr
+bool sigCompressionBullTrigger = switch sigCompressionTrigger
+    "Touch close outside cluster" => sigCompressionEvent and close > open and close > sigPocTop + sigCompressionBuffer
+    "Arm then breakout" => sigCompressionArmed and bar_index > sigCompressionOrigin and close > sigStoredCompressionTop + sigCompressionBuffer
+    => sigCompressionEvent and close > open
+bool sigCompressionBearTrigger = switch sigCompressionTrigger
+    "Touch close outside cluster" => sigCompressionEvent and close < open and close < sigPocBottom - sigCompressionBuffer
+    "Arm then breakout" => sigCompressionArmed and bar_index > sigCompressionOrigin and close < sigStoredCompressionBottom - sigCompressionBuffer
+    => sigCompressionEvent and close < open
+
+if sigCompressionBullTrigger and not sigRawBuy
+    sigRawBuy := true
+    sigRawBuySource := "POC3-W"
+    sigRawBuyWhale := sigBullMoney
+    sigRawBuyZoneCount := sigCurrentDemandCount
+    sigRawBuySpecial := true
+    sigRawBuyOriginIndex := sigCompressionOrigin
+    sigRawBuyOriginPrice := low
+    sigCompressionArmed := false
+
+if sigCompressionBearTrigger and not sigRawSell
+    sigRawSell := true
+    sigRawSellSource := "POC3-M"
+    sigRawSellWhale := sigBearMoney
+    sigRawSellZoneCount := sigCurrentSupplyCount
+    sigRawSellSpecial := true
+    sigRawSellOriginIndex := sigCompressionOrigin
+    sigRawSellOriginPrice := high
+    sigCompressionArmed := false
+
+// POC, MRP, zones and slope contribute to the tooltip quality score only.
+// They never block an independent pattern entry.
+bool sigBullAllPocAligned = sigPocsReady and close > fourHourPoc and close > dailyPoc and close > weeklyPoc
+bool sigBearAllPocAligned = sigPocsReady and close < fourHourPoc and close < dailyPoc and close < weeklyPoc
+bool sigBullMrpRelationship = not na(whaleMrp) and not na(weeklyMrp) and whaleMrp > weeklyMrp
+bool sigBearMrpRelationship = not na(whaleMrp) and not na(weeklyMrp) and whaleMrp < weeklyMrp
+bool sigBullSlope = not na(whaleMrp[sigWaveSlopeBars]) and whaleMrp > whaleMrp[sigWaveSlopeBars]
+bool sigBearSlope = not na(whaleMrp[sigWaveSlopeBars]) and whaleMrp < whaleMrp[sigWaveSlopeBars]
+bool sigBullVolumePass = not sigRequireWhaleVolume or sigRawBuyWhale or sigBullMoney
+bool sigBearVolumePass = not sigRequireWhaleVolume or sigRawSellWhale or sigBearMoney
+
+int sigBuyQuality = (sigBullAllPocAligned ? 1 : 0) + (sigBullMrpRelationship ? 1 : 0) + (sigRawBuyZoneCount > 0 ? 1 : 0) + (sigBullSlope ? 1 : 0) + (sigRawBuyDoji ? 1 : 0) + ((sigRawBuyWhale or sigBullMoney) ? 1 : 0) + (sigRawBuySpecial ? 1 : 0)
+int sigSellQuality = (sigBearAllPocAligned ? 1 : 0) + (sigBearMrpRelationship ? 1 : 0) + (sigRawSellZoneCount > 0 ? 1 : 0) + (sigBearSlope ? 1 : 0) + (sigRawSellDoji ? 1 : 0) + ((sigRawSellWhale or sigBearMoney) ? 1 : 0) + (sigRawSellSpecial ? 1 : 0)
+
+// The only entry qualifier outside the confirmed pattern is the matching
+// directional money dot when that requirement is enabled.
+bool sigBuyFiltersPass = sigBullVolumePass
+bool sigSellFiltersPass = sigBearVolumePass
+var int sigLastSignalBar = na
+bool sigCooldownPass = na(sigLastSignalBar) or bar_index - sigLastSignalBar > sigCooldownBars
+bool sigBuySignal = sigEnabled and barstate.isconfirmed and sigRawBuy and sigBuyFiltersPass and sigCooldownPass
+bool sigSellSignal = sigEnabled and barstate.isconfirmed and sigRawSell and sigSellFiltersPass and sigCooldownPass and not sigBuySignal
+bool sigRejectedBuy = sigRawBuy and not sigBuyFiltersPass
+bool sigRejectedSell = sigRawSell and not sigSellFiltersPass
+
+if sigBuySignal or sigSellSignal
+    sigLastSignalBar := bar_index
+
+bool sigBackpaint = sigSignalPlacement == "Pattern origin (backpainted)"
+
+if sigShowSignals and sigBuySignal
+    int labelIndex = sigBackpaint ? sigRawBuyOriginIndex : bar_index
+    label.new(labelIndex, na, "BUY", xloc = xloc.bar_index, yloc = yloc.belowbar, style = label.style_label_up,
+         color = sigBuyQuality >= 5 ? #047857 : #16A34A, textcolor = color.white, size = size.small,
+         tooltip = "Source: " + sigRawBuySource + " | Quality: " + str.tostring(sigBuyQuality) + "/7")
+    if sigBackpaint
+        label.new(bar_index, low, "C", style = label.style_circle, color = #16A34A, textcolor = color.white, size = size.tiny,
+             tooltip = "Real-time confirmation bar")
+
+if sigShowSignals and sigSellSignal
+    int labelIndex = sigBackpaint ? sigRawSellOriginIndex : bar_index
+    label.new(labelIndex, na, "SELL", xloc = xloc.bar_index, yloc = yloc.abovebar, style = label.style_label_down,
+         color = sigSellQuality >= 5 ? #991B1B : #DC2626, textcolor = color.white, size = size.small,
+         tooltip = "Source: " + sigRawSellSource + " | Quality: " + str.tostring(sigSellQuality) + "/7")
+    if sigBackpaint
+        label.new(bar_index, high, "C", style = label.style_circle, color = #DC2626, textcolor = color.white, size = size.tiny,
+             tooltip = "Real-time confirmation bar")
+
+if not sigCleanChart and sigShowRejected and sigRejectedBuy
+    label.new(bar_index, low, "X", style = label.style_label_up, color = #6B7280, textcolor = color.white, size = size.tiny,
+         tooltip = "Bullish pattern had no matching green buyers-money dot.")
+if not sigCleanChart and sigShowRejected and sigRejectedSell
+    label.new(bar_index, high, "X", style = label.style_label_down, color = #6B7280, textcolor = color.white, size = size.tiny,
+         tooltip = "Bearish pattern had no matching red sellers-money dot.")
+
+plot(sigEnabled and not sigCleanChart and sigShowNecklines and sigBullWmPending ? sigBullWmNeckline : na, "Active W Neckline", color = #22C55E, linewidth = 1, style = plot.style_linebr)
+plot(sigEnabled and not sigCleanChart and sigShowNecklines and sigBearWmPending ? sigBearWmNeckline : na, "Active M Neckline", color = #EF4444, linewidth = 1, style = plot.style_linebr)
+
+// Compact Data Window diagnostics; no additional pane labels are created.
+plot(sigEnabled ? sigRelativeVolume : na, "Signal Relative Volume", display = display.data_window)
+plot(sigEnabled ? sigVolumeZScore : na, "Signal Volume Z-Score", display = display.data_window)
+plot(sigEnabled ? (sigCompressionEvent ? 1 : 0) : na, "Signal Three-POC Compression", display = display.data_window)
+plot(sigEnabled and sigRawBuy ? sigBuyQuality : na, "Signal BUY Quality", display = display.data_window)
+plot(sigEnabled and sigRawSell ? sigSellQuality : na, "Signal SELL Quality", display = display.data_window)
+
+alertcondition(sigBuySignal, "Whale Patterns BUY", "Qualified BUY on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sigSellSignal, "Whale Patterns SELL", "Qualified SELL on {{ticker}} {{interval}} at {{close}}")
+

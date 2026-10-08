@@ -6,7 +6,7 @@
 import type { Candle } from '../types';
 import type { Series } from './types';
 import * as pm from '../pineMath';
-import { vdAtr } from '../indicators/vdEngine';
+import { wilderAtr } from '../tradeWalker';
 import { computeSuperTrend } from '../indicators/superTrend';
 import { computeMacd } from '../indicators/macd';
 import { computeRsi } from '../indicators/rsi';
@@ -39,7 +39,7 @@ export function emaScoreSeries(candles: Candle[]): Series {
   const closes = candles.map((c) => c.close);
   const e9 = pm.ema(closes, 9);
   const e21 = pm.ema(closes, 21);
-  const atr = vdAtr(candles);
+  const atr = wilderAtr(candles);
   return Array.from({ length: n }, (_, i) => {
     const a = atr[i];
     if (e9[i] == null || e21[i] == null || a == null || a <= 0) return null;
@@ -50,7 +50,7 @@ export function emaScoreSeries(candles: Candle[]): Series {
 export function supertrendScoreSeries(candles: Candle[]): Series {
   const n = candles.length;
   const st = plotSeries(computeSuperTrend(candles).plots, 'supertrend');
-  const atr = vdAtr(candles);
+  const atr = wilderAtr(candles);
   return Array.from({ length: n }, (_, i) => {
     const s = st[i], a = atr[i];
     if (s == null || a == null || a <= 0) return null;
@@ -63,7 +63,7 @@ export function macdScoreSeries(candles: Candle[]): Series {
   const res = computeMacd(candles);
   const line = plotSeries(res.plots, 'macd');
   const hist = plotSeries(res.plots, 'hist');
-  const atr = vdAtr(candles);
+  const atr = wilderAtr(candles);
   return Array.from({ length: n }, (_, i) => {
     const l = line[i], h = hist[i], a = atr[i];
     if (l == null || h == null || a == null || a <= 0) return null;
@@ -137,7 +137,7 @@ export function structureScoreSeries(candles: Candle[]): Series {
 
 function slopeScoreSeries(candles: Candle[], bars: number): Series {
   const n = candles.length;
-  const atr = vdAtr(candles);
+  const atr = wilderAtr(candles);
   return Array.from({ length: n }, (_, i) => {
     const a = atr[i];
     if (i < bars || a == null || a <= 0) return null;

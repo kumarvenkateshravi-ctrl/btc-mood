@@ -8,7 +8,6 @@ import type { Candle, Timeframe } from '../types';
 import { sliceCandlesByTf, TF_SECONDS } from './replaySlice';
 import { computeSmc, projectSmcSnapshot } from '../smc/engine';
 import { evaluateSmcScreener } from '../smc/screener';
-import { computeSdSignalEvents } from '../indicators/sdSignals';
 
 export interface IntegrityCheck {
   name: string;
@@ -64,10 +63,6 @@ export function verifyReplayIntegrity(args: {
     const scanB = JSON.stringify(evaluateSmcScreener(sliced, evalTf));
     checks.push({ name: 'Scanner', ok: scanA === scanB, detail: 'double-run identical' });
 
-    // 5. Signal events determinism on the slice.
-    const sigA = JSON.stringify(computeSdSignalEvents(slice, { id: 'sd_signals' }, { symbol: 'VERIFY', timeframe: evalTf }));
-    const sigB = JSON.stringify(computeSdSignalEvents(slice, { id: 'sd_signals' }, { symbol: 'VERIFY', timeframe: evalTf }));
-    checks.push({ name: 'Signals', ok: sigA === sigB, detail: 'double-run identical' });
   }
 
   const passed = checks.filter((c) => c.ok).length;

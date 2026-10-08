@@ -19,20 +19,27 @@ const INACTIVE: ReplayDataset = Object.freeze({
   candlesByTf: Object.freeze({}),
 });
 
-let state: ReplayDataset = INACTIVE;
-const listeners = new Set<() => void>();
+interface ReplayDatasetContainer {
+  value: ReplayDataset;
+  listeners: Set<() => void>;
+}
+const replayDatasetRoot = globalThis as typeof globalThis & { __mcsReplayDatasetV1?: ReplayDatasetContainer };
+const replayDatasetContainer = replayDatasetRoot.__mcsReplayDatasetV1 ??= {
+  value: INACTIVE,
+  listeners: new Set<() => void>(),
+};
 
 export function __subscribeReplayDatasetForTest(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  replayDatasetContainer.listeners.add(listener);
+  return () => replayDatasetContainer.listeners.delete(listener);
 }
 
 export function __getReplayDatasetListenerCountForTest(): number {
-  return listeners.size;
+  return replayDatasetContainer.listeners.size;
 }
 
 function emit() {
-  for (const listener of listeners) listener();
+  for (const listener of replayDatasetContainer.listeners) listener();
 }
 
 function freezeCandles(candles: Candle[]): readonly Candle[] {
@@ -67,31 +74,31 @@ export function captureReplayDataset(input: {
   sessionId?: string;
   candlesByTf: Partial<Record<Timeframe, Candle[]>>;
 }): ReplayDataset {
-  state = freezeDataset(input);
+  replayDatasetContainer.value = freezeDataset(input);
   emit();
-  return state;
+  return replayDatasetContainer.value;
 }
 
 export function clearReplayDataset(): void {
-  if (!state.active) return;
-  state = INACTIVE;
+  if (!replayDatasetContainer.value.active) return;
+  replayDatasetContainer.value = INACTIVE;
   emit();
 }
 
 /** Release a captured book before a new chart symbol becomes active. */
 export function clearReplayDatasetForSymbol(nextSymbol: string): void {
-  if (state.active && state.symbol !== nextSymbol) clearReplayDataset();
+  if (replayDatasetContainer.value.active && replayDatasetContainer.value.symbol !== nextSymbol) clearReplayDataset();
 }
 
 export function getReplayDataset(): ReplayDataset {
-  return state;
+  return replayDatasetContainer.value;
 }
 
 export function useReplayDataset(): ReplayDataset {
   return useSyncExternalStore(
     (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+      replayDatasetContainer.listeners.add(listener);
+      return () => replayDatasetContainer.listeners.delete(listener);
     },
     getReplayDataset,
     getReplayDataset,

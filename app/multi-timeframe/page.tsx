@@ -16,6 +16,12 @@ import StackSidebar, { type MarketState } from '@/components/stack/StackSidebar'
 import ThemeToggle from '@/components/ThemeToggle';
 import { Panel } from '@/components/ui';
 import { formatNumber, formatPercent } from '@/lib/format';
+import MtfStructuralContext from '@/components/mtf/MtfStructuralContext';
+import FvgMatrixRow from '@/components/mtf/FvgMatrixRow';
+import VwapCrossMatrixRow from '@/components/mtf/VwapCrossMatrixRow';
+import { buildStandardMtfSnapshot } from '@/lib/mtf/standardMtfService';
+import { countActiveTodayFvgsByTimeframe, type ActiveFvgCountsByTimeframe } from '@/lib/mtf/fvgActivity';
+import { computeClosedPriceWeeklyVwapCrossesByTimeframe, type PriceWeeklyVwapCrossByTimeframe } from '@/lib/mtf/vwapCrossover';
 
 const TF_LABEL: Record<Timeframe, string> = { '5m': '5M', '15m': '15M', '30m': '30M', '1h': '1H', '4h': '4H', '1d': '1D' };
 const fmt = (n: number | null | undefined, d = 1) => formatNumber(n ?? NaN, { precision: d });
@@ -46,6 +52,12 @@ export default function MultiTimeframePage() {
   const summary = useMemo(() => buildSummary(matrix, weighted), [matrix, weighted]);
   const details = useMemo(() => computeTimeframeDetails(candlesByTf[structTf] ?? []), [candlesByTf, structTf]);
   const structure = useMemo(() => detectStructure(candlesByTf[structTf] ?? []), [candlesByTf, structTf]);
+  const activeTodayFvgsByTf = useMemo(() => countActiveTodayFvgsByTimeframe(candlesByTf), [candlesByTf]);
+  const vwapCrossesByTf = useMemo(() => computeClosedPriceWeeklyVwapCrossesByTimeframe(candlesByTf), [candlesByTf]);
+  const standardMtf = useMemo(() => {
+    if (!TIMEFRAMES.every((tf) => (candlesByTf[tf]?.length ?? 0) > 1)) return null;
+    return buildStandardMtfSnapshot({ symbol, candlesByTimeframe: candlesByTf, hasFormingBar: true });
+  }, [candlesByTf, symbol]);
 
   const ready = TIMEFRAMES.some((tf) => (candlesByTf[tf]?.length ?? 0) > 0);
   const price = ticker24h ? ticker24h.price : (prices['5m'] ?? prices['1d'] ?? 0);
@@ -120,8 +132,10 @@ export default function MultiTimeframePage() {
                   <h2 className="text-sm font-semibold tracking-wide text-accent">MULTI-TIMEFRAME ANALYSIS</h2>
                   <span className="text-[11px] text-ink-faint">Complete market structure across all timeframes</span>
                 </div>
-                <MatrixTable matrix={matrix} />
+                <MatrixTable matrix={matrix} fvgCounts={activeTodayFvgsByTf} vwapCrosses={vwapCrossesByTf} />
               </Panel>
+
+              {standardMtf && <MtfStructuralContext timeframeLabel={TF_LABEL[structTf]} derived={standardMtf.snapshot.derived[structTf]} activeToday={standardMtf.presentation.activeTodayFvgs[structTf]} />}
 
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
                 <Panel eyebrow title="Timeframe Heatmap"><Heatmap rows={heatmap} /></Panel>
@@ -235,7 +249,7 @@ export default function MultiTimeframePage() {
 // ---- panels ----
 // Panel now imported from @/components/ui (MDS Phase C migration); eyebrow style.
 
-function MatrixTable({ matrix }: { matrix: ReturnType<typeof computeAlignmentMatrix> }) {
+function MatrixTable({ matrix, fvgCounts, vwapCrosses }: { matrix: ReturnType<typeof computeAlignmentMatrix>; fvgCounts: ActiveFvgCountsByTimeframe; vwapCrosses: PriceWeeklyVwapCrossByTimeframe }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-separate border-spacing-0 text-left text-sm">
@@ -270,6 +284,8 @@ function MatrixTable({ matrix }: { matrix: ReturnType<typeof computeAlignmentMat
               })}
             </tr>
           ))}
+          <FvgMatrixRow counts={fvgCounts} />
+          <VwapCrossMatrixRow crosses={vwapCrosses} />
           <tr>
             <td className="bg-surface-2/50 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-accent">Timeframe Score</td>
             {TIMEFRAMES.map((tf) => {

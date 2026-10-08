@@ -4,7 +4,7 @@
 // snapshot, entry/SL/TP fixed at creation. Rule 1 + Rule 4.
 
 import type { Candle, Timeframe } from '../types';
-import { vdAtr, type TradePlanLike } from '../indicators/vdEngine';
+import { wilderAtr, type TradePlanLike } from '../tradeWalker';
 import { evaluate, explainAt, TF_SECONDS } from './evaluate';
 import type { ConditionSnapshot, ScannerStrategy } from './types';
 
@@ -38,7 +38,7 @@ export function generateScannerSignals(
   if (!version || !candles || candles.length === 0) return [];
 
   const matches = evaluate(version.tree, candlesByTf, evalTf);
-  const atr = vdAtr(candles);
+  const atr = wilderAtr(candles);
   const dir = strategy.direction === 'long' ? 1 : -1;
   const out: ScannerSignal[] = [];
 

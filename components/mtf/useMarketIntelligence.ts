@@ -26,6 +26,7 @@ import {
 export function useMarketIntelligence(
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   selectedTf: Timeframe,
+  cacheScope = '',
 ): {
   full: FullMarketIntelligence;
   crossTf: FullMarketIntelligence;
@@ -33,10 +34,10 @@ export function useMarketIntelligence(
   tradeContext: TradeContext;
 } {
   // Signature over last-CLOSED bar per TF (last bar is still forming).
-  const fullSig = TIMEFRAMES
+  const fullSig = cacheScope + '|' + TIMEFRAMES
     .map((tf) => { const a = candlesByTf[tf]; return a && a.length > 1 ? `${tf}:${a[a.length - 2].time}` : `${tf}:0`; })
     .join('|');
-  const exec5mSig = (() => {
+  const exec5mSig = cacheScope + '|' + (() => {
     const a = candlesByTf['5m'];
     return a && a.length > 1 ? `5m:${a[a.length - 2].time}` : '5m:0';
   })();

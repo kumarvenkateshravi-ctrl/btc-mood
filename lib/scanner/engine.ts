@@ -6,7 +6,7 @@
 // dock are pure views of it.
 
 import type { Candle, Timeframe } from '../types';
-import { walkVdTrades, type VdTrade } from '../indicators/vdEngine';
+import { walkTrades, type TrackedTrade } from '../tradeWalker';
 import { generateScannerSignals, type ScannerSignal } from './signals';
 import { deriveScannerEvents, type ScannerEvent } from './events';
 import {
@@ -16,7 +16,7 @@ import {
 export interface ScannerSnapshot {
   evalTf: Timeframe;
   signals: ScannerSignal[];                       // all enabled strategies, chronological
-  trades: Array<VdTrade<ScannerSignal>>;          // walked on closed eval-TF candles
+  trades: Array<TrackedTrade<ScannerSignal>>;    // walked on closed eval-TF candles
   events: ScannerEvent[];
   byStrategy: Record<string, { name: string; chartVisible: boolean }>;
 }
@@ -44,12 +44,12 @@ export function computeScannerSnapshot(
   }
 
   const signals: ScannerSignal[] = [];
-  const trades: Array<VdTrade<ScannerSignal>> = [];
+  const trades: Array<TrackedTrade<ScannerSignal>> = [];
   const byStrategy: ScannerSnapshot['byStrategy'] = {};
   for (const strat of strategies) {
     const sigs = generateScannerSignals(strat, closedByTf, evalTf, now);
     signals.push(...sigs);
-    trades.push(...walkVdTrades(closed, sigs));
+    trades.push(...walkTrades(closed, sigs));
     byStrategy[strat.id] = { name: strat.name, chartVisible: strat.chartVisible !== false };
   }
   signals.sort((a, b) => a.index - b.index);

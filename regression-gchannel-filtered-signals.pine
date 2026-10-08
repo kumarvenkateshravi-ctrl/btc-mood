@@ -1,0 +1,367 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// at https://mozilla.org/MPL/2.0/
+// Regression Line [DW] credit: DonovanWall.
+// G-Channel Trend Detection credit: AlexGrover.
+
+//@version=6
+indicator("Regression + G-Channel Filtered Signals", shorttitle = "RegLn+GCh Filtered", overlay = true, max_bars_back = 5000)
+
+// ═══════════════════════════════════════════════════════════════════════
+// REGRESSION INPUTS
+// ═══════════════════════════════════════════════════════════════════════
+string GRP_REG = "Regression Line"
+src = input.source(close, "Source", group = GRP_REG)
+filtType = input.string("SMA", "Base Average Type", options = ["ALMA", "EMA", "SMA", "RMA", "LWMA", "VWMA"], group = GRP_REG)
+wType = input.string("Continuous", "Window Type", options = ["Continuous", "Interval"], group = GRP_REG)
+len = input.int(200, "Sampling Length", minval = 2, group = GRP_REG)
+res = input.timeframe("D", "Interval Size", group = GRP_REG)
+
+showLine = input.bool(true, "Show Regression Line", group = GRP_REG)
+extendLines = input.bool(false, "Extend Line Right", group = GRP_REG) ? extend.right : extend.none
+lineWidth = input.int(4, "Line Width", minval = 1, maxval = 10, group = GRP_REG)
+lineStyle = input.string("Solid", "Line Style", options = ["Solid", "Dotted", "Dashed"], group = GRP_REG)
+posColor = input.color(color.lime, "Positive Slope Color", group = GRP_REG)
+negColor = input.color(color.red, "Negative Slope Color", group = GRP_REG)
+flatColor = input.color(#CCCCCC, "Flat Slope Color", group = GRP_REG)
+showTracer = input.bool(true, "Show Regression Current Value", group = GRP_REG)
+tracerColor = input.color(color.white, "Current Value Color", group = GRP_REG)
+
+// ═══════════════════════════════════════════════════════════════════════
+// G-CHANNEL INPUTS
+// ═══════════════════════════════════════════════════════════════════════
+string GRP_GC = "G-Channel"
+gcShow = input.bool(true, "Show G-Channel", group = GRP_GC)
+gcLength = input.int(100, "Length", minval = 2, group = GRP_GC)
+gcSrc = input.source(close, "Source", group = GRP_GC)
+gcBullColor = input.color(color.lime, "Bullish Color", group = GRP_GC)
+gcBearColor = input.color(color.red, "Bearish Color", group = GRP_GC)
+
+// ═══════════════════════════════════════════════════════════════════════
+// SIGNAL FILTER INPUTS
+// ═══════════════════════════════════════════════════════════════════════
+string GRP_FILTER = "Filtered Signals"
+showSignals = input.bool(true, "Show Final Buy/Sell Signals", group = GRP_FILTER)
+showRawSetups = input.bool(false, "Show Raw G-Channel Setups", group = GRP_FILTER,
+     tooltip = "Diagnostic dots showing every unfiltered G-Channel trend flip.")
+useRegressionFilter = input.bool(true, "Require Regression Alignment", group = GRP_FILTER)
+useHtfFilter = input.bool(true, "Require Confirmed Higher-Timeframe Trend", group = GRP_FILTER)
+filterTimeframe = input.timeframe("15", "Confirmed Trend Timeframe", group = GRP_FILTER,
+     tooltip = "For a 3-minute chart, 15 minutes is recommended.")
+htfEmaLength = input.int(50, "Higher-Timeframe EMA Length", minval = 2, group = GRP_FILTER)
+useAdxFilter = input.bool(true, "Require ADX Directional Strength", group = GRP_FILTER)
+adxLength = input.int(14, "DI Length", minval = 2, group = GRP_FILTER)
+adxSmoothing = input.int(14, "ADX Smoothing", minval = 2, group = GRP_FILTER)
+minimumAdx = input.float(15.0, "Minimum ADX", minval = 0.0, step = 0.5, group = GRP_FILTER)
+useBodyFilter = input.bool(true, "Reject Wick-Dominated Entry Candles", group = GRP_FILTER)
+minimumBodyPercent = input.float(25.0, "Minimum Candle Body %", minval = 0.0, maxval = 100.0, step = 1.0, group = GRP_FILTER,
+     tooltip = "Rejects wick-dominated setup and breakout candles.")
+requireBreakout = input.bool(true, "Require Close Beyond Setup Candle", group = GRP_FILTER)
+breakoutWindow = input.int(5, "Breakout Confirmation Window (bars)", minval = 1, maxval = 20, group = GRP_FILTER)
+
+buyColor = input.color(#00E676, "Buy Signal Color", group = GRP_FILTER)
+sellColor = input.color(#FF1744, "Sell Signal Color", group = GRP_FILTER)
+
+// ═══════════════════════════════════════════════════════════════════════
+// STOP REFERENCE INPUTS
+// ═══════════════════════════════════════════════════════════════════════
+string GRP_RISK = "Structural ATR Stop"
+showStop = input.bool(true, "Show Active Stop", group = GRP_RISK)
+useRiskDistanceFilter = input.bool(false, "Reject Excessively Wide Stops", group = GRP_RISK,
+     tooltip = "Disabled by default so valid signals are not silently removed. The structural stop is still plotted.")
+swingLookback = input.int(7, "Swing Lookback", minval = 2, maxval = 50, group = GRP_RISK)
+atrLength = input.int(14, "ATR Length", minval = 2, group = GRP_RISK)
+atrBuffer = input.float(0.35, "ATR Buffer Beyond Swing", minval = 0.0, step = 0.05, group = GRP_RISK)
+maximumRiskAtr = input.float(2.0, "Maximum Entry Risk (ATR)", minval = 0.25, step = 0.25, group = GRP_RISK,
+     tooltip = "Rejects entries whose structural stop is excessively far away.")
+stopColor = input.color(color.orange, "Active Stop Color", group = GRP_RISK)
+
+// ═══════════════════════════════════════════════════════════════════════
+// REGRESSION FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════
+f_newbar(string resolution) =>
+    int t = time(resolution)
+    (na(t[1]) and not na(t)) or nz(t[1], t) < t
+
+f_alma(float y, int length) =>
+    float m = 0.85 * (length - 1)
+    float s = length / 6.0
+    float weightedSum = 0.0
+    float weightSum = 0.0
+    for i = 0 to length - 1
+        float weight = math.exp(-math.pow(i - m, 2) / (2 * math.pow(s, 2)))
+        weightedSum += weight * nz(y[length - 1 - i], y)
+        weightSum += weight
+    weightedSum / weightSum
+
+f_ema(float y, int length) =>
+    var float result = na
+    result := na(result[1]) ? y : (y - nz(result[1])) * (2.0 / (length + 1)) + nz(result[1])
+    result
+
+f_sma(float y, int length) =>
+    float total = 0.0
+    for i = 0 to length - 1
+        total += nz(y[i], y)
+    total / length
+
+f_rma(float y, int length) =>
+    var float result = na
+    result := na(result[1]) ? f_sma(y, length) : (nz(result[1]) * (length - 1) + y) / length
+    result
+
+f_lwma(float y, int length) =>
+    float numerator = 0.0
+    float denominator = 0.0
+    for i = 0 to length - 1
+        numerator += (length - i) * nz(y[i], y)
+        denominator += length - i
+    numerator / denominator
+
+f_vwma(float y, int length) =>
+    float tick = syminfo.mintick
+    float candleRange = high - low
+    var float tickRange = tick
+    tickRange := math.abs(candleRange) < tick ? tickRange : candleRange
+    float tickVolume = math.abs(tickRange) / tick
+    float sourceVolume = na(volume) ? tickVolume : volume
+    float priceVolume = y * sourceVolume
+    float pvTotal = 0.0
+    float volumeTotal = 0.0
+    for i = 0 to length - 1
+        pvTotal += nz(priceVolume[i], priceVolume)
+        volumeTotal += nz(sourceVolume[i], sourceVolume)
+    volumeTotal > 0 ? pvTotal / volumeTotal : y
+
+f_filter(float y, int length, string filterType) =>
+    filterType == "ALMA" ? f_alma(y, length) :
+     filterType == "EMA" ? f_ema(y, length) :
+     filterType == "SMA" ? f_sma(y, length) :
+     filterType == "RMA" ? f_rma(y, length) :
+     filterType == "LWMA" ? f_lwma(y, length) :
+     f_vwma(y, length)
+
+f_stdev(float y, int length, string filterType) =>
+    math.sqrt(f_filter(math.pow(y - f_filter(y, length, filterType), 2), length, filterType))
+
+f_corr(float x, float y, int length, string filterType) =>
+    int xDeviation = math.round(length / 2.0)
+    float yDeviation = y - f_filter(y, length, filterType)
+    float xyTotal = 0.0
+    float x2Total = 0.0
+    float y2Total = 0.0
+    for i = 0 to length - 1
+        xyTotal += xDeviation * nz(yDeviation[i], yDeviation)
+        x2Total += math.pow(xDeviation, 2)
+        y2Total += math.pow(nz(yDeviation[i], yDeviation), 2)
+    float denominator = math.sqrt(x2Total * y2Total)
+    denominator == 0 ? 0 : xyTotal / denominator
+
+f_linRegFilt(float y, int length, string filterType) =>
+    float x = bar_index
+    float correlation = f_corr(x, y, length, filterType)
+    float sourceDeviation = f_stdev(y, length, filterType)
+    int xDeviation = math.round(length / 2.0)
+    float yMean = f_filter(y, length, filterType)
+    float xMean = nz(bar_index[xDeviation], 0)
+    float slope = length == 1 ? 0 : correlation * (sourceDeviation / xDeviation)
+    float intercept = yMean - slope * xMean
+    float firstValue = intercept + slope * nz(x[length - 1], x)
+    float lastValue = intercept + slope * x
+    [firstValue, lastValue]
+
+f_lineStyle(string selectedStyle) =>
+    selectedStyle == "Solid" ? line.style_solid : selectedStyle == "Dotted" ? line.style_dotted : line.style_dashed
+
+f_drawLine(float firstValue, float lastValue, int length, color lineColor, string selectedStyle, int width, extension) =>
+    int firstIndex = nz(bar_index[length - 1], 0)
+    var line regressionLine = na
+    if bar_index != nz(bar_index[1], 0)
+        line.delete(regressionLine)
+        regressionLine := line.new(firstIndex, firstValue, bar_index, lastValue,
+             xloc = xloc.bar_index, extend = extension, color = lineColor,
+             style = f_lineStyle(selectedStyle), width = width)
+
+// ═══════════════════════════════════════════════════════════════════════
+// REGRESSION CALCULATION
+// ═══════════════════════════════════════════════════════════════════════
+bool newInterval = f_newbar(res)
+var int intervalBars = 1
+intervalBars := newInterval ? 1 : intervalBars + 1
+int regressionLength = wType == "Interval" ? intervalBars : len
+
+[regressionStart, regressionCurrent] = f_linRegFilt(src, regressionLength, filtType)
+bool regressionBullish = regressionCurrent > regressionStart
+bool regressionBearish = regressionCurrent < regressionStart
+color regressionColor = regressionBullish ? posColor : regressionBearish ? negColor : flatColor
+
+plot(showTracer ? regressionCurrent : na, "Regression Current Value", tracerColor, 1)
+if showLine
+    f_drawLine(regressionStart, regressionCurrent, regressionLength, regressionColor, lineStyle, lineWidth, extendLines)
+
+// ═══════════════════════════════════════════════════════════════════════
+// G-CHANNEL CALCULATION
+// ═══════════════════════════════════════════════════════════════════════
+var float gcA = 0.0
+var float gcB = 0.0
+gcA := math.max(gcSrc, nz(gcA[1])) - nz(gcA[1] - gcB[1]) / gcLength
+gcB := math.min(gcSrc, nz(gcB[1])) + nz(gcA[1] - gcB[1]) / gcLength
+float gcAverage = math.avg(gcA, gcB)
+
+bool gcCrossUp = gcB[1] < close[1] and gcB > close
+bool gcCrossDown = gcA[1] < close[1] and gcA > close
+bool gcBullish = ta.barssince(gcCrossDown) <= ta.barssince(gcCrossUp)
+bool rawBullishFlip = gcBullish and not gcBullish[1]
+bool rawBearishFlip = not gcBullish and gcBullish[1]
+color gcColor = gcBullish ? gcBullColor : gcBearColor
+
+gcAveragePlot = plot(gcShow ? gcAverage : na, "G-Channel Average", color.new(gcColor, 10), 1)
+gcClosePlot = plot(gcShow ? close : na, "G-Channel Close Anchor", color.new(gcColor, 100), 1)
+fill(gcAveragePlot, gcClosePlot, color.new(gcColor, 90), title = "G-Channel Fill")
+
+// ═══════════════════════════════════════════════════════════════════════
+// NON-REPAINTING FILTERS
+// The HTF values are from the last fully closed HTF candle.
+// ═══════════════════════════════════════════════════════════════════════
+[confirmedHtfClose, confirmedHtfEma, previousConfirmedHtfEma] = request.security(
+     syminfo.tickerid, filterTimeframe,
+     [close[1], ta.ema(close, htfEmaLength)[1], ta.ema(close, htfEmaLength)[2]],
+     gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+
+bool htfBullish = confirmedHtfClose > confirmedHtfEma and confirmedHtfEma > previousConfirmedHtfEma
+bool htfBearish = confirmedHtfClose < confirmedHtfEma and confirmedHtfEma < previousConfirmedHtfEma
+
+[positiveDi, negativeDi, adxValue] = ta.dmi(adxLength, adxSmoothing)
+bool bullishStrength = adxValue >= minimumAdx and positiveDi > negativeDi
+bool bearishStrength = adxValue >= minimumAdx and negativeDi > positiveDi
+
+float candleRange = math.max(high - low, syminfo.mintick)
+float candleBodyPercent = math.abs(close - open) / candleRange * 100.0
+bool bodyQuality = candleBodyPercent >= minimumBodyPercent
+
+bool bullishRegressionAlignment = close > regressionCurrent and regressionBullish
+bool bearishRegressionAlignment = close < regressionCurrent and regressionBearish
+
+// A raw G-Channel flip always arms a setup. Filters are evaluated later, at
+// the actual entry candle, so a small or weak flip candle cannot erase an
+// otherwise valid breakout opportunity.
+bool confirmedBullishSetup = barstate.isconfirmed and rawBullishFlip
+bool confirmedBearishSetup = barstate.isconfirmed and rawBearishFlip
+
+// ═══════════════════════════════════════════════════════════════════════
+// SETUP → BREAKOUT STATE MACHINE
+// A flip only arms a setup. Entry requires a close through the setup candle's
+// high/low within the selected confirmation window.
+// ═══════════════════════════════════════════════════════════════════════
+var bool bullishSetupArmed = false
+var bool bearishSetupArmed = false
+var float bullishSetupHigh = na
+var float bearishSetupLow = na
+var int bullishSetupBar = na
+var int bearishSetupBar = na
+
+if barstate.isconfirmed and rawBullishFlip
+    bearishSetupArmed := false
+    bullishSetupArmed := true
+    bullishSetupHigh := high
+    bullishSetupBar := bar_index
+
+if barstate.isconfirmed and rawBearishFlip
+    bullishSetupArmed := false
+    bearishSetupArmed := true
+    bearishSetupLow := low
+    bearishSetupBar := bar_index
+
+if bullishSetupArmed and bar_index - bullishSetupBar > breakoutWindow
+    bullishSetupArmed := false
+if bearishSetupArmed and bar_index - bearishSetupBar > breakoutWindow
+    bearishSetupArmed := false
+
+bool bullishBreakout = barstate.isconfirmed and bullishSetupArmed and
+     bar_index > bullishSetupBar and bar_index - bullishSetupBar <= breakoutWindow and
+     close > bullishSetupHigh
+bool bearishBreakout = barstate.isconfirmed and bearishSetupArmed and
+     bar_index > bearishSetupBar and bar_index - bearishSetupBar <= breakoutWindow and
+     close < bearishSetupLow
+
+bool bullishEntryTrigger = requireBreakout ? bullishBreakout : confirmedBullishSetup
+bool bearishEntryTrigger = requireBreakout ? bearishBreakout : confirmedBearishSetup
+
+// Apply each selected filter once—on the actual entry candle.
+bool bullishFiltersPass =
+     (not useRegressionFilter or bullishRegressionAlignment) and
+     (not useHtfFilter or htfBullish) and
+     (not useAdxFilter or bullishStrength) and
+     (not useBodyFilter or bodyQuality)
+bool bearishFiltersPass =
+     (not useRegressionFilter or bearishRegressionAlignment) and
+     (not useHtfFilter or htfBearish) and
+     (not useAdxFilter or bearishStrength) and
+     (not useBodyFilter or bodyQuality)
+
+bool bullishEntryQuality = bullishEntryTrigger and bullishFiltersPass
+bool bearishEntryQuality = bearishEntryTrigger and bearishFiltersPass
+
+// ═══════════════════════════════════════════════════════════════════════
+// STRUCTURAL ATR RISK FILTER AND ACTIVE STOP
+// ═══════════════════════════════════════════════════════════════════════
+float atrValue = ta.atr(atrLength)
+float candidateLongStop = ta.lowest(low, swingLookback) - atrValue * atrBuffer
+float candidateShortStop = ta.highest(high, swingLookback) + atrValue * atrBuffer
+float longRisk = close - candidateLongStop
+float shortRisk = candidateShortStop - close
+bool longRiskAcceptable = longRisk > syminfo.mintick and longRisk <= atrValue * maximumRiskAtr
+bool shortRiskAcceptable = shortRisk > syminfo.mintick and shortRisk <= atrValue * maximumRiskAtr
+
+bool buySignal = bullishEntryQuality and (not useRiskDistanceFilter or longRiskAcceptable)
+bool sellSignal = bearishEntryQuality and (not useRiskDistanceFilter or shortRiskAcceptable)
+
+// A breakout attempt consumes the setup even if the risk filter rejects it.
+if bullishBreakout
+    bullishSetupArmed := false
+if bearishBreakout
+    bearishSetupArmed := false
+
+var int activeDirection = 0
+var float activeStop = na
+bool stopHit = false
+
+if buySignal
+    activeDirection := 1
+    activeStop := candidateLongStop
+else if sellSignal
+    activeDirection := -1
+    activeStop := candidateShortStop
+else if activeDirection == 1 and not na(activeStop) and low <= activeStop
+    stopHit := true
+    activeDirection := 0
+    activeStop := na
+else if activeDirection == -1 and not na(activeStop) and high >= activeStop
+    stopHit := true
+    activeDirection := 0
+    activeStop := na
+
+plot(showStop ? activeStop : na, "Active Structural ATR Stop", stopColor, 2, plot.style_linebr)
+
+plotshape(showRawSetups and confirmedBullishSetup, title = "Raw Bullish Setup",
+     location = location.belowbar, style = shape.circle, color = color.new(buyColor, 35),
+     size = size.tiny)
+plotshape(showRawSetups and confirmedBearishSetup, title = "Raw Bearish Setup",
+     location = location.abovebar, style = shape.circle, color = color.new(sellColor, 35),
+     size = size.tiny)
+
+plotshape(showSignals and buySignal, title = "Filtered Buy", location = location.belowbar,
+     style = shape.labelup, color = buyColor, text = "BUY", textcolor = color.white,
+     size = size.small)
+plotshape(showSignals and sellSignal, title = "Filtered Sell", location = location.abovebar,
+     style = shape.labeldown, color = sellColor, text = "SELL", textcolor = color.white,
+     size = size.small)
+plotshape(showSignals and stopHit, title = "Stop Hit", location = location.abovebar,
+     style = shape.xcross, color = stopColor, text = "SL", textcolor = stopColor,
+     size = size.tiny)
+
+alertcondition(buySignal, title = "Filtered Buy Signal",
+     message = "Confirmed filtered BUY: G-Channel flip, regression, HTF, ADX, candle and breakout filters passed.")
+alertcondition(sellSignal, title = "Filtered Sell Signal",
+     message = "Confirmed filtered SELL: G-Channel flip, regression, HTF, ADX, candle and breakout filters passed.")
+alertcondition(stopHit, title = "Structural Stop Hit",
+     message = "The active structural ATR stop was touched.")

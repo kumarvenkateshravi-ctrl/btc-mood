@@ -223,15 +223,15 @@ describe('S3: Validation Engine', () => {
     expect(r.warnings.some((w) => w.code === 'live-only')).toBe(true);
   });
   it('cost estimation buckets by unique-series weights (cache-aware)', () => {
-    // vdZone (6) + intelligence (5) → 11 units → medium; duplicate refs count once.
+    // Two intelligence series (5 each) → 10 units → low; duplicate refs count once.
     const r = validateTree({ logic: 'AND', children: [
-      { left: { source: 'vdZone', output: 'confidence' }, op: 'gt', right: 60, tf: '15m' },
-      { left: { source: 'vdZone', output: 'confidence' }, op: 'lt', right: 100, tf: '15m' },
+      { left: { source: 'trendScore', output: 'score' }, op: 'gt', right: 60, tf: '15m' },
+      { left: { source: 'trendScore', output: 'score' }, op: 'lt', right: 100, tf: '15m' },
       { left: { source: 'contextScore', output: 'score' }, op: 'gt', right: 60, tf: '15m' },
     ] });
     expect(r.complexity.uniqueSeries).toBe(2);
-    expect(r.complexity.costUnits).toBeCloseTo(11, 6);
-    expect(r.complexity.cost).toBe('medium');
+    expect(r.complexity.costUnits).toBeCloseTo(10, 6);
+    expect(r.complexity.cost).toBe('low');
   });
   it('strategy-level: name, direction, exits ordering', () => {
     const s = {
@@ -252,7 +252,7 @@ describe('S3: Validation Engine', () => {
 describe('S4: signals + events + store', async () => {
   const { generateScannerSignals } = await import('./signals');
   const { deriveScannerEvents } = await import('./events');
-  const { walkVdTrades } = await import('../indicators/vdEngine');
+  const { walkTrades } = await import('../tradeWalker');
   const store = await import('./scannerStore');
 
   const okCond: Condition = { left: { source: 'rsi', output: 'rsi' }, op: 'gt', right: 55, tf: '15m' };
@@ -299,7 +299,7 @@ describe('S4: signals + events + store', async () => {
   it('scanner signals walk through the generalized trade engine and derive the event timeline', () => {
     const up = ramp(200, 1);
     const [sig] = generateScannerSignals(mkStrategy(), { '15m': up }, '15m', 5);
-    const trades = walkVdTrades(up, [sig], { beAfterTp1: false, trailAtr: 0, contextExit: false });
+    const trades = walkTrades(up, [sig], { beAfterTp1: false, trailAtr: 0, contextExit: false });
     expect(trades[0].status).toBe('tp3'); // relentless uptrend hits all targets
     const events = deriveScannerEvents(trades, up, '15m', 5);
     const types = events.map((e) => e.eventType);

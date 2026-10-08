@@ -85,9 +85,6 @@ describe('canonical indicator evaluation context', () => {
     const expected = new Map([
       ['session_volume_profile', ['raw', 'developing']],
       ['ma_fvg', ['mixed', 'closed']],
-      ['sd_zones', ['raw', 'closed']],
-      ['sd_signals', ['raw', 'closed']],
-      ['volume_distribution_zones', ['raw', 'closed']],
       ['smc', ['raw', 'closed']],
     ]);
 

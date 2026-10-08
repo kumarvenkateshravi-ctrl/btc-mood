@@ -1,0 +1,174 @@
+//@version=6
+indicator("BTC WHALE HUNTER'S - POC, MRP, G-Channel, EMA & Trend Magic", shorttitle = "POC/MRP + G + EMA + TM", overlay = true, format = format.price, precision = 2, max_bars_back = 5000)
+
+// Functional reconstruction from observed chart values. This is not the
+// protected source code and does not use volume-profile bins.
+
+GRP_MRP = "MRP / WMRP"
+GRP_POC = "POC LINES"
+GRP_EMA = "EMA 200"
+GRP_GCHANNEL = "G-CHANNEL TREND"
+GRP_TREND_MAGIC = "TREND MAGIC MTF"
+
+// Inputs contain calculation and visibility controls only. Plot colors and
+// widths are editable from TradingView's Style tab.
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "Show WMRP", inline = "mrp", group = GRP_MRP)
+showEndLabels = input.bool(true, "Show MRP / WMRP / EMA End Labels", group = GRP_MRP)
+endLabelOffset = input.int(2, "End Label Offset", minval = 0, maxval = 25, group = GRP_MRP)
+
+showWeeklyPoc = input.bool(true, "Show Weekly POC", group = GRP_POC)
+showDailyPoc = input.bool(true, "Show Daily POC", group = GRP_POC)
+showFourHourPoc = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+
+showEma200 = input.bool(true, "Show EMA 200", group = GRP_EMA)
+emaSource = input.source(close, "EMA Source", group = GRP_EMA)
+
+gLength = input.int(100, "Length", minval = 1, group = GRP_GCHANNEL)
+gSource = input.source(close, "Source", group = GRP_GCHANNEL)
+showGChannel = input.bool(true, "Show G-Channel Cloud", group = GRP_GCHANNEL)
+showGSignals = input.bool(true, "Show G-Channel Buy/Sell", group = GRP_GCHANNEL)
+
+showTrendMagic = input.bool(true, "Show Trend Magic", group = GRP_TREND_MAGIC)
+tmPeriod = input.int(20, "CCI Period", minval = 1, group = GRP_TREND_MAGIC)
+tmCoeff = input.float(1.0, "ATR Multiplier", minval = 0.0, step = 0.1, group = GRP_TREND_MAGIC)
+tmAtrPeriod = input.int(5, "ATR Period", minval = 1, group = GRP_TREND_MAGIC)
+tmSource = input.source(close, "Source", group = GRP_TREND_MAGIC)
+tmTimeframe = input.timeframe("", "Indicator Timeframe", tooltip = "Leave blank to use the chart timeframe, or choose another timeframe for Trend Magic.", group = GRP_TREND_MAGIC)
+
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+// Unix timestamps are UTC. Native four-hour changes occur at 00:00, 04:00,
+// 08:00, 12:00, 16:00 and 20:00 UTC — 05:30, 09:30, 13:30, 17:30,
+// 21:30 and 01:30 in India.
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// Developing Daily and Weekly HLC3 VWAPs.
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float mrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float weeklyMrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+float ema200 = ta.ema(emaSource, 200)
+
+// Exact-fit reconstructed 4H POC calculation. It builds a UTC-day VWAP from
+// native 4H candles and holds the cumulative result of the last completed 4H
+// candle throughout the next 4H block.
+f_developingDailyVwapFrom4H() =>
+    const int LOCAL_DAY_MS = 24 * 60 * 60 * 1000
+    int localDayKey = int(math.floor(time / LOCAL_DAY_MS))
+    bool localNewDay = barstate.isfirst or localDayKey != localDayKey[1]
+    float localVolume = nz(volume, 0.0)
+    var float localPvSum = 0.0
+    var float localVolumeSum = 0.0
+    if localNewDay
+        localPvSum := 0.0
+        localVolumeSum := 0.0
+    localPvSum += hlc3 * localVolume
+    localVolumeSum += localVolume
+    localVolumeSum > 0 ? localPvSum / localVolumeSum : na
+
+float fourHourPoc = request.security(syminfo.tickerid, "240", f_developingDailyVwapFrom4H()[1], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+float weeklyPoc = request.security(syminfo.tickerid, "1W", open, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+float dailyPoc = request.security(syminfo.tickerid, "1D", (high[1] + low[1] + close[1]) / 3, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+
+// Original G-Channel logic converted from Pine v4 to Pine v6.
+var float gUpper = 0.0
+var float gLower = 0.0
+gUpper := math.max(gSource, nz(gUpper[1])) - nz(gUpper[1] - gLower[1]) / gLength
+gLower := math.min(gSource, nz(gLower[1])) + nz(gUpper[1] - gLower[1]) / gLength
+float gAverage = math.avg(gUpper, gLower)
+
+bool gCrossUp = gLower[1] < close[1] and gLower > close
+bool gCrossDown = gUpper[1] < close[1] and gUpper > close
+bool gBullish = ta.barssince(gCrossDown) <= ta.barssince(gCrossUp)
+bool gSellSignal = showGSignals and not gBullish and gBullish[1]
+bool gBuySignal = showGSignals and gBullish and not gBullish[1]
+
+color gAverageColor = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90)
+color gCloseColor = gBullish ? color.new(color.lime, 100) : color.new(color.red, 100)
+color gCloudColor = gBullish ? color.new(color.lime, 90) : color.new(color.red, 90)
+
+// Trend Magic is calculated entirely inside the selected timeframe context.
+f_trendMagic() =>
+    float tmAtr = ta.sma(ta.tr, tmAtrPeriod)
+    float tmUp = low - tmAtr * tmCoeff
+    float tmDown = high + tmAtr * tmCoeff
+    var float tmValue = 0.0
+    float tmCciValue = ta.cci(tmSource, tmPeriod)
+    tmValue := tmCciValue >= 0 ? (tmUp < nz(tmValue[1]) ? nz(tmValue[1]) : tmUp) : (tmDown > nz(tmValue[1]) ? nz(tmValue[1]) : tmDown)
+    [tmValue, tmCciValue]
+
+string tmResolvedTimeframe = tmTimeframe == "" ? timeframe.period : tmTimeframe
+[magicTrend, tmCci] = request.security(syminfo.tickerid, tmResolvedTimeframe, f_trendMagic(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+bool tmCross = ta.cross(close, magicTrend)
+bool tmBuySignal = ta.crossover(low, magicTrend)
+bool tmSellSignal = ta.crossunder(high, magicTrend)
+
+// ════════════════════════════════════════════════════════════════════════════
+// STYLE ORDER
+// MRP → WMRP → EMA → Weekly/Daily/4H POC → G-Channel → G Signals → Trend Magic
+// ════════════════════════════════════════════════════════════════════════════
+
+plot(showMrp ? mrp : na, "01 — MRP", color = #0B46F0, linewidth = 2, editable = true)
+plotshape(showMrp and showEndLabels and barstate.islast ? mrp : na, title = "02 — MRP End Label", location = location.absolute, style = shape.labelup, color = color.new(#0B46F0, 100), text = "𝗠𝗥𝗣", textcolor = #0B46F0, size = size.normal, offset = endLabelOffset, editable = true)
+
+plot(showWMrp ? weeklyMrp : na, "03 — WMRP", color = #C57A00, linewidth = 1, editable = true)
+plotshape(showWMrp and showEndLabels and barstate.islast ? weeklyMrp : na, title = "04 — WMRP End Label", location = location.absolute, style = shape.labelup, color = color.new(#C57A00, 100), text = "𝗪𝗠𝗥𝗣", textcolor = #C57A00, size = size.normal, offset = endLabelOffset, editable = true)
+
+plot(showEma200 ? ema200 : na, "05 — EMA 200", color = #FFFFFF, linewidth = 2, editable = true)
+plotshape(showEma200 and showEndLabels and barstate.islast ? ema200 : na, title = "06 — EMA End Label", location = location.absolute, style = shape.labelup, color = color.new(#FFFFFF, 100), text = "𝗘𝗠𝗔", textcolor = #FFFFFF, size = size.normal, offset = endLabelOffset, editable = true)
+
+// Break the series on every weekly boundary so different Weekly POC levels
+// are never connected by a vertical line.
+float weeklyPocPlot = showWeeklyPoc and not (newWeek and not barstate.isfirst) ? weeklyPoc : na
+plot(weeklyPocPlot, "07 — Weekly POC", color = #F59E0B, linewidth = 2, style = plot.style_linebr, editable = true)
+plot(showDailyPoc ? dailyPoc : na, "08 — Daily POC", color = #14532D, linewidth = 2, style = plot.style_stepline, editable = true)
+plot(showFourHourPoc ? fourHourPoc : na, "09 — 4-Hour POC", color = #22D3EE, linewidth = 2, style = plot.style_stepline, editable = true)
+
+gAveragePlot = plot(showGChannel ? gAverage : na, "10 — G-Channel Average", color = gAverageColor, linewidth = 1, editable = true)
+gClosePlot = plot(showGChannel ? close : na, "11 — G-Channel Close Price", color = gCloseColor, linewidth = 1, editable = true)
+fill(gAveragePlot, gClosePlot, color = showGChannel ? gCloudColor : na, title = "12 — G-Channel Cloud", editable = true)
+
+plotshape(gBuySignal ? gAverage : na, title = "13 — G-Channel Buy", location = location.absolute, style = shape.labelup, color = color.lime, size = size.tiny, text = "Buy", textcolor = color.white, offset = -1, editable = true)
+plotshape(gSellSignal ? gAverage : na, title = "14 — G-Channel Sell", location = location.absolute, style = shape.labeldown, color = color.red, size = size.tiny, text = "Sell", textcolor = color.white, offset = -1, editable = true)
+
+// Separate bullish and bearish plots expose both colors in the Style tab.
+// Each plot keeps the first bar of the opposite state. That shared transition
+// bar joins the two segments and prevents the Trend Magic line from appearing
+// cut when its CCI state changes.
+bool tmBullSegment = tmCci >= 0 or tmCci[1] >= 0
+bool tmBearSegment = tmCci < 0 or tmCci[1] < 0
+plot(showTrendMagic and tmBullSegment ? magicTrend : na, "15 — Trend Magic Bullish", color = #0022FC, linewidth = 3, style = plot.style_linebr, editable = true)
+plot(showTrendMagic and tmBearSegment ? magicTrend : na, "16 — Trend Magic Bearish", color = #FC0400, linewidth = 3, style = plot.style_linebr, editable = true)
+
+alertcondition(gBuySignal, "G-Channel Buy", "G-Channel Buy on {{ticker}} {{interval}} at {{close}}")
+alertcondition(gSellSignal, "G-Channel Sell", "G-Channel Sell on {{ticker}} {{interval}} at {{close}}")
+
+alertcondition(tmCross, "Trend Magic Cross", "Price crossed Trend Magic on {{ticker}} {{interval}} at {{close}}")
+alertcondition(tmBuySignal, "Trend Magic Buy", "BUY SIGNAL: price crossed above Trend Magic on {{ticker}} {{interval}} at {{close}}")
+alertcondition(tmSellSignal, "Trend Magic Sell", "SELL SIGNAL: price crossed below Trend Magic on {{ticker}} {{interval}} at {{close}}")

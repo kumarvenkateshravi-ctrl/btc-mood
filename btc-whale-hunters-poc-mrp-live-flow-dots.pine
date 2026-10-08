@@ -1,0 +1,190 @@
+//@version=6
+indicator("BTC WHALE HUNTER'S - POC & MRP [Live Flow Dots Proxy]", shorttitle = "POC/MRP Flow Dots", overlay = true, format = format.price, precision = 2, max_bars_back = 5000)
+
+// Functional reconstruction from observed chart values. This is not the
+// protected source code and does not use volume-profile bins.
+
+GRP_MRP = "MRP"
+GRP_POC = "POC LINES"
+GRP_FLOW = "LIVE MONEY FLOW DOTS (PROXY)"
+
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "W MRP", inline = "mrp", group = GRP_MRP)
+
+showWeeklyPoc = input.bool(true, "Show Weekly POC", group = GRP_POC)
+showDailyPoc = input.bool(true, "Show Daily POC", group = GRP_POC)
+showFourHourPoc = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+
+weeklyPocColor = input.color(#F59E0B, "Weekly POC Color", group = GRP_POC)
+dailyPocColor = input.color(#14532D, "Daily POC Color", group = GRP_POC)
+fourHourPocColor = input.color(#22D3EE, "4-Hour POC Color", group = GRP_POC)
+pocLineWidth = input.int(2, "POC Line Width", minval = 1, maxval = 4, group = GRP_POC)
+
+showGreenDots = input.bool(true, "Show Buyers' Money Dots", group = GRP_FLOW)
+showRedDots = input.bool(true, "Show Sellers' Money Dots", group = GRP_FLOW)
+showBlackDots = input.bool(true, "Show End-of-Flow Dots", group = GRP_FLOW)
+flowLength = input.int(5, "Flow Smoothing Bars", minval = 1, maxval = 100, group = GRP_FLOW)
+volumeLength = input.int(20, "Relative Volume Lookback", minval = 2, maxval = 200, group = GRP_FLOW)
+minRelativeVolume = input.float(0.65, "Minimum Relative Volume", minval = 0.0, maxval = 10.0, step = 0.05, group = GRP_FLOW)
+flowThreshold = input.float(0.15, "Candle Flow Threshold", minval = 0.0, maxval = 1.0, step = 0.05, group = GRP_FLOW)
+minMoveAtr = input.float(0.50, "Minimum Move Before Black Dot (ATR)", minval = 0.0, maxval = 10.0, step = 0.1, group = GRP_FLOW)
+exitHighLowLookback = input.int(3, "Black Dot High/Low Lookback", minval = 2, maxval = 20, group = GRP_FLOW)
+greenDotColor = input.color(#10B981, "Buyers' Money Color", group = GRP_FLOW)
+redDotColor = input.color(#EF4444, "Sellers' Money Color", group = GRP_FLOW)
+blackDotColor = input.color(#111111, "End-of-Flow Color", group = GRP_FLOW)
+
+MRP_COLOR = #0B46F0
+WEEKLY_MRP_COLOR = #C57A00
+
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// Developing chart-timeframe Daily and Weekly HLC3 VWAPs.
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float mrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float weeklyMrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+plot(showMrp ? mrp : na, "MRP", color = MRP_COLOR, linewidth = 2)
+plot(showWMrp ? weeklyMrp : na, "W MRP", color = WEEKLY_MRP_COLOR, linewidth = 1)
+
+// Exact cyan reconstruction:
+// Build a UTC-day VWAP from native 4H candles, using each completed 4H
+// candle's HLC3 and volume. The [1] value is the cumulative 4H VWAP known at
+// the opening of the current block. Therefore the historical line is stable
+// and does not use the unfinished current 4H candle.
+f_developingDailyVwapFrom4H() =>
+    const int LOCAL_DAY_MS = 24 * 60 * 60 * 1000
+    int localDayKey = int(math.floor(time / LOCAL_DAY_MS))
+    bool localNewDay = barstate.isfirst or localDayKey != localDayKey[1]
+
+    float localVolume = nz(volume, 0.0)
+    var float localPvSum = 0.0
+    var float localVolumeSum = 0.0
+
+    if localNewDay
+        localPvSum := 0.0
+        localVolumeSum := 0.0
+
+    localPvSum += hlc3 * localVolume
+    localVolumeSum += localVolume
+    localVolumeSum > 0 ? localPvSum / localVolumeSum : na
+
+float fourHourPoc = request.security(
+     syminfo.tickerid, "240", f_developingDailyVwapFrom4H()[1],
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// Weekly POC and confirmed prior-day pivot retained from the reconstruction.
+float weeklyPoc = request.security(
+     syminfo.tickerid, "1W", open,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+float dailyPoc = request.security(
+     syminfo.tickerid, "1D",
+     (high[1] + low[1] + close[1]) / 3,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+color fourHourPlotColor = newFourHour and not barstate.isfirst ? na : fourHourPocColor
+color dailyPlotColor = newDay and not barstate.isfirst ? na : dailyPocColor
+color weeklyPlotColor = newWeek and not barstate.isfirst ? na : weeklyPocColor
+
+plot(showWeeklyPoc ? weeklyPoc : na, "Weekly POC", color = weeklyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showDailyPoc ? dailyPoc : na, "Daily POC", color = dailyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showFourHourPoc ? fourHourPoc : na, "4-Hour POC", color = fourHourPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+
+// Price-location-weighted volume is an observable proxy for money flow. It is
+// not actual aggressor-side order flow and is not the protected indicator's
+// undisclosed Live Money Flow formula.
+float candleRange = math.max(high - low, syminfo.mintick)
+float closeLocation = (2.0 * close - high - low) / candleRange
+float signedVolume = closeLocation * sourceVolume
+float averageVolume = ta.sma(sourceVolume, volumeLength)
+float relativeVolume = averageVolume > 0 ? sourceVolume / averageVolume : 0.0
+float smoothedVolume = ta.ema(sourceVolume, flowLength)
+float smoothedSignedVolume = ta.ema(signedVolume, flowLength)
+float pressure = smoothedVolume > 0 ? smoothedSignedVolume / smoothedVolume : 0.0
+
+bool enoughVolume = relativeVolume >= minRelativeVolume
+// Use the current candle's volume-qualified close location for the colored dots.
+// Requiring the smoothed flow to turn in the same direction made these dots too
+// rare, while plotting them at the close buried them inside the candle body.
+bool buyersMoneyDot = barstate.isconfirmed and enoughVolume and closeLocation >= flowThreshold
+bool sellersMoneyDot = barstate.isconfirmed and enoughVolume and closeLocation <= -flowThreshold
+
+float flowAtr = ta.atr(14)
+float priorHigh = ta.highest(high, exitHighLowLookback)[1]
+float priorLow = ta.lowest(low, exitHighLowLookback)[1]
+float dotOffset = math.max(nz(flowAtr, candleRange) * 0.08, syminfo.mintick * 2)
+
+// A colored dot starts a flow wave when its direction changes. Repeated dots
+// on the same side keep that wave alive. A black dot prints once when the wave
+// has travelled enough and pressure turns at a price extreme
+// or on a rejection candle. All events are confirmed at candle close.
+var int flowSide = 0
+var int flowStartBar = na
+var float flowStartPrice = na
+var float waveHigh = na
+var float waveLow = na
+bool blackDot = false
+float blackDotPrice = na
+
+if buyersMoneyDot and flowSide != 1
+    flowSide := 1
+    flowStartBar := bar_index
+    flowStartPrice := close
+    waveHigh := high
+    waveLow := low
+else if sellersMoneyDot and flowSide != -1
+    flowSide := -1
+    flowStartBar := bar_index
+    flowStartPrice := close
+    waveHigh := high
+    waveLow := low
+if barstate.isconfirmed and flowSide != 0 and not na(flowStartBar)
+    waveHigh := math.max(waveHigh, high)
+    waveLow := math.min(waveLow, low)
+    bool flowTurnsDown = pressure < pressure[1] and pressure[1] >= pressure[2]
+    bool flowTurnsUp = pressure > pressure[1] and pressure[1] <= pressure[2]
+    bool bullishExhaustion = flowSide == 1 and bar_index > flowStartBar and waveHigh - flowStartPrice >= flowAtr * minMoveAtr and flowTurnsDown and (high >= priorHigh or close < open)
+    bool bearishExhaustion = flowSide == -1 and bar_index > flowStartBar and flowStartPrice - waveLow >= flowAtr * minMoveAtr and flowTurnsUp and (low <= priorLow or close > open)
+    blackDot := bullishExhaustion or bearishExhaustion
+    if blackDot
+        blackDotPrice := flowSide == 1 ? high + flowAtr * 0.07 : low - flowAtr * 0.07
+        flowSide := 0
+
+plotshape(showGreenDots and buyersMoneyDot ? low - dotOffset : na, title = "Buyers' Money", style = shape.circle, location = location.absolute, color = greenDotColor, size = size.small)
+plotshape(showRedDots and sellersMoneyDot ? high + dotOffset : na, title = "Sellers' Money", style = shape.circle, location = location.absolute, color = redDotColor, size = size.small)
+plotshape(showBlackDots and blackDot ? blackDotPrice : na, title = "End of Flow / Exit", style = shape.circle, location = location.absolute, color = blackDotColor, size = size.small)
+
+alertcondition(buyersMoneyDot, "Buyers' Money Dot", "Buyers' money-flow proxy on {{ticker}} {{interval}} at {{close}}")
+alertcondition(sellersMoneyDot, "Sellers' Money Dot", "Sellers' money-flow proxy on {{ticker}} {{interval}} at {{close}}")
+alertcondition(blackDot, "Black Dot: Exit", "Money-flow exhaustion proxy: consider exiting on {{ticker}} {{interval}} at {{close}}")

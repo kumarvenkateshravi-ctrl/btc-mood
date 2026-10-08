@@ -1,0 +1,201 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Trade_by_DB (original concept) — extended composite strength scoring + tier filtering added.
+
+//@version=6
+indicator("Candle Strength — Composite + Next Candle Break", overlay = true, max_labels_count = 500)
+
+// ══════════════════════════════════════════════════════════════════════════
+// WHY THIS IS DIFFERENT FROM THE ORIGINAL
+//
+// The original measured only where the CLOSE landed inside the high-low
+// range. That's a real signal (it tells you whether buyers or sellers won
+// the last leg of the candle) but it's blind to three other things that
+// "strength" should reasonably include:
+//   1. Body dominance   — was this candle mostly body (conviction) or mostly
+//                          wick (rejection/indecision)?
+//   2. Relative range    — was this a big move for THIS instrument right now,
+//                          or a tiny move that happens to have closed near
+//                          one extreme? (normalized against ATR)
+//   3. Participation      — did volume confirm the move, or was it thin?
+//
+// Each factor is scored 0-100 and combined with adjustable weights. The
+// original close-location metric is kept as one of the four inputs rather
+// than discarded, since it's genuinely informative on its own.
+//
+// TIER FILTER: rather than one fixed cutoff, visibility is controlled by up
+// to four independently toggleable score bands. Ranges can overlap on
+// purpose — e.g. a "70-79%" tier and a separate ">=70%" tier can both be on
+// at once — a candle is shown if it falls inside ANY enabled tier.
+// ══════════════════════════════════════════════════════════════════════════
+
+grp_weights = "Composite Weights (should sum to 100, not enforced)"
+w_closeLoc = input.int(30, "Close Location Weight", minval = 0, maxval = 100, group = grp_weights,
+     tooltip = "The original metric: where the close sits between low and high.")
+w_body     = input.int(30, "Body Dominance Weight", minval = 0, maxval = 100, group = grp_weights,
+     tooltip = "How much of the total range was real body vs. wick.")
+w_range    = input.int(25, "ATR-Relative Range Weight", minval = 0, maxval = 100, group = grp_weights,
+     tooltip = "How large this candle's range is compared to its recent average (ATR).")
+w_volume   = input.int(15, "Volume Weight", minval = 0, maxval = 100, group = grp_weights,
+     tooltip = "How much volume confirmed the move, vs. its recent average.")
+
+grp_calc = "Calculation Settings"
+atrLen = input.int(14, "ATR Length", minval = 1, group = grp_calc)
+volLen = input.int(20, "Volume Average Length", minval = 1, group = grp_calc)
+rangeCapMult = input.float(2.0, "Range Score Cap (× ATR)", minval = 0.5, step = 0.25, group = grp_calc,
+     tooltip = "A candle with range >= this many ATRs scores the full 100 on the range component.")
+volCapMult = input.float(2.0, "Volume Score Cap (× Avg Volume)", minval = 0.5, step = 0.25, group = grp_calc,
+     tooltip = "A candle with volume >= this many times average scores the full 100 on the volume component.")
+decimals = input.int(1, "Decimal Places", minval = 0, maxval = 4, group = grp_calc)
+
+// ── STRENGTH FILTER (TIERS) ──────────────────────────────────────────────────
+// Each tier is a [min, max] score band with its own on/off switch. A candle's
+// label is shown if its composite score falls inside ANY enabled tier. Ranges
+// are free-form and may overlap — nothing stops "70-79%" and ">=70%" running
+// side by side if that's useful to you.
+grp_filter = "Strength Filter — Show Only These Score Bands"
+filterEnabled = input.bool(true, "Enable Strength Filter (off = show all candles)", group = grp_filter)
+
+tier1_on  = input.bool(true, "Tier 1", inline = "t1", group = grp_filter)
+tier1_min = input.float(60, "Min %", inline = "t1", group = grp_filter, minval = 0, maxval = 100)
+tier1_max = input.float(69.99, "Max %", inline = "t1", group = grp_filter, minval = 0, maxval = 100)
+
+tier2_on  = input.bool(true, "Tier 2", inline = "t2", group = grp_filter)
+tier2_min = input.float(70, "Min %", inline = "t2", group = grp_filter, minval = 0, maxval = 100)
+tier2_max = input.float(79.99, "Max %", inline = "t2", group = grp_filter, minval = 0, maxval = 100)
+
+tier3_on  = input.bool(true, "Tier 3", inline = "t3", group = grp_filter)
+tier3_min = input.float(70, "Min %", inline = "t3", group = grp_filter, minval = 0, maxval = 100,
+     tooltip = "Default recreates 'more than 70%' as an open-ended band up to 100.")
+tier3_max = input.float(100, "Max %", inline = "t3", group = grp_filter, minval = 0, maxval = 100)
+
+tier4_on  = input.bool(false, "Tier 4 (custom)", inline = "t4", group = grp_filter)
+tier4_min = input.float(0, "Min %", inline = "t4", group = grp_filter, minval = 0, maxval = 100)
+tier4_max = input.float(100, "Max %", inline = "t4", group = grp_filter, minval = 0, maxval = 100)
+
+grp_display = "Display"
+showLabels = input.bool(true, "Show Labels", group = grp_display)
+labelSize = input.string("small", "Label Size", options = ["tiny", "small", "normal", "large"], group = grp_display)
+bullColor = input.color(color.green, "Bullish Label Color", group = grp_display)
+bearColor = input.color(color.red, "Bearish Label Color", group = grp_display)
+showBG = input.bool(false, "Color Background by Score", group = grp_display)
+
+f_labelSize(string s) =>
+    s == "tiny" ? size.tiny : s == "normal" ? size.normal : s == "large" ? size.large : size.small
+
+roundn(float x, int n) =>
+    float mult = math.pow(10, n)
+    math.round(x * mult) / mult
+
+f_inTier(float score, bool enabled, float lo, float hi) =>
+    enabled and score >= lo and score <= hi
+
+// ── CORE RANGE MATH — guarded against high == low (doji / no-movement bar) ──
+float rng = high - low
+bool hasRange = rng > 0
+
+// 1. Close location: unchanged from the original, generalized to 0-100 where
+//    100 = close at the high, 0 = close at the low. Neutral (50) if no range.
+float closeLocPct = hasRange ? (close - low) / rng * 100.0 : 50.0
+
+// 2. Body dominance: how much of the range was real body vs. wick.
+//    A marubozu scores 100 here; a candle that's all wick with a doji body
+//    scores near 0, regardless of where that tiny body sits.
+float bodySize = math.abs(close - open)
+float bodyPct = hasRange ? bodySize / rng * 100.0 : 0.0
+
+// 3. ATR-relative range: is this candle big for THIS instrument right now?
+//    Uses ATR[1] (prior bar) so the current bar's own range doesn't leak
+//    into its own baseline.
+float atrVal = ta.atr(atrLen)[1]
+float rangeRatio = atrVal > 0 ? rng / atrVal : 1.0
+float rangeScore = math.min(rangeRatio / rangeCapMult * 100.0, 100.0)
+
+// 4. Volume confirmation: was participation above or below normal?
+float avgVol = ta.sma(volume, volLen)[1]
+float volRatio = avgVol > 0 ? nz(volume) / avgVol : 1.0
+float volScore = math.min(volRatio / volCapMult * 100.0, 100.0)
+
+// ── DIRECTION ────────────────────────────────────────────────────────────────
+bool bullish = close > open
+bool bearish = open > close
+
+// Directional close-location: for a bearish candle, "strength" means the
+// close sitting near the LOW, so this is inverted for bears — matching the
+// original script's separate green/red formulas, but unified into one line.
+float directionalCloseLoc = bullish ? closeLocPct : bearish ? (100.0 - closeLocPct) : 50.0
+
+// ── COMPOSITE SCORE ──────────────────────────────────────────────────────────
+float weightSum = w_closeLoc + w_body + w_range + w_volume
+float compositeScore = weightSum > 0 ?
+     (directionalCloseLoc * w_closeLoc + bodyPct * w_body + rangeScore * w_range + volScore * w_volume) / weightSum
+     : na
+
+float displayScore = roundn(compositeScore, decimals)
+
+// ── TIER FILTER EVALUATION ───────────────────────────────────────────────────
+bool passesFilter = not filterEnabled or not na(compositeScore) and (
+     f_inTier(compositeScore, tier1_on, tier1_min, tier1_max) or
+     f_inTier(compositeScore, tier2_on, tier2_min, tier2_max) or
+     f_inTier(compositeScore, tier3_on, tier3_min, tier3_max) or
+     f_inTier(compositeScore, tier4_on, tier4_min, tier4_max))
+
+// ── LABELS ───────────────────────────────────────────────────────────────────
+if showLabels and hasRange and not na(compositeScore) and passesFilter
+    if bullish
+        lbl = label.new(x = bar_index, y = low, text = str.tostring(displayScore) + "%",
+             color = bullColor, textcolor = color.white, style = label.style_label_up,
+             size = f_labelSize(labelSize), yloc = yloc.belowbar)
+    if bearish
+        lbl2 = label.new(x = bar_index, y = high, text = str.tostring(displayScore) + "%",
+             color = bearColor, textcolor = color.white, style = label.style_label_down,
+             size = f_labelSize(labelSize), yloc = yloc.abovebar)
+
+// ── OPTIONAL BACKGROUND ──────────────────────────────────────────────────────
+color bgCol = not showBG or na(compositeScore) or not passesFilter ? na :
+     bullish ? color.new(bullColor, 100 - int(compositeScore * 0.15)) :
+     bearish ? color.new(bearColor, 100 - int(compositeScore * 0.15)) : na
+bgcolor(bgCol, title = "Strength Background")
+
+// ── DATA WINDOW / STATUS LINE VALUES FOR VERIFICATION ────────────────────────
+plot(compositeScore, "Composite Strength Score", display = display.data_window + display.status_line)
+plot(closeLocPct, "Close Location %", display = display.data_window)
+plot(bodyPct, "Body Dominance %", display = display.data_window)
+plot(rangeScore, "ATR-Relative Range Score", display = display.data_window)
+plot(volScore, "Volume Score", display = display.data_window)
+
+// ── NEXT-CANDLE REVERSAL TRADE PLAN ─────────────────────────────────────────
+// Only the candle immediately after a qualifying setup candle can trigger.
+// The setup score is read from [1], so it is final before the live trigger bar
+// begins. The current high can only rise and the current low can only fall,
+// making an intrabar break permanent once it occurs.
+grp_trade = "Trading Plan — Next Candle Break"
+showTradeSignals = input.bool(true, "Show Long / Short Signals", group = grp_trade)
+tradeStrength = input.float(70.0, "Minimum Setup Strength % (strictly greater)",
+     minval = 0, maxval = 100, step = 0.1, group = grp_trade,
+     tooltip = "A setup candle must score strictly above this value. Default: > 70%.")
+longSignalColor = input.color(color.lime, "Long Label Color", group = grp_trade)
+shortSignalColor = input.color(color.red, "Short Label Color", group = grp_trade)
+
+bool strongRedSetup = bearish[1] and not na(compositeScore[1]) and compositeScore[1] > tradeStrength
+bool strongGreenSetup = bullish[1] and not na(compositeScore[1]) and compositeScore[1] > tradeStrength
+
+// Long: the previous candle is red and strong; this candle trades above its high.
+// Short: the previous candle is green and strong; this candle trades below its low.
+bool longSignal = showTradeSignals and strongRedSetup and high > high[1]
+bool shortSignal = showTradeSignals and strongGreenSetup and low < low[1]
+
+plotshape(longSignal, title = "Long — Red Candle High Break", style = shape.labelup,
+     location = location.belowbar, color = longSignalColor, text = "Long",
+     textcolor = color.white, size = size.small)
+plotshape(shortSignal, title = "Short — Green Candle Low Break", style = shape.labelup,
+     location = location.belowbar, color = shortSignalColor, text = "Short",
+     textcolor = color.white, size = size.small)
+
+alertcondition(longSignal, title = "Long: Strong Red Candle High Broken",
+     message = "Long setup: the current candle broke the high of the immediately previous red candle with composite strength above the configured threshold.")
+alertcondition(shortSignal, title = "Short: Strong Green Candle Low Broken",
+     message = "Short setup: the current candle broke the low of the immediately previous green candle with composite strength above the configured threshold.")
+
+plot(longSignal ? 1 : 0, "Long Signal", display = display.data_window)
+plot(shortSignal ? 1 : 0, "Short Signal", display = display.data_window)
+plot(compositeScore[1], "Previous Candle Strength", display = display.data_window)

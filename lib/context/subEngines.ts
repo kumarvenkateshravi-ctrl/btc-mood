@@ -3,7 +3,7 @@
 // structure/slope math into an independent 0-100 score. Closed bars only.
 
 import type { Candle } from '../types';
-import { vdAtr } from '../indicators/vdEngine';
+import { wilderAtr } from '../tradeWalker';
 import { blendScores, clamp } from './scoringEngine';
 import type { ContextIndicatorScore, ContextWeights } from './types';
 
@@ -33,7 +33,7 @@ export function structureScore(candles: Candle[]): number {
 export function slopeScore(candles: Candle[], bars = 10): number {
   const n = candles.length;
   if (n < bars + 1) return 50;
-  const a = vdAtr(candles)[n - 1] ?? 0;
+  const a = wilderAtr(candles)[n - 1] ?? 0;
   if (a <= 0) return 50;
   const slope = (candles[n - 1].close - candles[n - 1 - bars].close) / (bars * a);
   return 50 + 50 * clamp(slope * 2, -1, 1); // ±0.5 ATR/bar saturates

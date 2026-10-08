@@ -1,0 +1,344 @@
+//@version=6
+indicator("Money Flow Dots + Filtered Reversal Signals", shorttitle = "FlowFiltered", overlay = true, max_bars_back = 1000, max_labels_count = 200, max_boxes_count = 200)
+
+// OHLCV reconstruction for BTCUSDT perpetual on 30-minute candles.
+// Dots confirm at candle close. BUY/SELL signals use confirmed price pivots.
+// Signal labels and bands begin on the confirmation bar, never on an earlier bar.
+// The swing module is a testable reconstruction, not the protected source formula.
+
+string GRP_FLOW = "Directional Money Flow"
+string GRP_WAVE = "Wave Context"
+string GRP_EXIT = "Grey Exit Dots"
+string GRP_VIEW = "Display"
+
+int volumeLength = input.int(20, "Relative volume length", minval = 5, group = GRP_FLOW)
+int flowSmoothing = input.int(3, "Flow smoothing", minval = 1, group = GRP_FLOW)
+float minimumRelVolume = input.float(1.00, "Directional event minimum relative volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float weakSwingRelVolume = input.float(0.40, "Local swing minimum relative volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float continuationRelVolume = input.float(0.55, "Post-surge continuation minimum volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float flowThreshold = input.float(0.12, "Raw flow threshold", minval = 0.01, step = 0.01, group = GRP_FLOW)
+float sellerFlowThreshold = input.float(0.09, "Seller raw flow threshold", minval = 0.01, step = 0.01, group = GRP_FLOW)
+float bullishCloseLevel = input.float(0.58, "Buyer minimum close position", minval = 0.50, maxval = 1.00, step = 0.01, group = GRP_FLOW)
+float bearishCloseLevel = input.float(0.42, "Seller maximum close position", minval = 0.00, maxval = 0.50, step = 0.01, group = GRP_FLOW)
+float upperRejectionRelVolume = input.float(1.10, "Seller upper-wick minimum relative volume", minval = 0.1, step = 0.05, group = GRP_FLOW)
+float minimumSellerBodyFraction = input.float(0.15, "Seller minimum body/range", minval = 0.0, maxval = 1.0, step = 0.01, group = GRP_FLOW)
+float maximumSellerBodyAtr = input.float(0.75, "Seller maximum body/ATR", minval = 0.1, step = 0.05, group = GRP_FLOW)
+
+int structureLookback = input.int(6, "Local swing lookback", minval = 2, group = GRP_WAVE)
+int impulseEmaLength = input.int(5, "Impulse EMA length", minval = 2, group = GRP_WAVE)
+int surgeLookback = input.int(7, "Continuation window", minval = 2, group = GRP_WAVE)
+float surgeRelVolume = input.float(2.0, "Volume surge threshold", minval = 1.0, step = 0.1, group = GRP_WAVE)
+
+int minimumWaveBars = input.int(1, "Minimum bars after first directional dot", minval = 1, group = GRP_EXIT)
+float minimumFavorableMoveAtr = input.float(0.35, "Minimum favorable move (ATR)", minval = 0.0, step = 0.05, group = GRP_EXIT)
+float exitRelVolume = input.float(0.80, "Ordinary exit minimum relative volume", minval = 0.0, step = 0.05, group = GRP_EXIT)
+float stallRelVolume = input.float(0.50, "New extreme stall minimum relative volume", minval = 0.0, step = 0.05, group = GRP_EXIT)
+float exitWickBodyRatio = input.float(1.0, "Exit rejection wick/body", minval = 0.0, step = 0.1, group = GRP_EXIT)
+float intrabarAbsorption = input.float(0.05, "Intrabar absorption threshold", minval = 0.0, maxval = 1.0, step = 0.01, group = GRP_EXIT)
+float shortReversalVolume = input.float(2.50, "Short exit reversal relative volume", minval = 0.5, step = 0.05, group = GRP_EXIT)
+int rearmBars = input.int(3, "Bars before a new wave after grey", minval = 0, group = GRP_EXIT)
+int maximumWaveBars = input.int(72, "Maximum wave age (bars)", minval = 5, group = GRP_EXIT)
+string pressureTimeframe = input.timeframe("1", "Intrabar pressure timeframe", group = GRP_EXIT)
+
+bool showDots = input.bool(true, "Show dots", group = GRP_VIEW)
+bool showDiagnosticData = input.bool(false, "Show diagnostic values in Data Window", group = GRP_VIEW)
+float dotDistanceAtr = input.float(0.10, "Dot distance (ATR)", minval = 0.0, step = 0.01, group = GRP_VIEW)
+
+float candleRange = math.max(high - low, syminfo.mintick)
+float signedBody = close - open
+float body = math.abs(signedBody)
+float safeBody = math.max(body, syminfo.mintick)
+float upperWick = high - math.max(open, close)
+float lowerWick = math.min(open, close) - low
+float closePosition = (close - low) / candleRange
+float sourceVolume = nz(volume, 0.0)
+float priorAverageVolume = ta.sma(sourceVolume, volumeLength)[1]
+float relativeVolume = priorAverageVolume > 0 ? sourceVolume / priorAverageVolume : na
+
+// Close-location flow is a directional OHLCV proxy, not actual order-flow data.
+float closeLocationValue = 2.0 * closePosition - 1.0
+float rawDirectionalFlow = nz(relativeVolume, 0.0) * closeLocationValue
+float directionalFlow = ta.ema(rawDirectionalFlow, flowSmoothing)
+float impulseEma = ta.ema(close, impulseEmaLength)
+float atr = ta.atr(14)
+
+bool localLow = low <= ta.lowest(low, structureLookback)[1]
+bool localHigh = high >= ta.highest(high, structureLookback)[1]
+bool lowerRejection = lowerWick >= safeBody and closePosition >= 0.50
+bool upperRejection = upperWick >= safeBody and closePosition <= 0.50
+bool bullishImpulse = close > open and close > impulseEma and close > high[1]
+bool bearishImpulse = close < open and close < impulseEma and close < low[1]
+bool crossedAboveEma = ta.crossover(close, impulseEma)
+bool crossedBelowEma = ta.crossunder(close, impulseEma)
+bool recentSurge = ta.highest(relativeVolume, surgeLookback)[1] >= surgeRelVolume
+
+// Preserve consecutive directional events in a single wave. A prior surge can
+// make low-volume continuation candles meaningful without marking every candle.
+bool buyerVolumeContext = relativeVolume >= minimumRelVolume or (localLow and relativeVolume >= weakSwingRelVolume) or (recentSurge and relativeVolume >= continuationRelVolume)
+bool sellerVolumeContext = relativeVolume >= minimumRelVolume or ((localHigh or localLow) and relativeVolume >= weakSwingRelVolume) or (recentSurge and relativeVolume >= continuationRelVolume)
+bool buyerStructure = localLow or lowerRejection or bullishImpulse or crossedAboveEma or (recentSurge and close > impulseEma)
+bool sellerStructure = localHigh or localLow or upperRejection or bearishImpulse or crossedBelowEma or (recentSurge and close < impulseEma)
+bool buyerCandidate = close > open and closePosition >= bullishCloseLevel and rawDirectionalFlow >= flowThreshold and buyerVolumeContext and buyerStructure
+bool sellerFlowPressure = closePosition <= bearishCloseLevel and rawDirectionalFlow <= -sellerFlowThreshold
+bool sellerUpperWickPressure = closePosition <= 0.50 and upperWick >= safeBody and relativeVolume >= upperRejectionRelVolume
+bool sellerCandidate = close < open and body / candleRange >= minimumSellerBodyFraction and body / atr <= maximumSellerBodyAtr and sellerVolumeContext and sellerStructure and (sellerFlowPressure or sellerUpperWickPressure)
+
+// One grey exit is allowed per established wave. Same-color directional dots
+// do not reset the first dot's price or the wave's favorable excursion.
+var int activeWave = 0
+var int waveStartBar = na
+var float waveStartPrice = na
+var float waveExtreme = na
+var int lastGreyBar = na
+
+// Approximate intrabar pressure from the direction and volume of 1-minute bars.
+[subOpen, subClose, subVolume] = request.security_lower_tf(syminfo.tickerid, pressureTimeframe, [open, close, volume])
+float upVolume = 0.0
+float downVolume = 0.0
+int subCount = array.size(subVolume)
+if subCount > 0
+    for i = 0 to subCount - 1
+        float v = nz(array.get(subVolume, i), 0.0)
+        if array.get(subClose, i) >= array.get(subOpen, i)
+            upVolume += v
+        else
+            downVolume += v
+float intrabarDelta = upVolume + downVolume > 0 ? (upVolume - downVolume) / (upVolume + downVolume) : 0.0
+
+if barstate.isconfirmed and activeWave != 0 and not na(waveStartBar) and bar_index - waveStartBar > maximumWaveBars
+    activeWave := 0
+    waveStartBar := na
+    waveStartPrice := na
+    waveExtreme := na
+
+if activeWave == 1
+    waveExtreme := math.max(nz(waveExtreme, high), high)
+else if activeWave == -1
+    waveExtreme := math.min(nz(waveExtreme, low), low)
+
+float favorableMove = activeWave == 1 ? waveExtreme - waveStartPrice : activeWave == -1 ? waveStartPrice - waveExtreme : 0.0
+bool establishedWave = activeWave != 0 and not na(waveStartBar) and bar_index - waveStartBar >= minimumWaveBars and favorableMove >= minimumFavorableMoveAtr * atr
+bool significantVolume = relativeVolume >= exitRelVolume
+bool stalledNewExtreme = recentSurge and relativeVolume >= stallRelVolume and ((activeWave == 1 and high >= high[1]) or (activeWave == -1 and low <= low[1]))
+bool flowFadingLong = directionalFlow < directionalFlow[1]
+
+// Long exit: rejected high, failed continuation, or buyers absorbed by
+// intrabar selling. Short exits use the volume-confirmed recovery rule below.
+bool longRejection = upperWick >= safeBody * exitWickBodyRatio and closePosition <= 0.55
+bool longAbsorption = intrabarDelta <= -intrabarAbsorption and close > open
+bool longFailedContinuation = close < open and closePosition <= 0.45 and (close < impulseEma or upperWick >= safeBody)
+bool shortFailedContinuation = close > open and closePosition >= 0.50 and (close > impulseEma or lowerWick >= safeBody)
+
+bool longExit = activeWave == 1 and establishedWave and (significantVolume or stalledNewExtreme) and ((longRejection and flowFadingLong) or longAbsorption or (longFailedContinuation and flowFadingLong))
+bool shortExit = activeWave == -1 and establishedWave and relativeVolume >= shortReversalVolume and close > impulseEma and close > high[1] and shortFailedContinuation
+bool greyDot = barstate.isconfirmed and (longExit or shortExit)
+bool rearmReady = na(lastGreyBar) or bar_index - lastGreyBar >= rearmBars or relativeVolume >= surgeRelVolume
+bool greenDot = barstate.isconfirmed and not greyDot and activeWave != -1 and rearmReady and buyerCandidate
+bool redDot = barstate.isconfirmed and not greyDot and activeWave != 1 and rearmReady and sellerCandidate
+
+if greyDot
+    lastGreyBar := bar_index
+    activeWave := 0
+    waveStartBar := na
+    waveStartPrice := na
+    waveExtreme := na
+else if greenDot
+    if activeWave != 1
+        activeWave := 1
+        waveStartBar := bar_index
+        waveStartPrice := close
+        waveExtreme := high
+else if redDot
+    if activeWave != -1
+        activeWave := -1
+        waveStartBar := bar_index
+        waveStartPrice := close
+        waveExtreme := low
+
+float lowerDotPrice = low - atr * dotDistanceAtr
+float upperDotPrice = high + atr * dotDistanceAtr
+float greyDotPrice = close >= open ? upperDotPrice : lowerDotPrice
+
+plotshape(showDots and greenDot ? lowerDotPrice : na, "Buyers' money", shape.circle, location.absolute, color.rgb(35, 180, 110), size = size.small)
+plotshape(showDots and redDot ? upperDotPrice : na, "Sellers' money", shape.circle, location.absolute, color.rgb(239, 68, 68), size = size.small)
+plotshape(showDots and greyDot ? greyDotPrice : na, "Exit / exhaustion", shape.circle, location.absolute, color.rgb(95, 99, 104), size = size.small)
+
+diagnosticDisplay = showDiagnosticData ? display.data_window : display.none
+plot(relativeVolume, "Relative volume", display = diagnosticDisplay)
+plot(directionalFlow, "Directional flow", display = diagnosticDisplay)
+plot(intrabarDelta, "Intrabar pressure", display = diagnosticDisplay)
+plot(activeWave, "Active wave: buyers 1 / sellers -1", display = diagnosticDisplay)
+plot(favorableMove / atr, "Favorable move (ATR)", display = diagnosticDisplay)
+
+alertcondition(greenDot, "Buyers' money dot", "Buyers' money detected on {{ticker}} {{interval}}.")
+alertcondition(redDot, "Sellers' money dot", "Sellers' money detected on {{ticker}} {{interval}}.")
+alertcondition(greyDot, "Grey exit dot", "A confirmed money-flow exit dot appeared on {{ticker}} {{interval}}.")
+
+// -----------------------------------------------------------------------------
+// BUY / SELL: confirmed local swings, with optional W/M second-swing selection.
+// These events are independent from the money-flow state and POC/MRP levels.
+// The money-flow grey dots are not a record of a user's actual open position.
+// -----------------------------------------------------------------------------
+string GRP_SIGNALS = "BUY / SELL Swing Signals"
+string GRP_PAIRS = "Optional W / M Second Swing"
+string GRP_LEVELS = "Swing Reference Bands"
+string GRP_FILTER = "Reversal Quality / Duplicate Control"
+
+bool sigShowLabels = input.bool(true, "Show BUY / SELL labels", group = GRP_SIGNALS)
+int sigLeftBars = input.int(2, "Candles left of the swing", minval = 1, maxval = 20, group = GRP_SIGNALS)
+int sigRightBars = input.int(1, "Completed candles to confirm the swing", minval = 1, maxval = 10, group = GRP_SIGNALS, tooltip = "One right candle means a swing on the previous candle is confirmed when this candle closes. Increasing this value filters some small swings but delays the signal.")
+string sigMode = input.string("Qualified swings", "Setup selection", options = ["Qualified swings", "W/M second swing"], group = GRP_SIGNALS)
+bool sigRequireDot = input.bool(false, "Require a recent matching money-flow dot", group = GRP_SIGNALS, tooltip = "Optional extra filter. The reference screenshots do not establish that every BUY/SELL requires a matching dot.")
+int sigDotLookback = input.int(6, "Matching-dot lookback (bars)", minval = 0, maxval = 50, group = GRP_SIGNALS)
+int sigHistory = input.int(100, "Maximum retained labels / bands", minval = 10, maxval = 200, group = GRP_SIGNALS)
+
+int sigMinSeparation = input.int(3, "Minimum bars between same-side swings", minval = 2, maxval = 100, group = GRP_PAIRS)
+int sigMaxSeparation = input.int(40, "Maximum bars between same-side swings", minval = 2, maxval = 200, group = GRP_PAIRS)
+float sigPairTolerance = input.float(1.0, "Maximum difference between swing prices (ATR)", minval = 0.0, step = 0.1, group = GRP_PAIRS, tooltip = "Two lows with an intervening high form a W candidate; two highs with an intervening low form an M candidate. W/M mode requires a closing break of the intervening swing (neckline).")
+
+int sigApproachBars = input.int(6, "Incoming move lookback (bars)", minval = 2, maxval = 100, group = GRP_FILTER)
+float sigMinApproachAtr = input.float(1.5, "Minimum incoming move (ATR)", minval = 0.1, step = 0.1, group = GRP_FILTER)
+float sigMinReversalAtr = input.float(0.75, "Minimum recovery from swing (ATR)", minval = 0.1, step = 0.05, group = GRP_FILTER)
+int sigExpiryBars = input.int(6, "Pending setup lifetime after pivot confirmation", minval = 1, maxval = 50, group = GRP_FILTER)
+int sigCooldown = input.int(6, "Minimum bars between any two signals", minval = 1, maxval = 100, group = GRP_FILTER, tooltip = "Six bars means 3 hours on 30m and 24 hours on 4H. This limits labels; it does not measure trade quality.")
+float sigFreshPullbackAtr = input.float(1.0, "New pullback for repeated same-side signal (ATR)", minval = 0.1, step = 0.1, group = GRP_FILTER, tooltip = "After a BUY, another BUY requires a new swing low at least this far below the previous signal close. SELL uses the inverse. An intervening opposite signal resets this requirement.")
+
+bool sigShowBands = input.bool(true, "Show swing reference bands", group = GRP_LEVELS)
+int sigBandBars = input.int(8, "Band length after confirmation (bars)", minval = 1, maxval = 100, group = GRP_LEVELS)
+float sigBandHeightAtr = input.float(0.10, "Band thickness (ATR)", minval = 0.01, maxval = 1.0, step = 0.01, group = GRP_LEVELS)
+color sigBuyColor = input.color(#22A75A, "BUY color", group = GRP_LEVELS)
+color sigSellColor = input.color(#E34848, "SELL color", group = GRP_LEVELS)
+
+// Evaluate the built-ins on every bar; publish events only after bar close.
+float sigPivotLow = ta.pivotlow(low, sigLeftBars, sigRightBars)
+float sigPivotHigh = ta.pivothigh(high, sigLeftBars, sigRightBars)
+bool sigLowConfirmed = barstate.isconfirmed and not na(sigPivotLow)
+bool sigHighConfirmed = barstate.isconfirmed and not na(sigPivotHigh)
+bool sigAmbiguousPivot = sigLowConfirmed and sigHighConfirmed
+int sigPivotBar = bar_index - sigRightBars
+float sigPivotAtr = math.max(nz(atr[sigRightBars], high[sigRightBars] - low[sigRightBars]), syminfo.mintick)
+// All measurements use the pivot's already-known history and frozen ATR.
+float sigApproachHigh = ta.highest(high[1], sigApproachBars)[sigRightBars]
+float sigApproachLow = ta.lowest(low[1], sigApproachBars)[sigRightBars]
+bool sigReady = not na(atr[sigRightBars]) and sigPivotBar >= sigApproachBars
+
+var float sigPreviousLow = na
+var float sigPreviousHigh = na
+var int sigPreviousLowBar = na
+var int sigPreviousHighBar = na
+var array<label> sigLabels = array.new<label>()
+var array<box> sigBands = array.new<box>()
+
+// Pair only consecutive same-side pivots separated by an opposite pivot.
+// Prior history is read before the new pivots are stored.
+bool sigWPair = sigLowConfirmed and not sigAmbiguousPivot and not na(sigPreviousLowBar) and not na(sigPreviousHighBar) and sigPreviousHighBar > sigPreviousLowBar and sigPreviousHighBar < sigPivotBar and sigPivotBar - sigPreviousLowBar >= sigMinSeparation and sigPivotBar - sigPreviousLowBar <= sigMaxSeparation and math.abs(sigPivotLow - sigPreviousLow) <= sigPairTolerance * sigPivotAtr
+bool sigMPair = sigHighConfirmed and not sigAmbiguousPivot and not na(sigPreviousHighBar) and not na(sigPreviousLowBar) and sigPreviousLowBar > sigPreviousHighBar and sigPreviousLowBar < sigPivotBar and sigPivotBar - sigPreviousHighBar >= sigMinSeparation and sigPivotBar - sigPreviousHighBar <= sigMaxSeparation and math.abs(sigPivotHigh - sigPreviousHigh) <= sigPairTolerance * sigPivotAtr
+
+int sigBarsSinceGreen = ta.barssince(greenDot)
+int sigBarsSinceRed = ta.barssince(redDot)
+bool sigBuyDotPass = not sigRequireDot or (not na(sigBarsSinceGreen) and sigBarsSinceGreen <= sigDotLookback)
+bool sigSellDotPass = not sigRequireDot or (not na(sigBarsSinceRed) and sigBarsSinceRed <= sigDotLookback)
+var float sigBuyLow = na
+var float sigBuyTrigger = na
+var float sigBuyAtr = na
+var int sigBuyArmed = na
+var int sigBuyPivotBar = na
+var bool sigBuyPair = false
+var float sigSellHigh = na
+var float sigSellTrigger = na
+var float sigSellAtr = na
+var int sigSellArmed = na
+var int sigSellPivotBar = na
+var bool sigSellPair = false
+var int sigLastBar = na
+var int sigLastSide = 0
+var float sigLastClose = na
+
+bool sigBuySignal = false
+bool sigSellSignal = false
+float sigEventSwing = na
+float sigEventAtr = na
+int sigEventPivotBar = na
+bool sigEventPair = false
+
+if barstate.isconfirmed
+    // Cancel only pending labels, never manage or close a user's trade.
+    if not na(sigBuyArmed) and (low < sigBuyLow or bar_index - sigBuyArmed > sigExpiryBars)
+        sigBuyArmed := na
+    if not na(sigSellArmed) and (high > sigSellHigh or bar_index - sigSellArmed > sigExpiryBars)
+        sigSellArmed := na
+
+    bool sigLowSetup = sigReady and sigLowConfirmed and not sigAmbiguousPivot and (sigMode == "Qualified swings" or sigWPair) and sigApproachHigh - sigPivotLow >= sigMinApproachAtr * sigPivotAtr
+    bool sigHighSetup = sigReady and sigHighConfirmed and not sigAmbiguousPivot and (sigMode == "Qualified swings" or sigMPair) and sigPivotHigh - sigApproachLow >= sigMinApproachAtr * sigPivotAtr
+    // Keep one pending setup per side; replace it only with an equal/deeper extreme.
+    if sigLowSetup and (na(sigBuyArmed) or sigPivotLow <= sigBuyLow)
+        sigBuyLow := sigPivotLow
+        sigBuyTrigger := sigMode == "W/M second swing" ? sigPreviousHigh : high[sigRightBars]
+        sigBuyAtr := sigPivotAtr
+        sigBuyArmed := bar_index
+        sigBuyPivotBar := sigPivotBar
+        sigBuyPair := sigMode == "W/M second swing"
+    if sigHighSetup and (na(sigSellArmed) or sigPivotHigh >= sigSellHigh)
+        sigSellHigh := sigPivotHigh
+        sigSellTrigger := sigMode == "W/M second swing" ? sigPreviousLow : low[sigRightBars]
+        sigSellAtr := sigPivotAtr
+        sigSellArmed := bar_index
+        sigSellPivotBar := sigPivotBar
+        sigSellPair := sigMode == "W/M second swing"
+
+    bool sigBuyBreak = not na(sigBuyArmed) and close > sigBuyTrigger and close - sigBuyLow >= sigMinReversalAtr * sigBuyAtr
+    bool sigSellBreak = not na(sigSellArmed) and close < sigSellTrigger and sigSellHigh - close >= sigMinReversalAtr * sigSellAtr
+    bool sigSpaced = na(sigLastBar) or bar_index - sigLastBar >= sigCooldown
+    bool sigBuyFresh = sigLastSide != 1 or sigLastClose - sigBuyLow >= sigFreshPullbackAtr * sigBuyAtr
+    bool sigSellFresh = sigLastSide != -1 or sigSellHigh - sigLastClose >= sigFreshPullbackAtr * sigSellAtr
+
+    // Conflicting triggers produce neither signal. Never postpone an already
+    // completed trigger just to print a stale label after the cooldown expires.
+    sigBuySignal := sigBuyBreak and not sigSellBreak and sigSpaced and sigBuyFresh and sigBuyDotPass
+    sigSellSignal := sigSellBreak and not sigBuyBreak and sigSpaced and sigSellFresh and sigSellDotPass
+    if sigBuySignal or sigSellSignal
+        sigEventSwing := sigBuySignal ? sigBuyLow : sigSellHigh
+        sigEventAtr := sigBuySignal ? sigBuyAtr : sigSellAtr
+        sigEventPivotBar := sigBuySignal ? sigBuyPivotBar : sigSellPivotBar
+        sigEventPair := sigBuySignal ? sigBuyPair : sigSellPair
+        sigLastBar := bar_index
+        sigLastSide := sigBuySignal ? 1 : -1
+        sigLastClose := close
+        sigBuyArmed := na
+        sigSellArmed := na
+    if sigBuyBreak
+        sigBuyArmed := na
+    if sigSellBreak
+        sigSellArmed := na
+
+if sigBuySignal or sigSellSignal
+    float sigBandHeight = math.max(sigEventAtr * sigBandHeightAtr, syminfo.mintick)
+    color sigColor = sigBuySignal ? sigBuyColor : sigSellColor
+    string sigText = sigBuySignal ? "BUY" : "SELL"
+    string sigDescription = sigEventPair ? "W/M neckline close confirmed." : "Swing-candle breakout close confirmed."
+    if sigShowLabels
+        // Place labels next to the actual confirmation candle, not the earlier pivot.
+        array.push(sigLabels, label.new(x = bar_index, y = sigBuySignal ? low - sigBandHeight : high + sigBandHeight, text = sigText, xloc = xloc.bar_index, yloc = yloc.price, style = sigBuySignal ? label.style_label_up : label.style_label_down, color = sigColor, textcolor = color.white, size = size.small, tooltip = sigDescription + "\nConfirmation close: " + str.tostring(close, format.mintick) + "\nSwing price: " + str.tostring(sigEventSwing, format.mintick) + "\nConfirmed " + str.tostring(bar_index - sigEventPivotBar) + " bar(s) after the swing.\nBand = swing reference, not an entry fill or calculated trade stop."))
+    if sigShowBands
+        array.push(sigBands, box.new(left = bar_index, top = sigBuySignal ? sigEventSwing : sigEventSwing + sigBandHeight, right = bar_index + sigBandBars, bottom = sigBuySignal ? sigEventSwing - sigBandHeight : sigEventSwing, xloc = xloc.bar_index, border_color = color.new(sigColor, 100), bgcolor = color.new(sigColor, 75)))
+
+if array.size(sigLabels) > sigHistory
+    label.delete(array.shift(sigLabels))
+if array.size(sigBands) > sigHistory
+    box.delete(array.shift(sigBands))
+
+if sigLowConfirmed
+    sigPreviousLow := sigPivotLow
+    sigPreviousLowBar := sigPivotBar
+if sigHighConfirmed
+    sigPreviousHigh := sigPivotHigh
+    sigPreviousHighBar := sigPivotBar
+
+plot(sigBuySignal ? sigEventSwing : na, "BUY confirmed swing price", display = display.data_window)
+plot(sigSellSignal ? sigEventSwing : na, "SELL confirmed swing price", display = display.data_window)
+plot(sigBuySignal or sigSellSignal ? close : na, "Signal confirmation close", display = display.data_window)
+plot(sigBuySignal or sigSellSignal ? (sigEventPair ? 2 : 1) : na, "Signal type: 1 reversal / 2 W-M neckline", display = display.data_window)
+plot(not na(sigBuyArmed) ? sigBuyTrigger : na, "Pending BUY trigger", display = display.data_window)
+plot(not na(sigSellArmed) ? sigSellTrigger : na, "Pending SELL trigger", display = display.data_window)
+alertcondition(sigBuySignal, "BUY reversal confirmed", "BUY reversal confirmed at this bar close on {{ticker}} {{interval}}. Price {{close}}.")
+alertcondition(sigSellSignal, "SELL reversal confirmed", "SELL reversal confirmed at this bar close on {{ticker}} {{interval}}. Price {{close}}.")

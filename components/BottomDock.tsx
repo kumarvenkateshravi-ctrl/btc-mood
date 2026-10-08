@@ -89,7 +89,7 @@ export default function BottomDock({
   ] as const;
 
   return (
-    <div className="flex h-full flex-col bg-surface-1">
+    <div className="terminal-bottom-content flex h-full flex-col bg-surface-1">
       {/* Tabs Row */}
       <div className="flex shrink-0 border-b border-line px-2">
         {tabs.map((tab) => (

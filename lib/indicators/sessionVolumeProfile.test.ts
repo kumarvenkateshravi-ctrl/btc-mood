@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   autoTickSize,
   buildProfile,
+  buildPocOnlyProfile,
   buildSessionProfiles,
   computeSessionVolumeProfile,
   groupIntoSessions,
   MAX_ROWS_PER_PROFILE,
+  type SessionProfileProvider,
 } from './sessionVolumeProfile';
 import type { Candle } from '../types';
 import type { CustomIndicatorConfig } from '../indicatorFramework';
@@ -401,6 +403,90 @@ describe('multi-timeframe POC toggles', () => {
       buildSessionProfiles(candles, { mode: '4h' }).length;
 
     expect(result.profiles?.filter((profile) => profile.showRows === false)).toHaveLength(expectedCount);
+  });
+});
+describe('4H, daily, and weekly POC confluence markers', () => {
+  const visiblePocs = { sessions: 'daily', showWeeklyPocs: true, show4hPocs: true };
+  const fixedPocs: SessionProfileProvider = (candles, session, options) => {
+    const profile = buildPocOnlyProfile(candles, options);
+    const poc = session.mode === '4h' ? 99.8 : session.mode === 'daily' ? 100 : 100.2;
+    return profile ? [{ ...profile, poc }] : [];
+  };
+
+  it('marks green and red candle bodies, but not wick-only POC overlaps', () => {
+    const candles: Candle[] = [
+      bar(100, 100, 'up', T0),
+      bar(100, 100, 'up', T0 + 60),
+      { time: T0 + 120, open: 100.7, close: 100.8, low: 99, high: 101, volume: 0 },
+      { time: T0 + 180, open: 99.7, close: 100.3, low: 99, high: 101, volume: 0 },
+      { time: T0 + 240, open: 100.3, close: 99.7, low: 99, high: 101, volume: 0 },
+      { time: T0 + 300, open: 105, close: 105, low: 104, high: 106, volume: 0 },
+    ];
+    const result = computeSessionVolumeProfile(candles, svpConfig(visiblePocs), undefined, fixedPocs);
+    expect(result.markers?.some((marker) => marker.index === 2 && marker.text === 'C')).toBe(false);
+    expect(result.markers?.some((marker) => marker.index === 3 && marker.text === 'C' && marker.position === 'aboveBar')).toBe(true);
+    expect(result.markers?.some((marker) => marker.index === 4 && marker.text === 'C' && marker.position === 'aboveBar')).toBe(true);
+    expect(result.markers?.some((marker) => marker.index === 5 && marker.text === 'C')).toBe(false);
+  });
+
+  it('matches the POC lines currently displayed across each session', () => {
+    const initial = [bar(100, 100, 'up', T0), bar(100, 100, 'up', T0 + 60)];
+    const shiftingPocs: SessionProfileProvider = (candles, _session, options) => {
+      const profile = buildPocOnlyProfile(candles, options);
+      return profile ? [{ ...profile, poc: candles.length > initial.length ? 110 : 100 }] : [];
+    };
+    const earlier = computeSessionVolumeProfile(initial, svpConfig(visiblePocs), undefined, shiftingPocs);
+    const later = computeSessionVolumeProfile([...initial, bar(110, 10_000, 'up', T0 + 120)], svpConfig(visiblePocs), undefined, shiftingPocs);
+    expect(earlier.markers?.some((marker) => marker.index === 0 && marker.text === 'C')).toBe(true);
+    expect(later.markers?.some((marker) => marker.index === 0 && marker.text === 'C')).toBe(false);
+  });
+
+  it('respects the confluence Style-tab visibility', () => {
+    const result = computeSessionVolumeProfile([bar(100, 100)], svpConfig(visiblePocs, {
+      confluence: { color: '#ffffff', thickness: 1, lineStyle: 'solid', display: false },
+    }), undefined, fixedPocs);
+    expect(result.markers?.some((marker) => marker.text === 'C')).toBe(false);
+  });
+});
+describe('session and weekly VWAP confluence markers', () => {
+  it('marks either candle body when both VWAPs pass through it, excluding wick-only touches', () => {
+    const candles: Candle[] = [
+      bar(100, 100, 'up', T0),
+      bar(100, 100, 'up', T0 + 60),
+      { time: T0 + 120, open: 100.7, close: 100.8, low: 99, high: 101, volume: 0 },
+      { time: T0 + 180, open: 99.7, close: 100.3, low: 99, high: 101, volume: 0 },
+      { time: T0 + 240, open: 100.3, close: 99.7, low: 99, high: 101, volume: 0 },
+      { time: T0 + 300, open: 105, close: 105, low: 104, high: 106, volume: 0 },
+    ];
+    const markers = computeSessionVolumeProfile(candles).markers?.filter((marker) => marker.text === 'V');
+    expect(markers?.some((marker) => marker.index === 2)).toBe(false);
+    expect(markers?.some((marker) => marker.index === 3 && marker.position === 'belowBar')).toBe(true);
+    expect(markers?.some((marker) => marker.index === 4 && marker.position === 'belowBar')).toBe(true);
+    expect(markers?.some((marker) => marker.index === 5)).toBe(false);
+  });
+
+  it('resets the session and week independently', () => {
+    const tuesday = Math.floor(T0 / DAY) * DAY;
+    const candles = [
+      bar(100, 100, 'up', tuesday),
+      bar(200, 100, 'up', tuesday + DAY),
+      bar(200, 100, 'up', tuesday + 6 * DAY),
+    ];
+    const markers = computeSessionVolumeProfile(candles).markers?.filter((marker) => marker.text === 'V');
+    expect(markers?.some((marker) => marker.index === 1)).toBe(false);
+    expect(markers?.some((marker) => marker.index === 2)).toBe(true);
+  });
+
+  it('respects the VWAP confluence Style-tab visibility and color', () => {
+    const hidden = computeSessionVolumeProfile([bar(100, 100)], svpConfig({}, {
+      vwapConfluence: { color: '#123abc', thickness: 1, lineStyle: 'solid', display: false },
+    }));
+    expect(hidden.markers?.some((marker) => marker.text === 'V')).toBe(false);
+
+    const colored = computeSessionVolumeProfile([bar(100, 100)], svpConfig({}, {
+      vwapConfluence: { color: '#123abc', thickness: 1, lineStyle: 'solid', display: true },
+    }));
+    expect(colored.markers?.find((marker) => marker.text === 'V')?.color).toBe('#123abc');
   });
 });
 describe('timeframe-specific POC styles', () => {

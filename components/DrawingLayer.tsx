@@ -11,11 +11,20 @@ import {
   redo,
   newDrawingId,
   fibLevelPrices,
-  TOOL_POINTS,
   type Drawing,
   type DPoint,
   type Tool,
 } from '@/lib/drawings';
+import {
+  armDrawingCreation,
+  cancelDrawingCreation,
+  drawingCreationIncomplete,
+  drawingCreationPreviewPoints,
+  drawingToolDefinition,
+  placeDrawingAnchor,
+  previewDrawingCreation,
+  type DrawingCreationState,
+} from '@/lib/drawingCreation';
 
 interface DrawingLayerProps {
   api: ChartApi | null;
@@ -29,6 +38,8 @@ interface DrawingLayerProps {
   height: number;
   /** Bumped by the parent when candles change, to reposition drawings. */
   revision: number;
+  /** Changes when timeframe, mode, symbol, or chart-session ownership changes. */
+  creationContextKey: string;
   /** Called after a drawing commits, so the parent can reset the tool to cursor. */
   onToolUsed: () => void;
   onSelectionChange?: (id: string | null) => void;
@@ -57,15 +68,26 @@ export default function DrawingLayer({
   hidden,
   width,
   height,
+  creationContextKey,
   onToolUsed,
   onSelectionChange,
 }: DrawingLayerProps) {
   const drawings = useDrawings(symbol);
   const svgRef = useRef<SVGSVGElement>(null);
   const activePointerId = useRef<number | null>(null);
+  const creationGesture = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    multiTouch: boolean;
+  } | null>(null);
+  const touchPointers = useRef(new Set<number>());
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ type: Exclude<Tool, 'cursor'>; points: DPoint[] } | null>(null);
+  const [creation, setCreation] = useState<DrawingCreationState>(() => armDrawingCreation(tool));
+  const [textDraft, setTextDraft] = useState<{ point: DPoint; value: string } | null>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const selectDrawing = useCallback((id: string | null) => {
     setSelectedId(id);
     onSelectionChange?.(id);
@@ -82,16 +104,27 @@ export default function DrawingLayer({
     return api.subscribe(() => setVersion((v) => v + 1));
   }, [api]);
 
-  // Reset transient state when the symbol changes (different drawing set).
+  // Tool, symbol, timeframe, mode, and chart-session changes cancel drafts.
   useEffect(() => {
+    // These are intentionally transient session fields keyed by external chart ownership.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     selectDrawing(null);
-    setDraft(null);
+    setCreation(armDrawingCreation(tool));
+    setTextDraft(null);
     setDrag(null);
-  }, [symbol, selectDrawing]);
+    creationGesture.current = null;
+    touchPointers.current.clear();
+  }, [creationContextKey, selectDrawing, symbol, tool]);
+
+  useEffect(() => {
+    if (textDraft) textInputRef.current?.focus();
+  }, [textDraft]);
 
   // Latest values for the window-level pointer/key handlers.
-  const ctx = useRef({ api, symbol, color, magnet, locked, tool, onToolUsed, onSelectionChange, draft, drag, selectedId });
-  ctx.current = { api, symbol, color, magnet, locked, tool, onToolUsed, onSelectionChange, draft, drag, selectedId };
+  const ctx = useRef({ api, symbol, color, magnet, locked, tool, onToolUsed, onSelectionChange, creation, textDraft, drag, selectedId });
+  useEffect(() => {
+    ctx.current = { api, symbol, color, magnet, locked, tool, onToolUsed, onSelectionChange, creation, textDraft, drag, selectedId };
+  });
 
   const sx = (t: number): number | null => api?.timeToX(t) ?? null;
   const sy = (p: number): number | null => api?.priceToY(p) ?? null;
@@ -114,59 +147,59 @@ export default function DrawingLayer({
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  // ----- creation + drag, driven by window listeners -----
+  const cancelActiveCreation = useCallback(() => {
+    setCreation((current) => cancelDrawingCreation(current));
+    setTextDraft(null);
+    creationGesture.current = null;
+    touchPointers.current.clear();
+    ctx.current.onToolUsed();
+  }, []);
+
+  // ----- editing drag, driven by window listeners -----
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
-      const { draft: dr, drag: dg } = ctx.current;
-      if (!dr && !dg) return;
+      const { drag: dg } = ctx.current;
+      if (!dg) return;
       if (activePointerId.current != null && e.pointerId !== activePointerId.current) return;
       const { x, y } = local(e.clientX, e.clientY);
       const p = screenToData(x, y);
       if (!p) return;
-      if (dr) {
-        setDraft({ type: dr.type, points: [dr.points[0], p] });
-      } else if (dg) {
-        let live: DPoint[];
-        if (dg.handle === 'all') {
-          const dt = p.time - dg.startData.time;
-          const dp = p.price - dg.startData.price;
-          live = dg.startPoints.map((sp) => ({ time: sp.time + dt, price: sp.price + dp }));
-        } else {
-          live = dg.startPoints.map((sp, i) => (i === dg.handle ? p : sp));
-        }
-        setDrag({ ...dg, live });
+      let live: DPoint[];
+      if (dg.handle === 'all') {
+        const dt = p.time - dg.startData.time;
+        const dp = p.price - dg.startData.price;
+        live = dg.startPoints.map((sp) => ({ time: sp.time + dt, price: sp.price + dp }));
+      } else {
+        live = dg.startPoints.map((sp, i) => (i === dg.handle ? p : sp));
       }
+      setDrag({ ...dg, live });
     };
 
     const onUp = (e: PointerEvent) => {
       if (activePointerId.current != null && e.pointerId !== activePointerId.current) return;
-      const { draft: dr, drag: dg, symbol: sym, color: col, onToolUsed: used } = ctx.current;
-      if (dr) {
-        const [a, b] = dr.points;
-        if (Math.abs(a.time - b.time) > 1e-9 || Math.abs(a.price - b.price) > 1e-9) {
-          const d: Drawing = { id: newDrawingId(), type: dr.type, points: dr.points, color: col };
-          addDrawing(sym, d);
-          selectDrawing(d.id);
-        }
-        setDraft(null);
-        used();
-      } else if (dg) {
-        updateDrawing(sym, dg.id, { points: dg.live });
+      const { drag: dg, symbol: sym } = ctx.current;
+      if (dg) {
+        const changed = dg.live.some((point, index) => (
+          point.time !== dg.startPoints[index]?.time || point.price !== dg.startPoints[index]?.price
+        ));
+        if (changed) updateDrawing(sym, dg.id, { points: dg.live });
         setDrag(null);
+        activePointerId.current = null;
       }
     };
 
     const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      const { selectedId: sel, symbol: sym, locked: lk, draft: dr, drag: dg } = ctx.current;
+      const { selectedId: sel, symbol: sym, locked: lk, creation: cr, textDraft: text, drag: dg } = ctx.current;
       if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !lk) {
         removeDrawing(sym, sel);
         selectDrawing(null);
         e.preventDefault();
         e.stopImmediatePropagation();
-      } else if (e.key === 'Escape' && (dr || dg || sel)) {
-        setDraft(null);
+      } else if (e.key === 'Escape' && (ctx.current.tool !== 'cursor' || drawingCreationIncomplete(cr) || text || dg || sel)) {
+        cancelActiveCreation();
         setDrag(null);
         selectDrawing(null);
         activePointerId.current = null;
@@ -192,25 +225,45 @@ export default function DrawingLayer({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keydown', onKey, true);
     };
-  }, [selectDrawing]);
+  }, [cancelActiveCreation, selectDrawing]);
 
-  const startCreate = (lx: number, ly: number, pointerId: number) => {
-    activePointerId.current = pointerId;
-    const p = screenToData(lx, ly);
-    if (!p || tool === 'cursor') { activePointerId.current = null; return; }
-    if (TOOL_POINTS[tool] === 1) {
-      let text: string | undefined;
-      if (tool === 'text') {
-        text = (typeof window !== 'undefined' ? window.prompt('Text label:') : '') ?? '';
-        if (!text) return;
-      }
-      const d: Drawing = { id: newDrawingId(), type: tool, points: [p], color, ...(text != null ? { text } : {}) };
-      addDrawing(symbol, d);
-      selectDrawing(d.id);
-      onToolUsed();
-    } else {
-      setDraft({ type: tool, points: [p, p] });
+  const placeCreationAnchor = (point: DPoint) => {
+    const transition = placeDrawingAnchor(ctx.current.creation, point);
+    setCreation(transition.state);
+    if (!transition.commit) return;
+    if (transition.commit.tool === 'text') {
+      setTextDraft({ point: transition.commit.points[0], value: '' });
+      return;
     }
+    const drawing: Drawing = {
+      id: newDrawingId(),
+      type: transition.commit.tool,
+      points: [...transition.commit.points],
+      color: ctx.current.color,
+    };
+    addDrawing(ctx.current.symbol, drawing);
+    selectDrawing(drawing.id);
+    ctx.current.onToolUsed();
+  };
+
+  const commitText = () => {
+    const pending = ctx.current.textDraft;
+    const value = pending?.value.trim() ?? '';
+    if (!pending || !value) {
+      cancelActiveCreation();
+      return;
+    }
+    const drawing: Drawing = {
+      id: newDrawingId(),
+      type: 'text',
+      points: [pending.point],
+      color: ctx.current.color,
+      text: value,
+    };
+    addDrawing(ctx.current.symbol, drawing);
+    selectDrawing(drawing.id);
+    setTextDraft(null);
+    ctx.current.onToolUsed();
   };
 
   const onDrawingDown = (e: React.PointerEvent, d: Drawing) => {
@@ -234,50 +287,148 @@ export default function DrawingLayer({
 
   if (hidden || !api) return null;
 
-  // Render a drawing (committed, or its live-drag / draft override) to SVG.
+  // Render committed drawings, editing previews, and transient creation previews.
   const liveDrawing = (d: Drawing): Drawing =>
     drag && drag.id === d.id ? { ...d, points: drag.live } : d;
+  const previewPoints = drawingCreationPreviewPoints(creation);
+  const previewDrawing = creation.tool && previewPoints.length > 0 && creation.tool !== 'text'
+    ? { id: '__draft', type: creation.tool, points: [...previewPoints], color }
+    : null;
+  const incomplete = drawingCreationIncomplete(creation);
+  const instruction = creation.tool ? drawingToolDefinition(creation.tool).nextAnchorLabel : '';
+  const textX = textDraft ? sx(textDraft.point.time) : null;
+  const textY = textDraft ? sy(textDraft.point.price) : null;
 
   return (
-    <svg
-      ref={svgRef}
-      width={width}
-      height={height}
-      className="absolute inset-0 z-20"
-      style={{ pointerEvents: tool === 'cursor' ? 'none' : 'auto', cursor: tool === 'cursor' ? 'default' : 'crosshair' }}
-      onPointerDown={(e) => {
-        if (tool === 'cursor' || e.button !== 0 || !e.isPrimary) return;
-        e.stopPropagation();
-        const { x, y } = local(e.clientX, e.clientY);
-        startCreate(x, y, e.pointerId);
-      }}
-    >
-      {drawings.map((d0) => {
-        const d = liveDrawing(d0);
-        return (
+    <>
+      <svg
+        ref={svgRef}
+        width={width}
+        height={height}
+        data-testid="drawing-layer"
+        data-creation-phase={creation.phase}
+        className="absolute inset-0 z-20"
+        style={{
+          pointerEvents: tool === 'cursor' ? 'none' : 'auto',
+          cursor: tool === 'cursor' ? 'default' : 'crosshair',
+          touchAction: tool === 'cursor' ? 'auto' : 'none',
+        }}
+        onPointerDown={(event) => {
+          if (tool === 'cursor' || event.button !== 0 || !event.isPrimary && event.pointerType !== 'touch') return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.pointerType === 'touch') {
+            touchPointers.current.add(event.pointerId);
+            if (touchPointers.current.size > 1) {
+              if (creationGesture.current) creationGesture.current.multiTouch = true;
+              return;
+            }
+          }
+          creationGesture.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            moved: false,
+            multiTouch: false,
+          };
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (tool === 'cursor') return;
+          const gesture = creationGesture.current;
+          if (gesture?.pointerId === event.pointerId && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 6) {
+            gesture.moved = true;
+          }
+          if (creation.anchors.length === 0 || !event.isPrimary) return;
+          const { x, y } = local(event.clientX, event.clientY);
+          const point = screenToData(x, y);
+          if (point) setCreation((current) => previewDrawingCreation(current, point));
+        }}
+        onPointerUp={(event) => {
+          if (tool === 'cursor') return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.pointerType === 'touch') touchPointers.current.delete(event.pointerId);
+          const gesture = creationGesture.current;
+          if (!gesture || gesture.pointerId !== event.pointerId) return;
+          creationGesture.current = null;
+          event.currentTarget.releasePointerCapture?.(event.pointerId);
+          if (gesture.moved || gesture.multiTouch) return;
+          const { x, y } = local(event.clientX, event.clientY);
+          const point = screenToData(x, y);
+          if (point) placeCreationAnchor(point);
+        }}
+        onPointerCancel={(event) => {
+          touchPointers.current.delete(event.pointerId);
+          if (creationGesture.current?.pointerId === event.pointerId) creationGesture.current = null;
+        }}
+        onContextMenu={(event) => {
+          if (tool === 'cursor' && !incomplete && !textDraft) return;
+          event.preventDefault();
+          event.stopPropagation();
+          cancelActiveCreation();
+        }}
+      >
+        {drawings.map((d0) => {
+          const d = liveDrawing(d0);
+          return (
+            <DrawingShape
+              key={d.id}
+              drawing={d}
+              selected={selectedId === d.id}
+              cursorMode={tool === 'cursor'}
+              sx={sx}
+              sy={sy}
+              width={width}
+              onPointerDown={(e) => onDrawingDown(e, d0)}
+            />
+          );
+        })}
+        {previewDrawing && (
           <DrawingShape
-            key={d.id}
-            drawing={d}
-            selected={selectedId === d.id}
-            cursorMode={tool === 'cursor'}
+            drawing={previewDrawing}
+            selected
+            cursorMode={false}
             sx={sx}
             sy={sy}
             width={width}
-            onPointerDown={(e) => onDrawingDown(e, d0)}
           />
-        );
-      })}
-      {draft && (
-        <DrawingShape
-          drawing={{ id: '__draft', type: draft.type, points: draft.points, color }}
-          selected
-          cursorMode={false}
-          sx={sx}
-          sy={sy}
-          width={width}
-        />
+        )}
+      </svg>
+
+      {incomplete && (
+        <div data-testid="drawing-creation-hint" className="pointer-events-auto absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-md border border-line-strong bg-surface-1 px-2.5 py-1.5 text-[11px] text-ink shadow-lg">
+          <span>{instruction}</span>
+          <button type="button" onClick={cancelActiveCreation} className="focus-ring rounded px-1.5 py-0.5 font-semibold text-ink-muted hover:text-ink">Cancel</button>
+        </div>
       )}
-    </svg>
+
+      {textDraft && textX != null && textY != null && (
+        <form
+          data-testid="drawing-text-editor"
+          className="absolute z-30 flex items-center gap-1 rounded-md border border-line-strong bg-surface-1 p-1 shadow-lg"
+          style={{ left: Math.max(8, Math.min(width - 220, textX)), top: Math.max(8, textY - 18) }}
+          onSubmit={(event) => { event.preventDefault(); commitText(); }}
+        >
+          <input
+            ref={textInputRef}
+            aria-label="Drawing text"
+            value={textDraft.value}
+            onChange={(event) => setTextDraft((current) => current ? { ...current, value: event.target.value } : current)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                cancelActiveCreation();
+              }
+            }}
+            className="focus-ring h-8 w-36 rounded border border-line bg-base px-2 text-xs text-ink"
+            placeholder="Text label"
+          />
+          <button type="submit" disabled={!textDraft.value.trim()} className="focus-ring h-8 rounded bg-accent px-2 text-xs font-semibold text-base disabled:opacity-40">Add</button>
+          <button type="button" onClick={cancelActiveCreation} className="focus-ring h-8 rounded px-2 text-xs font-semibold text-ink-muted hover:text-ink">Cancel</button>
+        </form>
+      )}
+    </>
   );
 }
 

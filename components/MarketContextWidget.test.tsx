@@ -1,9 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import MarketContextWidget, { strengthStars, riskLabel } from './MarketContextWidget';
-import { __resetContextForTest, publishVdDecisions } from '@/lib/context/contextStore';
 import type { MarketContext } from '@/lib/context/types';
-import type { VdSignal } from '@/lib/indicators/vdEngine';
 
 const ctx: MarketContext = {
   perTf: {}, overallBias: 'bullish',
@@ -12,8 +10,6 @@ const ctx: MarketContext = {
   confirmations: [], warnings: [], asOfTime: 0,
 };
 
-beforeEach(() => __resetContextForTest());
-
 describe('MarketContextWidget', () => {
   it('renders bias, score, stars and risk', () => {
     const html = renderToStaticMarkup(<MarketContextWidget ctx={ctx} />);
@@ -21,19 +17,6 @@ describe('MarketContextWidget', () => {
     expect(html).toContain('78');
     expect(html).toContain('Risk');
     expect(html).toContain('Low'); // conflict 22 < 30 and confidence 68 ≥ 60
-  });
-  it('surfaces the latest WHY-NOT rejection when gated', () => {
-    publishVdDecisions({
-      decisions: [], gated: true,
-      rejections: [{
-        signal: { side: 'buy' } as VdSignal,
-        decisionScore: 58,
-        failedGates: ['decision score 58 < 65'],
-      }],
-    });
-    const html = renderToStaticMarkup(<MarketContextWidget ctx={ctx} />);
-    expect(html).toContain('No BUY');
-    expect(html).toContain('decision score 58');
   });
   it('helpers: stars scale with directional strength; risk ladders', () => {
     expect(strengthStars(50)).toBe('☆☆☆☆☆');

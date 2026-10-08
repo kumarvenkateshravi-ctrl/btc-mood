@@ -62,7 +62,7 @@ export function useWatchlist(): { rows: WatchlistRow[]; status: 'loading' | 'liv
 
     const load = async () => {
       try {
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${symbolsParam}`);
+        const res = await fetch(`/api/ticker?symbols=${symbolsParam}`);
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as BinanceTicker[];
         if (!alive) return;

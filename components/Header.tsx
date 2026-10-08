@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bitcoin, ScanLine } from 'lucide-react';
+import { Bitcoin, ScanLine, ShieldCheck } from 'lucide-react';
 import HealthDot from './HealthDot';
 
 export default function Header({ rightControls }: { rightControls?: React.ReactNode }) {
@@ -62,6 +62,21 @@ export default function Header({ rightControls }: { rightControls?: React.ReactN
             <span className="inline-flex items-center gap-1.5">
               <ScanLine className="h-3.5 w-3.5" />
               Technical Scanner
+            </span>
+          </Link>
+          <Link
+            href="/challenges"
+            aria-current={pathname?.startsWith('/challenges') ? 'page' : undefined}
+            className={[
+              'focus-ring rounded-lg px-3 py-1.5 font-medium transition',
+              pathname?.startsWith('/challenges')
+                ? 'bg-bull/15 text-bull-bright ring-1 ring-bull/30'
+                : 'text-ink-muted hover:text-ink',
+            ].join(' ')}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Challenges
             </span>
           </Link>
           <Link

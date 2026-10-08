@@ -1,0 +1,117 @@
+//@version=6
+indicator("BTC WHALE HUNTER'S - POC & MRP [Cyan Fit]", shorttitle = "POC & MRP Cyan Fit", overlay = true, format = format.price, precision = 2, max_bars_back = 5000)
+
+// Functional reconstruction from observed chart values. This is not the
+// protected source code and does not use volume-profile bins.
+
+GRP_MRP = "MRP"
+GRP_POC = "POC LINES"
+
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "W MRP", inline = "mrp", group = GRP_MRP)
+
+showWeeklyPoc = input.bool(true, "Show Weekly POC", group = GRP_POC)
+showDailyPoc = input.bool(true, "Show Daily POC", group = GRP_POC)
+showFourHourPoc = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+
+weeklyPocColor = input.color(#F59E0B, "Weekly POC Color", group = GRP_POC)
+dailyPocColor = input.color(#14532D, "Daily POC Color", group = GRP_POC)
+fourHourPocColor = input.color(#22D3EE, "4-Hour POC Color", group = GRP_POC)
+pocLineWidth = input.int(2, "POC Line Width", minval = 1, maxval = 4, group = GRP_POC)
+
+MRP_COLOR = #0B46F0
+WEEKLY_MRP_COLOR = #C57A00
+
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newDay = barstate.isfirst or dayKey != dayKey[1]
+bool newWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// Developing UTC-day and UTC-week HLC3 VWAPs.
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float mrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float weeklyMrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+plot(showMrp ? mrp : na, "MRP", color = MRP_COLOR, linewidth = 2)
+plot(showWMrp ? weeklyMrp : na, "W MRP", color = WEEKLY_MRP_COLOR, linewidth = 1)
+
+// Cyan-fit 4H reference: 30-minute Close VWAP, reset at 04:00 UTC
+// (09:30 IST), then frozen from the last confirmed 30-minute bar at every
+// 4-hour UTC boundary. Because the frozen value uses [1], lookahead_on only
+// places an already-confirmed value at the correct boundary; it cannot repaint.
+f_cyanFourHourPoc() =>
+    const int SESSION_OFFSET_MS = 4 * 60 * 60 * 1000
+    const int LOCAL_DAY_MS = 24 * 60 * 60 * 1000
+    const int LOCAL_FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+
+    int sessionKey = int(math.floor((time - SESSION_OFFSET_MS) / LOCAL_DAY_MS))
+    int blockKey = int(math.floor(time / LOCAL_FOUR_HOURS_MS))
+    bool newSession = barstate.isfirst or sessionKey != sessionKey[1]
+    bool newBlock = barstate.isfirst or blockKey != blockKey[1]
+
+    float barVolume = nz(volume, 0.0)
+    var float pvSum = 0.0
+    var float volumeSum = 0.0
+    var float heldValue = na
+
+    if newSession
+        pvSum := 0.0
+        volumeSum := 0.0
+
+    pvSum += close * barVolume
+    volumeSum += barVolume
+    float sessionVwap = volumeSum > 0 ? pvSum / volumeSum : na
+
+    if newBlock
+        heldValue := nz(sessionVwap[1], sessionVwap)
+
+    heldValue
+
+float fourHourPoc = request.security(
+     syminfo.tickerid, "30", f_cyanFourHourPoc(),
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+float weeklyPoc = request.security(
+     syminfo.tickerid, "1W", open,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+float dailyPoc = request.security(
+     syminfo.tickerid, "1D",
+     (high[1] + low[1] + close[1]) / 3,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+color fourHourPlotColor = newFourHour and not barstate.isfirst ? na : fourHourPocColor
+color dailyPlotColor = newDay and not barstate.isfirst ? na : dailyPocColor
+color weeklyPlotColor = newWeek and not barstate.isfirst ? na : weeklyPocColor
+
+plot(showWeeklyPoc ? weeklyPoc : na, "Weekly POC", color = weeklyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showDailyPoc ? dailyPoc : na, "Daily POC", color = dailyPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)
+plot(showFourHourPoc ? fourHourPoc : na, "4-Hour POC", color = fourHourPlotColor, linewidth = pocLineWidth, style = plot.style_linebr)

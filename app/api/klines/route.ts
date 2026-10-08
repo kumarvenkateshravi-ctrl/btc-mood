@@ -7,6 +7,11 @@ import {
   hasDataSource,
   listDataSourceMetas,
 } from '@/lib/dataSource';
+import { fetchBinanceRest } from '@/lib/marketData/binanceRest';
+import {
+  klinesCounters as counters,
+  recordKlinesError as recordError,
+} from '@/lib/marketData/klinesCounters';
 
 // Sourced from the canonical TIMEFRAMES so this allowlist can never drift
 // (e.g. when 30m was added). Binance accepts each of these interval strings.
@@ -17,7 +22,6 @@ const HISTORY_CACHE_TTL_MS = 10 * 60_000;
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 1000; // Binance spot klines hard cap
 const CACHE_MAX_ENTRIES = 64; // LRU cap to prevent unbounded growth
-const BINANCE_BASE = 'https://data-api.binance.vision/api/v3/klines';
 
 // Per-IP rate limit: fixed window. A normal dashboard does ~12 req/min
 // (6 timeframes reconciled every 30s); this leaves generous headroom
@@ -36,18 +40,6 @@ const RATE_LIMIT_MAX_IPS = 5_000; // cap the tracking map's memory
 // per-instance rather than globally. For shared state across instances,
 // back these with an external store (e.g. Redis). This is a deliberate,
 // documented trade-off for the single-process deployment target.
-
-// In-memory counters for the /api/health endpoint.
-const counters = {
-  hits: 0,
-  misses: 0,
-  upstream429: 0,
-  upstream5xx: 0,
-  parseErrors: 0,
-  rateLimited: 0,
-  lastError: null as string | null,
-  lastErrorAt: 0,
-};
 
 type RateEntry = { count: number; windowStart: number };
 const rateLimitMap = new Map<string, RateEntry>();
@@ -81,10 +73,6 @@ function isRateLimited(ip: string): boolean {
   }
   entry.count += 1;
   return entry.count > RATE_LIMIT_MAX;
-}
-
-export function getCounters() {
-  return { ...counters };
 }
 
 export const dynamic = 'force-dynamic';
@@ -127,11 +115,6 @@ function cacheSet(key: string, payload: string, status: number, ttl: number = CA
     if (oldest === undefined) break;
     cache.delete(oldest);
   }
-}
-
-function recordError(message: string) {
-  counters.lastError = message;
-  counters.lastErrorAt = Date.now();
 }
 
 export async function GET(req: NextRequest) {
@@ -229,12 +212,15 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  let upstream = `${BINANCE_BASE}?symbol=${encodeURIComponent(symbolParam)}&interval=${encodeURIComponent(validTf)}&limit=${limit}`;
-  if (before != null) upstream += `&endTime=${before}`;
+  let upstreamPath = `/api/v3/klines?symbol=${encodeURIComponent(symbolParam)}&interval=${encodeURIComponent(validTf)}&limit=${limit}`;
+  if (before != null) upstreamPath += `&endTime=${before}`;
 
   let res: Response;
+  let upstreamBase: string | null = null;
   try {
-    res = await fetch(upstream, { cache: 'no-store' });
+    const result = await fetchBinanceRest(upstreamPath);
+    res = result.response;
+    upstreamBase = result.baseUrl;
   } catch (err) {
     counters.upstream5xx += 1;
     recordError((err as Error).message ?? 'fetch threw');
@@ -318,6 +304,7 @@ export async function GET(req: NextRequest) {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
       'X-Cache': 'MISS',
+      ...(upstreamBase ? { 'X-Upstream': upstreamBase } : {}),
     },
   });
 }

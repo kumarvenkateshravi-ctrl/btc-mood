@@ -42,7 +42,9 @@ describe('atomic live protection updates', () => {
   it('rejects invalid long SL, TP, NaN, and Infinity', () => {
     open();
 
-    expect(updatePositionProtection(BTC, { sl: 100.1 })).toMatchObject({ ok: false });
+    // Market fills include one tick of slippage. 100.1 is the actual entry
+    // (valid break-even), so test an SL strictly above that fill instead.
+    expect(updatePositionProtection(BTC, { sl: position().entryPrice + 0.1 })).toMatchObject({ ok: false });
     expect(updatePositionProtection(BTC, { tp: 99.9 })).toMatchObject({ ok: false });
     expect(updatePositionProtection(BTC, { sl: Number.NaN })).toMatchObject({ ok: false });
     expect(updatePositionProtection(BTC, { tp: Number.POSITIVE_INFINITY })).toMatchObject({ ok: false });

@@ -1,0 +1,74 @@
+//@version=6
+indicator("Weekly POC — Standalone", shorttitle = "Weekly POC", overlay = true, max_bars_back = 5000)
+
+// Standalone extraction of the Weekly POC from the supplied combined script.
+// It uses the completed week's TPO distribution, not volume-profile bins.
+
+f_included(float lower, float upper, float barLow, float barHigh) =>
+    (barLow >= lower and barLow <= upper) or
+     (barHigh >= lower and barHigh <= upper) or
+     (barLow <= lower and barHigh >= upper)
+
+f_getTpo(float lower, float upper, int barsInProfile) =>
+    float result = 0.0
+
+    if barsInProfile > 0
+        for i = 1 to barsInProfile
+            if f_included(lower, upper, low[i], high[i])
+                result += 1
+
+    result
+
+f_weeklyPoc() =>
+    var float periodHigh = na
+    var float periodLow = na
+    var int periodBars = 0
+
+    var float completedHigh = na
+    var float completedLow = na
+    var int completedBars = 0
+
+    var float pocPrice = na
+
+    bool newWeek = ta.change(time("W")) != 0
+
+    if newWeek
+        completedHigh := periodHigh[1]
+        completedLow := periodLow[1]
+        completedBars := int(nz(periodBars[1], 0))
+
+        periodHigh := high
+        periodLow := low
+        periodBars := 0
+    else
+        periodHigh := math.max(nz(periodHigh, high), high)
+        periodLow := math.min(nz(periodLow, low), low)
+        periodBars += 1
+
+    if newWeek and not na(completedHigh) and not na(completedLow)
+        float profileRange = completedHigh - completedLow
+        float channelSize = profileRange / 20.0
+
+        int pocLocation = 1
+        float pocValue = 0.0
+
+        for i = 1 to 20
+            float lowerBound = completedLow + (i - 1) * channelSize
+            float upperBound = completedLow + i * channelSize
+            float tpoValue = f_getTpo(lowerBound, upperBound, completedBars)
+
+            // The source uses >=, so the higher price bin wins an equal-count tie.
+            if tpoValue >= pocValue
+                pocValue := tpoValue
+                pocLocation := i
+
+        pocPrice := completedLow + (pocLocation - 0.5) * channelSize
+
+    pocPrice
+
+float weeklyPoc = f_weeklyPoc()
+bool newWeeklyPeriod = ta.change(time("W")) != 0
+
+// The boundary bar is intentionally `na`, preventing separate weekly levels
+// from being joined. Color and width are editable in TradingView's Style tab.
+plot(not newWeeklyPeriod ? weeklyPoc : na, title = "Weekly POC", color = color.red, linewidth = 2, style = plot.style_linebr, editable = true)

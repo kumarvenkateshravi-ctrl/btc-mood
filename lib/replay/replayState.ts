@@ -39,33 +39,40 @@ const TRANSITIONS: Record<ReplayPhase, ReplayPhase[]> = {
 
 const IDLE: ReplayStateSnapshot = { phase: 'idle', playIndex: 0, startIndex: 0, cutTime: null, startTime: null };
 
-const listeners = new Set<() => void>();
-let state: ReplayStateSnapshot = IDLE;
+interface ReplayStateContainer {
+  value: ReplayStateSnapshot;
+  listeners: Set<() => void>;
+}
+const replayStateRoot = globalThis as typeof globalThis & { __mcsReplayStateV1?: ReplayStateContainer };
+const replayStateContainer = replayStateRoot.__mcsReplayStateV1 ??= {
+  value: IDLE,
+  listeners: new Set<() => void>(),
+};
 
 function emit() {
-  for (const fn of listeners) fn();
+  for (const fn of replayStateContainer.listeners) fn();
 }
 
 function subscribe(fn: () => void): () => void {
-  listeners.add(fn);
+  replayStateContainer.listeners.add(fn);
   return () => {
-    listeners.delete(fn);
+    replayStateContainer.listeners.delete(fn);
   };
 }
 
 function getSnapshot(): ReplayStateSnapshot {
-  return state;
+  return replayStateContainer.value;
 }
 
 function transition(to: ReplayPhase, patch?: Partial<ReplayStateSnapshot>): boolean {
-  if (state.phase === to && !patch) return false;
-  if (state.phase !== to && !TRANSITIONS[state.phase].includes(to)) {
+  if (replayStateContainer.value.phase === to && !patch) return false;
+  if (replayStateContainer.value.phase !== to && !TRANSITIONS[replayStateContainer.value.phase].includes(to)) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn(`[replay] illegal transition ${state.phase} → ${to} ignored`);
+      console.warn(`[replay] illegal transition ${replayStateContainer.value.phase} → ${to} ignored`);
     }
     return false;
   }
-  state = { ...state, ...patch, phase: to };
+  replayStateContainer.value = { ...replayStateContainer.value, ...patch, phase: to };
   emit();
   return true;
 }
@@ -80,9 +87,9 @@ export const replayActions = {
   },
   /** Keep the wall-clock moment in sync as the head moves (no transition). */
   syncCutTime(now: number): void {
-    if (state.phase === 'idle' || state.phase === 'selecting') return;
-    if (state.cutTime === now) return;
-    state = { ...state, cutTime: now };
+    if (replayStateContainer.value.phase === 'idle' || replayStateContainer.value.phase === 'selecting') return;
+    if (replayStateContainer.value.cutTime === now) return;
+    replayStateContainer.value = { ...replayStateContainer.value, cutTime: now };
     emit();
   },
   /**
@@ -90,9 +97,9 @@ export const replayActions = {
    * moment — the multi-TF switch. Phase is preserved (playing keeps playing).
    */
   rebase(playIndex: number, startIndex: number): void {
-    if (state.phase === 'idle' || state.phase === 'selecting') return;
-    if (state.playIndex === playIndex && state.startIndex === startIndex) return;
-    state = { ...state, playIndex, startIndex };
+    if (replayStateContainer.value.phase === 'idle' || replayStateContainer.value.phase === 'selecting') return;
+    if (replayStateContainer.value.playIndex === playIndex && replayStateContainer.value.startIndex === startIndex) return;
+    replayStateContainer.value = { ...replayStateContainer.value, playIndex, startIndex };
     emit();
   },
   play(): boolean {
@@ -106,8 +113,8 @@ export const replayActions = {
   },
   exit(): boolean {
     clearReplayDataset();
-    if (state.phase === 'idle') return false;
-    state = IDLE;
+    if (replayStateContainer.value.phase === 'idle') return false;
+    replayStateContainer.value = IDLE;
     emit();
     return true;
   },
@@ -117,20 +124,20 @@ export const replayActions = {
    * back off the end returns finished → paused.
    */
   scrubTo(index: number, total: number): void {
-    if (state.phase === 'idle' || state.phase === 'selecting') return;
+    if (replayStateContainer.value.phase === 'idle' || replayStateContainer.value.phase === 'selecting') return;
     const clamped = Math.max(1, Math.min(total - 1, index));
     const atEnd = clamped >= total - 1;
-    let phase = state.phase;
+    let phase = replayStateContainer.value.phase;
     if (atEnd && phase === 'playing') phase = 'finished';
     if (!atEnd && phase === 'finished') phase = 'paused';
     // Rewinding needs an atomic session reconstruction, never another tick.
-    if (clamped < state.playIndex && phase === 'playing') phase = 'paused';
-    if (clamped === state.playIndex && phase === state.phase) return;
-    state = { ...state, playIndex: clamped, phase };
+    if (clamped < replayStateContainer.value.playIndex && phase === 'playing') phase = 'paused';
+    if (clamped === replayStateContainer.value.playIndex && phase === replayStateContainer.value.phase) return;
+    replayStateContainer.value = { ...replayStateContainer.value, playIndex: clamped, phase };
     emit();
   },
   stepBy(n: number, total: number): void {
-    replayActions.scrubTo(state.playIndex + n, total);
+    replayActions.scrubTo(replayStateContainer.value.playIndex + n, total);
   },
 };
 
@@ -140,7 +147,7 @@ export function useReplayState(): ReplayStateSnapshot {
 
 /** Non-hook accessor for imperative code paths. */
 export function getReplayState(): ReplayStateSnapshot {
-  return state;
+  return replayStateContainer.value;
 }
 
 export function isReplayActive(phase: ReplayPhase): boolean {

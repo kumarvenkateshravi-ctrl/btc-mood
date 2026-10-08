@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { buildBacktestSeries } from './backtestSeries';
-import type { VdTrade } from '@/lib/indicators/vdEngine';
+import type { TrackedTrade } from '@/lib/tradeWalker';
 import type { ScannerSignal } from './signals';
 
 // Minimal resolved-trade factory (only the fields the series reads).
-const trade = (realizedR: number | null, resolvedTime: number): VdTrade<ScannerSignal> =>
+const trade = (realizedR: number | null, resolvedTime: number): TrackedTrade<ScannerSignal> =>
   ({
     signal: {} as ScannerSignal,
     status: realizedR != null ? (realizedR > 0 ? 'tp1' : 'stopped') : 'open',
@@ -18,7 +18,7 @@ const trade = (realizedR: number | null, resolvedTime: number): VdTrade<ScannerS
     mfeR: 1,
     maeR: 0.3,
     realizedR,
-  }) as VdTrade<ScannerSignal>;
+  }) as TrackedTrade<ScannerSignal>;
 
 describe('buildBacktestSeries', () => {
   it('reconstructs the equity curve in resolution order with drawdown', () => {

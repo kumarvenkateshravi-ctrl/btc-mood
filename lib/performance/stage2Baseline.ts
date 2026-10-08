@@ -1,7 +1,6 @@
 import type { Candle } from '../types';
 import type { CustomIndicatorConfig } from '../indicatorFramework';
 import { computeMacd } from '../indicators/macd';
-import { computeRegressionGChannel } from '../indicators/regressionGChannel';
 import { computeRsi } from '../indicators/rsi';
 import { computeSessionVolumeProfile } from '../indicators/sessionVolumeProfile';
 import { computeSma } from '../indicators/sma';
@@ -73,7 +72,6 @@ export function summarizeDurations(values: number[]): BaselineSummary {
 const LIGHT_SMA = { id: 'sma', settings: { inputs: { length: 20, source: 'close' }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
 const LIGHT_RSI = { id: 'rsi', settings: { inputs: { length: 14, source: 'close' }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
 const HEAVY_MACD = { id: 'macd', settings: { inputs: { fast: 12, slow: 26, signal: 9, source: 'close' }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
-const HEAVY_REGRESSION = { id: 'regression-g-channel', settings: { inputs: { length: 200, gcLength: 100 }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
 const PROFILE_CONFIG = {
   id: 'session-volume-profile-hd',
   settings: {
@@ -97,13 +95,12 @@ function computeIndicatorStack(candles: Candle[], stack: BaselineStack): void {
   computeRsi(candles, LIGHT_RSI);
   if (stack === 'heavy') {
     computeMacd(candles, HEAVY_MACD);
-    computeRegressionGChannel(candles, HEAVY_REGRESSION);
   }
 }
 
 function formatIndicatorSetData(candles: Candle[], stack: BaselineStack): number {
   const results = stack === 'heavy'
-    ? [computeSma(candles, LIGHT_SMA), computeRsi(candles, LIGHT_RSI), computeMacd(candles, HEAVY_MACD), computeRegressionGChannel(candles, HEAVY_REGRESSION)]
+    ? [computeSma(candles, LIGHT_SMA), computeRsi(candles, LIGHT_RSI), computeMacd(candles, HEAVY_MACD)]
     : [computeSma(candles, LIGHT_SMA), computeRsi(candles, LIGHT_RSI)];
   let writes = 0;
   const series = { setData(data: unknown[]) { writes += data.length; } };

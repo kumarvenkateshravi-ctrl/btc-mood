@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, HelpCircle } from 'lucide-react';
 import type { CustomIndicatorDef } from '@/lib/customIndicatorsLibrary';
 import type { IndicatorSettings } from '@/lib/indicatorFramework';
+import { saveIndicatorDefault } from '@/lib/indicatorDefaultsStore';
 
 interface IndicatorSettingsModalProps {
   indicatorDef: CustomIndicatorDef;
@@ -74,7 +75,7 @@ function ColorPickerPopover({
   }, [onClose]);
 
   return (
-    <div ref={popoverRef} className="absolute right-0 top-full mt-2 z-[60] w-[276px] rounded-lg bg-[#1e222d] border border-[#434651] shadow-[0_10px_30px_rgba(0,0,0,0.8)] p-4 flex flex-col gap-4 cursor-default" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+    <div ref={popoverRef} className="absolute right-0 top-full mt-2 z-[60] w-[276px] rounded-lg bg-[#1F1F1F] border border-[#434651] shadow-[0_10px_30px_rgba(0,0,0,0.8)] p-4 flex flex-col gap-4 cursor-default" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
       {/* Grid */}
       <div className="grid grid-cols-10 gap-1">
         {TV_COLORS.map(hex => (
@@ -184,6 +185,7 @@ export default function IndicatorSettingsModal({
 }: IndicatorSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>(visibleTabs[0] ?? 'Inputs');
   const [openColorPickerId, setOpenColorPickerId] = useState<string | null>(null);
+  const [defaultsSaveError, setDefaultsSaveError] = useState<string | null>(null);
 
   // Dragging state
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -426,7 +428,7 @@ export default function IndicatorSettingsModal({
             onChange={(e) => updateInputs(showInp.id, e.target.checked)}
             className="peer sr-only"
           />
-          <div className="flex h-[16px] w-[16px] items-center justify-center rounded-[3px] border border-[#50535e] bg-[#1e222d] transition-colors peer-checked:border-[#2962FF] peer-checked:bg-[#2962FF] peer-checked:[&>svg]:opacity-100">
+          <div className="flex h-[16px] w-[16px] items-center justify-center rounded-[3px] border border-[#50535e] bg-[#1F1F1F] transition-colors peer-checked:border-[#2962FF] peer-checked:bg-[#2962FF] peer-checked:[&>svg]:opacity-100">
             <svg width="9" height="7" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
               <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -449,7 +451,7 @@ export default function IndicatorSettingsModal({
             style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2210%22%20height%3D%226%22%20viewBox%3D%220%200%2010%206%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M1%201L5%205L9%201%22%20stroke%3D%22%23787b86%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '9px' }}
           >
             {typeInp.options?.map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-[#1e222d]">{opt.label}</option>
+              <option key={opt.value} value={opt.value} className="bg-[#1F1F1F]">{opt.label}</option>
             ))}
           </select>
         )}
@@ -465,7 +467,7 @@ export default function IndicatorSettingsModal({
             style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2210%22%20height%3D%226%22%20viewBox%3D%220%200%2010%206%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M1%201L5%205L9%201%22%20stroke%3D%22%23787b86%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '9px' }}
           >
             {srcInp.options?.map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-[#1e222d]">{opt.label}</option>
+              <option key={opt.value} value={opt.value} className="bg-[#1F1F1F]">{opt.label}</option>
             ))}
           </select>
         ) : (
@@ -530,7 +532,7 @@ export default function IndicatorSettingsModal({
     <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none p-4">
       <div 
         ref={modalRef}
-        className="pointer-events-auto flex w-[400px] max-h-full flex-col overflow-hidden rounded-lg bg-[#1e222d] text-[13px] text-[#d1d4dc] shadow-[0_2px_4px_rgba(0,0,0,0.5),0_16px_24px_rgba(0,0,0,0.5)] border border-[#434651]"
+        className="pointer-events-auto flex w-[400px] max-h-full flex-col overflow-hidden rounded-lg bg-[#1F1F1F] text-[13px] text-[#d1d4dc] shadow-[0_2px_4px_rgba(0,0,0,0.5),0_16px_24px_rgba(0,0,0,0.5)] border border-[#434651]"
         style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
       >
         {/* Header */}
@@ -608,7 +610,7 @@ export default function IndicatorSettingsModal({
                                   className="peer sr-only"
                                   disabled={isDisabled}
                                 />
-                                <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                                <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1F1F1F] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                                   <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
                                     <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                   </svg>
@@ -662,12 +664,12 @@ export default function IndicatorSettingsModal({
                                   disabled={isDisabled}
                                 >
                                   {inp.options?.map((opt) => (
-                                    <option key={opt.value} value={opt.value} className="bg-[#1e222d]">{opt.label}</option>
+                                    <option key={opt.value} value={opt.value} className="bg-[#1F1F1F]">{opt.label}</option>
                                   ))}
                                   {inp.type === 'source' && activeIndicatorsContext.map(ctx => (
-                                    <optgroup key={ctx.id} label={ctx.name} className="bg-[#1e222d] text-[#787b86] font-semibold text-[11px] uppercase">
+                                    <optgroup key={ctx.id} label={ctx.name} className="bg-[#1F1F1F] text-[#787b86] font-semibold text-[11px] uppercase">
                                       {ctx.plots.map(p => (
-                                        <option key={`${ctx.id}:${p.id}`} value={`${ctx.id}:${p.id}`} className="bg-[#1e222d] text-[#d1d4dc] normal-case text-[14px] font-normal">
+                                        <option key={`${ctx.id}:${p.id}`} value={`${ctx.id}:${p.id}`} className="bg-[#1F1F1F] text-[#d1d4dc] normal-case text-[14px] font-normal">
                                           {`${ctx.name}: ${p.title}`}
                                         </option>
                                       ))}
@@ -711,7 +713,7 @@ export default function IndicatorSettingsModal({
                               onChange={(e) => updateStyles(st.id, { ...currentStyle, display: e.target.checked })}
                               className="peer sr-only"
                             />
-                            <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                            <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1F1F1F] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                               <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
                                 <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                               </svg>
@@ -784,7 +786,7 @@ export default function IndicatorSettingsModal({
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className="relative flex items-center">
                     <input type="checkbox" checked={labelsOnPriceScale} onChange={(e) => updateLabelsOnPriceScale(e.target.checked)} className="peer sr-only" />
-                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1F1F1F] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
                         <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
@@ -795,7 +797,7 @@ export default function IndicatorSettingsModal({
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className="relative flex items-center">
                     <input type="checkbox" checked={valuesInStatusLine} onChange={(e) => updateValuesInStatusLine(e.target.checked)} className="peer sr-only" />
-                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1F1F1F] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
                         <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
@@ -827,7 +829,7 @@ export default function IndicatorSettingsModal({
                       onChange={(e) => updateVisibility(tf.id, e.target.checked)}
                       className="peer sr-only"
                     />
-                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1e222d] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
+                    <div className="h-[18px] w-[18px] rounded-[3px] border border-[#50535e] bg-[#1F1F1F] peer-checked:bg-[#2962FF] peer-checked:border-[#2962FF] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-colors">
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" className="opacity-0 transition-opacity">
                         <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
@@ -840,26 +842,30 @@ export default function IndicatorSettingsModal({
           )}
         </div>
 
+        {defaultsSaveError && (
+          <p role="alert" className="border-t border-[#2a2e39] px-5 py-2 text-[12px] text-[#f23645]">
+            {defaultsSaveError}
+          </p>
+        )}
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-[#2a2e39] px-5 py-4 bg-[#1e222d]">
+        <div className="flex items-center justify-between border-t border-[#2a2e39] px-5 py-4 bg-[#1F1F1F]">
           <select 
-            className="w-[110px] rounded-[4px] border border-[#363a45] bg-[#1e222d] px-2 py-1 text-[13px] text-[#d1d4dc] outline-none transition-colors appearance-none cursor-pointer" 
+            className="w-[110px] rounded-[4px] border border-[#363a45] bg-[#1F1F1F] px-2 py-1 text-[13px] text-[#d1d4dc] outline-none transition-colors appearance-none cursor-pointer"
             style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%228%22%20viewBox%3D%220%200%2012%208%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M1%201.5L6%206.5L11%201.5%22%20stroke%3D%22%23787b86%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '10px' }}
-            onChange={(e) => {
+            onChange={async (e) => {
               if (e.target.value === 'save_as_default') {
-                const defaultsStr = localStorage.getItem('indicator_defaults') || '{}';
-                const defaultsObj = JSON.parse(defaultsStr);
-                defaultsObj[indicatorDef.id] = {
+                e.target.value = 'defaults';
+                const saved = await saveIndicatorDefault(indicatorDef.id, {
                   inputs: inputsState,
                   styles: stylesState,
                   visibility: visibilityState,
                   labelsOnPriceScale,
                   valuesInStatusLine,
-                };
-                localStorage.setItem('indicator_defaults', JSON.stringify(defaultsObj));
-                e.target.value = 'defaults';
+                });
+                setDefaultsSaveError(saved ? null : 'Could not save this default. Browser storage is full or unavailable; your current indicator settings are still applied.');
               } else if (e.target.value === 'reset_settings') {
                 resetToDefaults();
+                setDefaultsSaveError(null);
                 e.target.value = 'defaults';
               }
             }}

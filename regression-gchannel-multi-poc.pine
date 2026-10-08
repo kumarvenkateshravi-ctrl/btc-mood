@@ -1,0 +1,311 @@
+//@version=6
+indicator("Regression Line [DW] + G-Channel Trend + Multi POC", shorttitle = "RegLn+GCh+POC", overlay = true, max_bars_back = 5000)
+
+// ═══════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════
+src = input.source(close, "Source")
+
+filtType = input.string("SMA", "Base Average Type", options = ["ALMA", "EMA", "SMA", "RMA", "LWMA", "VWMA"])
+wType    = input.string("Continuous", "Window Type", options = ["Continuous", "Interval"])
+len      = input.int(200, "Sampling Length (for Continuous Window Type)", minval = 2)
+res      = input.timeframe("D", "Interval Size (for Interval Window Type)")
+
+extendLines = input.bool(false, "Extend Line Right") ? extend.right : extend.none
+
+showLine = input.bool(true, "Show Regression Line")
+lineWidth = input.int(4, "Line Width", minval = 1)
+lineStyle = input.string("Solid", "Line Style", options = ["Solid", "Dotted", "Dashed"])
+posColor  = input.color(color.lime, "Positive Slope Color")
+negColor  = input.color(color.red, "Negative Slope Color")
+flatColor = input.color(color.new(#cccccc, 0), "Flat Slope Color")
+
+showTracer = input.bool(true, "Show Tracer (current-value plot)",
+     tooltip = "A thin plot() of the regression line's current bar value only — functionally a Least Squares Moving Average (LSMA). Useful if you want other scripts/request.security() to reference this value, since the diagonal line itself is drawn as a line object, not a plot series.")
+tracerColor = input.color(color.white, "Tracer Color")
+
+showBarColor = input.bool(true, "Color Bars by Position/Slope",
+     tooltip = "4-state coloring: bright vs dark shade distinguishes 'trending in your favor' from 'just starting to turn' — not just simple above/below.")
+
+// ═══════════════════════════════════════════════════════════════════════
+// FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════
+
+// Interval renewal — true on the first bar of a new `res`-sized period
+f_newbar(res) =>
+    t = time(res)
+    (na(t[1]) and not na(t)) or (nz(t[1], t) < t)
+
+f_alma(y, t) =>
+    m = 0.85 * (t - 1)
+    s = t / 6
+    wtsum = 0.0
+    cumwt = 0.0
+    for i = 0 to t - 1
+        wt = math.exp(-math.pow(i - m, 2) / (2 * math.pow(s, 2)))
+        wtsum += wt * nz(y[t - 1 - i], y)
+        cumwt += wt
+    wtsum / cumwt
+
+f_ema(y, t) =>
+    var float out = na
+    out := na(out[1]) ? y : (y - nz(out[1])) * (2 / (t + 1)) + nz(out[1])
+    out
+
+f_sma(y, t) =>
+    sum = 0.0
+    for i = 0 to t - 1
+        sum += nz(y[i], y)
+    sum / t
+
+f_rma(y, t) =>
+    var float out = na
+    out := na(out[1]) ? f_sma(y, t) : (nz(out[1]) * (t - 1) + y) / t
+    out
+
+f_lwma(y, t) =>
+    numSum = 0.0
+    denSum = 0.0
+    for i = 0 to t - 1
+        numSum += (t - i) * nz(y[i], y)
+        denSum += (t - i)
+    numSum / denSum
+
+f_vwma(y, t) =>
+    tick = syminfo.mintick
+    rng = high - low
+    var float tickrng = tick
+    tickrng := math.abs(rng) < tick ? tickrng : rng
+    tickvol = math.abs(tickrng) / tick
+    vol = na(volume) ? tickvol : volume
+    vp = y * vol
+    vpsum = 0.0
+    vsum = 0.0
+    for i = 0 to t - 1
+        vpsum += nz(vp[i], vp)
+        vsum  += nz(vol[i], vol)
+    vpsum / vsum
+
+f_filt(y, t, fType) =>
+    fType == "ALMA" ? f_alma(y, t) :
+     fType == "EMA"  ? f_ema(y, t) :
+     fType == "SMA"  ? f_sma(y, t) :
+     fType == "RMA"  ? f_rma(y, t) :
+     fType == "LWMA" ? f_lwma(y, t) :
+     f_vwma(y, t)
+
+// Standard deviation of y around its filtered mean, over t bars, using fType as the base average.
+// mult is a plain scaling factor (kept for reuse; slope math below always calls this with mult=1
+// to avoid coupling the line's own trajectory to an unrelated setting).
+f_stdev(y, t, fType, mult) =>
+    math.sqrt(f_filt(math.pow(y - f_filt(y, t, fType), 2), t, fType)) * mult
+
+f_corr(x, y, t, fType) =>
+    xDev = math.round(t / 2)
+    yDev = y - f_filt(y, t, fType)
+    xySum = 0.0
+    x2Sum = 0.0
+    y2Sum = 0.0
+    for i = 0 to t - 1
+        xySum += xDev * nz(yDev[i], yDev)
+        x2Sum += math.pow(xDev, 2)
+        y2Sum += math.pow(nz(yDev[i], yDev), 2)
+    den = math.sqrt(x2Sum * y2Sum)
+    den == 0 ? 0 : xySum / den
+
+// Returns [Y1, Y2] — the regression line's value at the start and end of the window.
+f_linRegFilt(y, t, fType) =>
+    x = bar_index
+    r = f_corr(x, y, t, fType)
+    sy = f_stdev(y, t, fType, 1.0)   // fixed multiplier — slope must not depend on channel width
+    sx = math.round(t / 2)
+    yMean = f_filt(y, t, fType)
+    xMean = nz(bar_index[sx], 0)
+    b = t == 1 ? 0 : r * (sy / sx)
+    a = yMean - b * xMean
+    y1 = a + b * nz(x[t - 1], x)
+    y2 = a + b * x
+    [y1, y2]
+
+f_lineStyle(s) =>
+    s == "Solid" ? line.style_solid : s == "Dotted" ? line.style_dotted : line.style_dashed
+
+f_drawLine(y1, y2, t, col, styleStr, lw, ext) =>
+    int x1 = nz(bar_index[t - 1], 0)
+    int x2 = bar_index
+    var line ln = na
+    if bar_index != nz(bar_index[1], 0)
+        line.delete(ln)
+        ln := line.new(x1 = x1, y1 = y1, x2 = x2, y2 = y2, xloc = xloc.bar_index, extend = ext, color = col, style = f_lineStyle(styleStr), width = lw)
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════
+newInt = f_newbar(res)
+
+var int interBars = 1
+interBars := newInt ? 1 : interBars + 1
+
+int per = wType == "Interval" ? interBars : int(len)
+
+[y1, y2] = f_linRegFilt(src, per, filtType)
+
+regColor = y2 > y1 ? posColor : y2 < y1 ? negColor : flatColor
+
+barColorVal = (src > y2) and (y2 <= y1) ? color.new(posColor, 40) :
+     (src > y2) and (y2 > y1) ? posColor :
+     (src < y2) and (y2 >= y1) ? color.new(negColor, 40) :
+     (src < y2) and (y2 < y1) ? negColor :
+     flatColor
+
+// ═══════════════════════════════════════════════════════════════════════
+// OUTPUTS
+// ═══════════════════════════════════════════════════════════════════════
+plot(showTracer ? y2 : na, color = tracerColor, linewidth = 1, title = "Regression Line Current Value")
+
+if showLine
+    f_drawLine(y1, y2, per, regColor, lineStyle, lineWidth, extendLines)
+
+barcolor(showBarColor ? barColorVal : na)
+
+// ═══════════════════════════════════════════════════════════════════════
+// G-CHANNEL TREND DETECTION
+// Two recursive bounds (gcA, gcB) each ratchet toward price and relax back by 1/length per bar —
+// together they form a channel that hugs price during trends and widens during consolidation.
+// Trend direction is read from whichever bound price crossed more recently.
+// ═══════════════════════════════════════════════════════════════════════
+GRP_GC = "G-Channel Trend"
+gcShow    = input.bool(true, "Show G-Channel", group = GRP_GC)
+gcLength  = input.int(100, "Length", group = GRP_GC)
+gcSrc     = input.source(close, "Source", group = GRP_GC)
+gcBullColor = input.color(color.lime, "Bullish Color", group = GRP_GC)
+gcBearColor = input.color(color.red, "Bearish Color", group = GRP_GC)
+gcShowCross = input.bool(true, "Show Buy/Sell Labels on Trend Flip", group = GRP_GC)
+
+var float gcA = 0.0
+var float gcB = 0.0
+gcA := math.max(gcSrc, nz(gcA[1])) - nz(gcA[1] - gcB[1]) / gcLength
+gcB := math.min(gcSrc, nz(gcB[1])) + nz(gcA[1] - gcB[1]) / gcLength
+gcAvg = (gcA + gcB) / 2
+
+gcCrossUp = gcB[1] < close[1] and gcB > close
+gcCrossDn = gcA[1] < close[1] and gcA > close
+gcBullish = ta.barssince(gcCrossDn) <= ta.barssince(gcCrossUp)
+gcColor = gcBullish ? gcBullColor : gcBearColor
+
+gcP1 = plot(gcShow ? gcAvg : na, title = "G-Channel Average", color = color.new(gcColor, 90), linewidth = 1)
+gcP2 = plot(gcShow ? close : na, title = "G-Channel Close Anchor", color = color.new(gcColor, 100), linewidth = 1)
+fill(gcP1, gcP2, color = color.new(gcColor, 90), title = "G-Channel Fill")
+
+plotshape(gcShow and gcShowCross and not gcBullish and gcBullish[1] ? gcAvg : na, title = "G-Channel Sell", location = location.absolute, style = shape.labeldown, color = gcBearColor, size = size.tiny, text = "Sell", textcolor = color.white, offset = -1)
+plotshape(gcShow and gcShowCross and gcBullish and not gcBullish[1] ? gcAvg : na, title = "G-Channel Buy", location = location.absolute, style = shape.labelup, color = gcBullColor, size = size.tiny, text = "Buy", textcolor = color.white, offset = -1)
+
+alertcondition(gcBullish and not gcBullish[1], title = "G-Channel Buy Signal", message = "G-Channel: trend flipped bullish.")
+alertcondition(not gcBullish and gcBullish[1], title = "G-Channel Sell Signal", message = "G-Channel: trend flipped bearish.")
+// ═══════════════════════════════════════════════════════════════════════
+// MARKET PROFILE — MULTI POC
+// The supplied completed-period TPO calculation is preserved; identifiers
+// are prefixed only to keep this merged script's global namespace isolated.
+// ═══════════════════════════════════════════════════════════════════════
+
+GRP_POC = "POC Lines"
+
+pocShowWeekly = input.bool(true, "Show Weekly POC", group = GRP_POC)
+pocShowDaily = input.bool(true, "Show Daily POC", group = GRP_POC)
+pocShow4Hour = input.bool(true, "Show 4-Hour POC", group = GRP_POC)
+
+pocWeeklyColor = input.color(color.red, "Weekly POC Color", group = GRP_POC)
+pocDailyColor = input.color(color.orange, "Daily POC Color", group = GRP_POC)
+pocFourHourColor = input.color(color.aqua, "4-Hour POC Color", group = GRP_POC)
+
+pocWidth = input.int(2, "POC Line Width", minval = 1, maxval = 4, group = GRP_POC)
+
+pocIncluded(lower, upper, barLow, barHigh) =>
+    (barLow >= lower and barLow <= upper) or
+     (barHigh >= lower and barHigh <= upper) or
+     (barLow <= lower and barHigh >= upper)
+
+pocGetTpo(lower, upper, barsInProfile) =>
+    float result = 0.0
+
+    if barsInProfile > 0
+        for i = 1 to barsInProfile
+            if pocIncluded(lower, upper, low[i], high[i])
+                result += 1
+
+    result
+
+pocProfile(string profileTimeframe) =>
+    var float periodHigh = na
+    var float periodLow = na
+    var int periodBars = 0
+
+    var float completedHigh = na
+    var float completedLow = na
+    var int completedBars = 0
+
+    var float pocPrice = na
+
+    bool newProfile = ta.change(time(profileTimeframe)) != 0
+
+    if newProfile
+        completedHigh := periodHigh[1]
+        completedLow := periodLow[1]
+        completedBars := int(nz(periodBars[1], 0))
+
+        periodHigh := high
+        periodLow := low
+        periodBars := 0
+    else
+        periodHigh := math.max(nz(periodHigh, high), high)
+        periodLow := math.min(nz(periodLow, low), low)
+        periodBars += 1
+
+    if newProfile and not na(completedHigh) and not na(completedLow)
+        float profileRange = completedHigh - completedLow
+        float channelSize = profileRange / 20.0
+
+        int pocLocation = 1
+        float pocValue = 0.0
+
+        for i = 1 to 20
+            float lowerBound = completedLow + (i - 1) * channelSize
+            float upperBound = completedLow + i * channelSize
+            float tpoValue = pocGetTpo(lowerBound, upperBound, completedBars)
+
+            if tpoValue >= pocValue
+                pocValue := tpoValue
+                pocLocation := i
+
+        pocPrice := completedLow + (pocLocation - 0.5) * channelSize
+
+    pocPrice
+
+float pocWeekly = pocProfile("W")
+float pocDaily = pocProfile("D")
+float pocFourHour = pocProfile("240")
+
+bool pocNewWeekly = ta.change(time("W")) != 0
+bool pocNewDaily = ta.change(time("D")) != 0
+bool pocNew4Hour = ta.change(time("240")) != 0
+
+plot(
+     pocShowWeekly and not pocNewWeekly ? pocWeekly : na,
+     title = "Weekly POC",
+     color = pocWeeklyColor,
+     linewidth = pocWidth,
+     style = plot.style_linebr)
+
+plot(
+     pocShowDaily and not pocNewDaily ? pocDaily : na,
+     title = "Daily POC",
+     color = pocDailyColor,
+     linewidth = pocWidth,
+     style = plot.style_linebr)
+
+plot(
+     pocShow4Hour and not pocNew4Hour ? pocFourHour : na,
+     title = "4-Hour POC",
+     color = pocFourHourColor,
+     linewidth = pocWidth,
+     style = plot.style_linebr)

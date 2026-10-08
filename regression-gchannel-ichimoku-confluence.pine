@@ -1,0 +1,288 @@
+//@version=6
+indicator("Regression Line + G-Channel + Ichimoku Confluence", shorttitle = "RegLn+GCh+Ichi", overlay = true, max_bars_back = 5000)
+
+// ═══════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════
+src = input.source(close, "Source")
+
+filtType = input.string("SMA", "Base Average Type", options = ["ALMA", "EMA", "SMA", "RMA", "LWMA", "VWMA"])
+wType    = input.string("Continuous", "Window Type", options = ["Continuous", "Interval"])
+len      = input.int(200, "Sampling Length (for Continuous Window Type)", minval = 2)
+res      = input.timeframe("D", "Interval Size (for Interval Window Type)")
+
+extendLines = input.bool(false, "Extend Line Right") ? extend.right : extend.none
+
+showLine = input.bool(true, "Show Regression Line")
+lineWidth = input.int(4, "Line Width", minval = 1)
+lineStyle = input.string("Solid", "Line Style", options = ["Solid", "Dotted", "Dashed"])
+posColor  = input.color(color.lime, "Positive Slope Color")
+negColor  = input.color(color.red, "Negative Slope Color")
+flatColor = input.color(color.new(#cccccc, 0), "Flat Slope Color")
+
+showTracer = input.bool(true, "Show Tracer (current-value plot)",
+     tooltip = "A thin plot() of the regression line's current bar value only — functionally a Least Squares Moving Average (LSMA). Useful if you want other scripts/request.security() to reference this value, since the diagonal line itself is drawn as a line object, not a plot series.")
+
+// ═══════════════════════════════════════════════════════════════════════
+// FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════
+
+// Interval renewal — true on the first bar of a new `res`-sized period
+f_newbar(res) =>
+    t = time(res)
+    (na(t[1]) and not na(t)) or (nz(t[1], t) < t)
+
+f_alma(y, t) =>
+    m = 0.85 * (t - 1)
+    s = t / 6
+    wtsum = 0.0
+    cumwt = 0.0
+    for i = 0 to t - 1
+        wt = math.exp(-math.pow(i - m, 2) / (2 * math.pow(s, 2)))
+        wtsum += wt * nz(y[t - 1 - i], y)
+        cumwt += wt
+    wtsum / cumwt
+
+f_ema(y, t) =>
+    var float out = na
+    out := na(out[1]) ? y : (y - nz(out[1])) * (2 / (t + 1)) + nz(out[1])
+    out
+
+f_sma(y, t) =>
+    sum = 0.0
+    for i = 0 to t - 1
+        sum += nz(y[i], y)
+    sum / t
+
+f_rma(y, t) =>
+    var float out = na
+    out := na(out[1]) ? f_sma(y, t) : (nz(out[1]) * (t - 1) + y) / t
+    out
+
+f_lwma(y, t) =>
+    numSum = 0.0
+    denSum = 0.0
+    for i = 0 to t - 1
+        numSum += (t - i) * nz(y[i], y)
+        denSum += (t - i)
+    numSum / denSum
+
+f_vwma(y, t) =>
+    tick = syminfo.mintick
+    rng = high - low
+    var float tickrng = tick
+    tickrng := math.abs(rng) < tick ? tickrng : rng
+    tickvol = math.abs(tickrng) / tick
+    vol = na(volume) ? tickvol : volume
+    vp = y * vol
+    vpsum = 0.0
+    vsum = 0.0
+    for i = 0 to t - 1
+        vpsum += nz(vp[i], vp)
+        vsum  += nz(vol[i], vol)
+    vpsum / vsum
+
+f_filt(y, t, fType) =>
+    fType == "ALMA" ? f_alma(y, t) :
+     fType == "EMA"  ? f_ema(y, t) :
+     fType == "SMA"  ? f_sma(y, t) :
+     fType == "RMA"  ? f_rma(y, t) :
+     fType == "LWMA" ? f_lwma(y, t) :
+     f_vwma(y, t)
+
+// Standard deviation of y around its filtered mean, over t bars, using fType as the base average.
+// mult is a plain scaling factor (kept for reuse; slope math below always calls this with mult=1
+// to avoid coupling the line's own trajectory to an unrelated setting).
+f_stdev(y, t, fType, mult) =>
+    math.sqrt(f_filt(math.pow(y - f_filt(y, t, fType), 2), t, fType)) * mult
+
+f_corr(x, y, t, fType) =>
+    xDev = math.round(t / 2)
+    yDev = y - f_filt(y, t, fType)
+    xySum = 0.0
+    x2Sum = 0.0
+    y2Sum = 0.0
+    for i = 0 to t - 1
+        xySum += xDev * nz(yDev[i], yDev)
+        x2Sum += math.pow(xDev, 2)
+        y2Sum += math.pow(nz(yDev[i], yDev), 2)
+    den = math.sqrt(x2Sum * y2Sum)
+    den == 0 ? 0 : xySum / den
+
+// Returns [Y1, Y2] — the regression line's value at the start and end of the window.
+f_linRegFilt(y, t, fType) =>
+    x = bar_index
+    r = f_corr(x, y, t, fType)
+    sy = f_stdev(y, t, fType, 1.0)   // fixed multiplier — slope must not depend on channel width
+    sx = math.round(t / 2)
+    yMean = f_filt(y, t, fType)
+    xMean = nz(bar_index[sx], 0)
+    b = t == 1 ? 0 : r * (sy / sx)
+    a = yMean - b * xMean
+    y1 = a + b * nz(x[t - 1], x)
+    y2 = a + b * x
+    [y1, y2]
+
+f_lineStyle(s) =>
+    s == "Solid" ? line.style_solid : s == "Dotted" ? line.style_dotted : line.style_dashed
+
+f_drawLine(y1, y2, t, col, styleStr, lw, ext) =>
+    int x1 = nz(bar_index[t - 1], 0)
+    int x2 = bar_index
+    var line ln = na
+    if bar_index != nz(bar_index[1], 0)
+        line.delete(ln)
+        ln := line.new(x1 = x1, y1 = y1, x2 = x2, y2 = y2, xloc = xloc.bar_index, extend = ext, color = col, style = f_lineStyle(styleStr), width = lw)
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════
+newInt = f_newbar(res)
+
+var int interBars = 1
+interBars := newInt ? 1 : interBars + 1
+
+int per = wType == "Interval" ? interBars : int(len)
+
+[y1, y2] = f_linRegFilt(src, per, filtType)
+
+regColor = y2 > y1 ? posColor : y2 < y1 ? negColor : flatColor
+
+// ═══════════════════════════════════════════════════════════════════════
+// OUTPUTS
+// ═══════════════════════════════════════════════════════════════════════
+// A compile-time color keeps TradingView's color/width/style controls available
+// for this plot in the Style tab.
+plot(showTracer ? y2 : na, color = color.white, linewidth = 1,
+     title = "Regression Line Current Value", editable = true)
+
+if showLine
+    f_drawLine(y1, y2, per, regColor, lineStyle, lineWidth, extendLines)
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// G-CHANNEL TREND DETECTION
+// Two recursive bounds (gcA, gcB) each ratchet toward price and relax back by 1/length per bar —
+// together they form a channel that hugs price during trends and widens during consolidation.
+// Trend direction is read from whichever bound price crossed more recently.
+// ═══════════════════════════════════════════════════════════════════════
+GRP_GC = "G-Channel Trend"
+gcShow    = input.bool(true, "Show G-Channel", group = GRP_GC)
+gcLength  = input.int(100, "Length", group = GRP_GC)
+gcSrc     = input.source(close, "Source", group = GRP_GC)
+gcShowCross = input.bool(true, "Show Buy/Sell Labels on Trend Flip", group = GRP_GC)
+
+var float gcA = 0.0
+var float gcB = 0.0
+gcA := math.max(gcSrc, nz(gcA[1])) - nz(gcA[1] - gcB[1]) / gcLength
+gcB := math.min(gcSrc, nz(gcB[1])) + nz(gcA[1] - gcB[1]) / gcLength
+gcAvg = (gcA + gcB) / 2
+
+gcCrossUp = gcB[1] < close[1] and gcB > close
+gcCrossDn = gcA[1] < close[1] and gcA > close
+gcBullish = ta.barssince(gcCrossDn) <= ta.barssince(gcCrossUp)
+
+// Bullish and bearish states use separate constant-color plots. A single plot
+// with a calculated series color makes TradingView suppress its Style color
+// picker; separating the states gives every component a proper picker.
+gcBullAvg = plot(gcShow and gcBullish ? gcAvg : na,
+     title = "G-Channel Bullish Average", color = color.lime,
+     linewidth = 1, style = plot.style_linebr, editable = true)
+gcBullAnchor = plot(gcShow and gcBullish ? close : na,
+     title = "G-Channel Bullish Close Anchor", color = color.new(color.lime, 100),
+     linewidth = 1, style = plot.style_linebr, editable = true)
+gcBearAvg = plot(gcShow and not gcBullish ? gcAvg : na,
+     title = "G-Channel Bearish Average", color = color.red,
+     linewidth = 1, style = plot.style_linebr, editable = true)
+gcBearAnchor = plot(gcShow and not gcBullish ? close : na,
+     title = "G-Channel Bearish Close Anchor", color = color.new(color.red, 100),
+     linewidth = 1, style = plot.style_linebr, editable = true)
+
+fill(gcBullAvg, gcBullAnchor, color = color.new(color.lime, 90),
+     title = "G-Channel Bullish Fill", editable = true)
+fill(gcBearAvg, gcBearAnchor, color = color.new(color.red, 90),
+     title = "G-Channel Bearish Fill", editable = true)
+
+plotshape(gcShow and gcShowCross and not gcBullish and gcBullish[1] ? gcAvg : na,
+     title = "G-Channel Sell", location = location.absolute,
+     style = shape.labeldown, color = color.red, size = size.tiny,
+     text = "Sell", textcolor = color.white, offset = -1, editable = true)
+plotshape(gcShow and gcShowCross and gcBullish and not gcBullish[1] ? gcAvg : na,
+     title = "G-Channel Buy", location = location.absolute,
+     style = shape.labelup, color = color.lime, size = size.tiny,
+     text = "Buy", textcolor = color.white, offset = -1, editable = true)
+
+alertcondition(gcBullish and not gcBullish[1], title = "G-Channel Buy Signal", message = "G-Channel: trend flipped bullish.")
+alertcondition(not gcBullish and gcBullish[1], title = "G-Channel Sell Signal", message = "G-Channel: trend flipped bearish.")
+
+// ═══════════════════════════════════════════════════════════════════════
+// ICHIMOKU CLOUD
+// ═══════════════════════════════════════════════════════════════════════
+string GRP_ICHI = "Ichimoku Cloud"
+bool ichShow = input.bool(true, "Show Ichimoku Cloud", group=GRP_ICHI)
+int ichConversionPeriods = input.int(9, minval=1, title="Conversion Line Length", group=GRP_ICHI)
+int ichBasePeriods = input.int(26, minval=1, title="Base Line Length", group=GRP_ICHI)
+int ichSpanBPeriods = input.int(52, minval=1, title="Leading Span B Length", group=GRP_ICHI)
+int ichDisplacement = input.int(26, minval=1, title="Lagging Span", group=GRP_ICHI)
+bool ichHighlightConfluence = input.bool(true, "Highlight Regression + Span A Confluence", group=GRP_ICHI)
+
+f_ichDonchian(int period) =>
+    math.avg(ta.lowest(period), ta.highest(period))
+
+float ichConversionLine = f_ichDonchian(ichConversionPeriods)
+float ichBaseLine = f_ichDonchian(ichBasePeriods)
+float ichLeadLine1 = math.avg(ichConversionLine, ichBaseLine)
+float ichLeadLine2 = f_ichDonchian(ichSpanBPeriods)
+int ichOffset = ichDisplacement - 1
+
+// Explicit const colors ensure that all Ichimoku plots expose TradingView's
+// normal Style-tab color, width and line-style controls.
+const color ICH_CONVERSION_COLOR = #2962FF
+const color ICH_BASE_COLOR = #B71C1C
+const color ICH_LAGGING_COLOR = #43A047
+const color ICH_SPAN_A_COLOR = #A5D6A7
+const color ICH_SPAN_B_COLOR = #EF9A9A
+const color ICH_HIDDEN_BOUND_COLOR = #2962FF
+const color ICH_BULL_FILL_COLOR = color.rgb(67, 160, 71, 90)
+const color ICH_BEAR_FILL_COLOR = color.rgb(244, 67, 54, 90)
+
+plot(ichShow ? ichConversionLine : na, color = ICH_CONVERSION_COLOR,
+     title = "Conversion Line", editable = true)
+plot(ichShow ? ichBaseLine : na, color = ICH_BASE_COLOR,
+     title = "Base Line", editable = true)
+plot(ichShow ? close : na, offset = -ichOffset, color = ICH_LAGGING_COLOR,
+     title = "Lagging Span", editable = true)
+ichP1 = plot(ichShow ? ichLeadLine1 : na, offset = ichOffset,
+     color = ICH_SPAN_A_COLOR, title = "Leading Span A", editable = true)
+ichP2 = plot(ichShow ? ichLeadLine2 : na, offset = ichOffset,
+     color = ICH_SPAN_B_COLOR, title = "Leading Span B", editable = true)
+plot(ichShow ? math.max(ichLeadLine1, ichLeadLine2) : na, offset=ichOffset,
+     color = ICH_HIDDEN_BOUND_COLOR, title="Kumo Cloud Upper Line",
+     display=display.none, editable=true)
+plot(ichShow ? math.min(ichLeadLine1, ichLeadLine2) : na, offset=ichOffset,
+     color = ICH_HIDDEN_BOUND_COLOR, title="Kumo Cloud Lower Line",
+     display=display.none, editable=true)
+fill(ichP1, ichP2, title="Cloud Fill",
+     color = ichLeadLine1 > ichLeadLine2 ? ICH_BULL_FILL_COLOR : ICH_BEAR_FILL_COLOR,
+     editable = true)
+
+// The Span A visible on the current candle was calculated ichOffset bars ago.
+float ichDisplayedSpanA = ichLeadLine1[ichOffset]
+bool candleTouchesRegression = not na(y2) and low <= y2 and high >= y2
+bool candleTouchesDisplayedSpanA = not na(ichDisplayedSpanA) and low <= ichDisplayedSpanA and high >= ichDisplayedSpanA
+bool regressionSpanAConfluence = ichShow and (showLine or showTracer) and
+     ichHighlightConfluence and candleTouchesRegression and candleTouchesDisplayedSpanA
+
+// Highlight only confluence candles without using barcolor(). This separate
+// candle output preserves the chart's native colors on every other bar.
+plotcandle(regressionSpanAConfluence ? open : na,
+     regressionSpanAConfluence ? high : na,
+     regressionSpanAConfluence ? low : na,
+     regressionSpanAConfluence ? close : na,
+     title="Regression + Span A Confluence Candle",
+     color=color.yellow, wickcolor=color.new(color.yellow, 100), bordercolor=color.yellow,
+     editable=true)
+
+alertcondition(regressionSpanAConfluence,
+     title="Regression + Leading Span A Confluence",
+     message="Candle touched both the regression line and displayed Ichimoku Leading Span A.")

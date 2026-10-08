@@ -22,6 +22,7 @@ import type { Side } from '@/lib/paper';
 
 const REASON_TEXT: Record<SizingResult['reason'], string> = {
   ok: '',
+  'margin-capped': '',
   'no-stop': 'Set a Stop Loss first. Undefined-risk trades are blocked.',
   'stop-on-wrong-side': 'Stop must sit on the losing side of entry.',
   'insufficient-margin': 'Not enough balance for this size at the chosen leverage.',
@@ -142,7 +143,11 @@ export default function SessionHud({
                 {sizing.ok ? `${sizing.units.toFixed(4)} units` : 'Blocked'}
               </p>
               <p className="mt-0.5 text-[10px] text-ink-faint">
-                {sizing.ok ? `Risk ${sym}${formatMoney(sizing.riskAmount)}` : REASON_TEXT[sizing.reason]}
+                {sizing.ok
+                  ? sizing.reason === 'margin-capped'
+                    ? `Capped by ${cfg.leverage}x margin · risk ${sym}${formatMoney(sizing.riskAmount)}`
+                    : `Risk ${sym}${formatMoney(sizing.riskAmount)}`
+                  : REASON_TEXT[sizing.reason]}
               </p>
             </div>
             <div className="flex items-center gap-1.5">

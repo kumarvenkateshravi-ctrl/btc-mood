@@ -4,7 +4,7 @@
 // versioning system exists for (v1 62% → v2 76%).
 
 import type { Candle, Timeframe } from '../types';
-import { walkVdTrades, type VdTrade } from '../indicators/vdEngine';
+import { walkTrades, type TrackedTrade } from '../tradeWalker';
 import { generateScannerSignals, type ScannerSignal } from './signals';
 import type { ScannerStrategy } from './types';
 
@@ -30,7 +30,7 @@ export interface StrategyVersionStats {
 
 /** Pure stats over walked trades (chronological). */
 export function statsFromTrades(
-  trades: Array<VdTrade<ScannerSignal>>,
+  trades: Array<TrackedTrade<ScannerSignal>>,
   version: number,
   note: string,
 ): StrategyVersionStats {
@@ -52,7 +52,7 @@ export function statsFromTrades(
     worstStreak = Math.min(worstStreak, streak);
   }
 
-  const count = (fn: (t: VdTrade<ScannerSignal>) => boolean) => trades.filter(fn).length;
+  const count = (fn: (t: TrackedTrade<ScannerSignal>) => boolean) => trades.filter(fn).length;
   const avgR = rs.length ? rs.reduce((s, r) => s + r, 0) / rs.length : 0;
   return {
     version, note,
@@ -90,7 +90,7 @@ export function tradesForStrategyVersion(
   version: number,
   candlesByTf: Partial<Record<Timeframe, Candle[]>>,
   evalTf: Timeframe,
-): { trades: Array<VdTrade<ScannerSignal>>; candles: Candle[] } {
+): { trades: Array<TrackedTrade<ScannerSignal>>; candles: Candle[] } {
   const v = strategy.versions.find((x) => x.v === version);
   const candles = candlesByTf[evalTf] ?? [];
   const closed = candles.length > 1 ? candles.slice(0, candles.length - 1) : [];
@@ -100,7 +100,7 @@ export function tradesForStrategyVersion(
   }
   if (!v || closed.length === 0) return { trades: [], candles: closed };
   const sigs = generateScannerSignals({ ...strategy, activeVersion: version }, closedByTf, evalTf, 0);
-  return { trades: walkVdTrades(closed, sigs), candles: closed };
+  return { trades: walkTrades(closed, sigs), candles: closed };
 }
 
 export function backtestStrategyVersion(

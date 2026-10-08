@@ -1,0 +1,221 @@
+//@version=6
+indicator(
+     "BTC WHALE HUNTER'S - POC & MRP + Multi TPO POC [Merged]",
+     shorttitle = "POC/MRP + TPO POC",
+     overlay = true,
+     format = format.price,
+     precision = 2,
+     max_bars_back = 5000)
+
+// This overlay deliberately keeps two different POC families independent:
+// 1) sampled reference levels from the POC/MRP reconstruction; and
+// 2) completed-period TPO POCs calculated from time-at-price bar inclusion.
+// The TPO calculation does not use volume-profile bins or volume weighting.
+
+GRP_MRP = "MRP"
+GRP_REF = "REFERENCE POC LINES"
+GRP_TPO = "TPO PROFILE POC LINES"
+GRP_HIGHLIGHT = "POC + MRP CANDLE HIGHLIGHT"
+
+showMrp = input.bool(true, "Show MRP", inline = "mrp", group = GRP_MRP)
+showWMrp = input.bool(true, "W MRP", inline = "mrp", group = GRP_MRP)
+mrpColor = input.color(#0B46F0, "MRP Color", group = GRP_MRP)
+weeklyMrpColor = input.color(#C57A00, "W MRP Color", group = GRP_MRP)
+
+showRefWeekly = input.bool(true, "Show Reference Weekly POC", group = GRP_REF)
+showRefDaily = input.bool(true, "Show Reference Daily POC", group = GRP_REF)
+showRefFourHour = input.bool(true, "Show Reference 4-Hour POC", group = GRP_REF)
+refWeeklyColor = input.color(#F59E0B, "Reference Weekly Color", group = GRP_REF)
+refDailyColor = input.color(#14532D, "Reference Daily Color", group = GRP_REF)
+refFourHourColor = input.color(#22D3EE, "Reference 4-Hour Color", group = GRP_REF)
+refLineWidth = input.int(2, "Reference Line Width", minval = 1, maxval = 4, group = GRP_REF)
+
+showTpoWeekly = input.bool(true, "Show TPO Weekly POC", group = GRP_TPO)
+showTpoDaily = input.bool(true, "Show TPO Daily POC", group = GRP_TPO)
+showTpoFourHour = input.bool(true, "Show TPO 4-Hour POC", group = GRP_TPO)
+tpoWeeklyColor = input.color(color.red, "TPO Weekly Color", group = GRP_TPO)
+tpoDailyColor = input.color(color.orange, "TPO Daily Color", group = GRP_TPO)
+tpoFourHourColor = input.color(color.aqua, "TPO 4-Hour Color", group = GRP_TPO)
+tpoLineWidth = input.int(2, "TPO Line Width", minval = 1, maxval = 4, group = GRP_TPO)
+tpoRows = input.int(20, "TPO Price Rows", minval = 5, maxval = 100, group = GRP_TPO)
+maxTpoBars = input.int(5000, "Maximum Bars Per Profile", minval = 100, maxval = 5000, group = GRP_TPO)
+
+showConfluenceHighlight = input.bool(true, "Highlight Confluence Candles", group = GRP_HIGHLIGHT)
+bullishHighlightColor = input.color(color.lime, "Bullish Candle Color", group = GRP_HIGHLIGHT)
+bearishHighlightColor = input.color(color.red, "Bearish Candle Color", group = GRP_HIGHLIGHT)
+dojiHighlightColor = input.color(color.yellow, "Doji Candle Color", group = GRP_HIGHLIGHT)
+
+// UTC period keys used by the sampled reference family.
+const int FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+const int DAY_MS = 24 * 60 * 60 * 1000
+
+int fourHourKey = int(math.floor(time / FOUR_HOURS_MS))
+int dayKey = int(math.floor(time / DAY_MS))
+// Unix epoch began on Thursday. Adding three aligns weeks to Monday UTC.
+int weekKey = int(math.floor((dayKey + 3) / 7))
+
+bool newRefFourHour = barstate.isfirst or fourHourKey != fourHourKey[1]
+bool newRefDay = barstate.isfirst or dayKey != dayKey[1]
+bool newRefWeek = barstate.isfirst or weekKey != weekKey[1]
+
+// Developing daily and weekly HLC3 VWAP (MRP / W MRP).
+float sourceVolume = nz(volume, 0.0)
+float sourcePriceVolume = hlc3 * sourceVolume
+
+var float dailyPv = 0.0
+var float dailyVolume = 0.0
+var float weeklyPv = 0.0
+var float weeklyVolume = 0.0
+
+if newRefDay
+    dailyPv := 0.0
+    dailyVolume := 0.0
+if newRefWeek
+    weeklyPv := 0.0
+    weeklyVolume := 0.0
+
+dailyPv += sourcePriceVolume
+dailyVolume += sourceVolume
+weeklyPv += sourcePriceVolume
+weeklyVolume += sourceVolume
+
+float mrp = dailyVolume > 0 ? dailyPv / dailyVolume : na
+float weeklyMrp = weeklyVolume > 0 ? weeklyPv / weeklyVolume : na
+
+plot(showMrp ? mrp : na, "MRP", color = mrpColor, linewidth = 2)
+plot(showWMrp ? weeklyMrp : na, "W MRP", color = weeklyMrpColor, linewidth = 1)
+
+// The reference cyan staircase samples the developing Daily MRP on the first
+// chart bar of each 4-hour UTC block. Including that boundary bar removes the
+// directional offset produced by sampling mrp[1].
+var float refFourHourPoc = na
+if newRefFourHour
+    refFourHourPoc := mrp
+
+// The reference orange weekly level is the first boundary-bar MRP sample of
+// the new UTC week, held unchanged until the following weekly boundary.
+var float refWeeklyPoc = na
+if newRefWeek
+    refWeeklyPoc := weeklyMrp
+
+float refDailyPoc = request.security(
+     syminfo.tickerid,
+     "1D",
+     (high[1] + low[1] + close[1]) / 3,
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+color refFourHourPlotColor = newRefFourHour and not barstate.isfirst ? na : refFourHourColor
+color refDailyPlotColor = newRefDay and not barstate.isfirst ? na : refDailyColor
+color refWeeklyPlotColor = newRefWeek and not barstate.isfirst ? na : refWeeklyColor
+
+plot(showRefWeekly ? refWeeklyPoc : na, "Reference Weekly POC", color = refWeeklyPlotColor, linewidth = refLineWidth, style = plot.style_linebr)
+plot(showRefDaily ? refDailyPoc : na, "Reference Daily Pivot POC", color = refDailyPlotColor, linewidth = refLineWidth, style = plot.style_linebr)
+plot(showRefFourHour ? refFourHourPoc : na, "Reference 4-Hour Held MRP", color = refFourHourPlotColor, linewidth = refLineWidth, style = plot.style_linebr)
+
+// A touch means that the line is anywhere inside the candle's complete range.
+// Bodies, upper/lower wicks, bullish/bearish candles, and dojis all qualify.
+f_candleTouches(float level) =>
+    not na(level) and low <= level and high >= level
+
+
+// TPO profile functions.
+f_included(float lower, float upper, float barLow, float barHigh) =>
+    (barLow >= lower and barLow <= upper) or
+     (barHigh >= lower and barHigh <= upper) or
+     (barLow <= lower and barHigh >= upper)
+
+f_getTpo(float lower, float upper, int barsInProfile) =>
+    float result = 0.0
+    int barsToScan = math.min(barsInProfile, maxTpoBars)
+    if barsToScan > 0
+        for lookback = 1 to barsToScan
+            if f_included(lower, upper, low[lookback], high[lookback])
+                result += 1
+    result
+
+f_profilePoc(string profileTimeframe) =>
+    var float periodHigh = na
+    var float periodLow = na
+    var int periodBars = 0
+    var float profilePoc = na
+
+    bool newProfile = ta.change(time(profileTimeframe)) != 0
+
+    if newProfile
+        float completedHigh = periodHigh[1]
+        float completedLow = periodLow[1]
+        int completedBars = int(nz(periodBars[1], 0))
+
+        if not na(completedHigh) and not na(completedLow) and completedBars > 0
+            float profileRange = completedHigh - completedLow
+            if profileRange <= syminfo.mintick
+                profilePoc := completedLow
+            else
+                float rowSize = profileRange / tpoRows
+                int pocRow = 1
+                float highestTpo = -1.0
+
+                // Ties resolve to the higher row, matching the supplied code.
+                for row = 1 to tpoRows
+                    float lowerBound = completedLow + (row - 1) * rowSize
+                    float upperBound = completedLow + row * rowSize
+                    float rowTpo = f_getTpo(lowerBound, upperBound, completedBars)
+                    if rowTpo >= highestTpo
+                        highestTpo := rowTpo
+                        pocRow := row
+
+                profilePoc := completedLow + (pocRow - 0.5) * rowSize
+
+        // Include the first candle of the new profile. The supplied code reset
+        // this to zero, omitting that candle from the next POC calculation.
+        periodHigh := high
+        periodLow := low
+        periodBars := 1
+    else
+        periodHigh := math.max(nz(periodHigh, high), high)
+        periodLow := math.min(nz(periodLow, low), low)
+        periodBars += 1
+
+    profilePoc
+
+// Completed-period TPO POCs.
+float tpoWeeklyPoc = f_profilePoc("W")
+float tpoDailyPoc = f_profilePoc("D")
+float tpoFourHourPoc = f_profilePoc("240")
+
+bool newTpoWeekly = ta.change(time("W")) != 0
+bool newTpoDaily = ta.change(time("D")) != 0
+bool newTpoFourHour = ta.change(time("240")) != 0
+
+plot(showTpoWeekly and not newTpoWeekly ? tpoWeeklyPoc : na, "TPO Weekly POC", color = tpoWeeklyColor, linewidth = tpoLineWidth, style = plot.style_linebr)
+plot(showTpoDaily and not newTpoDaily ? tpoDailyPoc : na, "TPO Daily POC", color = tpoDailyColor, linewidth = tpoLineWidth, style = plot.style_linebr)
+plot(showTpoFourHour and not newTpoFourHour ? tpoFourHourPoc : na, "TPO 4-Hour POC", color = tpoFourHourColor, linewidth = tpoLineWidth, style = plot.style_linebr)
+
+// Count every enabled POC line in both families. Each plotted Weekly, Daily,
+// or 4-hour level counts independently when it touches any part of the candle.
+int touchedPocCount =
+     (showRefWeekly and f_candleTouches(refWeeklyPoc) ? 1 : 0) +
+     (showRefDaily and f_candleTouches(refDailyPoc) ? 1 : 0) +
+     (showRefFourHour and f_candleTouches(refFourHourPoc) ? 1 : 0) +
+     (showTpoWeekly and f_candleTouches(tpoWeeklyPoc) ? 1 : 0) +
+     (showTpoDaily and f_candleTouches(tpoDailyPoc) ? 1 : 0) +
+     (showTpoFourHour and f_candleTouches(tpoFourHourPoc) ? 1 : 0)
+
+// MRP and W MRP use the identical full high-to-low touch test, so a contact
+// through either wick is sufficient even when neither line enters the body.
+bool mrpTouchesCandle =
+     (showMrp and f_candleTouches(mrp)) or
+     (showWMrp and f_candleTouches(weeklyMrp))
+
+bool confluenceCandle =
+     showConfluenceHighlight and
+     touchedPocCount >= 2 and
+     mrpTouchesCandle
+
+color confluenceCandleColor =
+     close > open ? bullishHighlightColor :
+     close < open ? bearishHighlightColor :
+     dojiHighlightColor
+
+barcolor(confluenceCandle ? confluenceCandleColor : na, title = "POC + MRP Confluence Candle")

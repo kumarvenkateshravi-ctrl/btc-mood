@@ -1,0 +1,42 @@
+{
+  "fixtureVersion": "mcs.btc-execution.golden/1",
+  "instrumentPolicyVersion": "mcs.btcusdt/1",
+  "executionPolicyVersion": "mcs.btc-execution/1",
+  "partialClose": {
+    "entry": { "side": "buy", "price": "100", "quantity": "10", "leverage": "10" },
+    "exit": { "side": "sell", "price": "110", "quantity": "4" },
+    "expected": {
+      "side": "long",
+      "remainingQuantity": "6",
+      "remainingCostBasisUsd": "600",
+      "remainingEntryCommissionUsd": "0.6",
+      "usedMarginUsd": "60"
+    }
+  },
+  "reversalFactOrder": [
+    "FillCommitted",
+    "CommissionAssessed",
+    "EntryFeeAllocated",
+    "PositionTransitioned",
+    "MarginTransitioned",
+    "FillCommitted",
+    "CommissionAssessed",
+    "MarginTransitioned",
+    "PositionTransitioned"
+  ],
+  "roundTrip": {
+    "startingCashUsd": "10000",
+    "entryCommissionUsd": "1",
+    "grossRealizedPnlUsd": "100",
+    "exitCommissionUsd": "1.1",
+    "finalCashUsd": "10097.9"
+  },
+  "gapStops": {
+    "long": { "stop": "90", "observable": "85.04", "fill": "85" },
+    "short": { "stop": "110", "observable": "115.04", "fill": "115.1" }
+  },
+  "replayPaths": {
+    "up": ["open", "low", "high", "close"],
+    "down": ["open", "high", "low", "close"]
+  }
+}

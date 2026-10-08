@@ -4,6 +4,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  LineType,
   createSeriesMarkers,
   type ISeriesApi,
   type SeriesType,
@@ -37,6 +38,7 @@ import { analyticalColor, analyticalDecay } from '@/lib/chartAnalyticalPresentat
 export function useChartData(
   refs: ChartRefs,
   candles: Candle[],
+  dataContextKey: string | undefined,
   type: ChartType,
   tf: string | undefined,
   symbol: string | undefined,
@@ -78,6 +80,11 @@ export function useChartData(
   // though tf/type and the bar timestamps are identical — undefined until the
   // parent threads `symbol`, in which case this stays inert (no false resets).
   const prevSymbolRef = useRef<string | undefined>(undefined);
+  // Live data and a replay snapshot can share the same symbol, timeframe,
+  // and transform. Keep their owner identity separately so entering/exiting
+  // replay is a real chart context transition, while stepping replay bars is
+  // not.
+  const prevDataContextKeyRef = useRef<string | undefined>(undefined);
   // Last plot-data reference pushed per series key. Indicators that cache
   // their result object (e.g. SMC) return IDENTICAL arrays on unchanged
   // closed bars — pushing those again costs O(bars x plots) per tick for
@@ -97,7 +104,10 @@ export function useChartData(
     if (candles.length === 0) return;
 
     const isNewContext =
-      prevTfRef.current !== tf || prevTypeRef.current !== type || prevSymbolRef.current !== symbol;
+      prevTfRef.current !== tf ||
+      prevTypeRef.current !== type ||
+      prevSymbolRef.current !== symbol ||
+      prevDataContextKeyRef.current !== dataContextKey;
     const indicatorSettingsChanged = hasIndicatorSettingsRef.current &&
       previousIndicatorSettingsMapRef.current !== indicatorSettingsMap;
     previousIndicatorSettingsMapRef.current = indicatorSettingsMap;
@@ -138,6 +148,7 @@ export function useChartData(
     prevTypeRef.current = type;
     prevTfRef.current = tf ?? null;
     prevSymbolRef.current = symbol;
+    prevDataContextKeyRef.current = dataContextKey;
 
     // LWC #2044 guard 1: strictly ascending, unique timestamps only.
     const baseCandles = ensureCleanSeries(candles);
@@ -185,19 +196,35 @@ export function useChartData(
     // last-bar time AND count, so without this guard it would be mistaken for an
     // in-bar tick and only update() the last bar — leaving the old symbol's
     // candles and price scale on screen.
+    const previousCount = prevCountRef.current;
+    const previousFirstTime = prevFirstTimeRef.current;
+    const previousLastTime = lastBarTimeRef.current;
     const isIncremental =
       !isNewContext &&
-      lastBarTimeRef.current === lastTime && baseCandles.length === prevCountRef.current;
+      previousLastTime === lastTime && baseCandles.length === previousCount;
     // Append-by-one: one new bar at the tail, history untouched — a replay
     // step or a live bar close. LWC's update() appends in O(1); a multi-bar
     // jump or backward scrub falls through to the full setData path.
     const isAppendOne =
       !isNewContext &&
       !isIncremental &&
-      prevFirstTimeRef.current === newFirstTime &&
-      baseCandles.length === prevCountRef.current + 1 &&
-      lastBarTimeRef.current != null &&
-      (lastTime as number) > lastBarTimeRef.current;
+      previousFirstTime === newFirstTime &&
+      baseCandles.length === previousCount + 1 &&
+      previousLastTime != null &&
+      (lastTime as number) > previousLastTime;
+
+    // A backwards scrub or replacement window needs the same treatment as a
+    // symbol change: both axes must frame the newly supplied bars. Do not
+    // trigger this for normal append-one replay playback or history prepends,
+    // where preserving the user's current viewport is intentional.
+    const windowWasRebased =
+      !isNewContext &&
+      !isIncremental &&
+      !isAppendOne &&
+      previousCount > 0 &&
+      (baseCandles.length < previousCount ||
+        (previousLastTime != null && (lastTime as number) < previousLastTime) ||
+        (previousFirstTime != null && newFirstTime > previousFirstTime));
 
     if (baseCandles.length > 0) {
       const last = baseCandles[baseCandles.length - 1];
@@ -503,6 +530,7 @@ export function useChartData(
                   priceLineVisible: axisLabels,
                   lastValueVisible: axisLabels,
                   crosshairMarkerVisible: false,
+                  lineType: plot.lineType === 'withSteps' ? LineType.WithSteps : LineType.Simple,
                   title: seriesTitle,
                 },
                 targetPane,
@@ -753,18 +781,23 @@ export function useChartData(
         }
 
         const lp = indicatorLineRef.current.get(key);
-        if (lp && result.lineSegments && lastPushedPlotRef.current.get('line::' + key) !== result.lineSegments) {
+        if (lp && result.lineSegments && (indicatorSettingsChanged || lastPushedPlotRef.current.get('line::' + key) !== result.lineSegments)) {
           lastPushedPlotRef.current.set('line::' + key, result.lineSegments);
-          const st = indicatorSettingsMap?.[key]?.styles?.['regression_line'];
-          const segments = hiddenKeys.has(key) || st?.display === false ? [] : result.lineSegments.map((segment) => ({
-            ...segment,
-            startTime: shiftTime(segment.startTime) as number,
-            endTime: shiftTime(segment.endTime) as number,
-            // Keep the regression segment slope color (rising/falling) intact.
-            color: segment.color,
-            lineWidth: st?.thickness || segment.lineWidth,
-            lineStyle: (st?.lineStyle || segment.lineStyle || 'solid') as 'solid' | 'dashed' | 'dotted',
-          }));
+          const fallbackStyle = indicatorSettingsMap?.[key]?.styles?.['regression_line'];
+          const segments = hiddenKeys.has(key) ? [] : result.lineSegments.flatMap((segment) => {
+            const st = segment.styleId
+              ? indicatorSettingsMap?.[key]?.styles?.[segment.styleId]
+              : fallbackStyle;
+            if (st?.display === false) return [];
+            return [{
+              ...segment,
+              startTime: shiftTime(segment.startTime) as number,
+              endTime: shiftTime(segment.endTime) as number,
+              color: segment.styleId ? (st?.color || segment.color) : segment.color,
+              lineWidth: st?.thickness || segment.lineWidth,
+              lineStyle: (st?.lineStyle || segment.lineStyle || 'solid') as 'solid' | 'dashed' | 'dotted',
+            }];
+          });
           try { lp.setData(segments, true); } catch {}
         }
 
@@ -793,7 +826,7 @@ export function useChartData(
 
     lastBarTimeRef.current = lastTime;
 
-    if ((isNewContext || indicatorStructureChanged) && chartRef.current) {
+    if ((isNewContext || windowWasRebased || indicatorStructureChanged) && chartRef.current) {
       // The first primitive paint can happen before Lightweight Charts has
       // established the final visible range. Refresh once after the range
       // settles so overlays are correct on the first render, not only after
@@ -802,7 +835,7 @@ export function useChartData(
       firstRaf = requestAnimationFrame(() => {
         refs.pendingAnimationFramesRef.current.delete(firstRaf);
         if (!active()) return;
-        if (isNewContext) applyDefaultView();
+        if (isNewContext || windowWasRebased) applyDefaultView();
         let secondRaf = 0;
         secondRaf = requestAnimationFrame(() => {
           refs.pendingAnimationFramesRef.current.delete(secondRaf);
@@ -812,5 +845,5 @@ export function useChartData(
       });
       refs.pendingAnimationFramesRef.current.add(firstRaf);
     }
-  }, [candles, type, isRenko, tf, symbol, visibleResults, indicatorSettingsMap, hiddenKeys]);
+  }, [candles, dataContextKey, type, isRenko, tf, symbol, visibleResults, indicatorSettingsMap, hiddenKeys]);
 }

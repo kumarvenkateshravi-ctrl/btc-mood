@@ -1,0 +1,122 @@
+//@version=5
+indicator("ORB + Previous Day Levels + VWAPs + EMA 200", shorttitle="ORB PDC PP VWAP EMA200", overlay=true, max_lines_count=500)
+
+// =============================================================================
+// INPUTS
+// =============================================================================
+
+string GRP_LEVELS = "Previous Day Levels"
+string GRP_ORB = "Opening Range Breakout"
+string GRP_VWAP = "VWAP"
+string GRP_EMA = "EMA 200"
+
+bool showPdc = input.bool(true, "Show Previous Day Close", group=GRP_LEVELS)
+bool showPivot = input.bool(true, "Show Pivot Point (Previous HLC3)", group=GRP_LEVELS)
+color pdcColor = input.color(#00FFFF, "Previous Day Close Color", group=GRP_LEVELS)
+color pivotColor = input.color(#A855F7, "Pivot Point Color", group=GRP_LEVELS)
+int levelWidth = input.int(1, "Level Width", minval=1, maxval=5, group=GRP_LEVELS)
+
+bool showOrb = input.bool(true, "Show ORB", group=GRP_ORB)
+int orbInputMax = input.int(5, "Maximum Chart Timeframe (minutes)", minval=1, group=GRP_ORB)
+string orbSession = input.session("0915-0920", "Opening Range Session", group=GRP_ORB)
+color orbHighColor = input.color(color.green, "ORB High Color", group=GRP_ORB)
+color orbLowColor = input.color(color.red, "ORB Low Color", group=GRP_ORB)
+int orbWidth = input.int(2, "ORB Line Width", minval=1, maxval=5, group=GRP_ORB)
+
+bool showSessionVwap = input.bool(true, "Show Session VWAP", group=GRP_VWAP)
+bool showWeeklyVwap = input.bool(true, "Show Weekly VWAP", group=GRP_VWAP)
+float vwapSource = input.source(hlc3, "VWAP Source", group=GRP_VWAP)
+color sessionVwapColor = input.color(color.blue, "Session VWAP Color", group=GRP_VWAP)
+color weeklyVwapColor = input.color(#FF9800, "Weekly VWAP Color", group=GRP_VWAP)
+int vwapWidth = input.int(2, "VWAP Line Width", minval=1, maxval=5, group=GRP_VWAP)
+
+bool showEma200 = input.bool(true, "Show EMA 200", group=GRP_EMA)
+float emaSource = input.source(close, "EMA Source", group=GRP_EMA)
+color ema200Color = input.color(#FFD700, "EMA 200 Color", group=GRP_EMA)
+int ema200Width = input.int(2, "EMA 200 Line Width", minval=1, maxval=5, group=GRP_EMA)
+
+// =============================================================================
+// PREVIOUS-DAY CLOSE AND PIVOT POINT
+// =============================================================================
+
+// [1] requests the completed previous daily candle. lookahead_on makes that
+// confirmed value available from the first intraday bar without future leakage.
+[previousDayClose, previousDayPivot] = request.security(
+     syminfo.tickerid, "D", [close[1], hlc3[1]],
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+// Unix-day boundaries occur at 00:00 UTC, displayed as 05:30 in India.
+// A line ending at the next 05:30 boundary covers the last 05:00 candle on a
+// 30-minute chart while keeping consecutive days as independent segments.
+const int DAY_MS = 24 * 60 * 60 * 1000
+int utcDayKey = int(math.floor(time / DAY_MS))
+bool newUtcDay = barstate.isfirst or utcDayKey != utcDayKey[1]
+int dayStartTime = utcDayKey * DAY_MS
+int nextDayStartTime = dayStartTime + DAY_MS
+
+// Preserve the values in the status line and Data Window. Visible levels use
+// time-anchored line objects so they have exact daily start/end timestamps.
+plot(showPdc ? previousDayClose : na, "Previous Day Close", display=display.status_line + display.data_window)
+plot(showPivot ? previousDayPivot : na, "Previous Day Pivot", display=display.status_line + display.data_window)
+
+var line activePdcLine = na
+var line activePivotLine = na
+
+if newUtcDay
+    if showPdc and not na(previousDayClose)
+        activePdcLine := line.new(dayStartTime, previousDayClose, nextDayStartTime, previousDayClose,
+             xloc=xloc.bar_time, extend=extend.none, color=pdcColor, width=levelWidth)
+    if showPivot and not na(previousDayPivot)
+        activePivotLine := line.new(dayStartTime, previousDayPivot, nextDayStartTime, previousDayPivot,
+             xloc=xloc.bar_time, extend=extend.none, color=pivotColor, width=levelWidth)
+
+// Keep both active segments locked to the same 24-hour timestamps and their
+// confirmed values throughout the current day.
+if showPdc and not na(activePdcLine)
+    line.set_xy1(activePdcLine, dayStartTime, previousDayClose)
+    line.set_xy2(activePdcLine, nextDayStartTime, previousDayClose)
+if showPivot and not na(activePivotLine)
+    line.set_xy1(activePivotLine, dayStartTime, previousDayPivot)
+    line.set_xy2(activePivotLine, nextDayStartTime, previousDayPivot)
+
+// =============================================================================
+// SESSION AND WEEKLY VWAP
+// =============================================================================
+
+float sessionVwap = ta.vwap(vwapSource)
+bool newWeek = timeframe.change("1W")
+float weeklyVwap = ta.vwap(vwapSource, newWeek)
+
+plot(showSessionVwap ? sessionVwap : na, "Session VWAP", color=sessionVwapColor, linewidth=vwapWidth)
+plot(showWeeklyVwap ? weeklyVwap : na, "Weekly VWAP", color=weeklyVwapColor, linewidth=vwapWidth)
+
+// =============================================================================
+// OPENING RANGE BREAKOUT
+// =============================================================================
+
+int orbTime = time(timeframe.period, orbSession + ":1234567")
+bool orbTimeframeAllowed = timeframe.isintraday and timeframe.multiplier <= orbInputMax
+bool orbInSession = not na(orbTime)
+bool orbFirstBar = orbInSession and not orbInSession[1]
+
+var float orbHigh = na
+var float orbLow = na
+
+if orbFirstBar
+    orbHigh := high
+    orbLow := low
+else if orbInSession
+    orbHigh := math.max(nz(orbHigh, high), high)
+    orbLow := math.min(nz(orbLow, low), low)
+
+// ORB values develop only inside the opening-range session. They remain fixed
+// after the session ends and reset when the next opening-range session begins.
+plot(showOrb and orbTimeframeAllowed ? orbHigh : na, "ORB High", color=orbHighColor, linewidth=orbWidth, style=plot.style_stepline)
+plot(showOrb and orbTimeframeAllowed ? orbLow : na, "ORB Low", color=orbLowColor, linewidth=orbWidth, style=plot.style_stepline)
+
+// =============================================================================
+// EMA 200
+// =============================================================================
+
+float ema200 = ta.ema(emaSource, 200)
+plot(showEma200 ? ema200 : na, "EMA 200", color=ema200Color, linewidth=ema200Width)

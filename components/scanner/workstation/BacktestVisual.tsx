@@ -6,7 +6,7 @@
 // comes from buildBacktestSeries (pure); this file only maps R → pixels.
 
 import { useMemo } from 'react';
-import type { VdTrade } from '@/lib/indicators/vdEngine';
+import type { TrackedTrade } from '@/lib/tradeWalker';
 import type { ScannerSignal } from '@/lib/scanner/signals';
 import type { StrategyVersionStats } from '@/lib/scanner/analytics';
 import { buildBacktestSeries } from '@/lib/scanner/backtestSeries';
@@ -93,7 +93,7 @@ export default function BacktestVisual({
   trades,
   stat,
 }: {
-  trades: Array<VdTrade<ScannerSignal>>;
+  trades: Array<TrackedTrade<ScannerSignal>>;
   stat: StrategyVersionStats;
 }) {
   const series = useMemo(() => buildBacktestSeries(trades), [trades]);

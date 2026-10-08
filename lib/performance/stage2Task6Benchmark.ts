@@ -1,6 +1,5 @@
 import type { Candle } from '../types';
 import { computeMacd } from '../indicators/macd';
-import { computeRegressionGChannel } from '../indicators/regressionGChannel';
 import { computeRsi } from '../indicators/rsi';
 import { computeSma } from '../indicators/sma';
 import type { CustomIndicatorConfig } from '../indicatorFramework';
@@ -12,7 +11,6 @@ import { BASELINE_DATASET_SIZES, createBaselineCandles, type BaselineScale, type
 const SMA = { id: 'sma', settings: { inputs: { length: 20, source: 'close' }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
 const RSI = { id: 'rsi', settings: { inputs: { length: 14, source: 'close' }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
 const MACD = { id: 'macd', settings: { inputs: { fast: 12, slow: 26, signal: 9, source: 'close' }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
-const REGRESSION = { id: 'regression-g-channel', settings: { inputs: { length: 200, gcLength: 100 }, styles: {}, visibility: {} } } as CustomIndicatorConfig;
 
 export interface Task6BenchmarkRow extends BaselineSummary {
   scale: BaselineScale;
@@ -37,7 +35,7 @@ function createSeries(): FakeSeries {
 
 function results(candles: Candle[], stack: BaselineStack) {
   const out = [computeSma(candles, SMA), computeRsi(candles, RSI)];
-  if (stack === 'heavy') out.push(computeMacd(candles, MACD), computeRegressionGChannel(candles, REGRESSION));
+  if (stack === 'heavy') out.push(computeMacd(candles, MACD));
   return out.flatMap((result) => result.plots.filter((plot) => plot.type === 'line' || plot.type === 'histogram'));
 }
 

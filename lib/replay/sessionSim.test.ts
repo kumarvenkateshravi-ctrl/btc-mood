@@ -30,10 +30,11 @@ describe('positionSizeFor', () => {
     expect(positionSizeFor(cfg, 1000, 'sell', 100, 95).reason).toBe('stop-on-wrong-side');
   });
 
-  it('enforces margin at 1x but allows the same trade at 10x', () => {
+  it('caps risk size at the account margin and allows the same trade at 10x', () => {
     // tight stop → huge size: entry 100, stop 99.9, risk $10 → 100 units = $10k notional
     const at1x = positionSizeFor({ ...cfg, leverage: 1 }, 1000, 'buy', 100, 99.9);
-    expect(at1x.reason).toBe('insufficient-margin');
+    expect(at1x).toMatchObject({ ok: true, reason: 'margin-capped', units: 10, margin: 1000 });
+    expect(at1x.riskAmount).toBeCloseTo(1);
     const at10x = positionSizeFor({ ...cfg, leverage: 10 }, 1000, 'buy', 100, 99.9);
     expect(at10x.ok).toBe(true);
     expect(at10x.margin).toBeCloseTo(1000);

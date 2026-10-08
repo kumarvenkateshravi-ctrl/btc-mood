@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { ArrowLeftRight, CandlestickChart, ChevronUp, Ellipsis, Wallet } from 'lucide-react';
+import Link from 'next/link';
+import MobileSheet from '@/components/ui/MobileSheet';
 import Num from '@/components/ui/Num';
 import type { ChartTradingCommands, PlaceChartOrder, ReplayCommandContext, TradingCommandResult } from '@/lib/chartTradingCommands';
 import type { MarketDataIntegrity } from '@/lib/marketDataIntegrity';
@@ -10,7 +12,7 @@ import type { TradePresentationFacade } from '@/lib/trade/presentationFacade';
 import { deriveActivePosition, formatHeld } from '@/lib/trade/activePosition';
 import { feedbackForTradingCommand } from '@/lib/tradeCommandFeedback';
 import { getChartInstrumentPresentation } from '@/lib/chartInstrumentPresentation';
-import { previewProtection, type ProtectionPreview } from '@/lib/trade/protectionPreview';
+import { previewProtection } from '@/lib/trade/protectionPreview';
 
 type OrderType = 'market' | 'limit' | 'stop';
 type ManageAction = 'menu' | 'sl' | 'tp' | 'partial' | 'close';
@@ -23,10 +25,16 @@ export interface MobileTradeExperienceProps {
   leverage: number;
   integrity?: MarketDataIntegrity;
   replayContext?: ReplayCommandContext;
+  bid?: number | null;
+  ask?: number | null;
+  secondaryContent?: ReactNode;
+  onReplayTrade?: (side: 'buy' | 'sell') => void;
+  entryPausedReason?: string;
 }
 
 /** Presentation-only mobile entry and management surface. */
-export default function MobileTradeExperience({ symbol, presentation, commands, leverage, integrity = 'live', replayContext }: MobileTradeExperienceProps) {
+export default function MobileTradeExperience({ symbol, presentation, commands, leverage, integrity = 'live', replayContext, bid, ask, secondaryContent, onReplayTrade, entryPausedReason }: MobileTradeExperienceProps) {
+  const [navSheet, setNavSheet] = useState<'positions' | 'more' | null>(null);
   const [side, setSide] = useState<'buy' | 'sell' | null>(null);
   const [type, setType] = useState<OrderType>('market');
   const [limitPrice, setLimitPrice] = useState('');
@@ -39,11 +47,11 @@ export default function MobileTradeExperience({ symbol, presentation, commands, 
   const [manageAction, setManageAction] = useState<ManageAction>('menu');
   const [manageDraft, setManageDraft] = useState('');
   const [partialPct, setPartialPct] = useState(50);
-  useEffect(() => { setManageOpen(false); setManageAction('menu'); setManageDraft(''); setError(null); }, [symbol, presentation.mode, presentation.position?.id]);
+  useEffect(() => { setSide(null); setNavSheet(null); setManageOpen(false); setManageAction('menu'); setManageDraft(''); setError(null); }, [symbol, presentation.mode, presentation.position?.id]);
   const instrument = getChartInstrumentPresentation(symbol);
   const mark = presentation.markPrice;
   const hasPosition = !!presentation.position && presentation.position.side !== 'flat' && presentation.position.units > 0;
-  const canTrade = presentation.mode === 'live' && presentation.markTrusted && integrity === 'live' && mark != null;
+  const canTrade = !entryPausedReason && presentation.mode === 'live' && presentation.markTrusted && integrity === 'live' && mark != null;
   const entryPrice = (type === 'market' ? mark : Number(limitPrice)) ?? Number.NaN;
   const preview = useMemo(() => {
     if (!side || !Number.isFinite(entryPrice) || !entryPrice || !Number(sl)) return null;
@@ -51,7 +59,7 @@ export default function MobileTradeExperience({ symbol, presentation, commands, 
   }, [side, entryPrice, sl, presentation.balance, riskPct, leverage]);
   const reward = preview?.ok && Number(tp) > 0 ? Math.abs(Number(tp) - entryPrice) * preview.units : null;
   const rr = preview?.ok && preview.riskAmount > 0 && reward != null ? reward / preview.riskAmount : null;
-  const activeView = presentation.position && mark != null ? deriveActivePosition(presentation.position, mark) : null;
+  const activeView = presentation.position && mark != null ? deriveActivePosition(presentation.position, mark, replayContext ? replayContext.cutTime * 1000 : undefined) : null;
   const result = (command: TradingCommandResult) => {
     if (command.status === 'accepted') { setError(null); setManageAction('menu'); return; }
     setError(feedbackForTradingCommand(command).message);
@@ -66,6 +74,7 @@ export default function MobileTradeExperience({ symbol, presentation, commands, 
   const closeSheet = () => { setSide(null); setError(null); };
   const confirm = () => {
     if (!side || !preview?.ok || !Number.isFinite(entryPrice) || entryPrice <= 0) return setError(preview && !preview.ok ? readableSizingReason(preview.reason) : 'Enter a valid risk, stop loss, and order price.');
+    if (!canTrade) return setError(`Trading paused. Market data ${integrity}.`);
     setSubmitting(true);
     const input: PlaceChartOrder = { symbol, side, type, units: preview.units, price: type === 'market' ? null : entryPrice, tp: Number(tp) > 0 ? Number(tp) : null, sl: Number(sl), reduceOnly: false, postOnly: false, leverage, midPrice: mark ?? entryPrice, ocoGroup: null };
     const command = commands.submitOrder(input);
@@ -77,35 +86,85 @@ export default function MobileTradeExperience({ symbol, presentation, commands, 
   const closeAtMark = () => mark == null ? setError('No trusted price is available.') : result(commands.close({ symbol, mark, ts: replayContext?.cutTime, replayContext }));
   const partialAtMark = () => mark == null ? setError('No trusted price is available.') : result(commands.partialClose({ symbol, fraction: partialPct / 100, mark, ts: replayContext?.cutTime, replayContext }));
 
-  if (hasPosition && activeView && presentation.position) {
-    const direction = activeView.side === 'long' ? 'LONG' : 'SHORT';
-    const currentPreview = manageAction === 'sl' ? previewProtection(presentation.position, { sl: Number(manageDraft) }) : previewProtection(presentation.position, { tp: Number(manageDraft) });
-    return <section data-testid="mobile-active-position" className="border-t border-line bg-surface/95 px-3 py-2 md:hidden" aria-label="Active position">
-      <div className="flex items-center justify-between gap-2"><div><p className="text-[10px] font-semibold tracking-[0.14em] text-ink-faint">{direction} · {instrument.label}</p><Num.Pnl value={activeView.pnlUsd} className="text-lg" /></div><div className="text-right"><p className="text-[10px] uppercase tracking-[0.12em] text-ink-faint">{presentation.mode === 'replay' ? 'Replay' : 'Paper'}</p><p className="num text-sm font-semibold text-ink">{activeView.pnlR == null ? 'R —' : `${activeView.pnlR >= 0 ? '+' : ''}${activeView.pnlR.toFixed(2)}R`}</p></div></div>
-      <dl className="mt-2 grid grid-cols-3 gap-x-2 gap-y-1 text-[10px]"><Metric label="Margin" value={<Num.Money value={activeView.marginUsed} />} /><Metric label="Entry" value={<Num.Price value={activeView.entry} precision={instrument.pricePrecision} />} /><Metric label="Current" value={<Num.Price value={activeView.mark} precision={instrument.pricePrecision} />} /><Metric label="SL" value={activeView.stopLoss == null ? '—' : <Num.Price value={activeView.stopLoss} precision={instrument.pricePrecision} />} /><Metric label="TP" value={activeView.takeProfit == null ? '—' : <Num.Price value={activeView.takeProfit} precision={instrument.pricePrecision} />} /><Metric label="Size" value={<Num.Qty value={activeView.qty} unit={instrument.label} precision={4} />} /></dl>
-      <div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-ink-faint">Held {formatHeld(activeView.heldMs)}</span><button type="button" onClick={openManage} className="focus-ring min-h-11 rounded-md border border-line px-3 text-xs font-semibold text-ink" aria-label="Manage active position">Manage Position</button></div>
-      {manageOpen && <ManagementSheet direction={direction} symbol={instrument.displaySymbol} mode={presentation.mode} positionUnits={activeView.qty} unit={instrument.label} pnl={activeView.pnlUsd} trailing={presentation.position.trailingSl} action={manageAction} draft={manageDraft} preview={currentPreview} partialPct={partialPct} onAction={setManageAction} onDraft={setManageDraft} onPartial={setPartialPct} onDismiss={() => setManageOpen(false)} onBreakEven={() => result(commands.setProtection({ symbol, protection: { sl: activeView.entry }, replayContext }))} onApplyLevel={() => applyProtection(manageAction === 'sl' ? 'sl' : 'tp', Number(manageDraft))} onTrailing={() => result(commands.toggleTrailing({ symbol, enabled: !presentation.position!.trailingSl, replayContext }))} onPartialClose={partialAtMark} onFullClose={closeAtMark} error={error} />}
-    </section>;
-  }
+  const position = presentation.position;
+  const direction = position?.side === 'short' ? 'SHORT' : 'LONG';
+  const replay = presentation.mode === 'replay';
+  const trade = (nextSide: 'buy' | 'sell') => { if (!entryPausedReason) { if (replay) onReplayTrade?.(nextSide); else open(nextSide); } };
+  const currentPreview = position ? previewProtection(position, { [manageAction === 'sl' ? 'sl' : 'tp']: Number(manageDraft) }) : null;
+  const openAction = (action: ManageAction) => {
+    setManageAction(action); setError(null);
+    setManageDraft(action === 'sl' ? String(position?.sl ?? '') : action === 'tp' ? String(position?.tp ?? '') : '');
+  };
+  // A caller that owns replay entry supplies that existing workflow explicitly.
+  if (replay && !hasPosition && !onReplayTrade) return null;
 
-  // Replay owns flat-entry through SessionHud and its replay-session risk
-  // policy. Keeping this live-paper ticket mounted here would show disabled
-  // BUY/SELL controls and a misleading Trading paused state below that replay surface.
-  // Active replay positions still use the management sheet and command boundary above.
-  if (presentation.mode === 'replay') return null;
-
-  return <section data-testid="mobile-trade-flat" className="border-t border-line bg-surface/95 px-3 py-2 md:hidden" aria-label="Mobile trade entry">
-    {!canTrade && <p className="mb-2 rounded-md border border-warn/30 bg-warn/10 px-2 py-1.5 text-xs text-warn" role="status"><strong>Trading paused</strong> · Market data {integrity}</p>}
-    <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => open('buy')} className="focus-ring min-h-11 rounded-md border border-bull/40 bg-bull/10 text-sm font-bold text-bull-bright disabled:opacity-45" aria-label="Open BUY order entry" disabled={!canTrade}>BUY</button><button type="button" onClick={() => open('sell')} className="focus-ring min-h-11 rounded-md border border-bear/40 bg-bear/10 text-sm font-bold text-bear-bright disabled:opacity-45" aria-label="Open SELL order entry" disabled={!canTrade}>SELL</button></div>
-    {error && !side && <p className="mt-2 text-xs text-bear-bright" role="alert">{error}</p>}
-    {side && <div className="fixed inset-x-0 bottom-0 z-[120] max-h-[88dvh] overflow-y-auto rounded-t-2xl border border-line bg-surface p-4 shadow-2" role="dialog" aria-label={`${side === 'buy' ? 'BUY' : 'SELL'} ${instrument.displaySymbol} order entry`}><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line" /><div className="mb-4 flex items-center justify-between"><div><p className={side === 'buy' ? 'text-sm font-bold text-bull-bright' : 'text-sm font-bold text-bear-bright'}>{side === 'buy' ? 'BUY' : 'SELL'} {instrument.displaySymbol}</p><p className="text-xs text-ink-faint">Live Paper · review risk before confirming</p></div><button type="button" onClick={closeSheet} className="focus-ring min-h-11 min-w-11 rounded-md text-ink-muted" aria-label="Close order entry"><X className="mx-auto h-5 w-5" /></button></div><div className="grid grid-cols-3 gap-1 rounded-lg bg-base p-1" role="tablist" aria-label="Order type">{(['market','limit','stop'] as OrderType[]).map((value) => <button key={value} type="button" onClick={() => setType(value)} className={['min-h-11 rounded-md text-xs font-semibold capitalize', type === value ? 'bg-surface-2 text-ink' : 'text-ink-faint'].join(' ')} aria-pressed={type === value}>{value}</button>)}</div>{type !== 'market' && <NumberInput label={type === 'limit' ? 'Limit price' : 'Stop price'} value={limitPrice} onChange={setLimitPrice} />}<div className="mt-3 grid grid-cols-2 gap-2"><NumberInput label="Risk %" value={riskPct} onChange={setRiskPct} /><NumberInput label="Stop Loss" value={sl} onChange={setSl} /><NumberInput label="Take Profit" value={tp} onChange={setTp} /></div><dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-line bg-base/50 p-3 text-xs"><Metric label="Account balance" value={<Num.Money value={presentation.balance} />} /><Metric label="Required margin" value={preview?.ok ? <Num.Money value={preview.margin} /> : '—'} /><Metric label="Risk amount" value={preview?.ok ? <Num.Money value={preview.riskAmount} /> : '—'} /><Metric label="Position size" value={preview?.ok ? <Num.Qty value={preview.units} unit={instrument.label} precision={4} /> : '—'} /><Metric label="Entry" value={Number.isFinite(entryPrice) && entryPrice ? <Num.Price value={entryPrice} precision={instrument.pricePrecision} /> : '—'} /><Metric label="Risk : Reward" value={rr == null ? '—' : <Num.RR ratio={rr} />} /></dl>{error && <p className="mt-3 rounded-md border border-bear/30 bg-bear/10 px-3 py-2 text-xs text-bear-bright" role="alert">{error}</p>}<button type="button" onClick={confirm} disabled={submitting || !canTrade} className={['focus-ring mt-3 min-h-12 w-full rounded-lg text-sm font-bold disabled:opacity-45', side === 'buy' ? 'bg-bull text-base' : 'bg-bear text-base'].join(' ')}>{submitting ? 'Submitting…' : `Confirm ${side === 'buy' ? 'BUY' : 'SELL'}`}</button></div>}
+  return <section className="terminal-mobile-trading lg:hidden" data-testid={hasPosition ? 'mobile-active-position' : 'mobile-trade-flat'} aria-label={hasPosition ? 'Active position' : 'Mobile trade entry'}>
+    {!hasPosition ? <div className="terminal-trade-dock">
+      {(entryPausedReason || (!replay && !canTrade)) && <p className="terminal-trading-paused" role="status"><strong>Trading paused</strong> · {entryPausedReason ?? `Market data ${integrity}`}</p>}
+      <div className="terminal-quotes"><span>Bid <Price value={replay ? mark : bid} precision={instrument.pricePrecision} /></span><span>{replay ? 'Snapshot · Simulated' : 'No position'}</span><span>Ask <Price value={replay ? mark : ask} precision={instrument.pricePrecision} /></span></div>
+      <div className="terminal-entry-actions">
+        <button type="button" onClick={() => trade('buy')} disabled={!!entryPausedReason || (replay ? !mark : !canTrade)} aria-label={replay ? 'Replay BUY' : 'Open BUY order entry'} className="terminal-buy focus-ring min-h-11"><strong>BUY</strong><span>{replay ? 'Simulated' : 'Paper order'}</span></button>
+        <span className="terminal-risk-label">{replay ? 'Replay' : 'Risk'}<br />{replay ? 'practice' : 'sized'}</span>
+        <button type="button" onClick={() => trade('sell')} disabled={!!entryPausedReason || (replay ? !mark : !canTrade)} aria-label={replay ? 'Replay SELL' : 'Open SELL order entry'} className="terminal-sell focus-ring min-h-11"><strong>SELL</strong><span>{replay ? 'Simulated' : 'Paper order'}</span></button>
+      </div>
+    </div> : <div className="terminal-position-dock">
+      <button type="button" className="terminal-position-toggle focus-ring min-h-11" onClick={openManage} aria-label="Manage active position" title={`Manage ${instrument.label} position`}>
+        <span><strong className={direction === 'LONG' ? 'text-bull-bright' : 'text-bear-bright'}>Active {direction}</strong><span>{instrument.displaySymbol} · {replay ? 'REPLAY' : 'PAPER'}</span></span>
+        <span className="terminal-position-pnl">{activeView && presentation.markTrusted ? <Num.Pnl value={activeView.pnlUsd} /> : <span>P&L unavailable</span>}<span>Manage Position <ChevronUp size={14} /></span></span>
+      </button>
+      <div className="terminal-position-levels"><span>Entry <Price value={position?.entryPrice} precision={instrument.pricePrecision} /></span><span>SL <Price value={position?.sl} precision={instrument.pricePrecision} /></span><span>TP <Price value={position?.tp} precision={instrument.pricePrecision} /></span></div>
+      {!presentation.markTrusted && <p className="terminal-trading-paused" role="status">Trading paused · waiting for a trusted price</p>}
+    </div>}
+    {error && !side && !manageOpen && <p className="px-3 py-1 text-xs text-bear-bright" role="alert">{error}</p>}
+    <nav className="terminal-bottom-nav" aria-label="Trading navigation">
+      <button type="button" aria-current={!side && !manageOpen && !navSheet ? 'page' : undefined} onClick={() => { closeSheet(); setManageOpen(false); setNavSheet(null); }}><CandlestickChart size={21} /><span>Chart</span></button>
+      <button type="button" onClick={() => hasPosition ? openManage() : trade('buy')} aria-label={hasPosition ? 'Trade management' : replay ? 'Open replay trade' : 'Open trade ticket'}><ArrowLeftRight size={21} /><span>Trade</span></button>
+      <button type="button" onClick={() => hasPosition ? openManage() : setNavSheet('positions')}><span className="relative"><Wallet size={21} />{hasPosition && <b className="terminal-position-badge">1</b>}</span><span>Positions</span></button>
+      <button type="button" onClick={() => setNavSheet('more')}><Ellipsis size={22} /><span>More</span></button>
+    </nav>
+    {navSheet && <MobileSheet title={navSheet === 'positions' ? 'Positions' : 'Trading workspace'} onClose={() => setNavSheet(null)}>
+      {navSheet === 'positions' ? <div className="py-6 text-center"><Wallet className="mx-auto mb-3 text-ink-muted" size={28} /><p className="font-semibold text-ink">No open position</p><p className="mt-2 text-sm text-ink-muted">Your {instrument.label} {replay ? 'replay' : 'paper'} position will appear here.</p></div> : <><div className="terminal-workspace-links"><Link href="/multi-timeframe">Market dashboard</Link><Link href="/custom-multi-timeframe">Custom indicators</Link><Link href="/journal">Trade journal</Link></div><div className="terminal-mobile-secondary">{secondaryContent ?? <p className="text-sm text-ink-muted">Open the dashboard for market analysis.</p>}</div></>}
+    </MobileSheet>}
+    {side && <MobileSheet title={`${side === 'buy' ? 'BUY' : 'SELL'} ${instrument.displaySymbol} order entry`} onClose={closeSheet}>
+      <p className="mb-3 text-xs text-ink-muted">Live Paper · review risk before confirming</p>
+      <div className="terminal-order-types" role="group" aria-label="Order type">{(['market','limit','stop'] as OrderType[]).map(value => <button type="button" key={value} aria-pressed={type === value} onClick={() => setType(value)}>{value}</button>)}</div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        {type !== 'market' && <NumberInput label={type === 'limit' ? 'Limit price' : 'Stop price'} value={limitPrice} onChange={setLimitPrice} />}
+        <NumberInput label="Risk %" value={riskPct} onChange={setRiskPct} />
+        <NumberInput label="Stop Loss" value={sl} onChange={setSl} />
+        <NumberInput label="Take Profit" value={tp} onChange={setTp} />
+      </div>
+      <dl className="terminal-order-summary"><Metric label="Balance" value={<Num.Money value={presentation.balance} />} /><Metric label="Entry" value={Number.isFinite(entryPrice) ? <Price value={entryPrice} precision={instrument.pricePrecision} /> : '—'} /><Metric label="Risk amount" value={preview?.ok ? <Num.Money value={preview.riskAmount} /> : '—'} /><Metric label="Position size" value={preview?.ok ? <Num.Qty value={preview.units} unit={instrument.label} precision={4} /> : '—'} /><Metric label="Required margin" value={preview?.ok ? <Num.Money value={preview.margin} /> : '—'} /><Metric label="Risk : Reward" value={rr == null ? '—' : <Num.RR ratio={rr} />} /><Metric label="Potential loss" value={preview?.ok ? <Num.Pnl value={-preview.riskAmount} /> : '—'} /><Metric label="Potential profit" value={reward == null ? '—' : <Num.Pnl value={reward} />} /></dl>
+      {error && <p role="alert" className="py-2 text-sm text-bear-bright">{error}</p>}
+      {!canTrade && <p role="status" className="py-2 text-sm text-warn">Trading paused · Market data {integrity}</p>}
+      <div className="terminal-sheet-submit"><button type="button" onClick={confirm} disabled={submitting || !canTrade} className={side === 'buy' ? 'terminal-buy focus-ring' : 'terminal-sell focus-ring'}>{submitting ? 'Submitting…' : `Confirm ${side === 'buy' ? 'BUY' : 'SELL'}`}</button></div>
+    </MobileSheet>}
+    {manageOpen && position && currentPreview && <MobileSheet title={manageAction === 'sl' ? 'Edit Stop Loss' : manageAction === 'tp' ? 'Edit Take Profit' : manageAction === 'partial' ? 'Partial Close' : manageAction === 'close' ? 'Close Position' : 'Manage Position'} onClose={() => setManageOpen(false)}>
+      <div className="mb-4 flex items-center justify-between text-sm"><strong className={direction === 'LONG' ? 'text-bull-bright' : 'text-bear-bright'}>{direction} {instrument.displaySymbol}</strong><span className="text-ink-muted">{replay ? 'REPLAY · SIMULATED' : 'PAPER'}</span></div>
+      {activeView && <dl className="terminal-order-summary"><Metric label="Current P&L" value={presentation.markTrusted ? <Num.Pnl value={activeView.pnlUsd} /> : 'Unavailable'} /><Metric label="R multiple" value={presentation.markTrusted && activeView.pnlR != null ? <span><Num value={activeView.pnlR} precision={2} />R</span> : '—'} /><Metric label="Size" value={<Num.Qty value={activeView.qty} unit={instrument.label} precision={4} />} /><Metric label="Margin" value={<Num.Money value={activeView.marginUsed} />} /><Metric label="Current" value={<Price value={mark} precision={instrument.pricePrecision} />} /><Metric label="Held" value={formatHeld(activeView.heldMs)} /></dl>}
+      {manageAction === 'menu' ? <div className="terminal-manage-grid">
+        <button type="button" onClick={() => result(commands.setProtection({ symbol, protection: { sl: position.entryPrice }, replayContext }))}>Move SL to BE</button>
+        <button type="button" onClick={() => openAction('sl')}>Edit Stop Loss</button>
+        <button type="button" onClick={() => openAction('tp')}>Edit Take Profit</button>
+        {[25,50,75].map(pct => <button type="button" key={pct} onClick={() => { setPartialPct(pct); openAction('partial'); }} aria-label={`Partial close ${pct}%`}>{pct}%</button>)}
+        <button type="button" onClick={() => result(commands.toggleTrailing({ symbol, enabled: !position.trailingSl, replayContext }))}>Trailing {position.trailingSl ? 'ACTIVE' : 'OFF'}</button>
+        <button type="button" onClick={() => openAction('close')} className="text-bear-bright">Close Position</button>
+      </div> : manageAction === 'partial' ? <>
+        <p className="text-sm text-ink-muted">Close {partialPct}% of your position</p><div className="terminal-order-types my-3">{[25,50,75].map(pct => <button key={pct} onClick={() => setPartialPct(pct)} aria-pressed={partialPct === pct}>{pct}%</button>)}</div>
+        <dl className="terminal-order-summary"><Metric label="Closing size" value={<Num.Qty value={position.units * partialPct / 100} unit={instrument.label} precision={4} />} /><Metric label="Remaining" value={<Num.Qty value={position.units * (1-partialPct / 100)} unit={instrument.label} precision={4} />} /></dl><button type="button" className="terminal-confirm" disabled={!presentation.markTrusted} onClick={partialAtMark}>Confirm Partial Close</button>
+      </> : manageAction === 'close' ? <><p className="mb-4 text-sm text-ink-muted">Close the entire {direction} position at the current market price?</p><button type="button" className="terminal-sell w-full" disabled={!presentation.markTrusted} onClick={closeAtMark}>Confirm Close</button></> : <>
+        <NumberInput label={manageAction === 'sl' ? 'Proposed Stop Loss' : 'Proposed Take Profit'} value={manageDraft} onChange={setManageDraft} /><dl className="terminal-order-summary"><Metric label={currentPreview.kind === 'profit-lock' ? 'Locks profit' : 'At level'} value={currentPreview.pnlAtLevel == null ? '—' : <Num.Pnl value={currentPreview.pnlAtLevel} />} /><Metric label="R impact" value={currentPreview.rMultiple == null ? '—' : <span><Num value={currentPreview.rMultiple} precision={2} />R</span>} /></dl><button type="button" className="terminal-confirm" onClick={() => applyProtection(manageAction === 'sl' ? 'sl' : 'tp',Number(manageDraft))}>Apply {manageAction === 'sl' ? 'Stop Loss' : 'Take Profit'}</button>
+      </>}
+      {manageAction !== 'menu' && <button type="button" className="mt-2 min-h-11 w-full text-sm text-ink-muted" onClick={() => openAction('menu')}>Back to management</button>}
+      {error && <p role="alert" className="mt-3 text-sm text-bear-bright">{error}</p>}
+    </MobileSheet>}
   </section>;
 }
 
-function ManagementSheet({ direction, symbol, mode, positionUnits, unit, pnl, trailing, action, draft, preview, partialPct, onAction, onDraft, onPartial, onDismiss, onBreakEven, onApplyLevel, onTrailing, onPartialClose, onFullClose, error }: { direction: string; symbol: string; mode: string; positionUnits: number; unit: string; pnl: number; trailing: boolean; action: ManageAction; draft: string; preview: ProtectionPreview; partialPct: number; onAction: (action: ManageAction) => void; onDraft: (value: string) => void; onPartial: (value: number) => void; onDismiss: () => void; onBreakEven: () => void; onApplyLevel: () => void; onTrailing: () => void; onPartialClose: () => void; onFullClose: () => void; error: string | null }) {
-  const title = action === 'sl' ? 'Edit Stop Loss' : action === 'tp' ? 'Edit Take Profit' : action === 'partial' ? 'Partial Close' : action === 'close' ? 'Close Position' : 'Manage Position';
-  return <div className="fixed inset-x-0 bottom-0 z-[120] max-h-[86dvh] overflow-y-auto rounded-t-2xl border border-line bg-surface p-4 shadow-2" role="dialog" aria-label={title}><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line" /><div className="mb-3 flex items-center justify-between"><div><p className="text-sm font-bold text-ink">{title}</p><p className="text-xs text-ink-faint">{direction} {symbol} · {mode === 'replay' ? 'REPLAY' : 'PAPER'}</p></div><button type="button" onClick={onDismiss} className="min-h-11 min-w-11 text-ink-muted" aria-label="Close position management"><X className="mx-auto h-5 w-5" /></button></div>{action === 'menu' ? <div className="grid grid-cols-2 gap-2"><button onClick={onBreakEven} className="min-h-11 rounded-md border border-line text-xs font-semibold text-ink">Move SL to BE</button><button onClick={() => onAction('sl')} className="min-h-11 rounded-md border border-line text-xs font-semibold text-ink">Edit Stop Loss</button><button onClick={() => onAction('tp')} className="min-h-11 rounded-md border border-line text-xs font-semibold text-ink">Edit Take Profit</button><button onClick={() => onAction('partial')} className="min-h-11 rounded-md border border-line text-xs font-semibold text-ink">Partial Close</button><button onClick={onTrailing} className="min-h-11 rounded-md border border-line text-xs font-semibold text-ink">Trailing {trailing ? 'ACTIVE' : 'OFF'}</button><button onClick={() => onAction('close')} className="min-h-11 rounded-md border border-bear/40 text-xs font-semibold text-bear-bright">Close Position</button></div> : action === 'partial' ? <div><p className="text-sm text-ink-muted">Close {partialPct}% · {(positionUnits * partialPct / 100).toFixed(4)} {unit}</p><div className="mt-3 grid grid-cols-3 gap-2">{[25,50,75].map((pct) => <button key={pct} onClick={() => onPartial(pct)} className={['min-h-11 rounded-md border text-sm font-semibold', partialPct === pct ? 'border-accent bg-accent/10 text-ink' : 'border-line text-ink-muted'].join(' ')}>{pct}%</button>)}</div><p className="mt-3 text-xs text-ink-faint">Remaining: {(positionUnits * (1 - partialPct / 100)).toFixed(4)} {unit}</p><button onClick={onPartialClose} className="mt-4 min-h-12 w-full rounded-lg bg-accent text-sm font-bold text-base">Confirm Partial Close</button></div> : action === 'close' ? <div><p className="text-sm text-ink">This closes the entire {direction} position.</p><dl className="mt-3 grid grid-cols-2 gap-2 text-xs"><Metric label="Position size" value={<Num.Qty value={positionUnits} unit={unit} precision={4} />} /><Metric label="Current P&L" value={<Num.Pnl value={pnl} />} /></dl><div className="mt-4 grid grid-cols-2 gap-2"><button onClick={() => onAction('menu')} className="min-h-11 rounded-md border border-line text-sm font-semibold text-ink">Cancel</button><button onClick={onFullClose} className="min-h-11 rounded-md bg-bear text-sm font-bold text-base">Confirm Close</button></div></div> : <div><NumberInput label={action === 'sl' ? 'Proposed Stop Loss' : 'Proposed Take Profit'} value={draft} onChange={onDraft} /><dl className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-line bg-base/50 p-3 text-xs"><Metric label={preview.kind === 'profit-lock' ? 'Locks profit' : 'At level'} value={preview.pnlAtLevel == null ? '—' : <Num.Pnl value={preview.pnlAtLevel} />} /><Metric label="R impact" value={preview.rMultiple == null ? '—' : `${preview.rMultiple >= 0 ? '+' : ''}${preview.rMultiple.toFixed(2)}R`} /></dl><button onClick={onApplyLevel} className="mt-4 min-h-12 w-full rounded-lg bg-accent text-sm font-bold text-base">Apply {action === 'sl' ? 'Stop Loss' : 'Take Profit'}</button></div>}{error && <p className="mt-3 text-xs text-bear-bright" role="alert">{error}</p>}</div>;
+function NumberInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="terminal-number-field">{label}<input inputMode="decimal" type="number" value={value} onChange={event => onChange(event.target.value)} /></label>;
 }
-function NumberInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-[11px] font-medium text-ink-faint">{label}<input inputMode="decimal" type="number" value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-11 w-full rounded-md border border-line bg-base px-3 font-mono text-sm text-ink outline-none focus:border-accent" /></label>; }
-function Metric({ label, value }: { label: string; value: ReactNode }) { return <div><dt className="text-[10px] uppercase tracking-[0.09em] text-ink-faint">{label}</dt><dd className="mt-0.5 text-right text-xs text-ink">{value}</dd></div>; }
+function Metric({ label, value }: { label: string; value: ReactNode }) { return <div><dt className="text-xs text-ink-muted">{label}</dt><dd className="mt-1 text-sm text-ink">{value}</dd></div>; }
 function readableSizingReason(reason: string) { return ({ 'no-stop': 'A stop loss is required for risk sizing.', 'stop-on-wrong-side': 'Stop loss is on the wrong side of entry.', 'insufficient-margin': 'Insufficient margin for this risk size.' } as Record<string, string>)[reason] ?? 'Enter valid trade values.'; }
+
+function Price({ value, precision }: { value?: number | null; precision: number }) { return value != null && Number.isFinite(value) ? <Num.Price value={value} precision={precision} /> : <span>—</span>; }
